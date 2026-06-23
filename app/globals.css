@@ -1,0 +1,25 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --background: #ffffff;
+  --surface: #fafafa;
+  --border: #eaeaea;
+  --text: #171717;
+  --muted: #4d4d4d;
+  --primary: #006bff;
+}
+
+body {
+  background: var(--background);
+  color: var(--text);
+  font-family: Geist, Arial, sans-serif;
+}
+
+button,
+input,
+textarea,
+select {
+  font: inherit;
+}

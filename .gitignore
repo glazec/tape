@@ -1,2 +1,8 @@
+.next/
+node_modules/
+.env
+.env.local
 .superpowers/
 .worktrees/
+test-results/
+playwright-report/
