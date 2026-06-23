@@ -1,28 +1,32 @@
 "use client";
 
-import { FormEvent, useState } from "react";
+import { ChangeEvent, FormEvent, useState } from "react";
 
 type UploadState = "idle" | "uploading" | "complete" | "error";
 
 export function UploadDropzone() {
   const [state, setState] = useState<UploadState>("idle");
   const [message, setMessage] = useState<string | null>(null);
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+
+  function handleFileChange(event: ChangeEvent<HTMLInputElement>) {
+    setSelectedFile(event.currentTarget.files?.[0] ?? null);
+    setState("idle");
+    setMessage(null);
+  }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setState("uploading");
     setMessage(null);
 
-    const formData = new FormData(event.currentTarget);
-    const file = formData.get("meeting-audio");
-
-    if (!(file instanceof File) || file.size === 0) {
+    if (!selectedFile || selectedFile.size === 0) {
       setState("error");
       setMessage("Select an MP3 file first");
       return;
     }
 
-    if (file.type && file.type !== "audio/mpeg") {
+    if (!selectedFile.name.toLowerCase().endsWith(".mp3")) {
       setState("error");
       setMessage("Only MP3 files are supported");
       return;
@@ -54,7 +58,7 @@ export function UploadDropzone() {
       const uploadResponse = await fetch(uploadUrl, {
         method: "PUT",
         headers: { "content-type": "audio/mpeg" },
-        body: file,
+        body: selectedFile,
       });
 
       if (!uploadResponse.ok) {
@@ -93,7 +97,13 @@ export function UploadDropzone() {
         type="file"
         accept="audio/mpeg"
         className="text-sm"
+        onChange={handleFileChange}
       />
+      {selectedFile ? (
+        <p className="text-sm text-[var(--muted)]">
+          Selected file: {selectedFile.name}
+        </p>
+      ) : null}
       <button
         type="submit"
         disabled={state === "uploading"}

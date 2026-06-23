@@ -69,6 +69,17 @@ test("uploads a selected MP3 through a signed upload URL", async ({ page }) => {
   expect(queuedTranscription).toBe(true);
 });
 
+test("shows the selected MP3 before uploading", async ({ page }) => {
+  await page.goto("/meetings/new");
+  await page.setInputFiles("#meeting-audio", {
+    name: "sample.mp3",
+    mimeType: "audio/mpeg",
+    buffer: Buffer.from("fake mp3"),
+  });
+
+  await expect(page.getByText("Selected file: sample.mp3")).toBeVisible();
+});
+
 test("schedules a meeting bot from a supported meeting link", async ({ page }) => {
   let requestedSchedule = false;
 
