@@ -1,4 +1,4 @@
-import { PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
+import { GetObjectCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { z } from "zod";
 
@@ -18,6 +18,10 @@ type PendingUploadObjectKeyInput = {
 type CreateUploadUrlInput = {
   key: string;
   contentType: string;
+};
+
+type CreateReadUrlInput = {
+  key: string;
 };
 
 export class UnsafeObjectKeySegmentError extends Error {
@@ -64,16 +68,8 @@ export function buildPendingUploadObjectKey(input: PendingUploadObjectKeyInput) 
 }
 
 export async function createUploadUrl(input: CreateUploadUrlInput) {
+  const client = createR2Client();
   const env = r2EnvSchema.parse(process.env);
-  const client = new S3Client({
-    region: "auto",
-    endpoint: `https://${env.R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
-    credentials: {
-      accessKeyId: env.R2_ACCESS_KEY_ID,
-      secretAccessKey: env.R2_SECRET_ACCESS_KEY,
-    },
-  });
-
   const command = new PutObjectCommand({
     Bucket: env.R2_BUCKET,
     Key: input.key,
@@ -81,4 +77,28 @@ export async function createUploadUrl(input: CreateUploadUrlInput) {
   });
 
   return getSignedUrl(client, command, { expiresIn: 900 });
+}
+
+export async function createReadUrl(input: CreateReadUrlInput) {
+  const client = createR2Client();
+  const env = r2EnvSchema.parse(process.env);
+  const command = new GetObjectCommand({
+    Bucket: env.R2_BUCKET,
+    Key: input.key,
+  });
+
+  return getSignedUrl(client, command, { expiresIn: 900 });
+}
+
+function createR2Client() {
+  const env = r2EnvSchema.parse(process.env);
+
+  return new S3Client({
+    region: "auto",
+    endpoint: `https://${env.R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
+    credentials: {
+      accessKeyId: env.R2_ACCESS_KEY_ID,
+      secretAccessKey: env.R2_SECRET_ACCESS_KEY,
+    },
+  });
 }

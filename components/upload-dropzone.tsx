@@ -42,11 +42,12 @@ export function UploadDropzone() {
         throw new Error("Upload URL request failed");
       }
 
-      const { uploadUrl } = (await signResponse.json()) as {
+      const { uploadId, uploadUrl } = (await signResponse.json()) as {
+        uploadId?: string;
         uploadUrl?: string;
       };
 
-      if (!uploadUrl) {
+      if (!uploadId || !uploadUrl) {
         throw new Error("Upload URL missing");
       }
 
@@ -60,8 +61,18 @@ export function UploadDropzone() {
         throw new Error("File upload failed");
       }
 
+      const completeResponse = await fetch("/api/uploads/complete", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ uploadId }),
+      });
+
+      if (!completeResponse.ok) {
+        throw new Error("Upload completion failed");
+      }
+
       setState("complete");
-      setMessage("Upload complete");
+      setMessage("Upload complete. Transcription queued");
     } catch {
       setState("error");
       setMessage("Upload failed");

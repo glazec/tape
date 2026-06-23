@@ -11,6 +11,7 @@ test("user can open upload flow", async ({ page }) => {
 test("uploads a selected MP3 through a signed upload URL", async ({ page }) => {
   let requestedUploadUrl = false;
   let uploadedFile = false;
+  let queuedTranscription = false;
 
   await page.route("**/api/upload", async (route) => {
     requestedUploadUrl = true;
@@ -38,6 +39,22 @@ test("uploads a selected MP3 through a signed upload URL", async ({ page }) => {
     await route.fulfill({ status: 200 });
   });
 
+  await page.route("**/api/uploads/complete", async (route) => {
+    queuedTranscription = true;
+    expect(route.request().method()).toBe("POST");
+    expect(await route.request().postDataJSON()).toEqual({
+      uploadId: "upload_123",
+    });
+    await route.fulfill({
+      status: 202,
+      contentType: "application/json",
+      body: JSON.stringify({
+        queued: true,
+        key: "users/user_123/uploads/upload_123.mp3",
+      }),
+    });
+  });
+
   await page.goto("/meetings/new");
   await page.setInputFiles("#meeting-audio", {
     name: "sample.mp3",
@@ -46,9 +63,10 @@ test("uploads a selected MP3 through a signed upload URL", async ({ page }) => {
   });
   await page.getByRole("button", { name: "Upload", exact: true }).click();
 
-  await expect(page.getByText("Upload complete")).toBeVisible();
+  await expect(page.getByText("Upload complete. Transcription queued")).toBeVisible();
   expect(requestedUploadUrl).toBe(true);
   expect(uploadedFile).toBe(true);
+  expect(queuedTranscription).toBe(true);
 });
 
 test("schedules a meeting bot from a supported meeting link", async ({ page }) => {

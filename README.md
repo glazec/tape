@@ -28,6 +28,10 @@ Dashboard, meeting transcript, and team settings pages require an authenticated 
 
 The new meeting page posts Google Meet and Zoom links to `/api/meetings/link`. The route requires an authenticated Neon Auth session, rejects unsupported meeting hosts, and schedules a Recall bot with `/api/recall/webhook` as the callback URL.
 
+## MP3 Uploads
+
+The upload form requests a signed R2 PUT URL from `/api/upload`, uploads the MP3 directly to R2, then posts the returned `uploadId` to `/api/uploads/complete`. The completion route rebuilds the user scoped object key server side and sends `meeting/transcribe.audio` to Inngest. The worker creates a short lived R2 read URL and starts an ElevenLabs transcription job.
+
 ## Share Links
 
 Shared transcript pages use `/share/[token]`. The route hashes the URL token, looks up an active `share_links` row, and returns 404 when the token is missing, expired, or revoked.

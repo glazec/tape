@@ -11,8 +11,8 @@ export default function NewMeetingPage() {
         </p>
         <h1 className="mt-3 text-3xl font-semibold">Add a transcript source</h1>
         <p className="mt-3 text-base leading-7 text-[var(--muted)]">
-          Paste a meeting link for a future recording or upload an MP3 for
-          processing when the backend workflow is connected.
+          Paste a meeting link for a future recording or upload an MP3 to queue
+          transcription.
         </p>
 
         <MeetingLinkForm />
