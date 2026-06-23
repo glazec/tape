@@ -1,4 +1,5 @@
 import { AppShell } from "@/components/app-shell";
+import { MeetingLinkForm } from "@/components/meeting-link-form";
 import { UploadDropzone } from "@/components/upload-dropzone";
 
 export default function NewMeetingPage() {
@@ -14,24 +15,7 @@ export default function NewMeetingPage() {
           processing when the backend workflow is connected.
         </p>
 
-        <form className="mt-8 flex flex-col gap-4 rounded-lg border border-[var(--border)] bg-white p-5">
-          <label htmlFor="meeting-link" className="text-sm font-medium">
-            Meeting link
-          </label>
-          <input
-            id="meeting-link"
-            name="meeting-link"
-            type="url"
-            placeholder="https://meet.google.com/example"
-            className="rounded-md border border-[var(--border)] px-3 py-2 text-sm outline-none focus:border-[var(--primary)]"
-          />
-          <button
-            type="button"
-            className="w-fit rounded-md bg-[var(--primary)] px-4 py-2 text-sm font-semibold text-white"
-          >
-            Save meeting link
-          </button>
-        </form>
+        <MeetingLinkForm />
 
         <div className="mt-6">
           <UploadDropzone />

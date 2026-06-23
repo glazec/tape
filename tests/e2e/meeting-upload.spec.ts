@@ -50,3 +50,35 @@ test("uploads a selected MP3 through a signed upload URL", async ({ page }) => {
   expect(requestedUploadUrl).toBe(true);
   expect(uploadedFile).toBe(true);
 });
+
+test("schedules a meeting bot from a supported meeting link", async ({ page }) => {
+  let requestedSchedule = false;
+
+  await page.route("**/api/meetings/link", async (route) => {
+    requestedSchedule = true;
+    expect(route.request().method()).toBe("POST");
+    expect(await route.request().postDataJSON()).toEqual({
+      meetingUrl: "https://meet.google.com/abc-defg-hij",
+    });
+
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        botId: "bot_123",
+        meetingUrl: "https://meet.google.com/abc-defg-hij",
+        platform: "google_meet",
+        status: "scheduled",
+      }),
+    });
+  });
+
+  await page.goto("/meetings/new");
+  await page
+    .getByLabel("Meeting link")
+    .fill("https://meet.google.com/abc-defg-hij");
+  await page.getByRole("button", { name: "Save meeting link" }).click();
+
+  await expect(page.getByText("Meeting bot scheduled")).toBeVisible();
+  expect(requestedSchedule).toBe(true);
+});

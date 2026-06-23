@@ -23,6 +23,10 @@ Team meeting transcript product.
 
 The app uses Neon Auth through the official Next.js SDK. Browser auth requests are proxied through `/api/auth/[...path]`, the landing page routes users to `/auth/sign-in`, and server code reads the current user from Neon Auth sessions instead of a hand rolled JWT cookie.
 
+## Meeting Links
+
+The new meeting page posts Google Meet and Zoom links to `/api/meetings/link`. The route requires an authenticated Neon Auth session, rejects unsupported meeting hosts, and schedules a Recall bot with `/api/recall/webhook` as the callback URL.
+
 ## Vendor Webhooks
 
 Recall bot status webhooks are delivered to endpoints configured in the Recall dashboard. ElevenLabs speech to text webhooks are delivered to workspace configured webhooks when transcript jobs set `webhook=true`. Both webhook routes verify vendor signatures from the raw request body before parsing the event. Per request webhook metadata is stored only for correlation.
