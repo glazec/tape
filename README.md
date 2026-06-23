@@ -19,6 +19,19 @@ Team meeting transcript product.
 3. Run `npm install`.
 4. Run `npm run dev`.
 
+## Local Tunnel
+
+The Cloudflare test tunnel is `meeting-note-dev.inevitable.tech`. It points to `http://localhost:3000` and is suitable for Google OAuth redirects plus Recall and ElevenLabs webhooks during local testing.
+
+1. Set `NEXT_PUBLIC_APP_URL=https://meeting-note-dev.inevitable.tech` in `.env.local`.
+2. Run `npm run dev`.
+3. In another terminal, run `CLOUDFLARED_TOKEN=... ./scripts/dev-tunnel.sh`.
+
+Local test webhook URLs:
+
+1. `https://meeting-note-dev.inevitable.tech/api/recall/webhook`
+2. `https://meeting-note-dev.inevitable.tech/api/elevenlabs/webhook`
+
 ## Auth
 
 The app uses Neon Auth through the official Next.js SDK. Browser auth requests are proxied through `/api/auth/[...path]`, the landing page routes users to `/auth/sign-in`, and server code reads the current user from Neon Auth sessions instead of a hand rolled JWT cookie.
