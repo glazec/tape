@@ -2,7 +2,7 @@ import { z } from "zod";
 
 import { getCurrentUser } from "@/lib/auth";
 import {
-  buildMeetingObjectKey,
+  buildPendingUploadObjectKey,
   createUploadUrl,
   UnsafeObjectKeySegmentError,
 } from "@/lib/r2";
@@ -10,12 +10,9 @@ import {
 export const runtime = "nodejs";
 
 const uploadRequestSchema = z.object({
-  teamId: z.string().min(1),
-  meetingId: z.string().min(1),
-  assetId: z.string().min(1),
   extension: z.literal("mp3"),
   contentType: z.literal("audio/mpeg"),
-});
+}).strict();
 
 export async function POST(request: Request) {
   const user = await getCurrentUser();
@@ -32,13 +29,18 @@ export async function POST(request: Request) {
   }
 
   try {
-    const key = buildMeetingObjectKey(result.data);
+    const uploadId = crypto.randomUUID();
+    const key = buildPendingUploadObjectKey({
+      userId: user.id,
+      uploadId,
+      extension: result.data.extension,
+    });
     const uploadUrl = await createUploadUrl({
       key,
       contentType: result.data.contentType,
     });
 
-    return Response.json({ key, uploadUrl });
+    return Response.json({ key, uploadUrl, uploadId });
   } catch (error) {
     if (error instanceof UnsafeObjectKeySegmentError) {
       return Response.json(

@@ -31,15 +31,13 @@ async function postUpload(body: unknown) {
 }
 
 const validBody = {
-  teamId: "team_123",
-  meetingId: "meeting_456",
-  assetId: "asset_789",
   extension: "mp3",
   contentType: "audio/mpeg",
 };
 
 describe("POST /api/upload", () => {
   afterEach(() => {
+    vi.restoreAllMocks();
     getCurrentUser.mockReset();
     createUploadUrl.mockReset();
     vi.resetModules();
@@ -71,14 +69,84 @@ describe("POST /api/upload", () => {
     });
   });
 
-  it("returns 400 for unsafe object key segments", async () => {
+  it("rejects caller supplied namespace fields", async () => {
     getCurrentUser.mockResolvedValue({
       id: "user_123",
       email: "user@example.com",
       name: null,
     });
 
-    const response = await postUpload({ ...validBody, teamId: "../other" });
+    const response = await postUpload({
+      ...validBody,
+      teamId: "team_123",
+      meetingId: "meeting_456",
+      assetId: "asset_789",
+    });
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toEqual({
+      error: "Invalid upload request",
+    });
+    expect(createUploadUrl).not.toHaveBeenCalled();
+  });
+
+  it("returns a key scoped to the authenticated user namespace", async () => {
+    vi.spyOn(crypto, "randomUUID").mockReturnValue(
+      "11111111-1111-4111-8111-111111111111",
+    );
+    getCurrentUser.mockResolvedValue({
+      id: "user_123",
+      email: "user@example.com",
+      name: null,
+    });
+    createUploadUrl.mockResolvedValue("https://upload.example.com/signed");
+
+    const response = await postUpload(validBody);
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({
+      key: "users/user_123/uploads/11111111-1111-4111-8111-111111111111.mp3",
+      uploadUrl: "https://upload.example.com/signed",
+      uploadId: "11111111-1111-4111-8111-111111111111",
+    });
+    expect(createUploadUrl).toHaveBeenCalledWith({
+      key: "users/user_123/uploads/11111111-1111-4111-8111-111111111111.mp3",
+      contentType: "audio/mpeg",
+    });
+  });
+
+  it("does not include caller supplied team namespace in returned keys", async () => {
+    vi.spyOn(crypto, "randomUUID").mockReturnValue(
+      "22222222-2222-4222-8222-222222222222",
+    );
+    getCurrentUser.mockResolvedValue({
+      id: "user_123",
+      email: "user@example.com",
+      name: null,
+    });
+    createUploadUrl.mockResolvedValue("https://upload.example.com/signed");
+
+    const response = await postUpload({
+      extension: "mp3",
+      contentType: "audio/mpeg",
+      teamId: "team_other",
+    });
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toEqual({
+      error: "Invalid upload request",
+    });
+    expect(createUploadUrl).not.toHaveBeenCalled();
+  });
+
+  it("returns 400 for unsafe authenticated user id segments", async () => {
+    getCurrentUser.mockResolvedValue({
+      id: "user/123",
+      email: "user@example.com",
+      name: null,
+    });
+
+    const response = await postUpload(validBody);
 
     expect(response.status).toBe(400);
     await expect(response.json()).resolves.toEqual({

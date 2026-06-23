@@ -9,6 +9,12 @@ type MeetingObjectKeyInput = {
   extension: string;
 };
 
+type PendingUploadObjectKeyInput = {
+  userId: string;
+  uploadId: string;
+  extension: string;
+};
+
 type CreateUploadUrlInput = {
   key: string;
   contentType: string;
@@ -47,6 +53,14 @@ export function buildMeetingObjectKey(input: MeetingObjectKeyInput) {
   assertSafeObjectKeySegment(input.extension, "extension");
 
   return `teams/${input.teamId}/meetings/${input.meetingId}/assets/${input.assetId}.${input.extension}`;
+}
+
+export function buildPendingUploadObjectKey(input: PendingUploadObjectKeyInput) {
+  assertSafeObjectKeySegment(input.userId, "userId");
+  assertSafeObjectKeySegment(input.uploadId, "uploadId");
+  assertSafeObjectKeySegment(input.extension, "extension");
+
+  return `users/${input.userId}/uploads/${input.uploadId}.${input.extension}`;
 }
 
 export async function createUploadUrl(input: CreateUploadUrlInput) {
