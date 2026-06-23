@@ -18,15 +18,15 @@ export default async function SharedTranscriptPage({
   }
 
   return (
-    <main className="min-h-screen bg-[var(--background)] px-6 py-10 text-[var(--text)]">
+    <main className="min-h-screen bg-background px-4 py-8 text-foreground sm:px-6 sm:py-10">
       <section className="mx-auto w-full max-w-4xl min-w-0">
-        <p className="text-sm font-medium uppercase tracking-normal text-[var(--primary)]">
+        <p className="text-sm font-medium uppercase tracking-normal text-primary">
           Shared transcript
         </p>
         <h1 className="mt-3 break-words text-3xl font-semibold">
           {sharedTranscript.title}
         </h1>
-        <p className="mt-3 max-w-2xl text-base leading-7 text-[var(--muted)]">
+        <p className="mt-3 max-w-2xl text-base leading-7 text-muted-foreground">
           Read only transcript link.
         </p>
         <div className="mt-8">

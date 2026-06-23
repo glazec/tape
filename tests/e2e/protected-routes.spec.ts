@@ -20,7 +20,9 @@ test("redirects anonymous meeting transcript visitors to sign in", async ({
   ).toBeVisible();
 });
 
-test("redirects anonymous team settings visitors to sign in", async ({ page }) => {
+test("redirects anonymous team settings visitors to sign in", async ({
+  page,
+}) => {
   await page.goto("/settings/team");
 
   await expect(page).toHaveURL("/auth/sign-in");

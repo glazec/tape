@@ -43,7 +43,30 @@ The new meeting page posts Google Meet and Zoom links to `/api/meetings/link`. T
 
 ## MP3 Uploads
 
-The upload form requests a signed R2 PUT URL from `/api/upload`, uploads the MP3 directly to R2, then posts the returned `uploadId` to `/api/uploads/complete`. The completion route rebuilds the user scoped object key server side and sends `meeting/transcribe.audio` to Inngest. The worker creates a short lived R2 read URL and starts an ElevenLabs transcription job.
+The upload form requests a signed R2 PUT URL from `/api/upload`, uploads the MP3 directly to R2, then posts the returned `uploadId` to `/api/uploads/complete`. If the browser PUT fails, the form falls back to `/api/uploads/audio`, which stores the MP3 server side and queues the same `meeting/transcribe.audio` event. The worker creates a short lived R2 read URL and starts an ElevenLabs transcription job.
+
+The R2 bucket must allow browser PUT requests from the app origin:
+
+```json
+{
+  "rules": [
+    {
+      "id": "meeting-transcript-browser-uploads",
+      "allowed": {
+        "origins": [
+          "https://meeting-note-swart.vercel.app",
+          "https://meeting-note-dev.inevitable.tech",
+          "http://localhost:3000"
+        ],
+        "methods": ["PUT"],
+        "headers": ["Content-Type", "content-type"]
+      },
+      "exposeHeaders": ["ETag"],
+      "maxAgeSeconds": 3600
+    }
+  ]
+}
+```
 
 ## Share Links
 

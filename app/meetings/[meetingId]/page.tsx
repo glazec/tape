@@ -4,6 +4,8 @@ import {
   TranscriptViewer,
   type TranscriptSegment,
 } from "@/components/transcript-viewer";
+import { Badge } from "@/components/ui/badge";
+import { Separator } from "@/components/ui/separator";
 import { requireCurrentUser } from "@/lib/auth-guards";
 
 export const dynamic = "force-dynamic";
@@ -54,27 +56,27 @@ export default async function MeetingPage({
     <AppShell>
       <div className="grid min-w-0 gap-8 lg:grid-cols-[1fr_18rem]">
         <section className="min-w-0">
-          <p className="text-sm font-medium uppercase tracking-normal text-[var(--primary)]">
+          <p className="text-sm font-medium uppercase tracking-normal text-primary">
             Meeting
           </p>
           <h1 className="mt-3 text-3xl font-semibold">{meeting.title}</h1>
-          <dl className="mt-5 grid gap-4 border-y border-[var(--border)] py-4 sm:grid-cols-3">
+          <dl className="mt-5 grid gap-4 py-4 sm:grid-cols-3">
             <div className="min-w-0">
-              <dt className="text-xs font-medium uppercase tracking-normal text-[var(--muted)]">
+              <dt className="text-xs font-medium uppercase tracking-normal text-muted-foreground">
                 Platform
               </dt>
-              <dd className="mt-1 text-sm font-semibold">
-                {meeting.platform}
-              </dd>
+              <dd className="mt-1 text-sm font-semibold">{meeting.platform}</dd>
             </div>
             <div>
-              <dt className="text-xs font-medium uppercase tracking-normal text-[var(--muted)]">
+              <dt className="text-xs font-medium uppercase tracking-normal text-muted-foreground">
                 Status
               </dt>
-              <dd className="mt-1 text-sm font-semibold">{meeting.status}</dd>
+              <dd className="mt-1">
+                <Badge>{meeting.status}</Badge>
+              </dd>
             </div>
             <div className="min-w-0">
-              <dt className="text-xs font-medium uppercase tracking-normal text-[var(--muted)]">
+              <dt className="text-xs font-medium uppercase tracking-normal text-muted-foreground">
                 Meeting ID
               </dt>
               <dd className="mt-1 min-w-0 break-all text-sm font-semibold">
@@ -82,6 +84,7 @@ export default async function MeetingPage({
               </dd>
             </div>
           </dl>
+          <Separator />
           <div className="mt-8">
             <TranscriptViewer segments={transcript} />
           </div>

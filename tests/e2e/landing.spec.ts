@@ -12,13 +12,14 @@ test("shows the Meeting Transcript landing page", async ({ page }) => {
   await expect(page.getByText("Transcript queue")).toBeVisible();
   await expect(page.getByText("Internal attendee access")).toBeVisible();
   await expect(page.getByText("Search transcripts")).toBeVisible();
-  await expect(page.getByRole("link", { name: "Sign in with Google" })).toHaveCSS(
-    "background-color",
-    "rgb(0, 107, 255)",
-  );
+  await expect(
+    page.getByRole("link", { name: "Sign in with Google" }),
+  ).toHaveClass(/bg-primary/);
 });
 
-test("opens the sign in page from the landing call to action", async ({ page }) => {
+test("opens the sign in page from the landing call to action", async ({
+  page,
+}) => {
   await page.goto("/");
 
   await page.getByRole("link", { name: "Sign in with Google" }).click();

@@ -1,6 +1,19 @@
 "use client";
 
 import { ChangeEvent, FormEvent, useState } from "react";
+import { AlertCircle, CheckCircle2, UploadCloud } from "lucide-react";
+
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 
 type UploadState = "idle" | "uploading" | "complete" | "error";
 
@@ -55,24 +68,20 @@ export function UploadDropzone() {
         throw new Error("Upload URL missing");
       }
 
-      const uploadResponse = await fetch(uploadUrl, {
-        method: "PUT",
-        headers: { "content-type": "audio/mpeg" },
-        body: selectedFile,
-      });
+      const uploadedDirectly = await uploadDirectly(uploadUrl, selectedFile);
 
-      if (!uploadResponse.ok) {
-        throw new Error("File upload failed");
-      }
+      if (!uploadedDirectly) {
+        await uploadViaServer(selectedFile);
+      } else {
+        const completeResponse = await fetch("/api/uploads/complete", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ uploadId }),
+        });
 
-      const completeResponse = await fetch("/api/uploads/complete", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ uploadId }),
-      });
-
-      if (!completeResponse.ok) {
-        throw new Error("Upload completion failed");
+        if (!completeResponse.ok) {
+          throw new Error("Upload completion failed");
+        }
       }
 
       setState("complete");
@@ -84,42 +93,78 @@ export function UploadDropzone() {
   }
 
   return (
-    <form
-      onSubmit={handleSubmit}
-      className="flex flex-col gap-4 rounded-lg border border-[var(--border)] bg-white p-5"
-    >
-      <label htmlFor="meeting-audio" className="text-sm font-medium">
-        Upload MP3
-      </label>
-      <input
-        id="meeting-audio"
-        name="meeting-audio"
-        type="file"
-        accept="audio/mpeg"
-        className="text-sm"
-        onChange={handleFileChange}
-      />
-      {selectedFile ? (
-        <p className="text-sm text-[var(--muted)]">
-          Selected file: {selectedFile.name}
-        </p>
-      ) : null}
-      <button
-        type="submit"
-        disabled={state === "uploading"}
-        className="w-fit rounded-md bg-[var(--text)] px-4 py-2 text-sm font-medium text-white"
-      >
-        {state === "uploading" ? "Uploading..." : "Upload"}
-      </button>
-      {message ? (
-        <p
-          className={
-            state === "error" ? "text-sm text-red-700" : "text-sm text-emerald-700"
-          }
-        >
-          {message}
-        </p>
-      ) : null}
-    </form>
+    <Card>
+      <CardHeader>
+        <CardTitle>Upload MP3</CardTitle>
+        <CardDescription>
+          Add an existing recording and queue transcription.
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+          <div className="flex flex-col gap-2">
+            <Label htmlFor="meeting-audio">Audio file</Label>
+            <Input
+              id="meeting-audio"
+              name="meeting-audio"
+              type="file"
+              accept="audio/mpeg,.mp3"
+              onChange={handleFileChange}
+              aria-invalid={state === "error"}
+            />
+          </div>
+          {selectedFile ? (
+            <p className="break-all text-sm text-muted-foreground">
+              Selected file: {selectedFile.name}
+            </p>
+          ) : null}
+          <Button
+            type="submit"
+            disabled={state === "uploading"}
+            className="w-fit"
+          >
+            <UploadCloud data-icon="inline-start" />
+            {state === "uploading" ? "Uploading..." : "Upload"}
+          </Button>
+          {message ? (
+            <Alert variant={state === "error" ? "destructive" : "default"}>
+              {state === "error" ? <AlertCircle /> : <CheckCircle2 />}
+              <AlertTitle>
+                {state === "error" ? "Upload failed" : "Upload queued"}
+              </AlertTitle>
+              <AlertDescription>{message}</AlertDescription>
+            </Alert>
+          ) : null}
+        </form>
+      </CardContent>
+    </Card>
   );
+}
+
+async function uploadDirectly(uploadUrl: string, file: File) {
+  try {
+    const uploadResponse = await fetch(uploadUrl, {
+      method: "PUT",
+      headers: { "content-type": "audio/mpeg" },
+      body: file,
+    });
+
+    return uploadResponse.ok;
+  } catch {
+    return false;
+  }
+}
+
+async function uploadViaServer(file: File) {
+  const formData = new FormData();
+  formData.set("meeting-audio", file);
+
+  const response = await fetch("/api/uploads/audio", {
+    method: "POST",
+    body: formData,
+  });
+
+  if (!response.ok) {
+    throw new Error("Server upload failed");
+  }
 }

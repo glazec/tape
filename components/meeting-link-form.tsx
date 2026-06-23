@@ -1,6 +1,19 @@
 "use client";
 
 import { FormEvent, useState } from "react";
+import { AlertCircle, CalendarPlus, CheckCircle2 } from "lucide-react";
+
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 
 type FormState = "idle" | "saving" | "scheduled" | "error";
 
@@ -42,36 +55,40 @@ export function MeetingLinkForm() {
   }
 
   return (
-    <form
-      onSubmit={handleSubmit}
-      className="mt-8 flex flex-col gap-4 rounded-lg border border-[var(--border)] bg-white p-5"
-    >
-      <label htmlFor="meeting-link" className="text-sm font-medium">
-        Meeting link
-      </label>
-      <input
-        id="meeting-link"
-        name="meeting-link"
-        type="url"
-        placeholder="https://meet.google.com/example"
-        className="rounded-md border border-[var(--border)] px-3 py-2 text-sm outline-none focus:border-[var(--primary)]"
-      />
-      <button
-        type="submit"
-        disabled={state === "saving"}
-        className="w-fit rounded-md bg-[var(--primary)] px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
-      >
-        {state === "saving" ? "Scheduling..." : "Save meeting link"}
-      </button>
-      {message ? (
-        <p
-          className={
-            state === "error" ? "text-sm text-red-700" : "text-sm text-emerald-700"
-          }
-        >
-          {message}
-        </p>
-      ) : null}
-    </form>
+    <Card>
+      <CardHeader>
+        <CardTitle>Meeting link</CardTitle>
+        <CardDescription>
+          Schedule a bot for a Google Meet or Zoom call.
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+          <div className="flex flex-col gap-2">
+            <Label htmlFor="meeting-link">Meeting link</Label>
+            <Input
+              id="meeting-link"
+              name="meeting-link"
+              type="url"
+              placeholder="https://meet.google.com/example"
+              aria-invalid={state === "error"}
+            />
+          </div>
+          <Button type="submit" disabled={state === "saving"} className="w-fit">
+            <CalendarPlus data-icon="inline-start" />
+            {state === "saving" ? "Scheduling..." : "Save meeting link"}
+          </Button>
+          {message ? (
+            <Alert variant={state === "error" ? "destructive" : "default"}>
+              {state === "error" ? <AlertCircle /> : <CheckCircle2 />}
+              <AlertTitle>
+                {state === "error" ? "Meeting not scheduled" : "Bot scheduled"}
+              </AlertTitle>
+              <AlertDescription>{message}</AlertDescription>
+            </Alert>
+          ) : null}
+        </form>
+      </CardContent>
+    </Card>
   );
 }

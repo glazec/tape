@@ -56,9 +56,6 @@ export async function POST(request: Request) {
       status: "scheduled",
     });
   } catch {
-    return Response.json(
-      { error: "Meeting bot unavailable" },
-      { status: 502 },
-    );
+    return Response.json({ error: "Meeting bot unavailable" }, { status: 502 });
   }
 }

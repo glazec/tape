@@ -28,10 +28,7 @@ export async function getSharedTranscriptByToken(
     })
     .from(shareLinks)
     .innerJoin(meetings, eq(shareLinks.meetingId, meetings.id))
-    .leftJoin(
-      transcriptSegments,
-      eq(transcriptSegments.meetingId, meetings.id),
-    )
+    .leftJoin(transcriptSegments, eq(transcriptSegments.meetingId, meetings.id))
     .where(
       and(
         eq(shareLinks.tokenHash, hashShareToken(token)),

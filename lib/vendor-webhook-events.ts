@@ -43,4 +43,3 @@ export async function recordVendorWebhookEvent(
 
   return { inserted: rows.length > 0 };
 }
-

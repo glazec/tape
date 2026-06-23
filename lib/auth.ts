@@ -13,10 +13,7 @@ export function sessionUserFromAuthUser(user: unknown): SessionUser | null {
 
   const candidate = user as Record<string, unknown>;
 
-  if (
-    typeof candidate.id !== "string" ||
-    typeof candidate.email !== "string"
-  ) {
+  if (typeof candidate.id !== "string" || typeof candidate.email !== "string") {
     return null;
   }
 

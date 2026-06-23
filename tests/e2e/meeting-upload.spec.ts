@@ -63,10 +63,63 @@ test("uploads a selected MP3 through a signed upload URL", async ({ page }) => {
   });
   await page.getByRole("button", { name: "Upload", exact: true }).click();
 
-  await expect(page.getByText("Upload complete. Transcription queued")).toBeVisible();
+  await expect(
+    page.getByText("Upload complete. Transcription queued"),
+  ).toBeVisible();
   expect(requestedUploadUrl).toBe(true);
   expect(uploadedFile).toBe(true);
   expect(queuedTranscription).toBe(true);
+});
+
+test("falls back to server upload when the signed upload fails", async ({
+  page,
+}) => {
+  let fallbackUpload = false;
+
+  await page.route("**/api/upload", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        key: "users/user_123/uploads/upload_123.mp3",
+        uploadId: "upload_123",
+        uploadUrl: "https://r2.example.com/upload_123",
+      }),
+    });
+  });
+
+  await page.route("https://r2.example.com/upload_123", async (route) => {
+    await route.abort("failed");
+  });
+
+  await page.route("**/api/uploads/audio", async (route) => {
+    fallbackUpload = true;
+    expect(route.request().method()).toBe("POST");
+    expect(route.request().headers()["content-type"]).toContain(
+      "multipart/form-data",
+    );
+    await route.fulfill({
+      status: 202,
+      contentType: "application/json",
+      body: JSON.stringify({
+        queued: true,
+        key: "users/user_123/uploads/upload_456.mp3",
+      }),
+    });
+  });
+
+  await page.goto("/meetings/new");
+  await page.setInputFiles("#meeting-audio", {
+    name: "sample.mp3",
+    mimeType: "audio/mpeg",
+    buffer: Buffer.from("fake mp3"),
+  });
+  await page.getByRole("button", { name: "Upload", exact: true }).click();
+
+  await expect(
+    page.getByText("Upload complete. Transcription queued"),
+  ).toBeVisible();
+  expect(fallbackUpload).toBe(true);
 });
 
 test("shows the selected MP3 before uploading", async ({ page }) => {
@@ -80,7 +133,9 @@ test("shows the selected MP3 before uploading", async ({ page }) => {
   await expect(page.getByText("Selected file: sample.mp3")).toBeVisible();
 });
 
-test("schedules a meeting bot from a supported meeting link", async ({ page }) => {
+test("schedules a meeting bot from a supported meeting link", async ({
+  page,
+}) => {
   let requestedSchedule = false;
 
   await page.route("**/api/meetings/link", async (route) => {

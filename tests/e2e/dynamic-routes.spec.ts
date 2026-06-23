@@ -24,7 +24,9 @@ test.describe("dynamic route values on mobile", () => {
     await expectNoHorizontalOverflow(page);
   });
 
-  test("long meeting IDs do not create horizontal overflow", async ({ page }) => {
+  test("long meeting IDs do not create horizontal overflow", async ({
+    page,
+  }) => {
     await page.goto(`/meetings/${longValue}`);
 
     await expect(

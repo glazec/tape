@@ -1,19 +1,12 @@
-import { z } from "zod";
-
 import { inngest } from "@/inngest/client";
 import { getCurrentUser } from "@/lib/auth";
 import {
   buildPendingUploadObjectKey,
+  putObject,
   UnsafeObjectKeySegmentError,
 } from "@/lib/r2";
 
 export const runtime = "nodejs";
-
-const completeUploadSchema = z
-  .object({
-    uploadId: z.string().min(1),
-  })
-  .strict();
 
 export async function POST(request: Request) {
   const user = await getCurrentUser();
@@ -22,21 +15,29 @@ export async function POST(request: Request) {
     return Response.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const body = await request.json().catch(() => null);
-  const result = completeUploadSchema.safeParse(body);
+  const formData = await request.formData().catch(() => null);
+  const file = formData?.get("meeting-audio");
 
-  if (!result.success) {
+  if (!(file instanceof File) || file.size === 0 || !isMp3(file)) {
     return Response.json(
-      { error: "Invalid upload completion request" },
+      { error: "Invalid audio upload request" },
       { status: 400 },
     );
   }
 
   try {
+    const uploadId = crypto.randomUUID();
     const key = buildPendingUploadObjectKey({
       userId: user.id,
-      uploadId: result.data.uploadId,
+      uploadId,
       extension: "mp3",
+    });
+    const body = new Uint8Array(await file.arrayBuffer());
+
+    await putObject({
+      key,
+      body,
+      contentType: "audio/mpeg",
     });
 
     await inngest.send({
@@ -48,14 +49,18 @@ export async function POST(request: Request) {
   } catch (error) {
     if (error instanceof UnsafeObjectKeySegmentError) {
       return Response.json(
-        { error: "Invalid upload completion request" },
+        { error: "Invalid audio upload request" },
         { status: 400 },
       );
     }
 
     return Response.json(
-      { error: "Upload completion unavailable" },
+      { error: "Audio upload unavailable" },
       { status: 500 },
     );
   }
+}
+
+function isMp3(file: File) {
+  return file.name.toLowerCase().endsWith(".mp3");
 }

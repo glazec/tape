@@ -1,8 +1,20 @@
 import Link from "next/link";
+import { Plus, Search } from "lucide-react";
 
 import { AppShell } from "@/components/app-shell";
 import { MeetingList, type MeetingListItem } from "@/components/meeting-list";
+import { buttonVariants } from "@/components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { requireCurrentUser } from "@/lib/auth-guards";
+import { cn } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
 
@@ -45,39 +57,50 @@ export default async function DashboardPage() {
       <section className="flex flex-col gap-6">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
           <div>
-            <p className="text-sm font-medium uppercase tracking-normal text-[var(--primary)]">
+            <p className="text-sm font-medium uppercase tracking-normal text-primary">
               Dashboard
             </p>
             <h1 className="mt-3 text-3xl font-semibold">
               Transcript workspace
             </h1>
-            <p className="mt-3 max-w-2xl text-base leading-7 text-[var(--muted)]">
+            <p className="mt-3 max-w-2xl text-base leading-7 text-muted-foreground">
               Search recent meetings, review processing state, and open ready
               transcripts.
             </p>
           </div>
-          <Link
-            href="/meetings/new"
-            className="inline-flex w-fit rounded-md bg-[var(--primary)] px-4 py-2 text-sm font-semibold text-white"
-          >
+          <Link href="/meetings/new" className={cn(buttonVariants(), "w-fit")}>
+            <Plus data-icon="inline-start" />
             Record
           </Link>
         </div>
 
-        <form className="max-w-xl">
-          <label htmlFor="meeting-search" className="text-sm font-medium">
-            Search transcripts
-          </label>
-          <input
-            id="meeting-search"
-            name="q"
-            type="search"
-            placeholder="Search title, speaker, or transcript"
-            className="mt-2 w-full rounded-md border border-[var(--border)] bg-white px-3 py-2 text-sm outline-none focus:border-[var(--primary)]"
-          />
-        </form>
+        <Card>
+          <CardHeader>
+            <CardTitle>Meetings</CardTitle>
+            <CardDescription>
+              Ready transcripts, queued uploads, and scheduled bots.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-4">
+            <form className="max-w-xl">
+              <Label htmlFor="meeting-search">Search transcripts</Label>
+              <div className="mt-2 flex items-center gap-2">
+                <Search
+                  className="text-muted-foreground"
+                  data-icon="inline-start"
+                />
+                <Input
+                  id="meeting-search"
+                  name="q"
+                  type="search"
+                  placeholder="Search title, speaker, or transcript"
+                />
+              </div>
+            </form>
 
-        <MeetingList meetings={meetings} />
+            <MeetingList meetings={meetings} />
+          </CardContent>
+        </Card>
       </section>
     </AppShell>
   );

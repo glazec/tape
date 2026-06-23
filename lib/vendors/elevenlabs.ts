@@ -40,10 +40,12 @@ export function normalizeElevenLabsWebhook(payload: unknown) {
   if (realPayload.success) {
     const transcription = realPayload.data.data.transcription ?? null;
     const transcriptionText =
-      typeof transcription === "string" ? transcription : transcription?.text ?? null;
+      typeof transcription === "string"
+        ? transcription
+        : (transcription?.text ?? null);
     const status =
       typeof transcription === "object" && transcription !== null
-        ? transcription.status ?? "completed"
+        ? (transcription.status ?? "completed")
         : "completed";
 
     return {

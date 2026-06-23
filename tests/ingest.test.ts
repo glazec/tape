@@ -6,7 +6,10 @@ import {
   createElevenLabsTranscriptJob,
   normalizeElevenLabsWebhook,
 } from "@/lib/vendors/elevenlabs";
-import { normalizeRecallWebhook, scheduleRecallBot } from "@/lib/vendors/recall";
+import {
+  normalizeRecallWebhook,
+  scheduleRecallBot,
+} from "@/lib/vendors/recall";
 
 const { recordVendorWebhookEvent, MissingWebhookIdempotencyKeyError } =
   vi.hoisted(() => ({
@@ -40,10 +43,7 @@ function signElevenLabsWebhook(rawBody: string) {
 function signRecallWebhook(rawBody: string) {
   const messageId = "msg_test";
   const timestamp = Math.floor(Date.now() / 1000).toString();
-  const key = Buffer.from(
-    recallWebhookSecret.slice("whsec_".length),
-    "base64",
-  );
+  const key = Buffer.from(recallWebhookSecret.slice("whsec_".length), "base64");
   const signature = createHmac("sha256", key)
     .update(`${messageId}.${timestamp}.${rawBody}`)
     .digest("base64");
@@ -158,7 +158,8 @@ describe("vendor webhook normalization", () => {
           bot: {
             id: "bot_123",
             metadata: {
-              requested_webhook_url: "https://app.example.com/api/recall/webhook",
+              requested_webhook_url:
+                "https://app.example.com/api/recall/webhook",
               meeting_id: "meeting_456",
             },
           },
@@ -210,7 +211,8 @@ describe("vendor webhook normalization", () => {
         data: {
           request_id: "req_123",
           webhook_metadata: {
-            requestedWebhookUrl: "https://app.example.com/api/elevenlabs/webhook",
+            requestedWebhookUrl:
+              "https://app.example.com/api/elevenlabs/webhook",
             meeting_id: "meeting_456",
           },
           transcription: {

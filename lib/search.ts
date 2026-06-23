@@ -12,10 +12,12 @@ export type TranscriptFullTextSearchQuery = {
 };
 
 export function buildPostgresTsQuery(input: string) {
-  return input
-    .toLowerCase()
-    .match(/[\p{L}\p{N}]+/gu)
-    ?.join(" ") ?? "";
+  return (
+    input
+      .toLowerCase()
+      .match(/[\p{L}\p{N}]+/gu)
+      ?.join(" ") ?? ""
+  );
 }
 
 export function buildTranscriptFullTextSearchQuery(

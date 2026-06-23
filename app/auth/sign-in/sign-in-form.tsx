@@ -1,7 +1,10 @@
 "use client";
 
 import { useState } from "react";
+import { AlertCircle } from "lucide-react";
 
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
 import { authClient } from "@/lib/auth/client";
 
 export function SignInForm() {
@@ -31,15 +34,16 @@ export function SignInForm() {
 
   return (
     <div className="mt-8 flex flex-col items-start gap-3">
-      <button
-        type="button"
-        onClick={signInWithGoogle}
-        disabled={isPending}
-        className="inline-flex rounded-md bg-[var(--primary)] px-5 py-3 text-sm font-semibold text-white disabled:opacity-60"
-      >
+      <Button type="button" onClick={signInWithGoogle} disabled={isPending}>
         {isPending ? "Opening Google..." : "Continue with Google"}
-      </button>
-      {error ? <p className="text-sm text-red-700">{error}</p> : null}
+      </Button>
+      {error ? (
+        <Alert variant="destructive">
+          <AlertCircle />
+          <AlertTitle>Google sign in failed</AlertTitle>
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
+      ) : null}
     </div>
   );
 }

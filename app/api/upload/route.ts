@@ -9,10 +9,12 @@ import {
 
 export const runtime = "nodejs";
 
-const uploadRequestSchema = z.object({
-  extension: z.literal("mp3"),
-  contentType: z.literal("audio/mpeg"),
-}).strict();
+const uploadRequestSchema = z
+  .object({
+    extension: z.literal("mp3"),
+    contentType: z.literal("audio/mpeg"),
+  })
+  .strict();
 
 export async function POST(request: Request) {
   const user = await getCurrentUser();
@@ -49,9 +51,6 @@ export async function POST(request: Request) {
       );
     }
 
-    return Response.json(
-      { error: "Upload URL unavailable" },
-      { status: 500 },
-    );
+    return Response.json({ error: "Upload URL unavailable" }, { status: 500 });
   }
 }
