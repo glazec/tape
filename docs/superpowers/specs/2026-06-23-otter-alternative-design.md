@@ -96,7 +96,7 @@ Core rules:
 2. The app syncs future events with Google Meet or Zoom links.
 3. The app stores calendar event metadata and attendee emails.
 4. The app schedules Recall bot attendance for eligible meetings.
-5. Recall sends webhook updates as the bot joins, records, and finishes.
+5. Recall sends dashboard configured webhook updates as the bot joins, records, and finishes.
 6. The app downloads or references the resulting media assets.
 7. The app stores media in Cloudflare R2.
 8. The app creates an ElevenLabs transcription job.
@@ -116,7 +116,8 @@ Core rules:
 2. The app stores the file in Cloudflare R2.
 3. The app creates a meeting record with upload source.
 4. The app creates an ElevenLabs transcription job.
-5. The completed transcript is stored as searchable transcript segments.
+5. ElevenLabs sends workspace configured transcription webhooks when `webhook=true`.
+6. The completed transcript is stored as searchable transcript segments.
 
 ## Web App
 
@@ -210,10 +211,10 @@ Idempotency is required for:
 
 1. Calendar event sync
 2. Recall bot scheduling
-3. Recall webhooks
+3. Recall dashboard configured webhooks
 4. Media asset ingest
 5. MP3 upload completion
-6. ElevenLabs transcription completion
+6. ElevenLabs workspace configured transcription completion webhooks
 7. Share link creation
 
 This prevents duplicate meetings, duplicate transcript jobs, and duplicate access grants when vendors retry requests.
@@ -235,8 +236,8 @@ Worker execution uses an Inngest style model with durable function runs, retries
 1. Unit tests for access rules, attendee matching, share links, and idempotency keys.
 2. Integration tests for Google OAuth callback handling.
 3. Integration tests for calendar event sync.
-4. Integration tests for Recall webhook handling using fixture payloads.
-5. Integration tests for ElevenLabs transcription completion using fixture payloads.
+4. Integration tests for Recall webhook handling using documented bot status payloads.
+5. Integration tests for ElevenLabs transcription completion using documented speech to text payloads.
 6. Integration tests for R2 upload and presigned URL generation.
 7. End to end tests for sign in, meeting upload, transcript view, search, and sharing.
 

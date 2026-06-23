@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-const recallWebhookSchema = z.object({
+const oldRecallWebhookSchema = z.object({
   event: z.string().min(1),
   data: z
     .object({
@@ -8,8 +8,24 @@ const recallWebhookSchema = z.object({
       recording_id: z.string().min(1).optional().nullable(),
       meeting_url: z.string().url().optional().nullable(),
     })
-    .optional()
-    .default({}),
+    .refine((data) => data.bot_id || data.recording_id || data.meeting_url),
+});
+
+const recallMetadataSchema = z.record(z.string(), z.unknown());
+
+const recallWebhookSchema = z.object({
+  event: z.string().min(1),
+  data: z.object({
+    data: z.object({
+      code: z.string().min(1),
+      sub_code: z.string().min(1).optional().nullable(),
+      updated_at: z.string().min(1).optional().nullable(),
+    }),
+    bot: z.object({
+      id: z.string().min(1),
+      metadata: recallMetadataSchema.optional().nullable(),
+    }),
+  }),
 });
 
 const recallBotInputSchema = z.object({
@@ -23,13 +39,34 @@ const recallApiEnvSchema = z.object({
 });
 
 export function normalizeRecallWebhook(payload: unknown) {
-  const parsed = recallWebhookSchema.parse(payload);
+  const realPayload = recallWebhookSchema.safeParse(payload);
+
+  if (realPayload.success) {
+    return {
+      eventType: realPayload.data.event,
+      botId: realPayload.data.data.bot.id,
+      recordingId: null,
+      meetingUrl: null,
+      statusCode: realPayload.data.data.data.code,
+      code: realPayload.data.data.data.code,
+      subCode: realPayload.data.data.data.sub_code ?? null,
+      updatedAt: realPayload.data.data.data.updated_at ?? null,
+      metadata: realPayload.data.data.bot.metadata ?? {},
+    };
+  }
+
+  const parsed = oldRecallWebhookSchema.parse(payload);
 
   return {
     eventType: parsed.event,
     botId: parsed.data.bot_id ?? null,
     recordingId: parsed.data.recording_id ?? null,
     meetingUrl: parsed.data.meeting_url ?? null,
+    statusCode: null,
+    code: null,
+    subCode: null,
+    updatedAt: null,
+    metadata: {},
   };
 }
 
@@ -52,7 +89,8 @@ export async function scheduleRecallBot(input: {
       meeting_url: parsedInput.meetingUrl,
       join_at: parsedInput.startAt,
       metadata: {
-        webhook_url: parsedInput.webhookUrl,
+        // Recall delivers bot status webhooks to dashboard configured endpoints. This metadata only correlates the request with our app URL.
+        requested_webhook_url: parsedInput.webhookUrl,
       },
     }),
   });

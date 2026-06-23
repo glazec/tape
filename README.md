@@ -19,6 +19,10 @@ Team meeting transcript product.
 3. Run `npm install`.
 4. Run `npm run dev`.
 
+## Vendor Webhooks
+
+Recall bot status webhooks are delivered to endpoints configured in the Recall dashboard. ElevenLabs speech to text webhooks are delivered to workspace configured webhooks when transcript jobs set `webhook=true`. Per request webhook metadata is stored only for correlation.
+
 ## Verification
 
 ```bash

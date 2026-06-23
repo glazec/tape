@@ -1,9 +1,28 @@
 import { z } from "zod";
 
-const elevenLabsWebhookSchema = z.object({
+const oldElevenLabsWebhookSchema = z.object({
   event: z.string().min(1),
   transcript_id: z.string().min(1).optional().nullable(),
   status: z.string().min(1).optional().nullable(),
+});
+
+const transcriptionSchema = z.union([
+  z.string().min(1),
+  z
+    .object({
+      text: z.string().optional().nullable(),
+      status: z.string().optional().nullable(),
+    })
+    .passthrough(),
+]);
+
+const elevenLabsWebhookSchema = z.object({
+  type: z.string().min(1),
+  data: z.object({
+    request_id: z.string().min(1),
+    webhook_metadata: z.record(z.string(), z.unknown()).optional().nullable(),
+    transcription: transcriptionSchema.optional().nullable(),
+  }),
 });
 
 const elevenLabsTranscriptInputSchema = z.object({
@@ -16,12 +35,38 @@ const elevenLabsApiEnvSchema = z.object({
 });
 
 export function normalizeElevenLabsWebhook(payload: unknown) {
-  const parsed = elevenLabsWebhookSchema.parse(payload);
+  const realPayload = elevenLabsWebhookSchema.safeParse(payload);
+
+  if (realPayload.success) {
+    const transcription = realPayload.data.data.transcription ?? null;
+    const transcriptionText =
+      typeof transcription === "string" ? transcription : transcription?.text ?? null;
+    const status =
+      typeof transcription === "object" && transcription !== null
+        ? transcription.status ?? "completed"
+        : "completed";
+
+    return {
+      eventType: realPayload.data.type,
+      type: realPayload.data.type,
+      requestId: realPayload.data.data.request_id,
+      transcriptId: null,
+      status,
+      transcriptionText,
+      metadata: realPayload.data.data.webhook_metadata ?? {},
+    };
+  }
+
+  const parsed = oldElevenLabsWebhookSchema.parse(payload);
 
   return {
     eventType: parsed.event,
+    type: parsed.event,
+    requestId: null,
     transcriptId: parsed.transcript_id ?? null,
     status: parsed.status ?? null,
+    transcriptionText: null,
+    metadata: {},
   };
 }
 
@@ -36,9 +81,10 @@ export async function createElevenLabsTranscriptJob(input: {
   body.append("model_id", "scribe_v2");
   body.append("source_url", parsedInput.audioUrl);
   body.append("webhook", "true");
+  // ElevenLabs delivers webhooks to workspace configured endpoints. This metadata only correlates the request with our app URL.
   body.append(
     "webhook_metadata",
-    JSON.stringify({ webhookUrl: parsedInput.webhookUrl }),
+    JSON.stringify({ requestedWebhookUrl: parsedInput.webhookUrl }),
   );
 
   const response = await fetch("https://api.elevenlabs.io/v1/speech-to-text", {

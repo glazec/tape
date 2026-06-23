@@ -1061,18 +1061,31 @@ describe("normalizeRecallWebhook", () => {
   it("extracts bot status and recording identifiers", () => {
     expect(
       normalizeRecallWebhook({
-        event: "bot.done",
+        event: "bot.status_change",
         data: {
-          bot_id: "bot_123",
-          recording_id: "rec_456",
-          meeting_url: "https://meet.google.com/abc-defg-hij",
+          data: {
+            code: "done",
+            sub_code: "recording_done",
+            updated_at: "2026-06-23T12:00:00Z",
+          },
+          bot: {
+            id: "bot_123",
+            metadata: {
+              requested_webhook_url: "https://app.example.com/api/recall/webhook",
+            },
+          },
         },
       }),
     ).toEqual({
-      eventType: "bot.done",
+      eventType: "bot.status_change",
       botId: "bot_123",
-      recordingId: "rec_456",
-      meetingUrl: "https://meet.google.com/abc-defg-hij",
+      statusCode: "done",
+      code: "done",
+      subCode: "recording_done",
+      updatedAt: "2026-06-23T12:00:00Z",
+      metadata: {
+        requested_webhook_url: "https://app.example.com/api/recall/webhook",
+      },
     });
   });
 });
@@ -1081,14 +1094,26 @@ describe("normalizeElevenLabsWebhook", () => {
   it("extracts transcript completion status", () => {
     expect(
       normalizeElevenLabsWebhook({
-        event: "transcript.completed",
-        transcript_id: "tr_123",
-        status: "completed",
+        type: "speech_to_text_transcription",
+        data: {
+          request_id: "req_123",
+          webhook_metadata: {
+            requestedWebhookUrl: "https://app.example.com/api/elevenlabs/webhook",
+          },
+          transcription: {
+            text: "Transcript text",
+          },
+        },
       }),
     ).toEqual({
-      eventType: "transcript.completed",
-      transcriptId: "tr_123",
+      eventType: "speech_to_text_transcription",
+      type: "speech_to_text_transcription",
+      requestId: "req_123",
       status: "completed",
+      transcriptionText: "Transcript text",
+      metadata: {
+        requestedWebhookUrl: "https://app.example.com/api/elevenlabs/webhook",
+      },
     });
   });
 });
@@ -1115,9 +1140,15 @@ import { env } from "@/lib/env";
 const recallWebhookSchema = z.object({
   event: z.string(),
   data: z.object({
-    bot_id: z.string().optional(),
-    recording_id: z.string().optional(),
-    meeting_url: z.string().url().optional(),
+    data: z.object({
+      code: z.string(),
+      sub_code: z.string().optional(),
+      updated_at: z.string().optional(),
+    }),
+    bot: z.object({
+      id: z.string(),
+      metadata: z.record(z.string(), z.unknown()).optional(),
+    }),
   }),
 });
 
@@ -1125,9 +1156,12 @@ export function normalizeRecallWebhook(payload: unknown) {
   const parsed = recallWebhookSchema.parse(payload);
   return {
     eventType: parsed.event,
-    botId: parsed.data.bot_id ?? null,
-    recordingId: parsed.data.recording_id ?? null,
-    meetingUrl: parsed.data.meeting_url ?? null,
+    botId: parsed.data.bot.id,
+    statusCode: parsed.data.data.code,
+    code: parsed.data.data.code,
+    subCode: parsed.data.data.sub_code ?? null,
+    updatedAt: parsed.data.data.updated_at ?? null,
+    metadata: parsed.data.bot.metadata ?? {},
   };
 }
 
@@ -1147,7 +1181,7 @@ export async function scheduleRecallBot(input: {
       bot_name: "Transcript Bot",
       recording_config: { transcript: { provider: { meeting_captions: false } } },
       real_time_media: false,
-      webhook_url: input.webhookUrl,
+      metadata: { requested_webhook_url: input.webhookUrl },
       join_at: input.startAt,
     }),
   });
@@ -1169,17 +1203,26 @@ import { z } from "zod";
 import { env } from "@/lib/env";
 
 const elevenWebhookSchema = z.object({
-  event: z.string(),
-  transcript_id: z.string(),
-  status: z.string(),
+  type: z.string(),
+  data: z.object({
+    request_id: z.string(),
+    webhook_metadata: z.record(z.string(), z.unknown()).optional(),
+    transcription: z.object({
+      text: z.string().optional(),
+      status: z.string().optional(),
+    }).passthrough().optional(),
+  }),
 });
 
 export function normalizeElevenLabsWebhook(payload: unknown) {
   const parsed = elevenWebhookSchema.parse(payload);
   return {
-    eventType: parsed.event,
-    transcriptId: parsed.transcript_id,
-    status: parsed.status,
+    eventType: parsed.type,
+    type: parsed.type,
+    requestId: parsed.data.request_id,
+    status: parsed.data.transcription?.status ?? "completed",
+    transcriptionText: parsed.data.transcription?.text ?? null,
+    metadata: parsed.data.webhook_metadata ?? {},
   };
 }
 
@@ -1187,17 +1230,21 @@ export async function createElevenLabsTranscriptJob(input: {
   audioUrl: string;
   webhookUrl: string;
 }) {
+  const body = new FormData();
+  body.append("model_id", "scribe_v2");
+  body.append("source_url", input.audioUrl);
+  body.append("webhook", "true");
+  body.append(
+    "webhook_metadata",
+    JSON.stringify({ requestedWebhookUrl: input.webhookUrl }),
+  );
+
   const response = await fetch("https://api.elevenlabs.io/v1/speech-to-text", {
     method: "POST",
     headers: {
       "xi-api-key": env.ELEVENLABS_API_KEY,
-      "Content-Type": "application/json",
     },
-    body: JSON.stringify({
-      audio_url: input.audioUrl,
-      webhook: true,
-      webhook_url: input.webhookUrl,
-    }),
+    body,
   });
 
   if (!response.ok) {
