@@ -8,6 +8,13 @@
       "when": 1782198264900,
       "tag": "0000_short_blade",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1782203210287,
+      "tag": "0001_clumsy_nehzno",
+      "breakpoints": true
     }
   ]
 }

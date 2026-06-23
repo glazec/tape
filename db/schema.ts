@@ -1,3 +1,4 @@
+import { sql } from "drizzle-orm";
 import {
   boolean,
   index,
@@ -178,27 +179,39 @@ export const calendarEvents = pgTable(
   ],
 );
 
-export const meetings = pgTable("meetings", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  teamId: uuid("team_id")
-    .notNull()
-    .references(() => teams.id, { onDelete: "cascade" }),
-  ownerUserId: uuid("owner_user_id")
-    .notNull()
-    .references(() => users.id),
-  calendarEventId: uuid("calendar_event_id").references(() => calendarEvents.id, {
-    onDelete: "set null",
-  }),
-  title: text("title").notNull(),
-  platform: meetingPlatform("platform").notNull(),
-  status: meetingStatus("status").notNull().default("scheduled"),
-  meetingUrl: text("meeting_url"),
-  startedAt: timestamp("started_at", { withTimezone: true }),
-  endedAt: timestamp("ended_at", { withTimezone: true }),
-  recallBotId: text("recall_bot_id"),
-  recallRecordingId: text("recall_recording_id"),
-  ...timestamps,
-});
+export const meetings = pgTable(
+  "meetings",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    teamId: uuid("team_id")
+      .notNull()
+      .references(() => teams.id, { onDelete: "cascade" }),
+    ownerUserId: uuid("owner_user_id")
+      .notNull()
+      .references(() => users.id),
+    calendarEventId: uuid("calendar_event_id").references(
+      () => calendarEvents.id,
+      {
+        onDelete: "set null",
+      },
+    ),
+    title: text("title").notNull(),
+    platform: meetingPlatform("platform").notNull(),
+    status: meetingStatus("status").notNull().default("scheduled"),
+    meetingUrl: text("meeting_url"),
+    startedAt: timestamp("started_at", { withTimezone: true }),
+    endedAt: timestamp("ended_at", { withTimezone: true }),
+    recallBotId: text("recall_bot_id"),
+    recallRecordingId: text("recall_recording_id"),
+    ...timestamps,
+  },
+  (table) => [
+    index("meetings_search_index").using(
+      "gin",
+      sql`to_tsvector('english', coalesce(${table.title}, '') || ' ' || coalesce(${table.meetingUrl}, ''))`,
+    ),
+  ],
+);
 
 export const meetingAttendees = pgTable(
   "meeting_attendees",
@@ -337,6 +350,10 @@ export const transcriptSegments = pgTable(
   },
   (table) => [
     index("transcript_segments_meeting_text_index").on(table.meetingId),
+    index("transcript_segments_search_index").using(
+      "gin",
+      sql`to_tsvector('english', coalesce(${table.text}, '') || ' ' || coalesce(${table.speaker}, ''))`,
+    ),
   ],
 );
 

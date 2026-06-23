@@ -179,6 +179,8 @@ Default retention policy:
 
 v1 search uses Neon Postgres full text search over transcript segments and meeting metadata.
 
+The initial implementation uses expression GIN indexes with `to_tsvector('english', ...)` on meeting title and URL metadata plus transcript segment text and speaker. Query helpers pass normalized user input to `websearch_to_tsquery('english', $1)`.
+
 This is enough for the first product because it keeps search close to permissions and avoids a separate search service. If volume grows, a dedicated search system can be added later while keeping the same meeting and transcript model.
 
 ## Data Model

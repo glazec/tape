@@ -1,0 +1,2 @@
+CREATE INDEX "meetings_search_index" ON "meetings" USING gin (to_tsvector('english', coalesce("title", '') || ' ' || coalesce("meeting_url", '')));--> statement-breakpoint
+CREATE INDEX "transcript_segments_search_index" ON "transcript_segments" USING gin (to_tsvector('english', coalesce("text", '') || ' ' || coalesce("speaker", '')));
