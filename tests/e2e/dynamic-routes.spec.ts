@@ -29,7 +29,7 @@ test.describe("dynamic route values on mobile", () => {
     await page.goto(`/meetings/${longValue}`);
 
     await expect(
-      page.getByRole("heading", { name: "Weekly product review" }),
+      page.getByRole("button", { name: "Continue with Google" }),
     ).toBeVisible();
     await expectNoHorizontalOverflow(page);
   });

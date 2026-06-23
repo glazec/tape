@@ -2,6 +2,9 @@ import Link from "next/link";
 
 import { AppShell } from "@/components/app-shell";
 import { MeetingList, type MeetingListItem } from "@/components/meeting-list";
+import { requireCurrentUser } from "@/lib/auth-guards";
+
+export const dynamic = "force-dynamic";
 
 const meetings: MeetingListItem[] = [
   {
@@ -34,7 +37,9 @@ const meetings: MeetingListItem[] = [
   },
 ];
 
-export default function DashboardPage() {
+export default async function DashboardPage() {
+  await requireCurrentUser();
+
   return (
     <AppShell>
       <section className="flex flex-col gap-6">

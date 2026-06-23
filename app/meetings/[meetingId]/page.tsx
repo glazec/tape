@@ -4,6 +4,9 @@ import {
   TranscriptViewer,
   type TranscriptSegment,
 } from "@/components/transcript-viewer";
+import { requireCurrentUser } from "@/lib/auth-guards";
+
+export const dynamic = "force-dynamic";
 
 const transcript: TranscriptSegment[] = [
   {
@@ -43,6 +46,8 @@ export default async function MeetingPage({
 }: {
   params: Promise<{ meetingId: string }>;
 }) {
+  await requireCurrentUser();
+
   const { meetingId } = await params;
 
   return (
