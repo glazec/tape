@@ -32,7 +32,17 @@ export type TranscriptSegment = {
   text: string;
 };
 
-const WAVEFORM_BAR_COUNT = 120;
+const WAVEFORM_DESKTOP_BAR_COUNT = 120;
+const WAVEFORM_MOBILE_BAR_COUNT = 56;
+const WAVEFORM_MOBILE_QUERY = "(max-width: 640px)";
+const WAVEFORM_SECTION_COLORS = [
+  "#2563eb",
+  "#059669",
+  "#d97706",
+  "#7c3aed",
+  "#dc2626",
+  "#0891b2",
+];
 
 type TranscriptViewerProps = {
   audioUrl?: string | null;
@@ -371,6 +381,7 @@ function TranscriptAudioPlayer({
   const [waveformStatus, setWaveformStatus] = useState<
     "idle" | "loading" | "ready" | "fallback"
   >("idle");
+  const waveformBarCount = useWaveformBarCount();
   const safeDuration = Number.isFinite(duration) && duration > 0 ? duration : 0;
   const segmentDuration = useMemo(() => getSegmentTimelineDuration(segments), [
     segments,
@@ -382,8 +393,8 @@ function TranscriptAudioPlayer({
       return waveformPeaks;
     }
 
-    return buildFallbackWaveform(segments, WAVEFORM_BAR_COUNT);
-  }, [segments, waveformPeaks]);
+    return buildFallbackWaveform(segments, waveformBarCount);
+  }, [segments, waveformBarCount, waveformPeaks]);
   const sectionMarkers = useMemo(
     () => buildWaveformSections(segments, timelineDuration),
     [segments, timelineDuration],
@@ -425,7 +436,7 @@ function TranscriptAudioPlayer({
 
         try {
           const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
-          const peaks = buildAudioPeaks(audioBuffer, WAVEFORM_BAR_COUNT);
+          const peaks = buildAudioPeaks(audioBuffer, waveformBarCount);
 
           if (!isCancelled) {
             setWaveformPeaks(peaks);
@@ -448,7 +459,7 @@ function TranscriptAudioPlayer({
       isCancelled = true;
       controller.abort();
     };
-  }, [audioUrl]);
+  }, [audioUrl, waveformBarCount]);
 
   async function togglePlayback() {
     const audio = audioRef.current;
@@ -544,29 +555,26 @@ function TranscriptAudioPlayer({
       <div className="mx-auto flex max-w-6xl flex-col gap-2 px-4 py-3">
         <button
           aria-label="Audio waveform"
-          className="relative h-14 w-full overflow-hidden rounded-lg border bg-muted/30 px-1 outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+          className="relative h-16 w-full overflow-hidden rounded-lg border bg-background px-2 outline-none focus-visible:ring-3 focus-visible:ring-ring/50 sm:h-14 sm:px-1"
           onPointerDown={seekFromWaveform}
           type="button"
         >
           {sectionMarkers.map((section) => (
             <span
               aria-hidden="true"
-              className={cn(
-                "absolute inset-y-1 rounded-md",
-                section.id === activeSegmentId
-                  ? "bg-primary/10"
-                  : "bg-foreground/[0.03]",
-              )}
+              className="absolute inset-y-1 rounded-md"
               key={section.id}
               style={{
+                backgroundColor: getWaveformSectionColor(section.speaker),
                 left: `${section.left}%`,
+                opacity: section.id === activeSegmentId ? 0.16 : 0.06,
                 width: `${section.width}%`,
               }}
             />
           ))}
           <span
             aria-hidden="true"
-            className="absolute inset-x-1 top-1/2 flex -translate-y-1/2 items-center gap-px"
+            className="absolute inset-x-2 bottom-3 top-2 flex items-center gap-[2px] sm:inset-x-1 sm:bottom-2 sm:gap-px"
           >
             {waveformValues.map((peak, index) => {
               const barPercent =
@@ -576,16 +584,33 @@ function TranscriptAudioPlayer({
               return (
                 <span
                   className={cn(
-                    "min-w-0 flex-1 rounded-full transition-colors",
-                    isPast ? "bg-primary/80" : "bg-muted-foreground/35",
+                    "min-w-0 flex-1 rounded-[2px] transition-colors",
+                    isPast ? "bg-primary" : "bg-muted-foreground/40",
                   )}
                   key={`${index}-${waveformStatus}`}
                   style={{
-                    height: `${Math.round(8 + peak * 36)}px`,
+                    height: `${Math.round(6 + peak * 34)}px`,
                   }}
                 />
               );
             })}
+          </span>
+          <span
+            aria-hidden="true"
+            className="absolute inset-x-2 bottom-1 h-1 overflow-hidden rounded-full bg-muted sm:inset-x-1"
+          >
+            {sectionMarkers.map((section) => (
+              <span
+                className="absolute inset-y-0"
+                key={`${section.id}-rail`}
+                style={{
+                  backgroundColor: getWaveformSectionColor(section.speaker),
+                  left: `${section.left}%`,
+                  opacity: section.id === activeSegmentId ? 0.95 : 0.55,
+                  width: `${section.width}%`,
+                }}
+              />
+            ))}
           </span>
           <span
             aria-hidden="true"
@@ -661,6 +686,30 @@ function TranscriptAudioPlayer({
       </div>
     </div>
   );
+}
+
+function useWaveformBarCount() {
+  const [barCount, setBarCount] = useState(WAVEFORM_DESKTOP_BAR_COUNT);
+
+  useEffect(() => {
+    const mediaQuery = window.matchMedia(WAVEFORM_MOBILE_QUERY);
+    const updateBarCount = () => {
+      setBarCount(
+        mediaQuery.matches
+          ? WAVEFORM_MOBILE_BAR_COUNT
+          : WAVEFORM_DESKTOP_BAR_COUNT,
+      );
+    };
+
+    updateBarCount();
+    mediaQuery.addEventListener("change", updateBarCount);
+
+    return () => {
+      mediaQuery.removeEventListener("change", updateBarCount);
+    };
+  }, []);
+
+  return barCount;
 }
 
 function formatPlayerTime(value: number) {
@@ -747,7 +796,12 @@ function buildFallbackWaveform(segments: TranscriptSegment[], count: number) {
 function normalizePeaks(peaks: number[]) {
   const maxPeak = Math.max(...peaks, 0.01);
 
-  return peaks.map((peak) => clamp(peak / maxPeak, 0.08, 1));
+  return peaks.map((peak) => {
+    const normalizedPeak = clamp(peak / maxPeak, 0, 1);
+    const shapedPeak = normalizedPeak ** 1.45;
+
+    return clamp(0.08 + shapedPeak * 0.92, 0.08, 1);
+  });
 }
 
 function buildWaveformSections(
@@ -772,10 +826,22 @@ function buildWaveformSections(
       return {
         id: segment.id,
         left,
+        speaker: segment.speaker,
         width,
       };
     })
     .filter((section) => section.width > 0);
+}
+
+function getWaveformSectionColor(speaker: string | null) {
+  const speakerKey = getSpeakerKey(speaker);
+  let hash = 0;
+
+  for (let index = 0; index < speakerKey.length; index += 1) {
+    hash = (hash * 31 + speakerKey.charCodeAt(index)) >>> 0;
+  }
+
+  return WAVEFORM_SECTION_COLORS[hash % WAVEFORM_SECTION_COLORS.length];
 }
 
 function getSegmentTimelineDuration(segments: TranscriptSegment[]) {
