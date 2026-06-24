@@ -2,7 +2,13 @@ import { eq } from "drizzle-orm";
 
 import { db } from "@/db/client";
 import { meetings } from "@/db/schema";
+import { inngest } from "@/inngest/client";
+import { createRecallRecordingTranscription } from "@/lib/transcription-records";
 import type { normalizeRecallWebhook } from "@/lib/vendors/recall";
+import {
+  findRecallRecordingMediaUrl,
+  retrieveRecallBot,
+} from "@/lib/vendors/recall";
 
 type RecallWebhookEvent = ReturnType<typeof normalizeRecallWebhook>;
 
@@ -58,7 +64,39 @@ export async function applyRecallMeetingEvent(event: RecallWebhookEvent) {
     })
     .where(eq(meetings.id, update.meetingId));
 
+  if (update.status === "processing" && update.recallBotId) {
+    await queueRecallRecordingTranscription({
+      ...update,
+      recallBotId: update.recallBotId,
+    });
+  }
+
   return update;
+}
+
+async function queueRecallRecordingTranscription(
+  update: Extract<RecallMeetingUpdate, { action: "update" }> & {
+    recallBotId: string;
+  },
+) {
+  const bot = await retrieveRecallBot(update.recallBotId);
+  const audioUrl = findRecallRecordingMediaUrl(bot, update.recallRecordingId);
+
+  if (!audioUrl) {
+    return;
+  }
+
+  const transcription = await createRecallRecordingTranscription({
+    meetingId: update.meetingId,
+  });
+
+  await inngest.send({
+    name: "meeting/transcribe.audio",
+    data: {
+      audioUrl,
+      ...transcription,
+    },
+  });
 }
 
 function getMetadataString(
@@ -77,7 +115,12 @@ function getMetadataString(
 }
 
 function mapRecallStatus(event: RecallWebhookEvent) {
-  const statusText = [event.statusCode, event.code, event.subCode, event.eventType]
+  const statusText = [
+    event.statusCode,
+    event.code,
+    event.subCode,
+    event.eventType,
+  ]
     .filter(Boolean)
     .join(" ")
     .toLowerCase();

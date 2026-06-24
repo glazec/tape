@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 
 import { AppShell } from "@/components/app-shell";
+import { MeetingActions } from "@/components/meeting-actions";
 import { ShareDialog } from "@/components/share-dialog";
 import { TranscriptViewer } from "@/components/transcript-viewer";
 import { Badge } from "@/components/ui/badge";
@@ -30,7 +31,12 @@ export default async function MeetingPage({
           <p className="text-sm font-medium uppercase tracking-normal text-primary">
             Meeting
           </p>
-          <h1 className="mt-3 text-3xl font-semibold">{meeting.title}</h1>
+          <div className="mt-3 flex min-w-0 flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+            <h1 className="min-w-0 text-3xl font-semibold">
+              {meeting.title}
+            </h1>
+            <MeetingActions meetingId={meetingId} />
+          </div>
           <dl className="mt-5 grid gap-4 py-4 sm:grid-cols-3">
             <div className="min-w-0">
               <dt className="text-xs font-medium uppercase tracking-normal text-muted-foreground">
@@ -59,7 +65,12 @@ export default async function MeetingPage({
           </dl>
           <Separator />
           <div className="mt-8">
-            <TranscriptViewer segments={meeting.segments} />
+            <TranscriptViewer
+              audioUrl={meeting.audioUrl}
+              key={meetingId}
+              meetingId={meetingId}
+              segments={meeting.segments}
+            />
           </div>
         </section>
 

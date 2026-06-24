@@ -20,18 +20,21 @@ type UploadState = "idle" | "uploading" | "complete" | "error";
 export function UploadDropzone() {
   const [state, setState] = useState<UploadState>("idle");
   const [message, setMessage] = useState<string | null>(null);
+  const [signInRequired, setSignInRequired] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
 
   function handleFileChange(event: ChangeEvent<HTMLInputElement>) {
     setSelectedFile(event.currentTarget.files?.[0] ?? null);
     setState("idle");
     setMessage(null);
+    setSignInRequired(false);
   }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setState("uploading");
     setMessage(null);
+    setSignInRequired(false);
 
     if (!selectedFile || selectedFile.size === 0) {
       setState("error");
@@ -54,6 +57,13 @@ export function UploadDropzone() {
           contentType: "audio/mpeg",
         }),
       });
+
+      if (signResponse.status === 401) {
+        setState("error");
+        setMessage("Sign in to upload MP3 files");
+        setSignInRequired(true);
+        return;
+      }
 
       if (!signResponse.ok) {
         throw new Error("Upload URL request failed");
@@ -132,7 +142,15 @@ export function UploadDropzone() {
               <AlertTitle>
                 {state === "error" ? "Upload failed" : "Upload queued"}
               </AlertTitle>
-              <AlertDescription>{message}</AlertDescription>
+              <AlertDescription>
+                {message}
+                {signInRequired ? (
+                  <>
+                    {" "}
+                    <a href="/auth/sign-in">Sign in</a>
+                  </>
+                ) : null}
+              </AlertDescription>
             </Alert>
           ) : null}
         </form>

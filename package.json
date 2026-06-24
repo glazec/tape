@@ -6,6 +6,7 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
+    "inngest:sync": "node scripts/sync-inngest.mjs",
     "lint": "eslint",
     "test": "vitest run",
     "test:watch": "vitest",

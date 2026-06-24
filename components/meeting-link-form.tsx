@@ -20,11 +20,13 @@ type FormState = "idle" | "saving" | "scheduled" | "error";
 export function MeetingLinkForm() {
   const [state, setState] = useState<FormState>("idle");
   const [message, setMessage] = useState<string | null>(null);
+  const [signInRequired, setSignInRequired] = useState(false);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setState("saving");
     setMessage(null);
+    setSignInRequired(false);
 
     const formData = new FormData(event.currentTarget);
     const meetingUrl = String(formData.get("meeting-link") ?? "").trim();
@@ -41,6 +43,13 @@ export function MeetingLinkForm() {
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ meetingUrl }),
       });
+
+      if (response.status === 401) {
+        setState("error");
+        setMessage("Sign in to schedule a meeting bot");
+        setSignInRequired(true);
+        return;
+      }
 
       if (!response.ok) {
         throw new Error("Meeting bot request failed");
@@ -84,7 +93,15 @@ export function MeetingLinkForm() {
               <AlertTitle>
                 {state === "error" ? "Meeting not scheduled" : "Bot scheduled"}
               </AlertTitle>
-              <AlertDescription>{message}</AlertDescription>
+              <AlertDescription>
+                {message}
+                {signInRequired ? (
+                  <>
+                    {" "}
+                    <a href="/auth/sign-in">Sign in</a>
+                  </>
+                ) : null}
+              </AlertDescription>
             </Alert>
           ) : null}
         </form>

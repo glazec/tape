@@ -26,6 +26,7 @@ The Cloudflare test tunnel is `meeting-note-dev.inevitable.tech`. It points to `
 1. Set `NEXT_PUBLIC_APP_URL=https://meeting-note-dev.inevitable.tech` in `.env.local`.
 2. Run `npm run dev`.
 3. In another terminal, run `CLOUDFLARED_TOKEN=... ./scripts/dev-tunnel.sh`.
+4. Run `npm run inngest:sync` after the tunnel is reachable so Inngest can register `/api/inngest`.
 
 Local test webhook URLs:
 
@@ -40,6 +41,8 @@ Dashboard, meeting transcript, and team settings pages require an authenticated 
 ## Meeting Links
 
 The new meeting page posts Google Meet and Zoom links to `/api/meetings/link`. The route requires an authenticated Neon Auth session, rejects unsupported meeting hosts, creates a local meeting row, and schedules a Recall bot with `/api/recall/webhook` as the callback URL. The Recall bot receives the local `meetingId` in metadata so later webhooks can update the same meeting.
+
+When Recall reports a completed recording, the webhook handler retrieves the bot, reads the recording media download URL, creates a local ElevenLabs transcript job, and queues `meeting/transcribe.audio` with that URL. Meeting pages can play Recall recording audio through the authenticated meeting audio route once Recall exposes the recording media.
 
 ## MP3 Uploads
 
@@ -76,7 +79,9 @@ Shared transcript pages use `/share/[token]`. The route hashes the URL token, lo
 
 Recall bot status webhooks are delivered to endpoints configured in the Recall dashboard. ElevenLabs speech to text webhooks are delivered to workspace configured webhooks when transcript jobs set `webhook=true`. Both webhook routes verify vendor signatures from the raw request body before parsing the event, store an idempotency record, and only apply side effects for newly inserted webhook events.
 
-Recall webhooks update the local meeting status when metadata contains a `meetingId`. ElevenLabs webhooks update the local transcript job, store transcript text as a transcript segment, and mark the meeting ready when metadata contains `meetingId` and `transcriptJobId`.
+Recall webhooks update the local meeting status when metadata contains a `meetingId`. Completed Recall recordings also queue ElevenLabs transcription when Recall exposes a recording media URL. ElevenLabs webhooks update the local transcript job, store transcript text as a transcript segment, and mark the meeting ready when metadata contains `meetingId` and `transcriptJobId`.
+
+Inngest events do not register functions by themselves. After deploying the app or changing `NEXT_PUBLIC_APP_URL`, run `npm run inngest:sync` to sync the public `/api/inngest` endpoint. If this sync is missing, upload rows can be created while transcript jobs stay queued with no ElevenLabs provider job id.
 
 ## Verification
 

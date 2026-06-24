@@ -2,10 +2,16 @@ import { and, asc, desc, eq, ilike, or, sql } from "drizzle-orm";
 import { z } from "zod";
 
 import { db } from "@/db/client";
-import { meetings, transcriptSegments } from "@/db/schema";
+import {
+  mediaAssets,
+  meetings,
+  transcriptJobs,
+  transcriptSegments,
+} from "@/db/schema";
 import type { MeetingListItem } from "@/components/meeting-list";
 import type { TranscriptSegment } from "@/components/transcript-viewer";
 import type { SessionUser } from "@/lib/auth";
+import type { TranscriptJobStatus } from "@/lib/meeting-display-status";
 import { getOrCreateWorkspaceForSessionUser } from "@/lib/workspace";
 
 const uuidSchema = z.string().uuid();
@@ -15,6 +21,7 @@ export type MeetingTranscript = {
   title: string;
   platform: MeetingListItem["platform"];
   status: MeetingListItem["status"];
+  audioUrl: string | null;
   segments: TranscriptSegment[];
 };
 
@@ -46,6 +53,13 @@ export async function listWorkspaceMeetings(
       title: meetings.title,
       platform: meetings.platform,
       status: meetings.status,
+      transcriptJobStatus: sql<TranscriptJobStatus | null>`(
+        select ${transcriptJobs.status}
+        from ${transcriptJobs}
+        where ${transcriptJobs.meetingId} = ${meetings.id}
+        order by ${transcriptJobs.createdAt} desc
+        limit 1
+      )`,
       startedAt: meetings.startedAt,
       createdAt: meetings.createdAt,
     })
@@ -59,6 +73,7 @@ export async function listWorkspaceMeetings(
     title: meeting.title,
     platform: meeting.platform,
     status: meeting.status,
+    transcriptJobStatus: meeting.transcriptJobStatus,
     startedAt: (meeting.startedAt ?? meeting.createdAt).toISOString(),
   }));
 }
@@ -80,14 +95,21 @@ export async function getWorkspaceMeetingTranscript(
       title: meetings.title,
       platform: meetings.platform,
       status: meetings.status,
+      audioObjectKey: mediaAssets.objectKey,
+      recallRecordingId: meetings.recallRecordingId,
     })
     .from(meetings)
+    .leftJoin(
+      mediaAssets,
+      and(eq(mediaAssets.meetingId, meetings.id), eq(mediaAssets.type, "audio")),
+    )
     .where(
       and(
         eq(meetings.id, parsedMeetingId.data),
         eq(meetings.teamId, workspace.teamId),
       ),
     )
+    .orderBy(desc(mediaAssets.createdAt))
     .limit(1);
   const meeting = meetingRows[0];
 
@@ -100,6 +122,7 @@ export async function getWorkspaceMeetingTranscript(
       id: transcriptSegments.id,
       speaker: transcriptSegments.speaker,
       startMs: transcriptSegments.startMs,
+      endMs: transcriptSegments.endMs,
       text: transcriptSegments.text,
     })
     .from(transcriptSegments)
@@ -111,6 +134,9 @@ export async function getWorkspaceMeetingTranscript(
     title: meeting.title,
     platform: meeting.platform,
     status: meeting.status,
+    audioUrl: meeting.audioObjectKey || meeting.recallRecordingId
+      ? `/api/meetings/${meeting.id}/audio`
+      : null,
     segments,
   };
 }
