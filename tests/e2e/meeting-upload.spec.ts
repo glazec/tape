@@ -8,6 +8,30 @@ test("user can open upload flow", async ({ page }) => {
   ).toBeVisible();
 });
 
+test("asks anonymous upload users to sign in", async ({ page }) => {
+  await page.route("**/api/upload", async (route) => {
+    await route.fulfill({
+      status: 401,
+      contentType: "application/json",
+      body: JSON.stringify({ error: "Unauthorized" }),
+    });
+  });
+
+  await page.goto("/meetings/new");
+  await page.setInputFiles("#meeting-audio", {
+    name: "sample.mp3",
+    mimeType: "audio/mpeg",
+    buffer: Buffer.from("fake mp3"),
+  });
+  await page.getByRole("button", { name: "Upload", exact: true }).click();
+
+  await expect(page.getByText("Sign in to upload MP3 files")).toBeVisible();
+  await expect(page.getByRole("link", { name: "Sign in" })).toHaveAttribute(
+    "href",
+    "/auth/sign-in",
+  );
+});
+
 test("uploads a selected MP3 through a signed upload URL", async ({ page }) => {
   let requestedUploadUrl = false;
   let uploadedFile = false;
@@ -165,4 +189,28 @@ test("schedules a meeting bot from a supported meeting link", async ({
 
   await expect(page.getByText("Meeting bot scheduled")).toBeVisible();
   expect(requestedSchedule).toBe(true);
+});
+
+test("asks anonymous meeting link users to sign in", async ({ page }) => {
+  await page.route("**/api/meetings/link", async (route) => {
+    await route.fulfill({
+      status: 401,
+      contentType: "application/json",
+      body: JSON.stringify({ error: "Unauthorized" }),
+    });
+  });
+
+  await page.goto("/meetings/new");
+  await page
+    .getByLabel("Meeting link")
+    .fill("https://meet.google.com/abc-defg-hij");
+  await page.getByRole("button", { name: "Save meeting link" }).click();
+
+  await expect(
+    page.getByText("Sign in to schedule a meeting bot"),
+  ).toBeVisible();
+  await expect(page.getByRole("link", { name: "Sign in" })).toHaveAttribute(
+    "href",
+    "/auth/sign-in",
+  );
 });

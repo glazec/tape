@@ -16,6 +16,16 @@ const transcriptionSchema = z.union([
     .passthrough(),
 ]);
 
+const transcriptionWordSchema = z
+  .object({
+    text: z.string(),
+    type: z.string().optional().nullable(),
+    start: z.number().optional().nullable(),
+    end: z.number().optional().nullable(),
+    speaker_id: z.string().optional().nullable(),
+  })
+  .passthrough();
+
 const elevenLabsWebhookSchema = z.object({
   type: z.string().min(1),
   data: z.object({
@@ -44,6 +54,10 @@ export function normalizeElevenLabsWebhook(payload: unknown) {
       typeof transcription === "string"
         ? transcription
         : (transcription?.text ?? null);
+    const transcriptionWords =
+      typeof transcription === "object" && transcription !== null
+        ? normalizeTranscriptionWords(transcription.words)
+        : undefined;
     const status =
       typeof transcription === "object" && transcription !== null
         ? (transcription.status ?? "completed")
@@ -56,6 +70,7 @@ export function normalizeElevenLabsWebhook(payload: unknown) {
       transcriptId: null,
       status,
       transcriptionText,
+      ...(transcriptionWords ? { transcriptionWords } : {}),
       metadata: realPayload.data.data.webhook_metadata ?? {},
     };
   }
@@ -91,6 +106,8 @@ export async function createElevenLabsTranscriptJob(input: {
   body.append("model_id", "scribe_v2");
   body.append("source_url", parsedInput.audioUrl);
   body.append("webhook", "true");
+  body.append("diarize", "true");
+  body.append("timestamps_granularity", "word");
   // ElevenLabs delivers webhooks to workspace configured endpoints. This metadata only correlates the request with our app URL.
   body.append(
     "webhook_metadata",
@@ -115,4 +132,30 @@ export async function createElevenLabsTranscriptJob(input: {
   }
 
   return response.json();
+}
+
+function normalizeTranscriptionWords(words: unknown) {
+  if (!Array.isArray(words)) {
+    return undefined;
+  }
+
+  const normalizedWords = words
+    .map((word) => {
+      const parsed = transcriptionWordSchema.safeParse(word);
+
+      if (!parsed.success) {
+        return null;
+      }
+
+      return {
+        text: parsed.data.text,
+        type: parsed.data.type ?? null,
+        start: parsed.data.start ?? null,
+        end: parsed.data.end ?? null,
+        speakerId: parsed.data.speaker_id ?? null,
+      };
+    })
+    .filter((word) => word !== null);
+
+  return normalizedWords.length > 0 ? normalizedWords : undefined;
 }

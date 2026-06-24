@@ -9,13 +9,20 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import {
+  getMeetingDisplayStatus,
+  type MeetingDisplayStatus,
+  type MeetingRecordStatus,
+  type TranscriptJobStatus,
+} from "@/lib/meeting-display-status";
 
 export type MeetingListItem = {
   id: string;
   title: string;
   platform: "google_meet" | "zoom" | "upload";
   startedAt: string;
-  status: "scheduled" | "recording" | "processing" | "ready" | "failed";
+  status: MeetingRecordStatus;
+  transcriptJobStatus?: TranscriptJobStatus | null;
 };
 
 type MeetingListProps = {
@@ -28,9 +35,11 @@ const platformLabels: Record<MeetingListItem["platform"], string> = {
   upload: "Upload",
 };
 
-const statusLabels: Record<MeetingListItem["status"], string> = {
+const statusLabels: Record<MeetingDisplayStatus, string> = {
   scheduled: "Scheduled",
   recording: "Recording",
+  queued: "Queued",
+  transcribing: "Transcribing",
   processing: "Processing",
   ready: "Ready",
   failed: "Failed",
@@ -67,48 +76,55 @@ export function MeetingList({ meetings }: MeetingListProps) {
             </TableCell>
           </TableRow>
         ) : (
-          meetings.map((meeting) => (
-            <TableRow key={meeting.id}>
-              <TableCell className="min-w-48">
-                <Link
-                  href={`/meetings/${meeting.id}`}
-                  className="font-medium text-foreground hover:underline"
-                >
-                  {meeting.title}
-                </Link>
-                <span className="mt-1 block text-xs text-muted-foreground sm:hidden">
+          meetings.map((meeting) => {
+            const displayStatus = getMeetingDisplayStatus({
+              meetingStatus: meeting.status,
+              transcriptJobStatus: meeting.transcriptJobStatus,
+            });
+
+            return (
+              <TableRow key={meeting.id}>
+                <TableCell className="min-w-48">
+                  <Link
+                    href={`/meetings/${meeting.id}`}
+                    className="font-medium text-foreground hover:underline"
+                  >
+                    {meeting.title}
+                  </Link>
+                  <span className="mt-1 block text-xs text-muted-foreground sm:hidden">
+                    {platformLabels[meeting.platform]}
+                  </span>
+                </TableCell>
+                <TableCell className="hidden text-muted-foreground sm:table-cell">
                   {platformLabels[meeting.platform]}
-                </span>
-              </TableCell>
-              <TableCell className="hidden text-muted-foreground sm:table-cell">
-                {platformLabels[meeting.platform]}
-              </TableCell>
-              <TableCell className="hidden text-muted-foreground md:table-cell">
-                {formatStartedAt(meeting.startedAt)}
-              </TableCell>
-              <TableCell className="text-right">
-                <Badge variant={getStatusVariant(meeting.status)}>
-                  {statusLabels[meeting.status]}
-                </Badge>
-              </TableCell>
-            </TableRow>
-          ))
+                </TableCell>
+                <TableCell className="hidden text-muted-foreground md:table-cell">
+                  {formatStartedAt(meeting.startedAt)}
+                </TableCell>
+                <TableCell className="text-right">
+                  <Badge variant={getStatusVariant(displayStatus)}>
+                    {statusLabels[displayStatus]}
+                  </Badge>
+                </TableCell>
+              </TableRow>
+            );
+          })
         )}
       </TableBody>
     </Table>
   );
 }
 
-function getStatusVariant(status: MeetingListItem["status"]) {
+function getStatusVariant(status: MeetingDisplayStatus) {
   if (status === "failed") {
     return "destructive";
   }
 
-  if (status === "scheduled") {
+  if (status === "scheduled" || status === "queued") {
     return "outline";
   }
 
-  if (status === "processing") {
+  if (status === "processing" || status === "transcribing") {
     return "secondary";
   }
 

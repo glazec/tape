@@ -21,6 +21,13 @@ const recallWebhookSchema = z.object({
       sub_code: z.string().min(1).optional().nullable(),
       updated_at: z.string().min(1).optional().nullable(),
     }),
+    recording: z
+      .object({
+        id: z.string().min(1),
+        metadata: recallMetadataSchema.optional().nullable(),
+      })
+      .optional()
+      .nullable(),
     bot: z.object({
       id: z.string().min(1),
       metadata: recallMetadataSchema.optional().nullable(),
@@ -46,7 +53,7 @@ export function normalizeRecallWebhook(payload: unknown) {
     return {
       eventType: realPayload.data.event,
       botId: realPayload.data.data.bot.id,
-      recordingId: null,
+      recordingId: realPayload.data.data.recording?.id ?? null,
       meetingUrl: null,
       statusCode: realPayload.data.data.data.code,
       code: realPayload.data.data.data.code,
@@ -118,4 +125,84 @@ export async function scheduleRecallBot(input: {
   }
 
   return response.json();
+}
+
+export async function retrieveRecallBot(botId: string) {
+  const env = recallApiEnvSchema.parse(process.env);
+  const response = await fetch(
+    `https://us-east-1.recall.ai/api/v1/bot/${botId}/`,
+    {
+      method: "GET",
+      headers: {
+        Authorization: `Token ${env.RECALL_API_KEY}`,
+        Accept: "application/json",
+      },
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error(
+      `Recall bot retrieval failed with ${response.status} ${response.statusText}`,
+    );
+  }
+
+  return response.json();
+}
+
+export function findRecallRecordingMediaUrl(
+  bot: unknown,
+  recordingId?: string | null,
+) {
+  if (!bot || typeof bot !== "object") {
+    return null;
+  }
+
+  const recordings = (bot as { recordings?: unknown }).recordings;
+
+  if (!Array.isArray(recordings)) {
+    return null;
+  }
+
+  for (const recording of recordings) {
+    if (!recording || typeof recording !== "object") {
+      continue;
+    }
+
+    const candidate = recording as {
+      id?: unknown;
+      media_shortcuts?: Record<string, unknown>;
+    };
+
+    if (recordingId && candidate.id !== recordingId) {
+      continue;
+    }
+
+    for (const shortcut of ["audio_mixed", "video_mixed"]) {
+      const url = getDownloadUrl(candidate.media_shortcuts?.[shortcut]);
+
+      if (url) {
+        return url;
+      }
+    }
+  }
+
+  return null;
+}
+
+function getDownloadUrl(mediaShortcut: unknown) {
+  if (!mediaShortcut || typeof mediaShortcut !== "object") {
+    return null;
+  }
+
+  const data = (mediaShortcut as { data?: unknown }).data;
+
+  if (!data || typeof data !== "object") {
+    return null;
+  }
+
+  const downloadUrl = (data as { download_url?: unknown }).download_url;
+
+  return typeof downloadUrl === "string" && downloadUrl.trim()
+    ? downloadUrl.trim()
+    : null;
 }

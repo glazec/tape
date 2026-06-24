@@ -57,3 +57,21 @@ export async function createUploadedAudioTranscription(
     transcriptJobId: job.id,
   };
 }
+
+export async function createRecallRecordingTranscription(input: {
+  meetingId: string;
+}) {
+  const [job] = await db
+    .insert(transcriptJobs)
+    .values({
+      meetingId: input.meetingId,
+      provider: "elevenlabs",
+      status: "queued",
+    })
+    .returning({ id: transcriptJobs.id });
+
+  return {
+    meetingId: input.meetingId,
+    transcriptJobId: job.id,
+  };
+}

@@ -24,6 +24,7 @@ export async function getSharedTranscriptByToken(
       segmentId: transcriptSegments.id,
       speaker: transcriptSegments.speaker,
       startMs: transcriptSegments.startMs,
+      endMs: transcriptSegments.endMs,
       text: transcriptSegments.text,
     })
     .from(shareLinks)
@@ -50,6 +51,7 @@ export async function getSharedTranscriptByToken(
         id: row.segmentId as string,
         speaker: row.speaker,
         startMs: row.startMs as number,
+        endMs: row.endMs,
         text: row.text as string,
       })),
   };

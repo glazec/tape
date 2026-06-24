@@ -6,10 +6,18 @@ import type { normalizeElevenLabsWebhook } from "@/lib/vendors/elevenlabs";
 
 type ElevenLabsTranscriptEvent = ReturnType<typeof normalizeElevenLabsWebhook>;
 
+type TranscriptSegmentInput = {
+  speaker: string | null;
+  startMs: number;
+  endMs: number | null;
+  text: string;
+};
+
 type CompleteTranscriptPersistence = {
   action: "complete";
   meetingId: string;
   providerJobId?: string;
+  segments: TranscriptSegmentInput[];
   text: string;
   transcriptJobId: string;
 };
@@ -61,9 +69,16 @@ export function buildElevenLabsTranscriptPersistence(
     return { action: "skip", reason: "missing_meeting_id" };
   }
 
-  const text = event.transcriptionText?.trim();
+  const words = "transcriptionWords" in event ? event.transcriptionWords : undefined;
+  const segments = buildTranscriptSegments(words);
+  const text =
+    event.transcriptionText?.trim() ??
+    segments
+      .map((segment) => segment.text)
+      .join("\n")
+      .trim();
 
-  if (!text) {
+  if (!text && segments.length === 0) {
     return { action: "skip", reason: "missing_transcript_text" };
   }
 
@@ -71,6 +86,7 @@ export function buildElevenLabsTranscriptPersistence(
     action: "complete",
     meetingId,
     providerJobId,
+    segments: segments.length > 0 ? segments : buildSingleSegment(text),
     text,
     transcriptJobId,
   };
@@ -107,14 +123,19 @@ export async function applyElevenLabsTranscriptEvent(
   }
 
   await db
-    .insert(transcriptSegments)
-    .values({
+    .delete(transcriptSegments)
+    .where(eq(transcriptSegments.jobId, persistence.transcriptJobId));
+
+  await db.insert(transcriptSegments).values(
+    persistence.segments.map((segment) => ({
       meetingId: persistence.meetingId,
       jobId: persistence.transcriptJobId,
-      speaker: null,
-      startMs: 0,
-      text: persistence.text,
-    });
+      speaker: segment.speaker,
+      startMs: segment.startMs,
+      endMs: segment.endMs,
+      text: segment.text,
+    })),
+  );
 
   await db
     .update(meetings)
@@ -147,4 +168,111 @@ function isFailedStatus(status: string | null) {
   const normalized = status.toLowerCase();
 
   return normalized.includes("fail") || normalized.includes("error");
+}
+
+function buildSingleSegment(text: string): TranscriptSegmentInput[] {
+  return [
+    {
+      speaker: null,
+      startMs: 0,
+      endMs: null,
+      text,
+    },
+  ];
+}
+
+type TranscriptWord = {
+  text: string;
+  type: string | null;
+  start: number | null;
+  end: number | null;
+  speakerId: string | null;
+};
+
+function buildTranscriptSegments(
+  words: TranscriptWord[] | undefined,
+): TranscriptSegmentInput[] {
+  if (!words?.length) {
+    return [];
+  }
+
+  const segments: TranscriptSegmentInput[] = [];
+  let current: TranscriptSegmentInput | null = null;
+  let currentSpeakerId: string | null = null;
+
+  for (const word of words) {
+    if (!word.text) {
+      continue;
+    }
+
+    const nextSpeakerId: string | null = word.speakerId ?? currentSpeakerId;
+    const shouldStartSegment =
+      !current ||
+      nextSpeakerId !== currentSpeakerId ||
+      shouldSplitLongSegment(current, word.text);
+
+    if (shouldStartSegment) {
+      pushSegment(segments, current);
+      currentSpeakerId = nextSpeakerId;
+      current = {
+        speaker: formatSpeaker(nextSpeakerId),
+        startMs: secondsToMs(word.start) ?? 0,
+        endMs: secondsToMs(word.end),
+        text: word.text,
+      };
+      continue;
+    }
+
+    if (!current) {
+      continue;
+    }
+
+    current.text += word.text;
+    current.endMs = secondsToMs(word.end) ?? current.endMs;
+  }
+
+  pushSegment(segments, current);
+
+  return segments;
+}
+
+function shouldSplitLongSegment(segment: TranscriptSegmentInput, text: string) {
+  return segment.text.length > 700 && /[.?!]\s*$/.test(text);
+}
+
+function pushSegment(
+  segments: TranscriptSegmentInput[],
+  segment: TranscriptSegmentInput | null,
+) {
+  const text = segment?.text.replace(/\s+/g, " ").trim();
+
+  if (!segment || !text) {
+    return;
+  }
+
+  segments.push({
+    ...segment,
+    text,
+  });
+}
+
+function formatSpeaker(speakerId: string | null) {
+  if (!speakerId) {
+    return null;
+  }
+
+  const numericId = speakerId.match(/\d+/)?.[0];
+
+  if (numericId) {
+    return `Speaker ${Number(numericId) + 1}`;
+  }
+
+  return speakerId
+    .replace(/[_-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function secondsToMs(value: number | null) {
+  return typeof value === "number" ? Math.max(0, Math.round(value * 1000)) : null;
 }

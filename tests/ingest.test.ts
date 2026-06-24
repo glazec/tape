@@ -7,7 +7,9 @@ import {
   normalizeElevenLabsWebhook,
 } from "@/lib/vendors/elevenlabs";
 import {
+  findRecallRecordingMediaUrl,
   normalizeRecallWebhook,
+  retrieveRecallBot,
   scheduleRecallBot,
 } from "@/lib/vendors/recall";
 
@@ -211,6 +213,43 @@ describe("vendor webhook normalization", () => {
     });
   });
 
+  it("normalizes Recall recording artifact webhooks", () => {
+    expect(
+      normalizeRecallWebhook({
+        event: "recording.done",
+        data: {
+          data: {
+            code: "done",
+            sub_code: null,
+            updated_at: "2026-06-23T12:05:00Z",
+          },
+          recording: {
+            id: "rec_123",
+            metadata: {},
+          },
+          bot: {
+            id: "bot_123",
+            metadata: {
+              meetingId: "11111111-1111-4111-8111-111111111111",
+            },
+          },
+        },
+      }),
+    ).toEqual({
+      eventType: "recording.done",
+      botId: "bot_123",
+      recordingId: "rec_123",
+      meetingUrl: null,
+      statusCode: "done",
+      code: "done",
+      subCode: null,
+      updatedAt: "2026-06-23T12:05:00Z",
+      metadata: {
+        meetingId: "11111111-1111-4111-8111-111111111111",
+      },
+    });
+  });
+
   it("keeps compatibility with old Recall bot completion fixtures", () => {
     expect(
       normalizeRecallWebhook({
@@ -247,6 +286,15 @@ describe("vendor webhook normalization", () => {
           },
           transcription: {
             text: "Transcript text",
+            words: [
+              {
+                text: "Transcript",
+                type: "word",
+                start: 0,
+                end: 0.5,
+                speaker_id: "speaker_0",
+              },
+            ],
           },
         },
       }),
@@ -257,6 +305,15 @@ describe("vendor webhook normalization", () => {
       transcriptId: null,
       status: "completed",
       transcriptionText: "Transcript text",
+      transcriptionWords: [
+        {
+          text: "Transcript",
+          type: "word",
+          start: 0,
+          end: 0.5,
+          speakerId: "speaker_0",
+        },
+      ],
       metadata: {
         requestedWebhookUrl: "https://app.example.com/api/elevenlabs/webhook",
         meeting_id: "meeting_456",
@@ -642,6 +699,8 @@ describe("vendor job creation", () => {
     expect(init.headers).toEqual({ "xi-api-key": "elevenlabs-key" });
     expect(init.body).toBeInstanceOf(FormData);
     expect(init.body.get("webhook")).toBe("true");
+    expect(init.body.get("diarize")).toBe("true");
+    expect(init.body.get("timestamps_granularity")).toBe("word");
     expect(JSON.parse(String(init.body.get("webhook_metadata")))).toEqual({
       requestedWebhookUrl: "https://app.example.com/api/elevenlabs/webhook",
     });
@@ -669,5 +728,61 @@ describe("vendor job creation", () => {
         requested_webhook_url: "https://app.example.com/api/recall/webhook",
       },
     });
+  });
+
+  it("retrieves Recall bot details", async () => {
+    vi.stubEnv("RECALL_API_KEY", "recall-key\n");
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ id: "bot_123" }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(retrieveRecallBot("bot_123")).resolves.toEqual({
+      id: "bot_123",
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://us-east-1.recall.ai/api/v1/bot/bot_123/",
+      {
+        method: "GET",
+        headers: {
+          Authorization: "Token recall-key",
+          Accept: "application/json",
+        },
+      },
+    );
+  });
+
+  it("extracts Recall recording media URLs", () => {
+    expect(
+      findRecallRecordingMediaUrl(
+        {
+          recordings: [
+            {
+              id: "rec_old",
+              media_shortcuts: {
+                video_mixed: {
+                  data: { download_url: "https://recall.example.com/old.mp4" },
+                },
+              },
+            },
+            {
+              id: "rec_123",
+              media_shortcuts: {
+                video_mixed: {
+                  data: {
+                    download_url: "https://recall.example.com/recording.mp4",
+                  },
+                },
+              },
+            },
+          ],
+        },
+        "rec_123",
+      ),
+    ).toBe("https://recall.example.com/recording.mp4");
   });
 });
