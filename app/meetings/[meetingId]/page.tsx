@@ -67,6 +67,7 @@ export default async function MeetingPage({
           <div className="mt-8">
             <TranscriptViewer
               audioUrl={meeting.audioUrl}
+              key={meetingId}
               meetingId={meetingId}
               segments={meeting.segments}
             />

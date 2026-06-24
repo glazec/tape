@@ -96,6 +96,7 @@ export async function getWorkspaceMeetingTranscript(
       platform: meetings.platform,
       status: meetings.status,
       audioObjectKey: mediaAssets.objectKey,
+      recallRecordingId: meetings.recallRecordingId,
     })
     .from(meetings)
     .leftJoin(
@@ -133,7 +134,7 @@ export async function getWorkspaceMeetingTranscript(
     title: meeting.title,
     platform: meeting.platform,
     status: meeting.status,
-    audioUrl: meeting.audioObjectKey
+    audioUrl: meeting.audioObjectKey || meeting.recallRecordingId
       ? `/api/meetings/${meeting.id}/audio`
       : null,
     segments,
