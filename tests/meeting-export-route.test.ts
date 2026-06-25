@@ -20,13 +20,13 @@ vi.mock("@/db/client", () => ({
   },
 }));
 
-async function getMeetingExport() {
+async function getMeetingExport(
+  url = "https://app.example.com/api/meetings/11111111-1111-4111-8111-111111111111/export",
+) {
   const { GET } = await import("@/app/api/meetings/[meetingId]/export/route");
 
   return GET(
-    new Request(
-      "https://app.example.com/api/meetings/11111111-1111-4111-8111-111111111111/export",
-    ),
+    new Request(url),
     {
       params: Promise.resolve({
         meetingId: "11111111-1111-4111-8111-111111111111",
@@ -104,5 +104,23 @@ describe("GET /api/meetings/[meetingId]/export", () => {
       "[0:20] Speaker 1: First line.",
     );
     expect(select).toHaveBeenCalledTimes(2);
+  });
+
+  it("redirects MP3 exports to the authenticated meeting audio route", async () => {
+    getCurrentUser.mockResolvedValue({
+      id: "user_123",
+      email: "user@example.com",
+      name: null,
+    });
+
+    const response = await getMeetingExport(
+      "https://app.example.com/api/meetings/11111111-1111-4111-8111-111111111111/export?format=mp3",
+    );
+
+    expect(response.status).toBe(302);
+    expect(response.headers.get("location")).toBe(
+      "https://app.example.com/api/meetings/11111111-1111-4111-8111-111111111111/audio?download=1",
+    );
+    expect(select).not.toHaveBeenCalled();
   });
 });

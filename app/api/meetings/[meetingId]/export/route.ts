@@ -11,7 +11,7 @@ export const runtime = "nodejs";
 const meetingIdSchema = z.string().uuid();
 
 export async function GET(
-  _request: Request,
+  request: Request,
   context: { params: Promise<{ meetingId: string }> },
 ) {
   const user = await getCurrentUser();
@@ -25,6 +25,24 @@ export async function GET(
 
   if (!parsedMeetingId.success) {
     return Response.json({ error: "Meeting not found" }, { status: 404 });
+  }
+
+  const format = new URL(request.url).searchParams.get("format") ?? "text";
+
+  if (format === "mp3") {
+    return Response.redirect(
+      new URL(
+        `/api/meetings/${encodeURIComponent(parsedMeetingId.data)}/audio?download=1`,
+        request.url,
+      ),
+    );
+  }
+
+  if (format !== "text") {
+    return Response.json(
+      { error: "Unsupported export format" },
+      { status: 400 },
+    );
   }
 
   const workspace = await getOrCreateWorkspaceForSessionUser(user);

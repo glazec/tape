@@ -27,7 +27,9 @@ export async function GET(
 
   const { meetingId } = await context.params;
   const parsedMeetingId = meetingIdSchema.safeParse(meetingId);
-  const shouldProxy = new URL(request.url).searchParams.get("proxy") === "1";
+  const searchParams = new URL(request.url).searchParams;
+  const shouldDownload = searchParams.get("download") === "1";
+  const shouldProxy = searchParams.get("proxy") === "1" || shouldDownload;
 
   if (!parsedMeetingId.success) {
     return Response.json({ error: "Audio not found" }, { status: 404 });
@@ -36,6 +38,7 @@ export async function GET(
   const workspace = await getOrCreateWorkspaceForSessionUser(user);
   const rows = await db
     .select({
+      title: meetings.title,
       objectKey: mediaAssets.objectKey,
       recallBotId: meetings.recallBotId,
       recallRecordingId: meetings.recallRecordingId,
@@ -53,42 +56,66 @@ export async function GET(
     )
     .orderBy(desc(mediaAssets.createdAt))
     .limit(1);
-  const objectKey = rows[0]?.objectKey;
+  const meeting = rows[0];
+  const objectKey = meeting?.objectKey;
+  const downloadFilename = shouldDownload
+    ? `${sanitizeFilename(meeting?.title ?? "meeting")} audio.mp3`
+    : undefined;
 
   if (objectKey) {
     const audioUrl = await createReadUrl({ key: objectKey });
 
-    return shouldProxy ? proxyAudio(audioUrl) : Response.redirect(audioUrl);
+    return shouldProxy
+      ? proxyAudio(audioUrl, downloadFilename)
+      : Response.redirect(audioUrl);
   }
 
-  const recallBotId = rows[0]?.recallBotId;
+  const recallBotId = meeting?.recallBotId;
 
   if (recallBotId) {
     const bot = await retrieveRecallBot(recallBotId);
     const audioUrl = findRecallRecordingMediaUrl(
       bot,
-      rows[0].recallRecordingId,
+      meeting.recallRecordingId,
     );
 
     if (audioUrl) {
-      return shouldProxy ? proxyAudio(audioUrl) : Response.redirect(audioUrl);
+      return shouldProxy
+        ? proxyAudio(audioUrl, downloadFilename)
+        : Response.redirect(audioUrl);
     }
   }
 
   return Response.json({ error: "Audio not found" }, { status: 404 });
 }
 
-async function proxyAudio(audioUrl: string) {
+async function proxyAudio(audioUrl: string, filename?: string) {
   const response = await fetch(audioUrl);
 
   if (!response.ok || !response.body) {
     return Response.json({ error: "Audio not found" }, { status: 404 });
   }
 
+  const headers: Record<string, string> = {
+    "cache-control": "private, max-age=300",
+    "content-type": response.headers.get("content-type") ?? "audio/mpeg",
+  };
+
+  if (filename) {
+    headers["content-disposition"] = `attachment; filename="${filename}"`;
+  }
+
   return new Response(response.body, {
-    headers: {
-      "cache-control": "private, max-age=300",
-      "content-type": response.headers.get("content-type") ?? "audio/mpeg",
-    },
+    headers,
   });
+}
+
+function sanitizeFilename(value: string) {
+  return (
+    value
+      .replace(/[^\w .()[\]]+/g, " ")
+      .replace(/\s+/g, " ")
+      .trim()
+      .slice(0, 80) || "meeting"
+  );
 }

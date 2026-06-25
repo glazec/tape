@@ -75,6 +75,10 @@ The R2 bucket must allow browser PUT requests from the app origin:
 
 Shared transcript pages use `/share/[token]`. The route hashes the URL token, looks up an active `share_links` row, and returns 404 when the token is missing, expired, or revoked.
 
+## Exports
+
+Meeting transcript pages can export transcript text, export MP3 audio through the authenticated audio route, export both files, or copy transcript text to the clipboard.
+
 ## Vendor Webhooks
 
 Recall bot status webhooks are delivered to endpoints configured in the Recall dashboard. ElevenLabs speech to text webhooks are delivered to workspace configured webhooks when transcript jobs set `webhook=true`. Both webhook routes verify vendor signatures from the raw request body before parsing the event, store an idempotency record, and only apply side effects for newly inserted webhook events.

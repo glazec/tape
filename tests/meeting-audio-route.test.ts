@@ -136,6 +136,42 @@ describe("GET /api/meetings/[meetingId]/audio", () => {
     await expect(response.text()).resolves.toBe("fake mp3");
   });
 
+  it("streams authenticated R2 audio as an attachment when download is requested", async () => {
+    getCurrentUser.mockResolvedValue({
+      id: "user_123",
+      email: "user@example.com",
+      name: null,
+    });
+    getWorkspace.mockResolvedValue({ teamId: "team_123" });
+    limit.mockResolvedValue([
+      {
+        objectKey: "users/user_123/uploads/audio.mp3",
+        title: "Nascent Sync",
+      },
+    ]);
+    createReadUrl.mockResolvedValue("https://r2.example.com/audio.mp3");
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response("fake mp3", {
+        headers: { "content-type": "audio/mpeg" },
+        status: 200,
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const response = await getMeetingAudio(
+      "https://app.example.com/api/meetings/11111111-1111-4111-8111-111111111111/audio?download=1",
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("content-type")).toBe("audio/mpeg");
+    expect(response.headers.get("content-disposition")).toBe(
+      'attachment; filename="Nascent Sync audio.mp3"',
+    );
+    expect(response.headers.get("location")).toBeNull();
+    expect(fetchMock).toHaveBeenCalledWith("https://r2.example.com/audio.mp3");
+    await expect(response.text()).resolves.toBe("fake mp3");
+  });
+
   it("redirects Recall recordings to the vendor audio URL when no R2 asset exists", async () => {
     getCurrentUser.mockResolvedValue({
       id: "user_123",
