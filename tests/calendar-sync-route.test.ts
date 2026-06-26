@@ -8,6 +8,11 @@ const { getCurrentUser, getWorkspace, syncGooglePrimaryCalendarEvents } =
   }));
 
 class GoogleCalendarAccessTokenError extends Error {}
+class GoogleCalendarFetchError extends Error {
+  constructor(readonly status: number) {
+    super("Google Calendar fetch failed");
+  }
+}
 
 vi.mock("@/lib/auth", () => ({
   getCurrentUser,
@@ -19,6 +24,7 @@ vi.mock("@/lib/workspace", () => ({
 
 vi.mock("@/lib/google-calendar", () => ({
   GoogleCalendarAccessTokenError,
+  GoogleCalendarFetchError,
   syncGooglePrimaryCalendarEvents,
 }));
 
@@ -103,6 +109,33 @@ describe("POST /api/calendar/sync", () => {
     getWorkspace.mockResolvedValue(workspace);
     syncGooglePrimaryCalendarEvents.mockRejectedValue(
       new GoogleCalendarAccessTokenError(),
+    );
+
+    const response = await postCalendarSync({ autoJoinEnabled: true });
+
+    expect(response.status).toBe(409);
+    await expect(response.json()).resolves.toEqual({
+      error: "Google Calendar access is not connected",
+      reconnect: true,
+    });
+  });
+
+  it("returns a reconnect signal when Google rejects calendar permission", async () => {
+    const sessionUser = {
+      id: "auth_user_123",
+      email: "alice@example.com",
+      name: null,
+    };
+    const workspace = {
+      userId: "11111111-1111-4111-8111-111111111111",
+      teamId: "22222222-2222-4222-8222-222222222222",
+      domain: "example.com",
+    };
+
+    getCurrentUser.mockResolvedValue(sessionUser);
+    getWorkspace.mockResolvedValue(workspace);
+    syncGooglePrimaryCalendarEvents.mockRejectedValue(
+      new GoogleCalendarFetchError(403),
     );
 
     const response = await postCalendarSync({ autoJoinEnabled: true });

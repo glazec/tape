@@ -15,6 +15,13 @@
       "when": 1782203210287,
       "tag": "0001_clumsy_nehzno",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1782505317947,
+      "tag": "0002_kind_captain_marvel",
+      "breakpoints": true
     }
   ]
 }

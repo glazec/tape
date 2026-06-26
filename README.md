@@ -15,7 +15,7 @@ Team meeting transcript product.
 ## Local Setup
 
 1. Copy `.env.example` to `.env.local`.
-2. Fill in Neon, R2, Recall, ElevenLabs, and Inngest credentials. `NEON_AUTH_BASE_URL` is optional when `NEON_AUTH_JWKS_URL` ends with `/.well-known/jwks.json`; generate `NEON_AUTH_COOKIE_SECRET` with `openssl rand -base64 32`.
+2. Fill in Neon, Google Calendar, R2, Recall, ElevenLabs, and Inngest credentials. `NEON_AUTH_BASE_URL` is optional when `NEON_AUTH_JWKS_URL` ends with `/.well-known/jwks.json`; generate `NEON_AUTH_COOKIE_SECRET` with `openssl rand -base64 32`.
    Set `RECALL_API_BASE_URL` to the region for the Recall API key, for example `https://ap-northeast-1.recall.ai`.
 3. Run `npm install`.
 4. Run `npm run dev`.
@@ -43,7 +43,13 @@ Dashboard, meeting transcript, and team settings pages require an authenticated 
 
 The new meeting page posts Google Meet and Zoom links to `/api/meetings/link`. The route requires an authenticated Neon Auth session, rejects unsupported meeting hosts, creates a local meeting row, and schedules a Recall bot with `/api/recall/webhook` as the callback URL. The Recall bot receives the local `meetingId` in metadata so later webhooks can update the same meeting.
 
-Google sign in requests `https://www.googleapis.com/auth/calendar.events.readonly` so authenticated users can sync upcoming primary calendar events from the dashboard. `/api/calendar/sync` retrieves a valid Google access token through Neon Auth, reads upcoming Google Calendar events, and emits `calendar/event.synced` to Inngest. The worker stores the `calendar_events` row, extracts supported Google Meet or Zoom URLs from `meetingUrl`, Google conference entry points, `hangoutLink`, `location`, or `description`, then creates a correlated `meetings` row and schedules Recall with `meetingId` plus `calendarEventId` metadata. Events without `location` are eligible when conferencing metadata contains the meeting link.
+Google sign in identifies the user through Neon Auth, so keep the Neon Auth Google redirect URI configured for sign in. Google Calendar permission is handled by the app owned OAuth flow at `/api/calendar/oauth/start` and `/api/calendar/oauth/callback`, because calendar scopes are separate from identity sign in. Add these app callback redirect URIs to the same Google OAuth client:
+
+1. `https://meeting-note-swart.vercel.app/api/calendar/oauth/callback`
+2. `https://meeting-note-dev.inevitable.tech/api/calendar/oauth/callback`
+3. `http://localhost:3000/api/calendar/oauth/callback`
+
+`/api/calendar/sync` retrieves a valid stored Google Calendar access token, refreshes it when needed, reads upcoming Google Calendar events, and emits `calendar/event.synced` to Inngest. The worker stores the `calendar_events` row, extracts supported Google Meet or Zoom URLs from `meetingUrl`, Google conference entry points, `hangoutLink`, `location`, or `description`, then creates a correlated `meetings` row and schedules Recall with `meetingId` plus `calendarEventId` metadata. Events without `location` are eligible when conferencing metadata contains the meeting link.
 
 When Recall reports a completed recording, the webhook handler retrieves the bot, reads the recording media download URL, creates a local ElevenLabs transcript job, and queues `meeting/transcribe.audio` with that URL. Meeting pages can play Recall recording audio through the authenticated meeting audio route once Recall exposes the recording media.
 

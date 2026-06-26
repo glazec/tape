@@ -12,6 +12,8 @@ const baseEnv = {
   RECALL_WEBHOOK_SECRET: "whsec_cmVjYWxsLXNlY3JldA==",
   ELEVENLABS_API_KEY: "elevenlabs-key",
   ELEVENLABS_WEBHOOK_SECRET: "elevenlabs-secret",
+  GOOGLE_CALENDAR_CLIENT_ID: "google-client-id",
+  GOOGLE_CALENDAR_CLIENT_SECRET: "google-client-secret",
   INNGEST_EVENT_KEY: "inngest-event-key",
   INNGEST_SIGNING_KEY: "inngest-signing-key",
   NEXT_PUBLIC_APP_URL: "https://app.example.com",

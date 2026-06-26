@@ -6,6 +6,7 @@ import { inngest } from "@/inngest/client";
 import type { SessionUser } from "@/lib/auth";
 import { auth } from "@/lib/auth/server";
 import type { SyncedCalendarEvent } from "@/lib/calendar-auto-join";
+import { getStoredGoogleCalendarAccessToken } from "@/lib/google-calendar-oauth";
 import type { WorkspaceContext } from "@/lib/workspace";
 
 const GOOGLE_CALENDAR_EVENTS_URL =
@@ -55,12 +56,23 @@ export class GoogleCalendarAccessTokenError extends Error {
 }
 
 export class GoogleCalendarFetchError extends Error {
+  readonly status: number;
+
   constructor(status: number, statusText: string) {
     super(`Google Calendar fetch failed with ${status} ${statusText}`);
+    this.status = status;
   }
 }
 
-export async function getGoogleCalendarAccessToken() {
+export async function getGoogleCalendarAccessToken(workspace?: WorkspaceContext) {
+  if (workspace) {
+    const storedAccessToken = await getStoredGoogleCalendarAccessToken(workspace);
+
+    if (storedAccessToken) {
+      return storedAccessToken;
+    }
+  }
+
   const { data, error } = await auth.getAccessToken({
     providerId: "google",
   });
@@ -95,7 +107,7 @@ export async function fetchGoogleCalendarEvents(input: {
 export async function syncGooglePrimaryCalendarEvents(
   input: GoogleCalendarSyncInput,
 ) {
-  const accessToken = await getGoogleCalendarAccessToken();
+  const accessToken = await getGoogleCalendarAccessToken(input.workspace);
   const connection = await getOrCreateGoogleCalendarConnection({
     workspace: input.workspace,
     autoJoinEnabled: input.autoJoinEnabled,

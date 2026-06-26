@@ -3,6 +3,7 @@ import { z } from "zod";
 import { getCurrentUser } from "@/lib/auth";
 import {
   GoogleCalendarAccessTokenError,
+  GoogleCalendarFetchError,
   syncGooglePrimaryCalendarEvents,
 } from "@/lib/google-calendar";
 import { getOrCreateWorkspaceForSessionUser } from "@/lib/workspace";
@@ -43,6 +44,16 @@ export async function POST(request: Request) {
     return Response.json(syncResult, { status: 202 });
   } catch (error) {
     if (error instanceof GoogleCalendarAccessTokenError) {
+      return Response.json(
+        { error: "Google Calendar access is not connected", reconnect: true },
+        { status: 409 },
+      );
+    }
+
+    if (
+      error instanceof GoogleCalendarFetchError &&
+      (error.status === 401 || error.status === 403)
+    ) {
       return Response.json(
         { error: "Google Calendar access is not connected", reconnect: true },
         { status: 409 },

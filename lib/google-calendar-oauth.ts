@@ -1,0 +1,272 @@
+import {
+  createCipheriv,
+  createDecipheriv,
+  createHash,
+  randomBytes,
+} from "crypto";
+import { and, eq } from "drizzle-orm";
+
+import { db } from "@/db/client";
+import { calendarConnections } from "@/db/schema";
+import { getNeonAuthCookieSecret } from "@/lib/auth-config";
+import { env } from "@/lib/env";
+import { GOOGLE_CALENDAR_EVENT_READ_SCOPE } from "@/lib/google-calendar-constants";
+import type { WorkspaceContext } from "@/lib/workspace";
+
+const GOOGLE_OAUTH_AUTHORIZE_URL =
+  "https://accounts.google.com/o/oauth2/v2/auth";
+const GOOGLE_OAUTH_TOKEN_URL = "https://oauth2.googleapis.com/token";
+const TOKEN_REFRESH_WINDOW_MS = 5 * 60 * 1000;
+const encryptedTokenPrefix = "v1";
+
+export const GOOGLE_CALENDAR_OAUTH_STATE_COOKIE =
+  "google-calendar-oauth-state";
+
+type GoogleTokenResponse = {
+  access_token?: unknown;
+  refresh_token?: unknown;
+  expires_in?: unknown;
+  error?: unknown;
+  error_description?: unknown;
+};
+
+export class GoogleCalendarOAuthError extends Error {
+  constructor(message = "Google Calendar OAuth failed") {
+    super(message);
+  }
+}
+
+export function getGoogleCalendarOAuthRedirectUri() {
+  return new URL(
+    "/api/calendar/oauth/callback",
+    env.NEXT_PUBLIC_APP_URL,
+  ).toString();
+}
+
+export function shouldUseSecureCalendarOAuthCookie() {
+  return new URL(env.NEXT_PUBLIC_APP_URL).protocol === "https:";
+}
+
+export function buildGoogleCalendarOAuthUrl(state: string) {
+  const url = new URL(GOOGLE_OAUTH_AUTHORIZE_URL);
+
+  url.searchParams.set("client_id", env.GOOGLE_CALENDAR_CLIENT_ID);
+  url.searchParams.set("redirect_uri", getGoogleCalendarOAuthRedirectUri());
+  url.searchParams.set("response_type", "code");
+  url.searchParams.set(
+    "scope",
+    ["openid", "email", GOOGLE_CALENDAR_EVENT_READ_SCOPE].join(" "),
+  );
+  url.searchParams.set("access_type", "offline");
+  url.searchParams.set("prompt", "consent");
+  url.searchParams.set("include_granted_scopes", "true");
+  url.searchParams.set("state", state);
+
+  return url.toString();
+}
+
+export async function exchangeGoogleCalendarCode(code: string) {
+  return requestGoogleToken({
+    code,
+    grant_type: "authorization_code",
+    redirect_uri: getGoogleCalendarOAuthRedirectUri(),
+  });
+}
+
+export async function getStoredGoogleCalendarAccessToken(
+  workspace: WorkspaceContext,
+) {
+  const connection = await findGoogleCalendarConnection(workspace);
+
+  if (!connection?.oauthRefreshToken) {
+    return null;
+  }
+
+  if (
+    connection.oauthAccessToken &&
+    connection.oauthAccessTokenExpiresAt &&
+    connection.oauthAccessTokenExpiresAt.getTime() - Date.now() >
+      TOKEN_REFRESH_WINDOW_MS
+  ) {
+    return decryptToken(connection.oauthAccessToken);
+  }
+
+  const tokens = await refreshGoogleCalendarAccessToken(
+    decryptToken(connection.oauthRefreshToken),
+  );
+
+  await db
+    .update(calendarConnections)
+    .set({
+      oauthAccessToken: encryptToken(tokens.accessToken),
+      oauthAccessTokenExpiresAt: tokens.accessTokenExpiresAt,
+      updatedAt: new Date(),
+    })
+    .where(eq(calendarConnections.id, connection.id));
+
+  return tokens.accessToken;
+}
+
+export async function storeGoogleCalendarTokens(input: {
+  workspace: WorkspaceContext;
+  accessToken: string;
+  accessTokenExpiresAt: Date;
+  refreshToken: string | null;
+}) {
+  const existing = await findGoogleCalendarConnection(input.workspace);
+  const encryptedAccessToken = encryptToken(input.accessToken);
+  const encryptedRefreshToken = input.refreshToken
+    ? encryptToken(input.refreshToken)
+    : existing?.oauthRefreshToken;
+
+  if (!encryptedRefreshToken) {
+    throw new GoogleCalendarOAuthError("Google did not return a refresh token");
+  }
+
+  if (existing) {
+    await db
+      .update(calendarConnections)
+      .set({
+        autoJoinEnabled: true,
+        oauthAccessToken: encryptedAccessToken,
+        oauthRefreshToken: encryptedRefreshToken,
+        oauthAccessTokenExpiresAt: input.accessTokenExpiresAt,
+        updatedAt: new Date(),
+      })
+      .where(eq(calendarConnections.id, existing.id));
+
+    return existing.id;
+  }
+
+  const [connection] = await db
+    .insert(calendarConnections)
+    .values({
+      teamId: input.workspace.teamId,
+      userId: input.workspace.userId,
+      provider: "google",
+      externalCalendarId: "primary",
+      autoJoinEnabled: true,
+      oauthAccessToken: encryptedAccessToken,
+      oauthRefreshToken: encryptedRefreshToken,
+      oauthAccessTokenExpiresAt: input.accessTokenExpiresAt,
+    })
+    .returning({ id: calendarConnections.id });
+
+  return connection.id;
+}
+
+async function refreshGoogleCalendarAccessToken(refreshToken: string) {
+  return requestGoogleToken({
+    refresh_token: refreshToken,
+    grant_type: "refresh_token",
+  });
+}
+
+async function requestGoogleToken(params: Record<string, string>) {
+  const body = new URLSearchParams({
+    client_id: env.GOOGLE_CALENDAR_CLIENT_ID,
+    client_secret: env.GOOGLE_CALENDAR_CLIENT_SECRET,
+    ...params,
+  });
+  const response = await fetch(GOOGLE_OAUTH_TOKEN_URL, {
+    method: "POST",
+    headers: {
+      "content-type": "application/x-www-form-urlencoded",
+      accept: "application/json",
+    },
+    body,
+  });
+  const data = (await response.json().catch(() => ({}))) as GoogleTokenResponse;
+
+  if (!response.ok || data.error) {
+    throw new GoogleCalendarOAuthError(
+      getString(data.error_description) ??
+        getString(data.error) ??
+        "Google token request failed",
+    );
+  }
+
+  const accessToken = getString(data.access_token);
+  const expiresIn = getNumber(data.expires_in);
+
+  if (!accessToken || !expiresIn) {
+    throw new GoogleCalendarOAuthError("Google token response is incomplete");
+  }
+
+  return {
+    accessToken,
+    refreshToken: getString(data.refresh_token),
+    accessTokenExpiresAt: new Date(Date.now() + expiresIn * 1000),
+  };
+}
+
+async function findGoogleCalendarConnection(workspace: WorkspaceContext) {
+  const [connection] = await db
+    .select({
+      id: calendarConnections.id,
+      oauthAccessToken: calendarConnections.oauthAccessToken,
+      oauthRefreshToken: calendarConnections.oauthRefreshToken,
+      oauthAccessTokenExpiresAt: calendarConnections.oauthAccessTokenExpiresAt,
+    })
+    .from(calendarConnections)
+    .where(
+      and(
+        eq(calendarConnections.teamId, workspace.teamId),
+        eq(calendarConnections.userId, workspace.userId),
+        eq(calendarConnections.provider, "google"),
+        eq(calendarConnections.externalCalendarId, "primary"),
+      ),
+    )
+    .limit(1);
+
+  return connection ?? null;
+}
+
+function encryptToken(token: string) {
+  const iv = randomBytes(12);
+  const cipher = createCipheriv("aes-256-gcm", getTokenEncryptionKey(), iv);
+  const encrypted = Buffer.concat([
+    cipher.update(token, "utf8"),
+    cipher.final(),
+  ]);
+  const tag = cipher.getAuthTag();
+
+  return [
+    encryptedTokenPrefix,
+    iv.toString("base64url"),
+    tag.toString("base64url"),
+    encrypted.toString("base64url"),
+  ].join(":");
+}
+
+function decryptToken(value: string) {
+  const [version, iv, tag, encrypted] = value.split(":");
+
+  if (version !== encryptedTokenPrefix || !iv || !tag || !encrypted) {
+    return value;
+  }
+
+  const decipher = createDecipheriv(
+    "aes-256-gcm",
+    getTokenEncryptionKey(),
+    Buffer.from(iv, "base64url"),
+  );
+  decipher.setAuthTag(Buffer.from(tag, "base64url"));
+
+  return Buffer.concat([
+    decipher.update(Buffer.from(encrypted, "base64url")),
+    decipher.final(),
+  ]).toString("utf8");
+}
+
+function getTokenEncryptionKey() {
+  return createHash("sha256").update(getNeonAuthCookieSecret()).digest();
+}
+
+function getString(value: unknown) {
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+function getNumber(value: unknown) {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}

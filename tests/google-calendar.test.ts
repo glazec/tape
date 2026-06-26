@@ -1,7 +1,15 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-const { getAccessToken, insert, select, send, update } = vi.hoisted(() => ({
+const {
+  getAccessToken,
+  getStoredGoogleCalendarAccessToken,
+  insert,
+  select,
+  send,
+  update,
+} = vi.hoisted(() => ({
   getAccessToken: vi.fn(),
+  getStoredGoogleCalendarAccessToken: vi.fn(),
   insert: vi.fn(),
   select: vi.fn(),
   send: vi.fn(),
@@ -12,6 +20,10 @@ vi.mock("@/lib/auth/server", () => ({
   auth: {
     getAccessToken,
   },
+}));
+
+vi.mock("@/lib/google-calendar-oauth", () => ({
+  getStoredGoogleCalendarAccessToken,
 }));
 
 vi.mock("@/db/client", () => ({
@@ -31,6 +43,7 @@ vi.mock("@/inngest/client", () => ({
 describe("Google Calendar capture", () => {
   afterEach(() => {
     getAccessToken.mockReset();
+    getStoredGoogleCalendarAccessToken.mockReset();
     insert.mockReset();
     select.mockReset();
     send.mockReset();
@@ -54,6 +67,22 @@ describe("Google Calendar capture", () => {
     expect(getAccessToken).toHaveBeenCalledWith({
       providerId: "google",
     });
+  });
+
+  it("uses a stored Google Calendar token when one is connected", async () => {
+    getStoredGoogleCalendarAccessToken.mockResolvedValue("stored-access-token");
+    const { getGoogleCalendarAccessToken } = await import(
+      "@/lib/google-calendar"
+    );
+
+    await expect(
+      getGoogleCalendarAccessToken({
+        userId: "11111111-1111-4111-8111-111111111111",
+        teamId: "22222222-2222-4222-8222-222222222222",
+        domain: "example.com",
+      }),
+    ).resolves.toBe("stored-access-token");
+    expect(getAccessToken).not.toHaveBeenCalled();
   });
 
   it("fetches upcoming primary calendar events with conference metadata", async () => {

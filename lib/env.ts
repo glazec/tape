@@ -25,6 +25,8 @@ const schema = z.object({
   }),
   ELEVENLABS_API_KEY: requiredString,
   ELEVENLABS_WEBHOOK_SECRET: requiredString,
+  GOOGLE_CALENDAR_CLIENT_ID: requiredString,
+  GOOGLE_CALENDAR_CLIENT_SECRET: requiredString,
   INNGEST_EVENT_KEY: requiredString,
   INNGEST_SIGNING_KEY: requiredString,
   NEXT_PUBLIC_APP_URL: requiredUrl,

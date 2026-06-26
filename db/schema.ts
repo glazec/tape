@@ -147,6 +147,11 @@ export const calendarConnections = pgTable("calendar_connections", {
   provider: text("provider").notNull().default("google"),
   externalCalendarId: text("external_calendar_id").notNull(),
   autoJoinEnabled: boolean("auto_join_enabled").notNull().default(false),
+  oauthAccessToken: text("oauth_access_token"),
+  oauthRefreshToken: text("oauth_refresh_token"),
+  oauthAccessTokenExpiresAt: timestamp("oauth_access_token_expires_at", {
+    withTimezone: true,
+  }),
   ...timestamps,
 });
 
