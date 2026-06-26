@@ -4,6 +4,7 @@ import { eq } from "drizzle-orm";
 import { db } from "@/db/client";
 import { transcriptJobs } from "@/db/schema";
 import { inngest } from "./client";
+import { autoJoinCalendarEvent as autoJoinSyncedCalendarEvent } from "@/lib/calendar-auto-join";
 import { createReadUrl } from "@/lib/r2";
 import { createElevenLabsTranscriptJob } from "@/lib/vendors/elevenlabs";
 import { scheduleRecallBot } from "@/lib/vendors/recall";
@@ -13,6 +14,40 @@ const appUrlSchema = z.string().trim().url();
 const scheduleMeetingBotDataSchema = z.object({
   meetingUrl: z.string().url(),
   startAt: z.string().datetime().optional(),
+});
+
+const calendarEventSyncedDataSchema = z.object({
+  connection: z.object({
+    id: z.string().uuid(),
+    teamId: z.string().uuid(),
+    userId: z.string().uuid(),
+    autoJoinEnabled: z.boolean(),
+  }),
+  event: z.object({
+    externalEventId: z.string().min(1),
+    title: z.string().optional().default(""),
+    startsAt: z.string().datetime(),
+    endsAt: z.string().datetime().optional().nullable(),
+    attendeeEmails: z.array(z.string()).optional(),
+    meetingUrl: z.string().optional().nullable(),
+    location: z.string().optional().nullable(),
+    description: z.string().optional().nullable(),
+    hangoutLink: z.string().optional().nullable(),
+    conferenceData: z
+      .object({
+        entryPoints: z
+          .array(
+            z.object({
+              entryPointType: z.string().optional().nullable(),
+              uri: z.string().optional().nullable(),
+            }),
+          )
+          .optional()
+          .nullable(),
+      })
+      .optional()
+      .nullable(),
+  }),
 });
 
 const transcribeAudioDataSchema = z.union([
@@ -48,6 +83,18 @@ export const scheduleMeetingBot = inngest.createFunction(
   },
 );
 
+export const autoJoinCalendarEvent = inngest.createFunction(
+  {
+    id: "auto-join-calendar-event",
+    triggers: [{ event: "calendar/event.synced" }],
+  },
+  async ({ event }) => {
+    const data = calendarEventSyncedDataSchema.parse(event.data);
+
+    return autoJoinSyncedCalendarEvent(data);
+  },
+);
+
 export const transcribeAudio = inngest.createFunction(
   { id: "transcribe-audio", triggers: [{ event: "meeting/transcribe.audio" }] },
   async ({ event }) => {
@@ -79,7 +126,11 @@ export const transcribeAudio = inngest.createFunction(
   },
 );
 
-export const functions = [scheduleMeetingBot, transcribeAudio];
+export const functions = [
+  scheduleMeetingBot,
+  autoJoinCalendarEvent,
+  transcribeAudio,
+];
 
 function buildTranscriptMetadata(data: z.infer<typeof transcribeAudioDataSchema>) {
   const metadata: Record<string, string> = {};

@@ -2,6 +2,7 @@ import Link from "next/link";
 import { Plus, Search } from "lucide-react";
 
 import { AppShell } from "@/components/app-shell";
+import { CalendarSyncButton } from "@/components/calendar-sync-button";
 import { MeetingList } from "@/components/meeting-list";
 import { buttonVariants } from "@/components/ui/button";
 import {
@@ -44,10 +45,13 @@ export default async function DashboardPage({
               transcripts.
             </p>
           </div>
-          <Link href="/meetings/new" className={cn(buttonVariants(), "w-fit")}>
-            <Plus data-icon="inline-start" />
-            Record
-          </Link>
+          <div className="flex flex-col items-start gap-3 sm:items-end">
+            <Link href="/meetings/new" className={cn(buttonVariants(), "w-fit")}>
+              <Plus data-icon="inline-start" />
+              Record
+            </Link>
+            <CalendarSyncButton />
+          </div>
         </div>
 
         <Card>
