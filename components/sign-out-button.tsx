@@ -5,6 +5,59 @@ import { useRouter } from "next/navigation";
 import { LogOut } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { authClient as defaultAuthClient } from "@/lib/auth/client";
+
+type SignOutAuthClient = {
+  signOut: () => Promise<{
+    error?: { message?: string } | null;
+  }>;
+};
+
+type SignOutSessionInput = {
+  authClient?: SignOutAuthClient;
+  clearLocalCookies?: () => Promise<Response>;
+};
+
+export async function signOutSession({
+  authClient = defaultAuthClient,
+  clearLocalCookies = clearNeonAuthCookies,
+}: SignOutSessionInput = {}) {
+  let authErrorMessage: string | null = null;
+
+  try {
+    const result = await authClient.signOut();
+    authErrorMessage = result.error?.message ?? null;
+  } catch (error) {
+    authErrorMessage = error instanceof Error ? error.message : "Sign out failed";
+  }
+
+  try {
+    const response = await clearLocalCookies();
+
+    if (response.ok) {
+      return { ok: true as const };
+    }
+  } catch {
+    if (!authErrorMessage) {
+      return { ok: true as const };
+    }
+  }
+
+  if (!authErrorMessage) {
+    return { ok: true as const };
+  }
+
+  return {
+    ok: false as const,
+    message: "Sign out failed",
+  };
+}
+
+function clearNeonAuthCookies() {
+  return fetch("/api/sign-out", {
+    method: "POST",
+  });
+}
 
 export function SignOutButton() {
   const router = useRouter();
@@ -16,12 +69,10 @@ export function SignOutButton() {
     setError(null);
 
     try {
-      const response = await fetch("/api/sign-out", {
-        method: "POST",
-      });
+      const result = await signOutSession();
 
-      if (!response.ok) {
-        setError("Sign out failed");
+      if (!result.ok) {
+        setError(result.message);
         setIsPending(false);
         return;
       }

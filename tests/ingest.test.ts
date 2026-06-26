@@ -7,6 +7,7 @@ import {
   normalizeElevenLabsWebhook,
 } from "@/lib/vendors/elevenlabs";
 import {
+  deleteScheduledRecallBot,
   findRecallRecordingMediaUrl,
   normalizeRecallWebhook,
   retrieveRecallBot,
@@ -793,6 +794,27 @@ describe("vendor job creation", () => {
             meetingId: "meeting_123",
           },
         }),
+      },
+    );
+  });
+
+  it("deletes a scheduled Recall bot before it joins", async () => {
+    vi.stubEnv("RECALL_API_KEY", "recall-key\n");
+    const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 204 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(deleteScheduledRecallBot({ botId: "bot_123" })).resolves.toEqual(
+      {},
+    );
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://us-east-1.recall.ai/api/v1/bot/bot_123/",
+      {
+        method: "DELETE",
+        headers: {
+          Authorization: "Token recall-key",
+          Accept: "application/json",
+        },
       },
     );
   });

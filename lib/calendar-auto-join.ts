@@ -10,6 +10,7 @@ import {
 } from "@/lib/meeting-links";
 import {
   DEFAULT_RECALL_BOT_NAME,
+  deleteScheduledRecallBot,
   scheduleRecallBot,
   updateScheduledRecallBot,
 } from "@/lib/vendors/recall";
@@ -67,7 +68,7 @@ export function findCalendarMeetingUrl(event: SyncedCalendarEvent) {
     ...extractUrls(event.description),
   ];
 
-  return candidates.find(isSupportedMeetingUrl) ?? null;
+  return candidates.find(isSupportedMeetingUrl) ?? candidates.find(isHttpUrl) ?? null;
 }
 
 export async function autoJoinCalendarEvent(input: AutoJoinInput) {
@@ -110,23 +111,6 @@ export async function autoJoinCalendarEvent(input: AutoJoinInput) {
     };
   }
 
-  if (!meetingUrl) {
-    return {
-      action: "skipped" as const,
-      calendarEventId: calendarEvent.id,
-      reason: "missing_meeting_link" as const,
-    };
-  }
-
-  if (!platform) {
-    return {
-      action: "skipped" as const,
-      calendarEventId: calendarEvent.id,
-      meetingUrl,
-      reason: "unsupported_meeting_link" as const,
-    };
-  }
-
   const existing = await db
     .select({
       id: meetings.id,
@@ -145,6 +129,60 @@ export async function autoJoinCalendarEvent(input: AutoJoinInput) {
     .limit(1);
 
   const existingMeeting = existing[0];
+
+  if (!meetingUrl) {
+    if (existingMeeting?.recallBotId && existingMeeting.status === "scheduled") {
+      await cancelScheduledMeetingBotFromCalendar({
+        botId: existingMeeting.recallBotId,
+        endsAt,
+        meetingId: existingMeeting.id,
+        meetingUrl: null,
+        startsAt,
+        title,
+      });
+
+      return {
+        action: "skipped" as const,
+        calendarEventId: calendarEvent.id,
+        meetingId: existingMeeting.id,
+        reason: "missing_meeting_link" as const,
+      };
+    }
+
+    return {
+      action: "skipped" as const,
+      calendarEventId: calendarEvent.id,
+      reason: "missing_meeting_link" as const,
+    };
+  }
+
+  if (!platform) {
+    if (existingMeeting?.recallBotId && existingMeeting.status === "scheduled") {
+      await cancelScheduledMeetingBotFromCalendar({
+        botId: existingMeeting.recallBotId,
+        endsAt,
+        meetingId: existingMeeting.id,
+        meetingUrl,
+        startsAt,
+        title,
+      });
+
+      return {
+        action: "skipped" as const,
+        calendarEventId: calendarEvent.id,
+        meetingId: existingMeeting.id,
+        meetingUrl,
+        reason: "unsupported_meeting_link" as const,
+      };
+    }
+
+    return {
+      action: "skipped" as const,
+      calendarEventId: calendarEvent.id,
+      meetingUrl,
+      reason: "unsupported_meeting_link" as const,
+    };
+  }
 
   if (existingMeeting?.recallBotId) {
     if (existingMeeting.status !== "scheduled") {
@@ -319,6 +357,29 @@ async function markMeetingFailed(meetingId: string) {
     .where(eq(meetings.id, meetingId));
 }
 
+async function cancelScheduledMeetingBotFromCalendar(input: {
+  botId: string;
+  meetingId: string;
+  title: string;
+  meetingUrl: string | null;
+  startsAt: Date;
+  endsAt: Date | null;
+}) {
+  await deleteScheduledRecallBot({ botId: input.botId });
+  await db
+    .update(meetings)
+    .set({
+      title: input.title,
+      meetingUrl: input.meetingUrl,
+      startedAt: input.startsAt,
+      endedAt: input.endsAt,
+      recallBotId: null,
+      status: "failed",
+      updatedAt: new Date(),
+    })
+    .where(eq(meetings.id, input.meetingId));
+}
+
 function hasScheduledBotChange(
   meeting: ExistingMeeting,
   next: { meetingUrl: string; startsAt: Date },
@@ -350,6 +411,20 @@ function trimUrlPunctuation(value: string) {
 
 function isSupportedMeetingUrl(value?: string | null): value is string {
   return Boolean(value && detectMeetingPlatform(value));
+}
+
+function isHttpUrl(value?: string | null): value is string {
+  if (!value) {
+    return false;
+  }
+
+  try {
+    const url = new URL(value);
+
+    return url.protocol === "http:" || url.protocol === "https:";
+  } catch {
+    return false;
+  }
 }
 
 function normalizeAttendeeEmails(attendeeEmails: string[]) {

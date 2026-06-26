@@ -52,6 +52,10 @@ const recallBotUpdateInputSchema = z.object({
   metadata: z.record(z.string(), z.string()).optional(),
 });
 
+const recallBotDeleteInputSchema = z.object({
+  botId: z.string().trim().min(1),
+});
+
 const optionalRecallApiBaseUrl = z.preprocess(
   (value) =>
     typeof value === "string" && value.trim() === "" ? undefined : value,
@@ -177,6 +181,34 @@ export async function updateScheduledRecallBot(input: {
   if (!response.ok) {
     throw new Error(
       `Recall bot update failed with ${response.status} ${response.statusText}`,
+    );
+  }
+
+  if (response.status === 204) {
+    return {};
+  }
+
+  return response.json();
+}
+
+export async function deleteScheduledRecallBot(input: { botId: string }) {
+  const parsedInput = recallBotDeleteInputSchema.parse(input);
+  const env = recallApiEnvSchema.parse(process.env);
+
+  const response = await fetch(
+    buildRecallApiUrl(env, `/api/v1/bot/${encodeURIComponent(parsedInput.botId)}/`),
+    {
+      method: "DELETE",
+      headers: {
+        Authorization: `Token ${env.RECALL_API_KEY}`,
+        Accept: "application/json",
+      },
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error(
+      `Recall bot deletion failed with ${response.status} ${response.statusText}`,
     );
   }
 
