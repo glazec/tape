@@ -7,7 +7,7 @@ import { AlertCircle, CalendarCheck, RefreshCw } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { authClient } from "@/lib/auth/client";
-import { buildGoogleCalendarLinkOptions } from "@/lib/google-calendar-auth";
+import { connectGoogleCalendar } from "@/lib/google-calendar-auth";
 
 type SyncState =
   | "idle"
@@ -88,16 +88,12 @@ export function CalendarSyncButton({ autoSync = false }: CalendarSyncButtonProps
     setMessage(null);
 
     try {
-      const result = await authClient.linkSocial(buildGoogleCalendarLinkOptions());
+      const result = await connectGoogleCalendar(authClient);
 
-      if (result.error) {
+      if (!result.ok) {
         setState("needs_connection");
-        setMessage(result.error.message || "Google Calendar could not connect.");
+        setMessage(result.message);
         return;
-      }
-
-      if (result.data?.url) {
-        window.location.href = result.data.url;
       }
     } catch {
       setState("needs_connection");
@@ -143,7 +139,19 @@ export function CalendarSyncButton({ autoSync = false }: CalendarSyncButtonProps
             <CalendarCheck />
           )}
           <AlertTitle>{alertTitle}</AlertTitle>
-          <AlertDescription>{message}</AlertDescription>
+          <AlertDescription className="flex flex-col items-start gap-3">
+            <span>{message}</span>
+            {needsConnection ? (
+              <Button
+                type="button"
+                onClick={connectCalendar}
+                disabled={isBusy}
+                size="sm"
+              >
+                Connect Google Calendar
+              </Button>
+            ) : null}
+          </AlertDescription>
         </Alert>
       ) : null}
     </div>

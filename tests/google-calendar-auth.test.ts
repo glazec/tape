@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 describe("Google Calendar auth", () => {
   it("requests read access to calendar events during Google sign in", async () => {
@@ -13,15 +13,38 @@ describe("Google Calendar auth", () => {
     });
   });
 
-  it("builds a calendar link flow for existing signed in users", async () => {
-    const { GOOGLE_CALENDAR_EVENT_READ_SCOPE, buildGoogleCalendarLinkOptions } =
+  it("builds a calendar reconnect flow for existing signed in users", async () => {
+    const {
+      GOOGLE_CALENDAR_EVENT_READ_SCOPE,
+      buildGoogleCalendarReconnectOptions,
+    } =
       await import("@/lib/google-calendar-auth");
 
-    expect(buildGoogleCalendarLinkOptions()).toEqual({
+    expect(buildGoogleCalendarReconnectOptions()).toEqual({
       provider: "google",
       callbackURL: "/dashboard?syncCalendar=1",
       errorCallbackURL: "/dashboard",
       scopes: [GOOGLE_CALENDAR_EVENT_READ_SCOPE],
     });
+  });
+
+  it("starts calendar reconnect through the Google sign in endpoint", async () => {
+    const signInSocial = vi.fn().mockResolvedValue({
+      data: { redirect: true, url: "https://accounts.google.com/o/oauth2/v2/auth" },
+      error: null,
+    });
+    const { connectGoogleCalendar, buildGoogleCalendarReconnectOptions } =
+      await import("@/lib/google-calendar-auth");
+
+    await expect(
+      connectGoogleCalendar({
+        signIn: {
+          social: signInSocial,
+        },
+      }),
+    ).resolves.toEqual({ ok: true });
+    expect(signInSocial).toHaveBeenCalledWith(
+      buildGoogleCalendarReconnectOptions(),
+    );
   });
 });
