@@ -32,8 +32,8 @@ export function CalendarAutomationPanel({
       <CardHeader>
         <CardTitle>Calendar automation</CardTitle>
         <CardDescription>
-          Recall watches future calendar changes and keeps one team bot per
-          meeting.
+          Recall watches future calendar changes and keeps team bot coverage
+          consistent.
         </CardDescription>
         <CardAction>
           <Badge variant={statusVariant}>{statusLabel}</Badge>
@@ -52,10 +52,14 @@ export function CalendarAutomationPanel({
           />
           <StatusRow
             icon={<Bot />}
-            label={autoJoinActive ? "Auto join on" : "Auto join off"}
+            label={
+              autoJoinActive
+                ? "Team bot coverage on"
+                : "Team bot coverage off"
+            }
             value={
               autoJoinActive
-                ? "AI joins eligible meetings"
+                ? "One bot joins each eligible meeting"
                 : connected
                   ? "Sync calendar to enable bots"
                   : "Connect calendar to enable bots"

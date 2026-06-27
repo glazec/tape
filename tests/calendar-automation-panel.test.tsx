@@ -25,7 +25,7 @@ describe("CalendarAutomationPanel", () => {
 
     expect(html).toContain("Calendar automation");
     expect(html).toContain("Recall Calendar connected");
-    expect(html).toContain("Auto join on");
+    expect(html).toContain("Team bot coverage on");
     expect(html).toContain("Last checked");
     expect(html).toContain("Sync Recall calendar");
   });
@@ -61,9 +61,9 @@ describe("CalendarAutomationPanel", () => {
       />,
     );
 
-    expect(html).toContain("Auto join off");
+    expect(html).toContain("Team bot coverage off");
     expect(html).toContain("Connect calendar to enable bots");
-    expect(html).not.toContain("AI joins eligible meetings");
+    expect(html).not.toContain("One bot joins each eligible meeting");
   });
 
   it("uses sync copy when the calendar is connected but auto join is off", () => {
@@ -79,7 +79,7 @@ describe("CalendarAutomationPanel", () => {
       />,
     );
 
-    expect(html).toContain("Auto join off");
+    expect(html).toContain("Team bot coverage off");
     expect(html).toContain("Sync calendar to enable bots");
     expect(html).not.toContain("Connect calendar to enable bots");
   });

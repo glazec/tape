@@ -24,6 +24,7 @@ export type MeetingListItem = {
   startedAt: string;
   status: MeetingRecordStatus;
   transcriptJobStatus?: TranscriptJobStatus | null;
+  hasRecallBot?: boolean;
 };
 
 type MeetingListProps = {
@@ -86,6 +87,10 @@ export function MeetingList({ meetings }: MeetingListProps) {
                   <span className="mt-1 block text-xs text-muted-foreground sm:hidden">
                     {platformLabels[meeting.platform]}
                   </span>
+                  <MeetingCoverageNote
+                    displayStatus={displayStatus}
+                    hasRecallBot={meeting.hasRecallBot}
+                  />
                 </TableCell>
                 <TableCell className="hidden text-muted-foreground sm:table-cell">
                   {platformLabels[meeting.platform]}
@@ -105,6 +110,40 @@ export function MeetingList({ meetings }: MeetingListProps) {
       </TableBody>
     </Table>
   );
+}
+
+function MeetingCoverageNote({
+  displayStatus,
+  hasRecallBot,
+}: {
+  displayStatus: MeetingDisplayStatus;
+  hasRecallBot?: boolean;
+}) {
+  if (displayStatus === "scheduled") {
+    return (
+      <span className="mt-1 block text-xs text-muted-foreground">
+        {hasRecallBot ? "Bot scheduled" : "No bot linked"}
+      </span>
+    );
+  }
+
+  if (displayStatus === "recording") {
+    return (
+      <span className="mt-1 block text-xs text-muted-foreground">
+        Bot in meeting
+      </span>
+    );
+  }
+
+  if (displayStatus === "failed") {
+    return (
+      <span className="mt-1 block text-xs text-destructive">
+        Needs review
+      </span>
+    );
+  }
+
+  return null;
 }
 
 function getStatusVariant(status: MeetingDisplayStatus) {

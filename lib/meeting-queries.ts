@@ -11,6 +11,10 @@ import {
 import type { MeetingListItem } from "@/components/meeting-list";
 import type { TranscriptSegment } from "@/components/transcript-viewer";
 import type { SessionUser } from "@/lib/auth";
+import {
+  getDashboardWorkflowSummary,
+  type DashboardWorkflowSummaryModel,
+} from "@/lib/dashboard-workflow-summary";
 import type { TranscriptJobStatus } from "@/lib/meeting-display-status";
 import {
   getOrCreateWorkspaceForSessionUser,
@@ -72,6 +76,7 @@ export async function listMeetingsForWorkspace(
         order by ${transcriptJobs.createdAt} desc
         limit 1
       )`,
+      recallBotId: meetings.recallBotId,
       startedAt: meetings.startedAt,
       createdAt: meetings.createdAt,
     })
@@ -86,8 +91,41 @@ export async function listMeetingsForWorkspace(
     platform: meeting.platform,
     status: meeting.status,
     transcriptJobStatus: meeting.transcriptJobStatus,
+    hasRecallBot: Boolean(meeting.recallBotId),
     startedAt: (meeting.startedAt ?? meeting.createdAt).toISOString(),
   }));
+}
+
+export async function getMeetingDashboardSummaryForWorkspace(
+  workspace: WorkspaceContext,
+): Promise<DashboardWorkflowSummaryModel> {
+  const rows = await db
+    .select({
+      title: meetings.title,
+      status: meetings.status,
+      transcriptJobStatus: sql<TranscriptJobStatus | null>`(
+        select ${transcriptJobs.status}
+        from ${transcriptJobs}
+        where ${transcriptJobs.meetingId} = ${meetings.id}
+        order by ${transcriptJobs.createdAt} desc
+        limit 1
+      )`,
+      recallBotId: meetings.recallBotId,
+      startedAt: meetings.startedAt,
+      createdAt: meetings.createdAt,
+    })
+    .from(meetings)
+    .where(eq(meetings.teamId, workspace.teamId));
+
+  return getDashboardWorkflowSummary(
+    rows.map((meeting) => ({
+      title: meeting.title,
+      status: meeting.status,
+      transcriptJobStatus: meeting.transcriptJobStatus,
+      hasRecallBot: Boolean(meeting.recallBotId),
+      startedAt: (meeting.startedAt ?? meeting.createdAt).toISOString(),
+    })),
+  );
 }
 
 export async function getWorkspaceMeetingTranscript(
