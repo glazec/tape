@@ -14,7 +14,7 @@ export default async function TeamSettingsPage() {
   const user = await requireCurrentUser();
 
   return (
-    <AppShell>
+    <AppShell activeHref="/settings/team">
       <section className="flex max-w-3xl flex-col gap-6">
         <div>
           <p className="text-sm font-medium uppercase tracking-normal text-primary">

@@ -1,4 +1,4 @@
-import { and, eq, or } from "drizzle-orm";
+import { and, eq, isNotNull, ne, or, sql } from "drizzle-orm";
 
 import { db } from "@/db/client";
 import { calendarEvents, meetingAttendees, meetings } from "@/db/schema";
@@ -70,6 +70,11 @@ type ExistingMeeting = {
   status: string;
 };
 
+type CalendarEventRow = {
+  id: string;
+  teamMeetingKey?: string | null;
+};
+
 export function findCalendarMeetingUrl(event: SyncedCalendarEvent) {
   const structuredCandidates = [
     event.meetingUrl,
@@ -122,7 +127,9 @@ export async function autoJoinCalendarEvent(input: AutoJoinInput) {
       target: [calendarEvents.connectionId, calendarEvents.externalEventId],
       set: {
         title,
-        teamMeetingKey,
+        teamMeetingKey:
+          teamMeetingKey ??
+          sql`coalesce(${calendarEvents.teamMeetingKey}, excluded.team_meeting_key)`,
         meetingUrl,
         startsAt,
         endsAt,
@@ -130,7 +137,12 @@ export async function autoJoinCalendarEvent(input: AutoJoinInput) {
         updatedAt: new Date(),
       },
     })
-    .returning({ id: calendarEvents.id });
+    .returning({
+      id: calendarEvents.id,
+      teamMeetingKey: calendarEvents.teamMeetingKey,
+    });
+  const activeTeamMeetingKey =
+    teamMeetingKey ?? calendarEvent.teamMeetingKey ?? null;
 
   if (!input.connection.autoJoinEnabled) {
     return {
@@ -140,43 +152,36 @@ export async function autoJoinCalendarEvent(input: AutoJoinInput) {
     };
   }
 
-  const existing = await db
-    .select({
-      id: meetings.id,
-      calendarEventId: meetings.calendarEventId,
-      teamMeetingKey: meetings.teamMeetingKey,
-      recallBotId: meetings.recallBotId,
-      meetingUrl: meetings.meetingUrl,
-      startedAt: meetings.startedAt,
-      status: meetings.status,
-    })
-    .from(meetings)
-    .where(
-      teamMeetingKey
-        ? and(
-            eq(meetings.teamId, input.connection.teamId),
-            or(
-              eq(meetings.calendarEventId, calendarEvent.id),
-              eq(meetings.teamMeetingKey, teamMeetingKey),
-            ),
-          )
-        : and(
-            eq(meetings.teamId, input.connection.teamId),
-            eq(meetings.calendarEventId, calendarEvent.id),
-          ),
-    )
-    .limit(1);
-
-  const existingMeeting = existing[0];
+  let existingMeeting = await findExistingMeeting({
+    teamId: input.connection.teamId,
+    calendarEventId: calendarEvent.id,
+    teamMeetingKey: activeTeamMeetingKey,
+  });
 
   if (!meetingUrl) {
     if (existingMeeting?.recallBotId && existingMeeting.status === "scheduled") {
+      if (
+        await hasOtherActiveCalendarEventForTeamMeeting({
+          teamId: input.connection.teamId,
+          calendarEvent,
+          teamMeetingKey: activeTeamMeetingKey,
+        })
+      ) {
+        return {
+          action: "skipped" as const,
+          calendarEventId: calendarEvent.id,
+          meetingId: existingMeeting.id,
+          reason: "shared_meeting_still_scheduled" as const,
+        };
+      }
+
       await cancelScheduledMeetingBotFromCalendar({
         botId: existingMeeting.recallBotId,
         endsAt,
         meetingId: existingMeeting.id,
         meetingUrl: null,
         recallCalendarEventId: input.event.recallCalendarEventId,
+        skipVendorDelete: input.event.isDeleted === true,
         startsAt,
         title,
       });
@@ -198,6 +203,22 @@ export async function autoJoinCalendarEvent(input: AutoJoinInput) {
 
   if (!platform) {
     if (existingMeeting?.recallBotId && existingMeeting.status === "scheduled") {
+      if (
+        await hasOtherActiveCalendarEventForTeamMeeting({
+          teamId: input.connection.teamId,
+          calendarEvent,
+          teamMeetingKey: activeTeamMeetingKey,
+        })
+      ) {
+        return {
+          action: "skipped" as const,
+          calendarEventId: calendarEvent.id,
+          meetingId: existingMeeting.id,
+          meetingUrl,
+          reason: "shared_meeting_still_scheduled" as const,
+        };
+      }
+
       await cancelScheduledMeetingBotFromCalendar({
         botId: existingMeeting.recallBotId,
         endsAt,
@@ -226,112 +247,83 @@ export async function autoJoinCalendarEvent(input: AutoJoinInput) {
   }
 
   if (existingMeeting?.recallBotId) {
-    if (existingMeeting.status !== "scheduled") {
-      return {
-        action: "skipped" as const,
-        calendarEventId: calendarEvent.id,
-        meetingId: existingMeeting.id,
-        meetingUrl,
-        reason: "already_scheduled" as const,
-      };
-    }
-
-    const shouldUpdateBot = hasScheduledBotChange(existingMeeting, {
+    return syncExistingCalendarMeeting({
+      meeting: existingMeeting,
+      event: input.event,
+      calendarEvent,
+      title,
+      platform,
       meetingUrl,
       startsAt,
+      endsAt,
+      teamMeetingKey: activeTeamMeetingKey,
     });
-    const shouldLinkRecallCalendarEvent = Boolean(
-      input.event.recallCalendarEventId &&
-        existingMeeting.calendarEventId !== calendarEvent.id,
-    );
-    let recallBotId = existingMeeting.recallBotId;
-
-    try {
-      if (shouldUpdateBot || shouldLinkRecallCalendarEvent) {
-        const bot = await scheduleBotForCalendarEvent({
-          event: input.event,
-          meetingUrl,
-          startsAt,
-          teamMeetingKey,
-          calendarEventId: calendarEvent.id,
-          meetingId: existingMeeting.id,
-          existingBotId: existingMeeting.recallBotId,
-        });
-        recallBotId = getRecallBotResponseId(
-          bot,
-          input.event.recallCalendarEventDeduplicationKey,
-        ) ?? existingMeeting.recallBotId;
-      }
-
-      await updateMeetingFromCalendar({
-        meetingId: existingMeeting.id,
-        title,
-        platform,
-        meetingUrl,
-        startsAt,
-        endsAt,
-        teamMeetingKey,
-        recallBotId,
-      });
-    } catch (error) {
-      await markMeetingFailed(existingMeeting.id);
-      throw error;
-    }
-
-    if (shouldUpdateBot) {
-      return {
-        action: "updated" as const,
-        calendarEventId: calendarEvent.id,
-        meetingId: existingMeeting.id,
-        meetingUrl,
-        platform,
-        recallBotId,
-      };
-    }
-
-    if (shouldLinkRecallCalendarEvent) {
-      return {
-        action: "scheduled" as const,
-        calendarEventId: calendarEvent.id,
-        meetingId: existingMeeting.id,
-        meetingUrl,
-        platform,
-        recallBotId,
-      };
-    }
-
-    return {
-      action: "skipped" as const,
-      calendarEventId: calendarEvent.id,
-      meetingId: existingMeeting.id,
-      meetingUrl,
-      reason: "already_scheduled" as const,
-    };
   }
 
-  const meeting =
-    existingMeeting ??
-    (
-      await db
-        .insert(meetings)
-        .values({
-          teamId: input.connection.teamId,
-          ownerUserId: input.connection.userId,
-          calendarEventId: calendarEvent.id,
-          teamMeetingKey,
-          title,
-          platform,
-          status: "scheduled",
-          meetingUrl,
-          startedAt: startsAt,
-          endedAt: endsAt,
-        })
-        .returning({ id: meetings.id })
-    )[0];
+  let meeting: ExistingMeeting | { id: string } | null = existingMeeting;
+  let createdMeeting = false;
+
+  if (!meeting) {
+    try {
+      meeting = (
+        await db
+          .insert(meetings)
+          .values({
+            teamId: input.connection.teamId,
+            ownerUserId: input.connection.userId,
+            calendarEventId: calendarEvent.id,
+            teamMeetingKey: activeTeamMeetingKey,
+            title,
+            platform,
+            status: "scheduled",
+            meetingUrl,
+            startedAt: startsAt,
+            endedAt: endsAt,
+          })
+          .returning({ id: meetings.id })
+      )[0];
+      createdMeeting = true;
+    } catch (error) {
+      if (!isTeamMeetingKeyUniqueConflict(error) || !activeTeamMeetingKey) {
+        throw error;
+      }
+
+      existingMeeting = await findExistingMeeting({
+        teamId: input.connection.teamId,
+        calendarEventId: calendarEvent.id,
+        teamMeetingKey: activeTeamMeetingKey,
+      });
+
+      if (!existingMeeting) {
+        throw error;
+      }
+
+      meeting = existingMeeting;
+    }
+  }
+
+  if (meeting && "recallBotId" in meeting && meeting.recallBotId) {
+    return syncExistingCalendarMeeting({
+      meeting,
+      event: input.event,
+      calendarEvent,
+      title,
+      platform,
+      meetingUrl,
+      startsAt,
+      endsAt,
+      teamMeetingKey: activeTeamMeetingKey,
+      forceScheduleBot: true,
+    });
+  }
+
+  if (!meeting) {
+    throw new Error("Meeting creation failed");
+  }
 
   const attendeeEmails = normalizeAttendeeEmails(input.event.attendeeEmails ?? []);
 
-  if (!existingMeeting && attendeeEmails.length > 0) {
+  if (createdMeeting && attendeeEmails.length > 0) {
     await db
       .insert(meetingAttendees)
       .values(
@@ -350,13 +342,16 @@ export async function autoJoinCalendarEvent(input: AutoJoinInput) {
       event: input.event,
       meetingUrl,
       startsAt,
-      teamMeetingKey,
+      teamMeetingKey: activeTeamMeetingKey,
       calendarEventId: calendarEvent.id,
       meetingId: meeting.id,
     });
     const recallBotId = getRecallBotResponseId(
       bot,
-      input.event.recallCalendarEventDeduplicationKey,
+      getRecallCalendarEventBotDeduplicationKey({
+        event: input.event,
+        teamMeetingKey: activeTeamMeetingKey,
+      }),
     );
 
     if (!recallBotId) {
@@ -367,7 +362,7 @@ export async function autoJoinCalendarEvent(input: AutoJoinInput) {
       .update(meetings)
       .set({
         recallBotId,
-        teamMeetingKey,
+        teamMeetingKey: activeTeamMeetingKey,
         title,
         platform,
         meetingUrl,
@@ -391,6 +386,106 @@ export async function autoJoinCalendarEvent(input: AutoJoinInput) {
 
     throw error;
   }
+}
+
+async function syncExistingCalendarMeeting(input: {
+  meeting: ExistingMeeting;
+  event: SyncedCalendarEvent;
+  calendarEvent: CalendarEventRow;
+  title: string;
+  platform: SupportedMeetingPlatform;
+  meetingUrl: string;
+  startsAt: Date;
+  endsAt: Date | null;
+  teamMeetingKey?: string | null;
+  forceScheduleBot?: boolean;
+}) {
+  if (input.meeting.status !== "scheduled") {
+    return {
+      action: "skipped" as const,
+      calendarEventId: input.calendarEvent.id,
+      meetingId: input.meeting.id,
+      meetingUrl: input.meetingUrl,
+      reason: "already_scheduled" as const,
+    };
+  }
+
+  const shouldUpdateBot = hasScheduledBotChange(input.meeting, {
+    meetingUrl: input.meetingUrl,
+    startsAt: input.startsAt,
+  });
+  const shouldLinkRecallCalendarEvent = Boolean(
+    input.event.recallCalendarEventId &&
+      input.meeting.calendarEventId !== input.calendarEvent.id,
+  );
+  const shouldScheduleBot =
+    input.forceScheduleBot || shouldUpdateBot || shouldLinkRecallCalendarEvent;
+  let recallBotId = input.meeting.recallBotId;
+
+  try {
+    if (shouldScheduleBot) {
+      const bot = await scheduleBotForCalendarEvent({
+        event: input.event,
+        meetingUrl: input.meetingUrl,
+        startsAt: input.startsAt,
+        teamMeetingKey: input.teamMeetingKey,
+        calendarEventId: input.calendarEvent.id,
+        meetingId: input.meeting.id,
+        existingBotId: input.meeting.recallBotId ?? undefined,
+      });
+      recallBotId = getRecallBotResponseId(
+        bot,
+        getRecallCalendarEventBotDeduplicationKey({
+          event: input.event,
+          teamMeetingKey: input.teamMeetingKey,
+        }),
+      ) ?? input.meeting.recallBotId;
+    }
+
+    await updateMeetingFromCalendar({
+      meetingId: input.meeting.id,
+      title: input.title,
+      platform: input.platform,
+      meetingUrl: input.meetingUrl,
+      startsAt: input.startsAt,
+      endsAt: input.endsAt,
+      teamMeetingKey: input.teamMeetingKey,
+      recallBotId,
+    });
+  } catch (error) {
+    await markMeetingFailed(input.meeting.id);
+    throw error;
+  }
+
+  if (shouldUpdateBot && !input.forceScheduleBot) {
+    return {
+      action: "updated" as const,
+      calendarEventId: input.calendarEvent.id,
+      meetingId: input.meeting.id,
+      meetingUrl: input.meetingUrl,
+      platform: input.platform,
+      recallBotId,
+    };
+  }
+
+  if (shouldLinkRecallCalendarEvent || input.forceScheduleBot) {
+    return {
+      action: "scheduled" as const,
+      calendarEventId: input.calendarEvent.id,
+      meetingId: input.meeting.id,
+      meetingUrl: input.meetingUrl,
+      platform: input.platform,
+      recallBotId,
+    };
+  }
+
+  return {
+    action: "skipped" as const,
+    calendarEventId: input.calendarEvent.id,
+    meetingId: input.meeting.id,
+    meetingUrl: input.meetingUrl,
+    reason: "already_scheduled" as const,
+  };
 }
 
 async function updateMeetingFromCalendar(input: {
@@ -418,6 +513,82 @@ async function updateMeetingFromCalendar(input: {
     .where(eq(meetings.id, input.meetingId));
 }
 
+async function findExistingMeeting(input: {
+  teamId: string;
+  calendarEventId: string;
+  teamMeetingKey?: string | null;
+}) {
+  const existing = await db
+    .select({
+      id: meetings.id,
+      calendarEventId: meetings.calendarEventId,
+      teamMeetingKey: meetings.teamMeetingKey,
+      recallBotId: meetings.recallBotId,
+      meetingUrl: meetings.meetingUrl,
+      startedAt: meetings.startedAt,
+      status: meetings.status,
+    })
+    .from(meetings)
+    .where(
+      input.teamMeetingKey
+        ? and(
+            eq(meetings.teamId, input.teamId),
+            or(
+              eq(meetings.calendarEventId, input.calendarEventId),
+              eq(meetings.teamMeetingKey, input.teamMeetingKey),
+            ),
+          )
+        : and(
+            eq(meetings.teamId, input.teamId),
+            eq(meetings.calendarEventId, input.calendarEventId),
+          ),
+    )
+    .limit(1);
+
+  return existing[0] ?? null;
+}
+
+async function hasOtherActiveCalendarEventForTeamMeeting(input: {
+  teamId: string;
+  calendarEvent: CalendarEventRow;
+  teamMeetingKey?: string | null;
+}) {
+  if (!input.teamMeetingKey) {
+    return false;
+  }
+
+  const active = await db
+    .select({
+      id: calendarEvents.id,
+      meetingUrl: calendarEvents.meetingUrl,
+    })
+    .from(calendarEvents)
+    .where(
+      and(
+        eq(calendarEvents.teamId, input.teamId),
+        eq(calendarEvents.teamMeetingKey, input.teamMeetingKey),
+        ne(calendarEvents.id, input.calendarEvent.id),
+        isNotNull(calendarEvents.meetingUrl),
+      ),
+    )
+    .limit(25);
+
+  return active.some((event) => isSupportedMeetingUrl(event.meetingUrl));
+}
+
+function isTeamMeetingKeyUniqueConflict(error: unknown) {
+  if (!error || typeof error !== "object") {
+    return false;
+  }
+
+  const candidate = error as { code?: unknown; constraint?: unknown };
+
+  return (
+    candidate.code === "23505" &&
+    candidate.constraint === "meetings_team_meeting_key_unique"
+  );
+}
+
 async function markMeetingFailed(meetingId: string) {
   await db
     .update(meetings)
@@ -434,10 +605,13 @@ async function cancelScheduledMeetingBotFromCalendar(input: {
   title: string;
   meetingUrl: string | null;
   recallCalendarEventId?: string | null;
+  skipVendorDelete?: boolean;
   startsAt: Date;
   endsAt: Date | null;
 }) {
-  if (input.recallCalendarEventId) {
+  if (input.skipVendorDelete) {
+    // Recall Calendar V2 automatically removes scheduled bots for deleted events.
+  } else if (input.recallCalendarEventId) {
     await deleteRecallCalendarEventBot({
       calendarEventId: input.recallCalendarEventId,
     });
@@ -528,25 +702,41 @@ function normalizeMeetingUrlForKey(meetingUrl: string) {
   }
 }
 
+function getRecallCalendarEventBotDeduplicationKey(input: {
+  event: SyncedCalendarEvent;
+  teamMeetingKey?: string | null;
+}) {
+  if (!input.event.recallCalendarEventId) {
+    return null;
+  }
+
+  return (
+    input.teamMeetingKey ??
+    input.event.recallCalendarEventDeduplicationKey ??
+    input.event.recallCalendarEventId
+  );
+}
+
 function getRecallBotResponseId(
   bot: RecallBotResponse,
   deduplicationKey?: string | null,
 ) {
-  const botEntry =
-    bot.bots?.find(
+  if (deduplicationKey) {
+    const botEntry = bot.bots?.find(
       (candidate) =>
-        deduplicationKey &&
         candidate.deduplication_key === deduplicationKey &&
         typeof candidate.bot_id === "string",
-    ) ??
-    bot.bots?.find((candidate) => typeof candidate.bot_id === "string");
+    );
+
+    return typeof botEntry?.bot_id === "string" ? botEntry.bot_id : null;
+  }
+
+  const botEntry = bot.bots?.find(
+    (candidate) => typeof candidate.bot_id === "string",
+  );
 
   if (typeof botEntry?.bot_id === "string") {
     return botEntry.bot_id;
-  }
-
-  if (deduplicationKey) {
-    return null;
   }
 
   return typeof bot.id === "string" ? bot.id : null;

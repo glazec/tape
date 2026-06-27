@@ -4,13 +4,26 @@ vi.mock("@/lib/auth", () => ({
   getCurrentUser: vi.fn(),
 }));
 
+vi.mock("@/lib/auth-guards", () => ({
+  requireCurrentUser: vi.fn(),
+}));
+
+vi.mock("@/lib/calendar-connection-queries", () => ({
+  getCalendarConnectionSummaryForWorkspace: vi.fn(),
+}));
+
 vi.mock("@/lib/share-links", () => ({
   getSharedTranscriptByToken: vi.fn(),
 }));
 
 vi.mock("@/lib/meeting-queries", () => ({
   getWorkspaceMeetingTranscript: vi.fn(),
+  listMeetingsForWorkspace: vi.fn(),
   listWorkspaceMeetings: vi.fn(),
+}));
+
+vi.mock("@/lib/workspace", () => ({
+  getOrCreateWorkspaceForSessionUser: vi.fn(),
 }));
 
 describe("page rendering configuration", () => {

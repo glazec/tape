@@ -4,7 +4,7 @@ import { UploadDropzone } from "@/components/upload-dropzone";
 
 export default function NewMeetingPage() {
   return (
-    <AppShell>
+    <AppShell activeHref="/meetings/new">
       <section className="flex max-w-3xl flex-col gap-6">
         <div>
           <p className="text-sm font-medium uppercase tracking-normal text-primary">

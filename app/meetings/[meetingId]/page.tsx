@@ -33,7 +33,7 @@ export default async function MeetingPage({
   });
 
   return (
-    <AppShell>
+    <AppShell activeHref="/dashboard">
       <div className="grid min-w-0 gap-8 lg:grid-cols-[1fr_18rem]">
         <section className="min-w-0">
           <MeetingAutoRefresh

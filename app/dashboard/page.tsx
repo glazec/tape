@@ -2,7 +2,7 @@ import Link from "next/link";
 import { Plus, Search } from "lucide-react";
 
 import { AppShell } from "@/components/app-shell";
-import { CalendarSyncButton } from "@/components/calendar-sync-button";
+import { CalendarAutomationPanel } from "@/components/calendar-automation-panel";
 import { MeetingList } from "@/components/meeting-list";
 import { buttonVariants } from "@/components/ui/button";
 import {
@@ -15,8 +15,10 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { requireCurrentUser } from "@/lib/auth-guards";
-import { listWorkspaceMeetings } from "@/lib/meeting-queries";
+import { getCalendarConnectionSummaryForWorkspace } from "@/lib/calendar-connection-queries";
+import { listMeetingsForWorkspace } from "@/lib/meeting-queries";
 import { cn } from "@/lib/utils";
+import { getOrCreateWorkspaceForSessionUser } from "@/lib/workspace";
 
 export const dynamic = "force-dynamic";
 
@@ -27,12 +29,16 @@ export default async function DashboardPage({
 }) {
   const user = await requireCurrentUser();
   const { q, syncCalendar } = await searchParams;
-  const meetings = await listWorkspaceMeetings(user, q);
+  const workspace = await getOrCreateWorkspaceForSessionUser(user);
+  const [meetings, calendarStatus] = await Promise.all([
+    listMeetingsForWorkspace(workspace, q),
+    getCalendarConnectionSummaryForWorkspace(workspace),
+  ]);
 
   return (
-    <AppShell>
+    <AppShell activeHref="/dashboard">
       <section className="flex flex-col gap-6">
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+        <div className="grid gap-4 lg:grid-cols-[1fr_22rem] lg:items-start">
           <div>
             <p className="text-sm font-medium uppercase tracking-normal text-primary">
               Dashboard
@@ -44,14 +50,18 @@ export default async function DashboardPage({
               Search recent meetings, review processing state, and open ready
               transcripts.
             </p>
-          </div>
-          <div className="flex flex-col items-start gap-3 sm:items-end">
-            <Link href="/meetings/new" className={cn(buttonVariants(), "w-fit")}>
+            <Link
+              href="/meetings/new"
+              className={cn(buttonVariants(), "mt-5 w-fit")}
+            >
               <Plus data-icon="inline-start" />
               Record
             </Link>
-            <CalendarSyncButton autoSync={syncCalendar === "1"} />
           </div>
+          <CalendarAutomationPanel
+            autoSync={syncCalendar === "1"}
+            status={calendarStatus}
+          />
         </div>
 
         <Card>

@@ -7,6 +7,7 @@ import { cn } from "@/lib/utils";
 
 type AppShellProps = {
   children: ReactNode;
+  activeHref?: string;
 };
 
 const navItems = [
@@ -15,7 +16,7 @@ const navItems = [
   { href: "/settings/team", label: "Team settings" },
 ];
 
-export function AppShell({ children }: AppShellProps) {
+export function AppShell({ children, activeHref }: AppShellProps) {
   return (
     <div className="min-h-screen bg-background text-foreground">
       <header className="border-b bg-card">
@@ -32,9 +33,15 @@ export function AppShell({ children }: AppShellProps) {
                 <Link
                   key={item.href}
                   href={item.href}
+                  aria-current={activeHref === item.href ? "page" : undefined}
                   className={cn(
-                    buttonVariants({ variant: "ghost", size: "sm" }),
-                    "text-muted-foreground",
+                    buttonVariants({
+                      variant: activeHref === item.href ? "secondary" : "ghost",
+                      size: "sm",
+                    }),
+                    activeHref === item.href
+                      ? "text-foreground"
+                      : "text-muted-foreground",
                   )}
                 >
                   {item.label}

@@ -12,7 +12,10 @@ import type { MeetingListItem } from "@/components/meeting-list";
 import type { TranscriptSegment } from "@/components/transcript-viewer";
 import type { SessionUser } from "@/lib/auth";
 import type { TranscriptJobStatus } from "@/lib/meeting-display-status";
-import { getOrCreateWorkspaceForSessionUser } from "@/lib/workspace";
+import {
+  getOrCreateWorkspaceForSessionUser,
+  type WorkspaceContext,
+} from "@/lib/workspace";
 
 const uuidSchema = z.string().uuid();
 
@@ -31,6 +34,14 @@ export async function listWorkspaceMeetings(
   query?: string,
 ): Promise<MeetingListItem[]> {
   const workspace = await getOrCreateWorkspaceForSessionUser(sessionUser);
+
+  return listMeetingsForWorkspace(workspace, query);
+}
+
+export async function listMeetingsForWorkspace(
+  workspace: WorkspaceContext,
+  query?: string,
+): Promise<MeetingListItem[]> {
   const search = query?.trim();
   const where = search
     ? and(

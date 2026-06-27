@@ -29,4 +29,13 @@ describe("AppShell", () => {
     expect(primaryNav).toContain("Dashboard");
     expect(primaryNav).not.toContain("Sign out");
   });
+
+  it("marks the active navigation item", () => {
+    const html = renderToStaticMarkup(
+      <AppShell activeHref="/dashboard">Dashboard body</AppShell>,
+    );
+
+    expect(html).toContain('href="/dashboard"');
+    expect(html).toContain('aria-current="page"');
+  });
 });

@@ -18,6 +18,7 @@ type SyncState =
 
 type CalendarSyncButtonProps = {
   autoSync?: boolean;
+  connected?: boolean;
 };
 
 type CalendarSyncResponse = {
@@ -26,7 +27,10 @@ type CalendarSyncResponse = {
   syncedEventCount?: number;
 };
 
-export function CalendarSyncButton({ autoSync = false }: CalendarSyncButtonProps) {
+export function CalendarSyncButton({
+  autoSync = false,
+  connected = true,
+}: CalendarSyncButtonProps) {
   const router = useRouter();
   const autoSyncAttempted = useRef(false);
   const [state, setState] = useState<SyncState>("idle");
@@ -48,7 +52,7 @@ export function CalendarSyncButton({ autoSync = false }: CalendarSyncButtonProps
       if (!response.ok) {
         if (response.status === 409 && result.reconnect) {
           setState("needs_connection");
-          setMessage("Connect Google Calendar to grant calendar read access.");
+          setMessage("Reconnect calendar so Recall can watch events.");
           return;
         }
 
@@ -102,7 +106,7 @@ export function CalendarSyncButton({ autoSync = false }: CalendarSyncButtonProps
     }
   }
 
-  const needsConnection = state === "needs_connection";
+  const needsConnection = state === "needs_connection" || !connected;
   const isBusy = state === "syncing" || state === "connecting";
   const buttonLabel =
     state === "syncing"
@@ -111,7 +115,7 @@ export function CalendarSyncButton({ autoSync = false }: CalendarSyncButtonProps
         ? "Opening Google..."
         : needsConnection
           ? "Connect calendar"
-          : "Sync calendar";
+          : "Sync Recall calendar";
   const alertTitle =
     state === "error"
       ? "Calendar not synced"
@@ -126,7 +130,11 @@ export function CalendarSyncButton({ autoSync = false }: CalendarSyncButtonProps
         onClick={needsConnection ? connectCalendar : syncCalendar}
         disabled={isBusy}
       >
-        <RefreshCw data-icon="inline-start" />
+        {needsConnection ? (
+          <CalendarCheck data-icon="inline-start" />
+        ) : (
+          <RefreshCw data-icon="inline-start" />
+        )}
         {buttonLabel}
       </Button>
       {message ? (
