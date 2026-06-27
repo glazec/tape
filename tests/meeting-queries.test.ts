@@ -28,20 +28,26 @@ describe("getWorkspaceMeetingTranscript", () => {
       .mockReturnValueOnce({
         from: () => ({
           leftJoin: () => ({
-            where: () => ({
-              orderBy: () => ({
-                limit: vi.fn().mockResolvedValue([
-                  {
-                    id: "11111111-1111-4111-8111-111111111111",
-                    teamId: "team_123",
-                    title: "Customer sync",
-                    platform: "google_meet",
-                    status: "processing",
-                    transcriptJobStatus: "running",
-                    audioObjectKey: null,
-                    recallRecordingId: "recording_123",
-                  },
-                ]),
+            leftJoin: () => ({
+              where: () => ({
+                orderBy: () => ({
+                  limit: vi.fn().mockResolvedValue([
+                    {
+                      id: "11111111-1111-4111-8111-111111111111",
+                      teamId: "team_123",
+                      title: "Customer sync",
+                      platform: "google_meet",
+                      status: "processing",
+                      transcriptJobStatus: "running",
+                      audioObjectKey: null,
+                      calendarAttendeeEmails: [
+                        "alice@example.com",
+                        "updated.guest@nascent.xyz",
+                      ],
+                      recallRecordingId: "recording_123",
+                    },
+                  ]),
+                }),
               }),
             }),
           }),
@@ -51,6 +57,26 @@ describe("getWorkspaceMeetingTranscript", () => {
         from: () => ({
           where: () => ({
             orderBy: vi.fn().mockResolvedValue([]),
+          }),
+        }),
+      })
+      .mockReturnValueOnce({
+        from: () => ({
+          leftJoin: () => ({
+            where: () => ({
+              orderBy: () => ({
+                limit: vi.fn().mockResolvedValue([
+                  {
+                    email: "alice@example.com",
+                    name: "Alice Chen",
+                  },
+                  {
+                    email: "jane.doe@nascent.xyz",
+                    name: null,
+                  },
+                ]),
+              }),
+            }),
           }),
         }),
       });
@@ -71,6 +97,20 @@ describe("getWorkspaceMeetingTranscript", () => {
       accessScope: "workspace",
       audioUrl:
         "/api/meetings/11111111-1111-4111-8111-111111111111/audio",
+      speakerSuggestions: [
+        {
+          email: "alice@example.com",
+          name: "Alice Chen",
+        },
+        {
+          email: "jane.doe@nascent.xyz",
+          name: "Jane Doe",
+        },
+        {
+          email: "updated.guest@nascent.xyz",
+          name: "Updated Guest",
+        },
+      ],
       transcriptJobStatus: "running",
     });
   });
@@ -81,20 +121,23 @@ describe("getWorkspaceMeetingTranscript", () => {
       .mockReturnValueOnce({
         from: () => ({
           leftJoin: () => ({
-            where: () => ({
-              orderBy: () => ({
-                limit: vi.fn().mockResolvedValue([
-                  {
-                    id: "11111111-1111-4111-8111-111111111111",
-                    teamId: "team_other",
-                    title: "Partner sync",
-                    platform: "google_meet",
-                    status: "ready",
-                    transcriptJobStatus: null,
-                    audioObjectKey: "audio.mp3",
-                    recallRecordingId: "recording_123",
-                  },
-                ]),
+            leftJoin: () => ({
+              where: () => ({
+                orderBy: () => ({
+                  limit: vi.fn().mockResolvedValue([
+                    {
+                      id: "11111111-1111-4111-8111-111111111111",
+                      teamId: "team_other",
+                      title: "Partner sync",
+                      platform: "google_meet",
+                      status: "ready",
+                      transcriptJobStatus: null,
+                      audioObjectKey: "audio.mp3",
+                      calendarAttendeeEmails: ["guest@partner.com"],
+                      recallRecordingId: "recording_123",
+                    },
+                  ]),
+                }),
               }),
             }),
           }),

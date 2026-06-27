@@ -3,8 +3,10 @@ import { z } from "zod";
 
 import { db } from "@/db/client";
 import {
+  calendarEvents,
   mediaAssets,
   meetingAccess,
+  meetingAttendees,
   meetings,
   teamMemberships,
   transcriptJobs,
@@ -12,7 +14,10 @@ import {
   users,
 } from "@/db/schema";
 import type { MeetingListItem } from "@/components/meeting-list";
-import type { TranscriptSegment } from "@/components/transcript-viewer";
+import type {
+  SpeakerSuggestion,
+  TranscriptSegment,
+} from "@/components/transcript-viewer";
 import type { SessionUser } from "@/lib/auth";
 import {
   getDashboardWorkflowSummary,
@@ -34,6 +39,7 @@ export type MeetingTranscript = {
   transcriptJobStatus: TranscriptJobStatus | null;
   audioUrl: string | null;
   segments: TranscriptSegment[];
+  speakerSuggestions: SpeakerSuggestion[];
   accessScope: "workspace" | "shared";
 };
 
@@ -179,6 +185,7 @@ export async function getMeetingTranscriptForWorkspace(
         limit 1
       )`,
       audioObjectKey: mediaAssets.objectKey,
+      calendarAttendeeEmails: calendarEvents.attendeeEmails,
       recallRecordingId: meetings.recallRecordingId,
     })
     .from(meetings)
@@ -186,6 +193,7 @@ export async function getMeetingTranscriptForWorkspace(
       mediaAssets,
       and(eq(mediaAssets.meetingId, meetings.id), eq(mediaAssets.type, "audio")),
     )
+    .leftJoin(calendarEvents, eq(calendarEvents.id, meetings.calendarEventId))
     .where(
       and(
         eq(meetings.id, parsedMeetingId.data),
@@ -219,6 +227,13 @@ export async function getMeetingTranscriptForWorkspace(
     .from(transcriptSegments)
     .where(eq(transcriptSegments.meetingId, meeting.id))
     .orderBy(asc(transcriptSegments.startMs));
+  const speakerSuggestions =
+    meeting.teamId === workspace.teamId
+      ? await listMeetingSpeakerSuggestions(
+          meeting.id,
+          meeting.calendarAttendeeEmails,
+        )
+      : [];
 
   return {
     id: meeting.id,
@@ -232,8 +247,61 @@ export async function getMeetingTranscriptForWorkspace(
         ? `/api/meetings/${meeting.id}/audio`
         : null,
     segments,
+    speakerSuggestions,
     accessScope: meeting.teamId === workspace.teamId ? "workspace" : "shared",
   };
+}
+
+async function listMeetingSpeakerSuggestions(
+  meetingId: string,
+  calendarAttendeeEmails: unknown,
+): Promise<SpeakerSuggestion[]> {
+  const rows = await db
+    .select({
+      email: meetingAttendees.email,
+      name: users.name,
+    })
+    .from(meetingAttendees)
+    .leftJoin(users, eq(users.email, meetingAttendees.email))
+    .where(eq(meetingAttendees.meetingId, meetingId))
+    .orderBy(asc(meetingAttendees.email))
+    .limit(100);
+  const attendeeEmails = new Set(
+    Array.isArray(calendarAttendeeEmails)
+      ? calendarAttendeeEmails.filter(
+          (email): email is string =>
+            typeof email === "string" && email.trim().length > 0,
+        )
+      : [],
+  );
+
+  for (const row of rows) {
+    attendeeEmails.add(row.email);
+  }
+
+  const namesByEmail = new Map(
+    rows.map((row) => [row.email, row.name?.trim() || null]),
+  );
+
+  return Array.from(attendeeEmails)
+    .sort()
+    .map((email) => ({
+      email,
+      name: namesByEmail.get(email) || formatNameFromEmail(email),
+    }));
+}
+
+function formatNameFromEmail(email: string) {
+  const localPart = email.split("@")[0] ?? email;
+  const words = localPart.split(/[._-]+/).filter(Boolean);
+
+  if (words.length === 0) {
+    return email;
+  }
+
+  return words
+    .map((word) => `${word.charAt(0).toUpperCase()}${word.slice(1)}`)
+    .join(" ");
 }
 
 export async function listWorkspaceShareRecipients(

@@ -81,6 +81,8 @@ describe("PATCH /api/meetings/[meetingId]/speakers", () => {
 
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toEqual({
+      applyTo: "matching_speaker",
+      segmentId: null,
       updated: true,
       speaker: "Alice",
     });
@@ -88,6 +90,54 @@ describe("PATCH /api/meetings/[meetingId]/speakers", () => {
       speaker: "Alice",
       updatedAt: expect.any(Date),
     });
+  });
+
+  it("can rename only one transcript line for shared microphone corrections", async () => {
+    getCurrentUser.mockResolvedValue({
+      id: "user_123",
+      email: "user@example.com",
+      name: null,
+    });
+    getWorkspace.mockResolvedValue({ teamId: "team_123" });
+    limit.mockResolvedValue([{ id: "11111111-1111-4111-8111-111111111111" }]);
+    set.mockReturnValue({ where });
+    where.mockResolvedValue(undefined);
+
+    const response = await patchSpeakerLabel({
+      applyTo: "segment",
+      currentSpeaker: "Speaker 1",
+      segmentId: "22222222-2222-4222-8222-222222222222",
+      speaker: "Dan",
+    });
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({
+      applyTo: "segment",
+      segmentId: "22222222-2222-4222-8222-222222222222",
+      updated: true,
+      speaker: "Dan",
+    });
+    expect(set).toHaveBeenCalledWith({
+      speaker: "Dan",
+      updatedAt: expect.any(Date),
+    });
+  });
+
+  it("rejects segment scoped updates without a segment id", async () => {
+    getCurrentUser.mockResolvedValue({
+      id: "user_123",
+      email: "user@example.com",
+      name: null,
+    });
+
+    const response = await patchSpeakerLabel({
+      applyTo: "segment",
+      currentSpeaker: "Speaker 1",
+      speaker: "Dan",
+    });
+
+    expect(response.status).toBe(400);
+    expect(set).not.toHaveBeenCalled();
   });
 
   it("rejects blank replacement labels", async () => {

@@ -32,6 +32,20 @@ export type TranscriptSegment = {
   text: string;
 };
 
+export type SpeakerSuggestion = {
+  email: string;
+  name: string;
+};
+
+type EditingSpeaker = {
+  allowSegmentScope: boolean;
+  currentSpeaker: string | null;
+  segmentId: string;
+  speakerKey: string;
+};
+
+type SpeakerApplyScope = "matching_speaker" | "segment";
+
 const WAVEFORM_DESKTOP_BAR_COUNT = 120;
 const WAVEFORM_MOBILE_BAR_COUNT = 56;
 const WAVEFORM_MOBILE_QUERY = "(max-width: 640px)";
@@ -48,6 +62,7 @@ type TranscriptViewerProps = {
   audioUrl?: string | null;
   meetingId?: string | null;
   segments: TranscriptSegment[];
+  speakerSuggestions?: SpeakerSuggestion[];
 };
 
 function formatTimestamp(startMs: number) {
@@ -62,12 +77,15 @@ export function TranscriptViewer({
   audioUrl,
   meetingId,
   segments: initialSegments,
+  speakerSuggestions = [],
 }: TranscriptViewerProps) {
   const [segments, setSegments] = useState(initialSegments);
-  const [editingSpeakerKey, setEditingSpeakerKey] = useState<string | null>(
+  const [editingSpeaker, setEditingSpeaker] = useState<EditingSpeaker | null>(
     null,
   );
   const [draftSpeaker, setDraftSpeaker] = useState("");
+  const [speakerApplyScope, setSpeakerApplyScope] =
+    useState<SpeakerApplyScope>("matching_speaker");
   const [savingSpeakerKey, setSavingSpeakerKey] = useState<string | null>(null);
   const [errorSpeakerKey, setErrorSpeakerKey] = useState<string | null>(null);
   const audioRef = useRef<HTMLAudioElement>(null);
@@ -120,23 +138,37 @@ export function TranscriptViewer({
       .sort((left, right) => right.totalMs - left.totalMs);
   }, [segments]);
 
-  function startEditing(speaker: string | null) {
-    setEditingSpeakerKey(getSpeakerKey(speaker));
+  function startEditing(speaker: string | null, segmentId?: string) {
+    const speakerKey = getSpeakerKey(speaker);
+    const targetSegmentId =
+      segmentId ??
+      segments.find((segment) => getSpeakerKey(segment.speaker) === speakerKey)
+        ?.id;
+
+    if (!targetSegmentId) {
+      return;
+    }
+
+    setEditingSpeaker({
+      allowSegmentScope: Boolean(segmentId),
+      currentSpeaker: speaker,
+      segmentId: targetSegmentId,
+      speakerKey,
+    });
     setDraftSpeaker(speaker ?? "");
+    setSpeakerApplyScope("matching_speaker");
     setErrorSpeakerKey(null);
   }
 
-  async function saveSpeaker(
-    event: FormEvent<HTMLFormElement>,
-    currentSpeaker: string | null,
-  ) {
+  async function saveSpeaker(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const speaker = draftSpeaker.trim();
-    const speakerKey = getSpeakerKey(currentSpeaker);
 
-    if (!meetingId) {
+    if (!meetingId || !editingSpeaker) {
       return;
     }
+
+    const speakerKey = editingSpeaker.speakerKey;
 
     if (!speaker) {
       setErrorSpeakerKey(speakerKey);
@@ -154,7 +186,9 @@ export function TranscriptViewer({
           "content-type": "application/json",
         },
         body: JSON.stringify({
-          currentSpeaker,
+          applyTo: speakerApplyScope,
+          currentSpeaker: editingSpeaker.currentSpeaker,
+          segmentId: editingSpeaker.segmentId,
           speaker,
         }),
       },
@@ -169,12 +203,16 @@ export function TranscriptViewer({
 
     setSegments((currentSegments) =>
       currentSegments.map((segment) =>
-        getSpeakerKey(segment.speaker) === speakerKey
+        speakerApplyScope === "segment"
+          ? segment.id === editingSpeaker.segmentId
+            ? { ...segment, speaker }
+            : segment
+          : getSpeakerKey(segment.speaker) === speakerKey
           ? { ...segment, speaker }
           : segment,
       ),
     );
-    setEditingSpeakerKey(null);
+    setEditingSpeaker(null);
   }
 
   async function seekTo(startMs: number) {
@@ -244,7 +282,7 @@ export function TranscriptViewer({
             <ol className="border-t">
               {segments.map((segment) => {
                 const speakerKey = getSpeakerKey(segment.speaker);
-                const isEditing = editingSpeakerKey === speakerKey;
+                const isEditing = editingSpeaker?.segmentId === segment.id;
                 const isSaving = savingSpeakerKey === speakerKey;
                 const hasError = errorSpeakerKey === speakerKey;
                 const isActive = activeSegmentId === segment.id;
@@ -269,43 +307,114 @@ export function TranscriptViewer({
                       <div className="mb-2 flex min-h-8 items-center">
                         {isEditing ? (
                           <form
-                            className="flex w-full max-w-xs items-center gap-1.5"
-                            onSubmit={(event) =>
-                              saveSpeaker(event, segment.speaker)
-                            }
+                            className="flex w-full max-w-xl flex-col gap-2"
+                            onSubmit={saveSpeaker}
                           >
-                            <Input
-                              aria-label="Speaker name"
-                              aria-invalid={hasError}
-                              onChange={(event) =>
-                                setDraftSpeaker(event.currentTarget.value)
-                              }
-                              value={draftSpeaker}
-                            />
-                            <Button
-                              aria-label="Save speaker"
-                              disabled={isSaving}
-                              size="icon"
-                              type="submit"
-                            >
-                              <Check />
-                            </Button>
-                            <Button
-                              aria-label="Cancel speaker edit"
-                              disabled={isSaving}
-                              onClick={() => setEditingSpeakerKey(null)}
-                              size="icon"
-                              type="button"
-                              variant="outline"
-                            >
-                              <X />
-                            </Button>
+                            <div className="flex min-w-0 items-center gap-1.5">
+                              <Input
+                                aria-label="Speaker name"
+                                aria-invalid={hasError}
+                                list="speaker-suggestions"
+                                onChange={(event) =>
+                                  setDraftSpeaker(event.currentTarget.value)
+                                }
+                                placeholder="Speaker name"
+                                value={draftSpeaker}
+                              />
+                              <datalist id="speaker-suggestions">
+                                {speakerSuggestions.map((suggestion) => (
+                                  <option
+                                    key={suggestion.email}
+                                    label={suggestion.email}
+                                    value={suggestion.name}
+                                  />
+                                ))}
+                              </datalist>
+                              <Button
+                                aria-label="Save speaker"
+                                disabled={isSaving}
+                                size="icon"
+                                type="submit"
+                              >
+                                <Check />
+                              </Button>
+                              <Button
+                                aria-label="Cancel speaker edit"
+                                disabled={isSaving}
+                                onClick={() => setEditingSpeaker(null)}
+                                size="icon"
+                                type="button"
+                                variant="outline"
+                              >
+                                <X />
+                              </Button>
+                            </div>
+                            {speakerSuggestions.length > 0 ? (
+                              <div
+                                aria-label="Speaker suggestions"
+                                className="flex flex-wrap gap-1.5"
+                              >
+                                {speakerSuggestions.slice(0, 8).map((suggestion) => (
+                                  <button
+                                    className="inline-flex h-7 max-w-full items-center rounded-md border px-2 text-xs font-medium text-foreground outline-none hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/50"
+                                    key={suggestion.email}
+                                    onClick={() =>
+                                      setDraftSpeaker(suggestion.name)
+                                    }
+                                    type="button"
+                                  >
+                                    <span className="truncate">
+                                      {suggestion.name}
+                                    </span>
+                                  </button>
+                                ))}
+                              </div>
+                            ) : null}
+                            {editingSpeaker?.allowSegmentScope ? (
+                              <div className="inline-flex w-fit rounded-md border bg-background p-0.5">
+                                <button
+                                  aria-pressed={
+                                    speakerApplyScope === "matching_speaker"
+                                  }
+                                  className={cn(
+                                    "h-7 rounded px-2 text-xs font-medium outline-none focus-visible:ring-3 focus-visible:ring-ring/50",
+                                    speakerApplyScope === "matching_speaker"
+                                      ? "bg-muted text-foreground"
+                                      : "text-muted-foreground hover:text-foreground",
+                                  )}
+                                  onClick={() =>
+                                    setSpeakerApplyScope("matching_speaker")
+                                  }
+                                  type="button"
+                                >
+                                  All matching
+                                </button>
+                                <button
+                                  aria-pressed={speakerApplyScope === "segment"}
+                                  className={cn(
+                                    "h-7 rounded px-2 text-xs font-medium outline-none focus-visible:ring-3 focus-visible:ring-ring/50",
+                                    speakerApplyScope === "segment"
+                                      ? "bg-muted text-foreground"
+                                      : "text-muted-foreground hover:text-foreground",
+                                  )}
+                                  onClick={() => setSpeakerApplyScope("segment")}
+                                  type="button"
+                                >
+                                  This line
+                                </button>
+                              </div>
+                            ) : null}
+                            {hasError ? (
+                              <p className="text-xs font-medium text-destructive">
+                                Add a speaker name.
+                              </p>
+                            ) : null}
                           </form>
                         ) : canEditSpeakers ? (
                           <button
                             aria-label={`Edit speaker ${segment.speaker ?? "Unknown speaker"}`}
                             className="group inline-flex min-h-8 items-center gap-2 rounded-lg px-0 text-left text-sm font-semibold text-foreground outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
-                            onClick={() => startEditing(segment.speaker)}
+                            onClick={() => startEditing(segment.speaker, segment.id)}
                             type="button"
                           >
                             <span>
