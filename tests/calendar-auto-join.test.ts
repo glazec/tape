@@ -135,16 +135,16 @@ describe("calendar auto join", () => {
           teamId: "22222222-2222-4222-8222-222222222222",
           userId: "55555555-5555-4555-8555-555555555555",
           autoJoinEnabled: true,
+          workspaceDomain: "iosg.vc",
         },
         event: {
           externalEventId: "google_event_123",
-          title: "Partner sync",
+          title: "Google Meet",
           startsAt: "2026-06-30T12:00:00.000Z",
           endsAt: null,
           attendeeEmails: [
-            " Alice@Example.com ",
-            "alice@example.com",
-            "guest@vendor.com",
+            "founder@nascent.xyz",
+            "alice@iosg.vc",
           ],
           location: null,
           conferenceData: {
@@ -170,6 +170,7 @@ describe("calendar auto join", () => {
       expect.objectContaining({
         connectionId: "11111111-1111-4111-8111-111111111111",
         externalEventId: "google_event_123",
+        location: null,
         meetingUrl: "https://meet.google.com/abc-defg-hij",
         teamId: "22222222-2222-4222-8222-222222222222",
       }),
@@ -182,16 +183,16 @@ describe("calendar auto join", () => {
         platform: "google_meet",
         status: "scheduled",
         teamId: "22222222-2222-4222-8222-222222222222",
-        title: "Partner sync",
+        title: "IOSG <> Nascent",
       }),
     );
     expect(attendeeValues).toHaveBeenCalledWith([
       {
-        email: "alice@example.com",
+        email: "founder@nascent.xyz",
         meetingId: "44444444-4444-4444-8444-444444444444",
       },
       {
-        email: "guest@vendor.com",
+        email: "alice@iosg.vc",
         meetingId: "44444444-4444-4444-8444-444444444444",
       },
     ]);
@@ -208,6 +209,84 @@ describe("calendar auto join", () => {
     expect(updateSet).toHaveBeenCalledWith(
       expect.objectContaining({
         recallBotId: "bot_123",
+      }),
+    );
+  });
+
+  it("creates an in person meeting reminder when a calendar event has a location and no meeting link", async () => {
+    const calendarEventReturning = vi
+      .fn()
+      .mockResolvedValue([{ id: "33333333-3333-4333-8333-333333333333" }]);
+    const calendarEventOnConflictDoUpdate = vi
+      .fn()
+      .mockReturnValue({ returning: calendarEventReturning });
+    const calendarEventValues = vi
+      .fn()
+      .mockReturnValue({ onConflictDoUpdate: calendarEventOnConflictDoUpdate });
+
+    const meetingReturning = vi
+      .fn()
+      .mockResolvedValue([{ id: "44444444-4444-4444-8444-444444444444" }]);
+    const meetingValues = vi.fn().mockReturnValue({ returning: meetingReturning });
+
+    const reminderOnConflictDoUpdate = vi.fn().mockResolvedValue(undefined);
+    const reminderValues = vi
+      .fn()
+      .mockReturnValue({ onConflictDoUpdate: reminderOnConflictDoUpdate });
+
+    const existingLimit = vi.fn().mockResolvedValue([]);
+
+    insert
+      .mockReturnValueOnce({ values: calendarEventValues })
+      .mockReturnValueOnce({ values: meetingValues })
+      .mockReturnValueOnce({ values: reminderValues });
+    select.mockReturnValue({
+      from: () => ({
+        where: () => ({
+          limit: existingLimit,
+        }),
+      }),
+    });
+
+    const { autoJoinCalendarEvent } = await import("@/lib/calendar-auto-join");
+
+    await expect(
+      autoJoinCalendarEvent({
+        connection: {
+          id: "11111111-1111-4111-8111-111111111111",
+          teamId: "22222222-2222-4222-8222-222222222222",
+          userId: "55555555-5555-4555-8555-555555555555",
+          autoJoinEnabled: true,
+        },
+        event: {
+          externalEventId: "google_event_123",
+          title: "Office visit",
+          startsAt: "2026-06-30T12:00:00.000Z",
+          endsAt: null,
+          attendeeEmails: ["founder@nascent.xyz"],
+          location: "IOSG 12F",
+        },
+      }),
+    ).resolves.toEqual({
+      action: "scheduled",
+      calendarEventId: "33333333-3333-4333-8333-333333333333",
+      meetingId: "44444444-4444-4444-8444-444444444444",
+      platform: "in_person",
+      reminderScheduledFor: "2026-06-30T11:58:00.000Z",
+    });
+
+    expect(meetingValues).toHaveBeenCalledWith(
+      expect.objectContaining({
+        platform: "in_person",
+        status: "scheduled",
+        title: "Office visit",
+      }),
+    );
+    expect(reminderValues).toHaveBeenCalledWith(
+      expect.objectContaining({
+        meetingId: "44444444-4444-4444-8444-444444444444",
+        userId: "55555555-5555-4555-8555-555555555555",
+        status: "pending",
       }),
     );
   });

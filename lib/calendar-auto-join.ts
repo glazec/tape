@@ -1,13 +1,19 @@
 import { and, eq, isNotNull, ne, or, sql } from "drizzle-orm";
 
 import { db } from "@/db/client";
-import { calendarEvents, meetingAttendees, meetings } from "@/db/schema";
+import {
+  calendarEvents,
+  meetingAttendees,
+  meetingReminders,
+  meetings,
+} from "@/db/schema";
 import { normalizeEmail } from "@/lib/access";
 import {
   buildAppUrl,
   detectMeetingPlatform,
   type SupportedMeetingPlatform,
 } from "@/lib/meeting-links";
+import { buildSmartMeetingTitle } from "@/lib/meeting-intelligence";
 import {
   DEFAULT_RECALL_BOT_NAME,
   deleteRecallCalendarEventBot,
@@ -22,6 +28,7 @@ type CalendarConnection = {
   teamId: string;
   userId: string;
   autoJoinEnabled: boolean;
+  workspaceDomain?: string | null;
 };
 
 type CalendarEventEntryPoint = {
@@ -98,9 +105,15 @@ export async function autoJoinCalendarEvent(input: AutoJoinInput) {
     ? null
     : findCalendarMeetingUrl(input.event);
   const platform = meetingUrl ? detectMeetingPlatform(meetingUrl) : null;
-  const title = normalizeEventTitle(input.event, platform);
+  const title = normalizeEventTitle(
+    input.event,
+    platform,
+    input.connection.workspaceDomain,
+  );
   const startsAt = parseEventDate(input.event.startsAt);
   const endsAt = input.event.endsAt ? parseEventDate(input.event.endsAt) : null;
+  const location = input.event.location?.trim() || null;
+  const description = input.event.description?.trim() || null;
   const teamMeetingKey =
     meetingUrl && platform
       ? buildTeamMeetingKey({
@@ -108,6 +121,12 @@ export async function autoJoinCalendarEvent(input: AutoJoinInput) {
           startsAt,
           meetingUrl,
         })
+      : location
+        ? buildLocationMeetingKey({
+            teamId: input.connection.teamId,
+            startsAt,
+            location,
+          })
       : null;
   const [calendarEvent] = await db
     .insert(calendarEvents)
@@ -118,6 +137,8 @@ export async function autoJoinCalendarEvent(input: AutoJoinInput) {
       title,
       teamMeetingKey,
       meetingUrl,
+      location,
+      description,
       startsAt,
       endsAt,
       attendeeEmails: normalizeAttendeeEmails(input.event.attendeeEmails ?? []),
@@ -131,6 +152,8 @@ export async function autoJoinCalendarEvent(input: AutoJoinInput) {
           teamMeetingKey ??
           sql`coalesce(${calendarEvents.teamMeetingKey}, excluded.team_meeting_key)`,
         meetingUrl,
+        location,
+        description,
         startsAt,
         endsAt,
         attendeeEmails: normalizeAttendeeEmails(input.event.attendeeEmails ?? []),
@@ -159,6 +182,19 @@ export async function autoJoinCalendarEvent(input: AutoJoinInput) {
   });
 
   if (!meetingUrl) {
+    if (location) {
+      return syncLocationCalendarMeeting({
+        connection: input.connection,
+        calendarEvent,
+        existingMeeting,
+        title,
+        startsAt,
+        endsAt,
+        location,
+        teamMeetingKey: activeTeamMeetingKey,
+      });
+    }
+
     if (existingMeeting?.recallBotId && existingMeeting.status === "scheduled") {
       if (
         await hasOtherActiveCalendarEventForTeamMeeting({
@@ -386,6 +422,88 @@ export async function autoJoinCalendarEvent(input: AutoJoinInput) {
 
     throw error;
   }
+}
+
+async function syncLocationCalendarMeeting(input: {
+  connection: CalendarConnection;
+  calendarEvent: CalendarEventRow;
+  existingMeeting: ExistingMeeting | null;
+  title: string;
+  startsAt: Date;
+  endsAt: Date | null;
+  location: string;
+  teamMeetingKey?: string | null;
+}) {
+  let meeting = input.existingMeeting;
+
+  if (!meeting) {
+    meeting = (
+      await db
+        .insert(meetings)
+        .values({
+          teamId: input.connection.teamId,
+          ownerUserId: input.connection.userId,
+          calendarEventId: input.calendarEvent.id,
+          teamMeetingKey: input.teamMeetingKey,
+          title: input.title,
+          platform: "in_person",
+          status: "scheduled",
+          startedAt: input.startsAt,
+          endedAt: input.endsAt,
+        })
+        .returning({
+          id: meetings.id,
+          calendarEventId: meetings.calendarEventId,
+          teamMeetingKey: meetings.teamMeetingKey,
+          recallBotId: meetings.recallBotId,
+          meetingUrl: meetings.meetingUrl,
+          startedAt: meetings.startedAt,
+          status: meetings.status,
+        })
+    )[0];
+  } else {
+    await db
+      .update(meetings)
+      .set({
+        calendarEventId: input.calendarEvent.id,
+        teamMeetingKey: input.teamMeetingKey,
+        title: input.title,
+        platform: "in_person",
+        status: "scheduled",
+        meetingUrl: null,
+        startedAt: input.startsAt,
+        endedAt: input.endsAt,
+        updatedAt: new Date(),
+      })
+      .where(eq(meetings.id, meeting.id));
+  }
+
+  const reminderScheduledFor = new Date(input.startsAt.getTime() - 2 * 60 * 1000);
+
+  await db
+    .insert(meetingReminders)
+    .values({
+      meetingId: meeting.id,
+      userId: input.connection.userId,
+      scheduledFor: reminderScheduledFor,
+      status: "pending",
+    })
+    .onConflictDoUpdate({
+      target: [meetingReminders.meetingId, meetingReminders.userId],
+      set: {
+        scheduledFor: reminderScheduledFor,
+        status: "pending",
+        updatedAt: new Date(),
+      },
+    });
+
+  return {
+    action: "scheduled" as const,
+    calendarEventId: input.calendarEvent.id,
+    meetingId: meeting.id,
+    platform: "in_person" as const,
+    reminderScheduledFor: reminderScheduledFor.toISOString(),
+  };
 }
 
 async function syncExistingCalendarMeeting(input: {
@@ -688,6 +806,18 @@ function buildTeamMeetingKey(input: {
   ].join(":");
 }
 
+function buildLocationMeetingKey(input: {
+  teamId: string;
+  startsAt: Date;
+  location: string;
+}) {
+  return [
+    `team:${input.teamId}`,
+    `start:${input.startsAt.toISOString()}`,
+    `location:${input.location.toLowerCase().replace(/\s+/g, " ").trim()}`,
+  ].join(":");
+}
+
 function normalizeMeetingUrlForKey(meetingUrl: string) {
   try {
     const url = new URL(meetingUrl);
@@ -802,14 +932,21 @@ function normalizeAttendeeEmails(attendeeEmails: string[]) {
 function normalizeEventTitle(
   event: SyncedCalendarEvent,
   platform: SupportedMeetingPlatform | null,
+  workspaceDomain?: string | null,
 ) {
   const title = event.title.trim();
+  const attendeeDomains = (event.attendeeEmails ?? [])
+    .map((email) => email.split("@")[1]?.trim().toLowerCase())
+    .filter((domain): domain is string => Boolean(domain));
+  const resolvedWorkspaceDomain =
+    normalizeWorkspaceDomain(workspaceDomain) ?? attendeeDomains[0] ?? "";
 
-  if (title) {
-    return title;
-  }
-
-  return platform === "zoom" ? "Zoom recording" : "Google Meet recording";
+  return buildSmartMeetingTitle({
+    eventTitle:
+      title || (platform === "zoom" ? "Zoom recording" : "Google Meet recording"),
+    attendeeEmails: event.attendeeEmails ?? [],
+    workspaceDomain: resolvedWorkspaceDomain,
+  });
 }
 
 function parseEventDate(value: string | Date) {
@@ -820,4 +957,16 @@ function parseEventDate(value: string | Date) {
   }
 
   return date;
+}
+
+function normalizeWorkspaceDomain(value?: string | null) {
+  const normalized = value?.trim().toLowerCase();
+
+  if (!normalized) {
+    return null;
+  }
+
+  return normalized.includes("@")
+    ? (normalized.split("@")[1]?.trim() ?? null)
+    : normalized;
 }

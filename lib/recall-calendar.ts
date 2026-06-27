@@ -2,7 +2,8 @@ import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 
 import { db } from "@/db/client";
-import { calendarConnections } from "@/db/schema";
+import { calendarConnections, users } from "@/db/schema";
+import { normalizeEmailDomain } from "@/lib/access";
 import { autoJoinCalendarEvent, type SyncedCalendarEvent } from "@/lib/calendar-auto-join";
 import {
   listRecallCalendarEvents,
@@ -34,6 +35,7 @@ type RecallCalendarConnection = {
   userId: string;
   autoJoinEnabled: boolean;
   recallCalendarId?: string | null;
+  workspaceDomain?: string | null;
 };
 
 export class RecallCalendarConnectionError extends Error {
@@ -132,6 +134,7 @@ export async function syncRecallCalendarEventsForWorkspace(input: {
     teamId: connection.teamId,
     userId: connection.userId,
     autoJoinEnabled: input.autoJoinEnabled,
+    workspaceDomain: input.workspace.domain,
   };
   const events = await listRecallCalendarEvents({
     calendarId: connection.recallCalendarId,
@@ -197,14 +200,25 @@ async function findConnectionByRecallCalendarId(calendarId: string) {
       id: calendarConnections.id,
       teamId: calendarConnections.teamId,
       userId: calendarConnections.userId,
+      userEmail: users.email,
       autoJoinEnabled: calendarConnections.autoJoinEnabled,
       recallCalendarId: calendarConnections.recallCalendarId,
     })
     .from(calendarConnections)
+    .innerJoin(users, eq(users.id, calendarConnections.userId))
     .where(eq(calendarConnections.recallCalendarId, calendarId))
     .limit(1);
 
-  return (connection ?? null) as RecallCalendarConnection | null;
+  return connection
+    ? {
+        id: connection.id,
+        teamId: connection.teamId,
+        userId: connection.userId,
+        autoJoinEnabled: connection.autoJoinEnabled,
+        recallCalendarId: connection.recallCalendarId,
+        workspaceDomain: normalizeEmailDomain(connection.userEmail),
+      }
+    : null;
 }
 
 async function findConnectionByWorkspace(workspace: WorkspaceContext) {

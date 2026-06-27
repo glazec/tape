@@ -31,4 +31,55 @@ describe("TranscriptViewer", () => {
 
     expect(html).toContain("Edit speaker");
   });
+
+  it("shows Chinese translation first while keeping original text available", () => {
+    const html = renderToStaticMarkup(
+      <TranscriptViewer
+        segments={[
+          {
+            ...segments[0],
+            translatedText: "大家好",
+          },
+        ]}
+      />,
+    );
+
+    expect(html).toContain("中文");
+    expect(html).toContain("大家好");
+    expect(html).toContain("Original sentence");
+    expect(html).toContain("Hello team");
+  });
+
+  it("shows translation correction controls for workspace meetings", () => {
+    const html = renderToStaticMarkup(
+      <TranscriptViewer
+        meetingId="11111111-1111-4111-8111-111111111111"
+        segments={[
+          {
+            ...segments[0],
+            translatedText: "大家好",
+          },
+        ]}
+      />,
+    );
+
+    expect(html).toContain("Edit translation");
+  });
+
+  it("shows emotion labels without exposing model details", () => {
+    const html = renderToStaticMarkup(
+      <TranscriptViewer
+        segments={[
+          {
+            ...segments[0],
+            emotionLabel: "hard",
+            emotionReason: "High pressure words or fast pace",
+          },
+        ]}
+      />,
+    );
+
+    expect(html).toContain("Hard");
+    expect(html).not.toContain("High pressure words or fast pace");
+  });
 });

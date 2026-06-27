@@ -1,6 +1,7 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 
+import { OneSignalLogin } from "@/components/onesignal-login";
 import { SignOutButton } from "@/components/sign-out-button";
 import { buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -9,6 +10,7 @@ type AppShellProps = {
   children: ReactNode;
   activeHref?: string;
   canCreateMeetings?: boolean;
+  oneSignalExternalId?: string;
 };
 
 const navItems = [
@@ -21,6 +23,7 @@ export function AppShell({
   children,
   activeHref,
   canCreateMeetings = true,
+  oneSignalExternalId,
 }: AppShellProps) {
   const visibleNavItems = canCreateMeetings
     ? navItems
@@ -64,6 +67,9 @@ export function AppShell({
       <main className="mx-auto w-full max-w-6xl px-4 py-8 sm:px-6 sm:py-10">
         {children}
       </main>
+      {oneSignalExternalId ? (
+        <OneSignalLogin externalId={oneSignalExternalId} />
+      ) : null}
     </div>
   );
 }

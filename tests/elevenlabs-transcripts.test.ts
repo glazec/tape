@@ -23,10 +23,13 @@ describe("buildElevenLabsTranscriptPersistence", () => {
       }),
     ).toEqual({
       action: "complete",
+      entities: [],
       meetingId: "11111111-1111-4111-8111-111111111111",
       providerJobId: "req_123",
       segments: [
         {
+          emotionLabel: "neutral",
+          emotionReason: "No strong signal",
           speaker: null,
           startMs: 0,
           endMs: null,
@@ -77,18 +80,61 @@ describe("buildElevenLabsTranscriptPersistence", () => {
       }),
     ).toMatchObject({
       action: "complete",
+      entities: [],
       segments: [
         {
+          emotionLabel: "neutral",
+          emotionReason: "No strong signal",
           speaker: "Speaker 1",
           startMs: 1000,
           endMs: 2000,
           text: "Hello there.",
         },
         {
+          emotionLabel: "neutral",
+          emotionReason: "No strong signal",
           speaker: "Speaker 2",
           startMs: 3000,
           endMs: 3400,
           text: "Yes.",
+        },
+      ],
+    });
+  });
+
+  it("extracts meeting entities and segment emotion during persistence planning", () => {
+    expect(
+      buildElevenLabsTranscriptPersistence({
+        eventType: "speech_to_text_transcription",
+        type: "speech_to_text_transcription",
+        requestId: "req_123",
+        transcriptId: null,
+        status: "completed",
+        transcriptionText: "Nascent asked about Solana deadline risk.",
+        metadata: {
+          meetingId: "11111111-1111-4111-8111-111111111111",
+          transcriptJobId: "22222222-2222-4222-8222-222222222222",
+        },
+      }),
+    ).toMatchObject({
+      action: "complete",
+      entities: [
+        {
+          type: "organization",
+          value: "Nascent",
+          normalizedValue: "nascent",
+        },
+        {
+          type: "product",
+          value: "Solana",
+          normalizedValue: "solana",
+        },
+      ],
+      segments: [
+        {
+          emotionLabel: "hard",
+          emotionReason: "High pressure words or fast pace",
+          text: "Nascent asked about Solana deadline risk.",
         },
       ],
     });

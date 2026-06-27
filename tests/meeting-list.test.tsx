@@ -33,4 +33,31 @@ describe("MeetingList", () => {
     expect(html).toContain("No transcripts have been shared with you yet");
     expect(html).not.toContain("No meetings found");
   });
+
+  it("shows related meetings as a compact tree under the main meeting", () => {
+    const html = renderToStaticMarkup(
+      <MeetingList
+        meetings={[
+          {
+            id: "22222222-2222-4222-8222-222222222222",
+            title: "Nascent follow up",
+            platform: "google_meet",
+            startedAt: "2026-06-27T12:00:00.000Z",
+            status: "ready",
+            relatedMeetings: [
+              {
+                id: "11111111-1111-4111-8111-111111111111",
+                title: "Nascent intro",
+                startedAt: "2026-06-20T12:00:00.000Z",
+              },
+            ],
+          },
+        ]}
+      />,
+    );
+
+    expect(html).toContain("Nascent follow up");
+    expect(html).toContain("Nascent intro");
+    expect(html).toContain("Related");
+  });
 });

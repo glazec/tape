@@ -30,6 +30,9 @@ export type TranscriptSegment = {
   startMs: number;
   endMs: number | null;
   text: string;
+  translatedText?: string | null;
+  emotionLabel?: "hard" | "chill" | "neutral" | null;
+  emotionReason?: string | null;
 };
 
 export type SpeakerSuggestion = {
@@ -88,12 +91,23 @@ export function TranscriptViewer({
     useState<SpeakerApplyScope>("matching_speaker");
   const [savingSpeakerKey, setSavingSpeakerKey] = useState<string | null>(null);
   const [errorSpeakerKey, setErrorSpeakerKey] = useState<string | null>(null);
+  const [editingTranslationId, setEditingTranslationId] = useState<string | null>(
+    null,
+  );
+  const [draftTranslation, setDraftTranslation] = useState("");
   const audioRef = useRef<HTMLAudioElement>(null);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
   const [playbackRate, setPlaybackRate] = useState(1);
   const canEditSpeakers = Boolean(meetingId);
+  const hasTranslations = useMemo(
+    () => segments.some((segment) => Boolean(segment.translatedText?.trim())),
+    [segments],
+  );
+  const [textVersion, setTextVersion] = useState<"zh" | "original">(
+    hasTranslations ? "zh" : "original",
+  );
   const activeSegmentId = useMemo(() => {
     const currentMs = currentTime * 1000;
 
@@ -215,6 +229,38 @@ export function TranscriptViewer({
     setEditingSpeaker(null);
   }
 
+  async function saveTranslation(segmentId: string) {
+    const translatedText = draftTranslation.trim();
+
+    if (!meetingId || !translatedText) {
+      return;
+    }
+
+    const response = await fetch(
+      `/api/meetings/${encodeURIComponent(meetingId)}/segments/${encodeURIComponent(segmentId)}/translation`,
+      {
+        method: "PATCH",
+        headers: {
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({ translatedText }),
+      },
+    );
+
+    if (!response.ok) {
+      return;
+    }
+
+    setSegments((currentSegments) =>
+      currentSegments.map((segment) =>
+        segment.id === segmentId
+          ? { ...segment, translatedText }
+          : segment,
+      ),
+    );
+    setEditingTranslationId(null);
+  }
+
   async function seekTo(startMs: number) {
     const audio = audioRef.current;
 
@@ -237,7 +283,39 @@ export function TranscriptViewer({
     <>
       <section className={audioUrl ? "pb-44" : undefined}>
         <header className="mb-5">
-          <h2 className="text-lg font-semibold">Transcript</h2>
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <h2 className="text-lg font-semibold">Transcript</h2>
+            {hasTranslations ? (
+              <div className="inline-flex w-fit rounded-md border bg-background p-0.5">
+                <button
+                  aria-pressed={textVersion === "zh"}
+                  className={cn(
+                    "h-7 rounded px-2 text-xs font-medium outline-none focus-visible:ring-3 focus-visible:ring-ring/50",
+                    textVersion === "zh"
+                      ? "bg-muted text-foreground"
+                      : "text-muted-foreground hover:text-foreground",
+                  )}
+                  onClick={() => setTextVersion("zh")}
+                  type="button"
+                >
+                  中文
+                </button>
+                <button
+                  aria-pressed={textVersion === "original"}
+                  className={cn(
+                    "h-7 rounded px-2 text-xs font-medium outline-none focus-visible:ring-3 focus-visible:ring-ring/50",
+                    textVersion === "original"
+                      ? "bg-muted text-foreground"
+                      : "text-muted-foreground hover:text-foreground",
+                  )}
+                  onClick={() => setTextVersion("original")}
+                  type="button"
+                >
+                  Original
+                </button>
+              </div>
+            ) : null}
+          </div>
         </header>
 
         {segments.length === 0 ? (
@@ -286,6 +364,14 @@ export function TranscriptViewer({
                 const isSaving = savingSpeakerKey === speakerKey;
                 const hasError = errorSpeakerKey === speakerKey;
                 const isActive = activeSegmentId === segment.id;
+                const translatedText = segment.translatedText?.trim();
+                const shouldShowTranslation =
+                  textVersion === "zh" && Boolean(translatedText);
+                const displayedText = shouldShowTranslation
+                  ? translatedText
+                  : segment.text;
+                const isEditingTranslation =
+                  editingTranslationId === segment.id;
 
                 return (
                   <li
@@ -427,10 +513,69 @@ export function TranscriptViewer({
                             {segment.speaker ?? "Unknown speaker"}
                           </p>
                         )}
+                        {segment.emotionLabel &&
+                        segment.emotionLabel !== "neutral" ? (
+                          <span className="ml-2 inline-flex h-6 items-center rounded-md border px-2 text-xs font-medium text-muted-foreground">
+                            {formatEmotionLabel(segment.emotionLabel)}
+                          </span>
+                        ) : null}
                       </div>
                       <p className="text-[0.95rem] leading-7 text-foreground">
-                        {segment.text}
+                        {displayedText}
                       </p>
+                      {canEditSpeakers && shouldShowTranslation ? (
+                        <div className="mt-2">
+                          {isEditingTranslation ? (
+                            <div className="flex max-w-xl flex-col gap-2">
+                              <textarea
+                                aria-label="Chinese translation"
+                                className="min-h-24 rounded-md border bg-background p-2 text-sm outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+                                onChange={(event) =>
+                                  setDraftTranslation(event.currentTarget.value)
+                                }
+                                value={draftTranslation}
+                              />
+                              <div className="flex gap-2">
+                                <Button
+                                  onClick={() => saveTranslation(segment.id)}
+                                  size="sm"
+                                  type="button"
+                                >
+                                  Save
+                                </Button>
+                                <Button
+                                  onClick={() => setEditingTranslationId(null)}
+                                  size="sm"
+                                  type="button"
+                                  variant="outline"
+                                >
+                                  Cancel
+                                </Button>
+                              </div>
+                            </div>
+                          ) : (
+                            <Button
+                              onClick={() => {
+                                setEditingTranslationId(segment.id);
+                                setDraftTranslation(translatedText ?? "");
+                              }}
+                              size="sm"
+                              type="button"
+                              variant="ghost"
+                            >
+                              Edit translation
+                            </Button>
+                          )}
+                        </div>
+                      ) : null}
+                      {shouldShowTranslation ? (
+                        <details className="mt-2 text-sm text-muted-foreground">
+                          <summary className="cursor-pointer font-medium text-foreground">
+                            Original sentence
+                          </summary>
+                          <p className="mt-2 leading-6">{segment.text}</p>
+                        </details>
+                      ) : null}
                     </div>
                   </li>
                 );
@@ -714,7 +859,10 @@ function TranscriptAudioPlayer({
                 className="absolute inset-y-0"
                 key={`${section.id}-rail`}
                 style={{
-                  backgroundColor: getWaveformSectionColor(section.speaker),
+                  backgroundColor: getWaveformSectionColor(
+                    section.speaker,
+                    section.emotionLabel,
+                  ),
                   left: `${section.left}%`,
                   opacity: section.id === activeSegmentId ? 0.95 : 0.55,
                   width: `${section.width}%`,
@@ -934,6 +1082,7 @@ function buildWaveformSections(
       );
 
       return {
+        emotionLabel: segment.emotionLabel,
         id: segment.id,
         left,
         speaker: segment.speaker,
@@ -943,7 +1092,18 @@ function buildWaveformSections(
     .filter((section) => section.width > 0);
 }
 
-function getWaveformSectionColor(speaker: string | null) {
+function getWaveformSectionColor(
+  speaker: string | null,
+  emotionLabel?: TranscriptSegment["emotionLabel"],
+) {
+  if (emotionLabel === "hard") {
+    return "#dc2626";
+  }
+
+  if (emotionLabel === "chill") {
+    return "#059669";
+  }
+
   const speakerKey = getSpeakerKey(speaker);
   let hash = 0;
 
@@ -952,6 +1112,10 @@ function getWaveformSectionColor(speaker: string | null) {
   }
 
   return WAVEFORM_SECTION_COLORS[hash % WAVEFORM_SECTION_COLORS.length];
+}
+
+function formatEmotionLabel(label: NonNullable<TranscriptSegment["emotionLabel"]>) {
+  return label.charAt(0).toUpperCase() + label.slice(1);
 }
 
 function getSegmentTimelineDuration(segments: TranscriptSegment[]) {

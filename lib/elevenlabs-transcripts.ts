@@ -1,12 +1,25 @@
 import { eq } from "drizzle-orm";
 
 import { db } from "@/db/client";
-import { meetings, transcriptJobs, transcriptSegments } from "@/db/schema";
+import {
+  meetingEntities,
+  meetings,
+  transcriptJobs,
+  transcriptSegments,
+} from "@/db/schema";
+import {
+  classifySegmentEmotion,
+  extractMeetingEntities,
+  type ExtractedMeetingEntity,
+  type SegmentEmotion,
+} from "@/lib/meeting-intelligence";
 import type { normalizeElevenLabsWebhook } from "@/lib/vendors/elevenlabs";
 
 type ElevenLabsTranscriptEvent = ReturnType<typeof normalizeElevenLabsWebhook>;
 
 type TranscriptSegmentInput = {
+  emotionLabel?: SegmentEmotion["label"];
+  emotionReason?: string;
   speaker: string | null;
   startMs: number;
   endMs: number | null;
@@ -17,6 +30,7 @@ type CompleteTranscriptPersistence = {
   action: "complete";
   meetingId: string;
   providerJobId?: string;
+  entities: ExtractedMeetingEntity[];
   segments: TranscriptSegmentInput[];
   text: string;
   transcriptJobId: string;
@@ -84,6 +98,9 @@ export function buildElevenLabsTranscriptPersistence(
 
   return {
     action: "complete",
+    entities: extractEntitiesFromSegments(
+      segments.length > 0 ? segments : buildSingleSegment(text),
+    ),
     meetingId,
     providerJobId,
     segments: segments.length > 0 ? segments : buildSingleSegment(text),
@@ -123,6 +140,10 @@ export async function applyElevenLabsTranscriptEvent(
   }
 
   await db
+    .delete(meetingEntities)
+    .where(eq(meetingEntities.meetingId, persistence.meetingId));
+
+  await db
     .delete(transcriptSegments)
     .where(eq(transcriptSegments.jobId, persistence.transcriptJobId));
 
@@ -134,8 +155,30 @@ export async function applyElevenLabsTranscriptEvent(
       startMs: segment.startMs,
       endMs: segment.endMs,
       text: segment.text,
+      emotionLabel: segment.emotionLabel,
+      emotionReason: segment.emotionReason,
     })),
   );
+
+  if (persistence.entities.length > 0) {
+    await db
+      .insert(meetingEntities)
+      .values(
+        persistence.entities.map((entity) => ({
+          meetingId: persistence.meetingId,
+          type: entity.type,
+          value: entity.value,
+          normalizedValue: entity.normalizedValue,
+        })),
+      )
+      .onConflictDoNothing({
+        target: [
+          meetingEntities.meetingId,
+          meetingEntities.type,
+          meetingEntities.normalizedValue,
+        ],
+      });
+  }
 
   await db
     .update(meetings)
@@ -171,8 +214,16 @@ function isFailedStatus(status: string | null) {
 }
 
 function buildSingleSegment(text: string): TranscriptSegmentInput[] {
+  const emotion = classifySegmentEmotion({
+    text,
+    startMs: 0,
+    endMs: null,
+  });
+
   return [
     {
+      emotionLabel: emotion.label,
+      emotionReason: emotion.reason,
       speaker: null,
       startMs: 0,
       endMs: null,
@@ -250,10 +301,27 @@ function pushSegment(
     return;
   }
 
+  const emotion = classifySegmentEmotion({
+    text,
+    startMs: segment.startMs,
+    endMs: segment.endMs,
+  });
+
   segments.push({
     ...segment,
+    emotionLabel: emotion.label,
+    emotionReason: emotion.reason,
     text,
   });
+}
+
+function extractEntitiesFromSegments(segments: TranscriptSegmentInput[]) {
+  return extractMeetingEntities(
+    segments.map((segment, index) => ({
+      id: `segment_${index}`,
+      text: segment.text,
+    })),
+  );
 }
 
 function formatSpeaker(speakerId: string | null) {

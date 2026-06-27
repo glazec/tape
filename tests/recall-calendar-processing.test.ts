@@ -35,15 +35,18 @@ describe("processRecallCalendarWebhook", () => {
   it("syncs changed Recall calendar events into the existing auto join worker", async () => {
     select.mockReturnValue({
       from: () => ({
-        where: () => ({
-          limit: vi.fn().mockResolvedValue([
-            {
-              id: "33333333-3333-4333-8333-333333333333",
-              teamId: "22222222-2222-4222-8222-222222222222",
-              userId: "11111111-1111-4111-8111-111111111111",
-              autoJoinEnabled: true,
-            },
-          ]),
+        innerJoin: () => ({
+          where: () => ({
+            limit: vi.fn().mockResolvedValue([
+              {
+                id: "33333333-3333-4333-8333-333333333333",
+                teamId: "22222222-2222-4222-8222-222222222222",
+                userId: "11111111-1111-4111-8111-111111111111",
+                userEmail: "yiping@iosg.vc",
+                autoJoinEnabled: true,
+              },
+            ]),
+          }),
         }),
       }),
     });
@@ -96,6 +99,7 @@ describe("processRecallCalendarWebhook", () => {
         teamId: "22222222-2222-4222-8222-222222222222",
         userId: "11111111-1111-4111-8111-111111111111",
         autoJoinEnabled: true,
+        workspaceDomain: "iosg.vc",
       },
       event: expect.objectContaining({
         externalEventId: "google_event_123",
@@ -182,6 +186,7 @@ describe("processRecallCalendarWebhook", () => {
         teamId: "22222222-2222-4222-8222-222222222222",
         userId: "11111111-1111-4111-8111-111111111111",
         autoJoinEnabled: true,
+        workspaceDomain: "example.com",
       },
       event: expect.objectContaining({
         externalEventId: "google_event_123",

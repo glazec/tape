@@ -48,6 +48,14 @@ describe("Inngest functions", () => {
         id: "transcribe-audio",
         triggers: [{ event: "meeting/transcribe.audio" }],
       },
+      {
+        id: "enrich-transcript",
+        triggers: [{ event: "meeting/enrich.transcript" }],
+      },
+      {
+        id: "send-location-reminders",
+        triggers: [{ event: "meeting/send.location-reminders" }],
+      },
     ]);
   });
 });

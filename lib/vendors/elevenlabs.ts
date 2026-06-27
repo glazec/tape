@@ -38,6 +38,7 @@ const elevenLabsWebhookSchema = z.object({
 const elevenLabsTranscriptInputSchema = z.object({
   audioUrl: z.string().url(),
   webhookUrl: z.string().url(),
+  keyterms: z.array(z.string().trim().min(1)).optional(),
   metadata: z.record(z.string(), z.string()).optional(),
 });
 
@@ -97,6 +98,7 @@ export function getElevenLabsWebhookIdempotencyKey(
 export async function createElevenLabsTranscriptJob(input: {
   audioUrl: string;
   webhookUrl: string;
+  keyterms?: string[];
   metadata?: Record<string, string>;
 }) {
   const parsedInput = elevenLabsTranscriptInputSchema.parse(input);
@@ -107,7 +109,11 @@ export async function createElevenLabsTranscriptJob(input: {
   body.append("source_url", parsedInput.audioUrl);
   body.append("webhook", "true");
   body.append("diarize", "true");
+  body.append("detect_entities", "true");
   body.append("timestamps_granularity", "word");
+  for (const keyterm of parsedInput.keyterms ?? []) {
+    body.append("keyterms", keyterm);
+  }
   // ElevenLabs delivers webhooks to workspace configured endpoints. This metadata only correlates the request with our app URL.
   body.append(
     "webhook_metadata",

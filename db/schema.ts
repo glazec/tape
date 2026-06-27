@@ -23,6 +23,7 @@ const timestamps = {
 
 export const meetingPlatform = pgEnum("meeting_platform", [
   "google_meet",
+  "in_person",
   "zoom",
   "upload",
 ]);
@@ -77,6 +78,26 @@ export const allowedDomains = pgTable(
     uniqueIndex("allowed_domains_team_domain_unique").on(
       table.teamId,
       table.domain,
+    ),
+  ],
+);
+
+export const teamVocabularyTerms = pgTable(
+  "team_vocabulary_terms",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    teamId: uuid("team_id")
+      .notNull()
+      .references(() => teams.id, { onDelete: "cascade" }),
+    term: text("term").notNull(),
+    hint: text("hint"),
+    enabled: boolean("enabled").notNull().default(true),
+    ...timestamps,
+  },
+  (table) => [
+    uniqueIndex("team_vocabulary_terms_team_term_unique").on(
+      table.teamId,
+      table.term,
     ),
   ],
 );
@@ -182,6 +203,8 @@ export const calendarEvents = pgTable(
     title: text("title").notNull(),
     teamMeetingKey: text("team_meeting_key"),
     meetingUrl: text("meeting_url"),
+    location: text("location"),
+    description: text("description"),
     startsAt: timestamp("starts_at", { withTimezone: true }).notNull(),
     endsAt: timestamp("ends_at", { withTimezone: true }),
     attendeeEmails: jsonb("attendee_emails")
@@ -393,6 +416,12 @@ export const transcriptSegments = pgTable(
     startMs: integer("start_ms").notNull(),
     endMs: integer("end_ms"),
     text: text("text").notNull(),
+    translatedText: text("translated_text"),
+    translationEditedAt: timestamp("translation_edited_at", {
+      withTimezone: true,
+    }),
+    emotionLabel: text("emotion_label"),
+    emotionReason: text("emotion_reason"),
     ...timestamps,
   },
   (table) => [
@@ -400,6 +429,56 @@ export const transcriptSegments = pgTable(
     index("transcript_segments_search_index").using(
       "gin",
       sql`to_tsvector('english', coalesce(${table.text}, '') || ' ' || coalesce(${table.speaker}, ''))`,
+    ),
+  ],
+);
+
+export const meetingEntities = pgTable(
+  "meeting_entities",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    meetingId: uuid("meeting_id")
+      .notNull()
+      .references(() => meetings.id, { onDelete: "cascade" }),
+    segmentId: uuid("segment_id").references(() => transcriptSegments.id, {
+      onDelete: "set null",
+    }),
+    type: text("type").notNull(),
+    value: text("value").notNull(),
+    normalizedValue: text("normalized_value").notNull(),
+    ...timestamps,
+  },
+  (table) => [
+    uniqueIndex("meeting_entities_meeting_type_value_unique").on(
+      table.meetingId,
+      table.type,
+      table.normalizedValue,
+    ),
+    index("meeting_entities_normalized_value_index").on(table.normalizedValue),
+  ],
+);
+
+export const meetingReminders = pgTable(
+  "meeting_reminders",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    meetingId: uuid("meeting_id")
+      .notNull()
+      .references(() => meetings.id, { onDelete: "cascade" }),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    scheduledFor: timestamp("scheduled_for", { withTimezone: true }).notNull(),
+    sentAt: timestamp("sent_at", { withTimezone: true }),
+    providerNotificationId: text("provider_notification_id"),
+    status: text("status").notNull().default("pending"),
+    errorMessage: text("error_message"),
+    ...timestamps,
+  },
+  (table) => [
+    uniqueIndex("meeting_reminders_meeting_user_unique").on(
+      table.meetingId,
+      table.userId,
     ),
   ],
 );
