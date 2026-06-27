@@ -1,11 +1,13 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-const { createRecallCalendar, insert, select, update } = vi.hoisted(() => ({
-  createRecallCalendar: vi.fn(),
-  insert: vi.fn(),
-  select: vi.fn(),
-  update: vi.fn(),
-}));
+const { createRecallCalendar, insert, select, update, updateRecallCalendar } =
+  vi.hoisted(() => ({
+    createRecallCalendar: vi.fn(),
+    insert: vi.fn(),
+    select: vi.fn(),
+    update: vi.fn(),
+    updateRecallCalendar: vi.fn(),
+  }));
 
 vi.mock("@/db/client", () => ({
   db: {
@@ -27,11 +29,13 @@ vi.mock("@/lib/env", () => ({
 
 vi.mock("@/lib/vendors/recall", () => ({
   createRecallCalendar,
+  updateRecallCalendar,
 }));
 
 describe("storeGoogleCalendarTokens", () => {
   afterEach(() => {
     createRecallCalendar.mockReset();
+    updateRecallCalendar.mockReset();
     insert.mockReset();
     select.mockReset();
     update.mockReset();
@@ -93,5 +97,66 @@ describe("storeGoogleCalendarTokens", () => {
         recallCalendarStatus: "connecting",
       }),
     );
+  });
+
+  it("backfills a Recall calendar for an existing Google Calendar connection", async () => {
+    vi.stubEnv("GOOGLE_CALENDAR_CLIENT_ID", "google-client-id");
+    vi.stubEnv("GOOGLE_CALENDAR_CLIENT_SECRET", "google-client-secret");
+    createRecallCalendar.mockResolvedValue({
+      id: "44444444-4444-4444-8444-444444444444",
+      status: "connecting",
+    });
+    const updateWhere = vi.fn().mockResolvedValue([]);
+    const updateSet = vi.fn().mockReturnValue({ where: updateWhere });
+
+    select.mockReturnValue({
+      from: () => ({
+        where: () => ({
+          limit: vi.fn().mockResolvedValue([
+            {
+              id: "33333333-3333-4333-8333-333333333333",
+              oauthAccessToken: null,
+              oauthRefreshToken: "google-refresh-token",
+              oauthAccessTokenExpiresAt: null,
+              recallCalendarId: null,
+              recallCalendarStatus: null,
+            },
+          ]),
+        }),
+      }),
+    });
+    update.mockReturnValue({ set: updateSet });
+
+    const { ensureGoogleCalendarRecallCalendar } = await import(
+      "@/lib/google-calendar-oauth"
+    );
+
+    await expect(
+      ensureGoogleCalendarRecallCalendar({
+        userId: "11111111-1111-4111-8111-111111111111",
+        teamId: "22222222-2222-4222-8222-222222222222",
+        domain: "example.com",
+      }),
+    ).resolves.toEqual({
+      id: "44444444-4444-4444-8444-444444444444",
+      status: "connecting",
+    });
+
+    expect(createRecallCalendar).toHaveBeenCalledWith({
+      oauthClientId: "google-client-id",
+      oauthClientSecret: "google-client-secret",
+      oauthRefreshToken: "google-refresh-token",
+      platform: "google_calendar",
+      metadata: {
+        teamId: "22222222-2222-4222-8222-222222222222",
+        userId: "11111111-1111-4111-8111-111111111111",
+      },
+    });
+    expect(updateSet).toHaveBeenCalledWith({
+      recallCalendarId: "44444444-4444-4444-8444-444444444444",
+      recallCalendarStatus: "connecting",
+      updatedAt: expect.any(Date),
+    });
+    expect(updateWhere).toHaveBeenCalledOnce();
   });
 });

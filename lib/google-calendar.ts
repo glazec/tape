@@ -6,7 +6,10 @@ import { inngest } from "@/inngest/client";
 import type { SessionUser } from "@/lib/auth";
 import { auth } from "@/lib/auth/server";
 import type { SyncedCalendarEvent } from "@/lib/calendar-auto-join";
-import { getStoredGoogleCalendarAccessToken } from "@/lib/google-calendar-oauth";
+import {
+  ensureGoogleCalendarRecallCalendar,
+  getStoredGoogleCalendarAccessToken,
+} from "@/lib/google-calendar-oauth";
 import type { WorkspaceContext } from "@/lib/workspace";
 
 const GOOGLE_CALENDAR_EVENTS_URL =
@@ -108,6 +111,7 @@ export async function syncGooglePrimaryCalendarEvents(
   input: GoogleCalendarSyncInput,
 ) {
   const accessToken = await getGoogleCalendarAccessToken(input.workspace);
+  await ensureGoogleCalendarRecallCalendar(input.workspace);
   const connection = await getOrCreateGoogleCalendarConnection({
     workspace: input.workspace,
     autoJoinEnabled: input.autoJoinEnabled,

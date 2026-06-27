@@ -175,6 +175,42 @@ export async function storeGoogleCalendarTokens(input: {
   return connection.id;
 }
 
+export async function ensureGoogleCalendarRecallCalendar(
+  workspace: WorkspaceContext,
+) {
+  const existing = await findGoogleCalendarConnection(workspace);
+
+  if (!existing?.oauthRefreshToken) {
+    return null;
+  }
+
+  const recallCalendar = await ensureRecallCalendar({
+    workspace,
+    existing,
+    refreshToken: decryptToken(existing.oauthRefreshToken),
+  });
+
+  if (!recallCalendar.id) {
+    return null;
+  }
+
+  if (
+    recallCalendar.id !== existing.recallCalendarId ||
+    recallCalendar.status !== existing.recallCalendarStatus
+  ) {
+    await db
+      .update(calendarConnections)
+      .set({
+        recallCalendarId: recallCalendar.id,
+        recallCalendarStatus: recallCalendar.status,
+        updatedAt: new Date(),
+      })
+      .where(eq(calendarConnections.id, existing.id));
+  }
+
+  return recallCalendar;
+}
+
 async function ensureRecallCalendar(input: {
   workspace: WorkspaceContext;
   existing: Awaited<ReturnType<typeof findGoogleCalendarConnection>>;

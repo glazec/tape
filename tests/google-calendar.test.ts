@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 const {
+  ensureGoogleCalendarRecallCalendar,
   getAccessToken,
   getStoredGoogleCalendarAccessToken,
   insert,
@@ -8,6 +9,7 @@ const {
   send,
   update,
 } = vi.hoisted(() => ({
+  ensureGoogleCalendarRecallCalendar: vi.fn(),
   getAccessToken: vi.fn(),
   getStoredGoogleCalendarAccessToken: vi.fn(),
   insert: vi.fn(),
@@ -23,6 +25,7 @@ vi.mock("@/lib/auth/server", () => ({
 }));
 
 vi.mock("@/lib/google-calendar-oauth", () => ({
+  ensureGoogleCalendarRecallCalendar,
   getStoredGoogleCalendarAccessToken,
 }));
 
@@ -43,6 +46,7 @@ vi.mock("@/inngest/client", () => ({
 describe("Google Calendar capture", () => {
   afterEach(() => {
     getAccessToken.mockReset();
+    ensureGoogleCalendarRecallCalendar.mockReset();
     getStoredGoogleCalendarAccessToken.mockReset();
     insert.mockReset();
     select.mockReset();
@@ -223,6 +227,11 @@ describe("Google Calendar capture", () => {
       provider: "google",
       externalCalendarId: "primary",
       autoJoinEnabled: true,
+    });
+    expect(ensureGoogleCalendarRecallCalendar).toHaveBeenCalledWith({
+      userId: "11111111-1111-4111-8111-111111111111",
+      teamId: "22222222-2222-4222-8222-222222222222",
+      domain: "example.com",
     });
     expect(send).toHaveBeenCalledWith([
       {
