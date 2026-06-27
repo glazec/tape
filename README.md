@@ -11,11 +11,12 @@ Team meeting transcript product.
 5. Recall.ai for Google Meet and Zoom capture
 6. ElevenLabs for transcription
 7. Inngest style workers for long running jobs
+8. OneSignal for browser push subscriptions and meeting reminders
 
 ## Local Setup
 
 1. Copy `.env.example` to `.env.local`.
-2. Fill in Neon, Google Calendar, R2, Recall, ElevenLabs, and Inngest credentials. `NEON_AUTH_BASE_URL` is optional when `NEON_AUTH_JWKS_URL` ends with `/.well-known/jwks.json`; generate `NEON_AUTH_COOKIE_SECRET` with `openssl rand -base64 32`.
+2. Fill in Neon, Google Calendar, R2, Recall, ElevenLabs, Inngest, and OneSignal credentials. `NEON_AUTH_BASE_URL` is optional when `NEON_AUTH_JWKS_URL` ends with `/.well-known/jwks.json`; generate `NEON_AUTH_COOKIE_SECRET` with `openssl rand -base64 32`.
    Set `RECALL_API_BASE_URL` to the region for the Recall API key, for example `https://ap-northeast-1.recall.ai`.
 3. Run `npm install`.
 4. Run `npm run dev`.
@@ -40,6 +41,12 @@ Local test webhook URLs:
 The app uses Neon Auth through the official Next.js SDK. Browser auth requests are proxied through `/api/auth/[...path]`, the landing page routes users to `/auth/sign-in`, and server code reads the current user from Neon Auth sessions instead of a hand rolled JWT cookie.
 Dashboard, meeting transcript, and team settings pages require an authenticated session. Anonymous visitors are redirected to `/auth/sign-in`.
 The sign out button calls the Neon Auth client sign out method, then posts to `/api/sign-out` to expire local Neon Auth cookies as a cleanup fallback.
+
+## Push Notifications
+
+The production OneSignal web app is configured for `https://meeting-note-swart.vercel.app` with app id `117c1d1c-ada4-4b49-bb2e-9f4b5cb747ef`. Set `NEXT_PUBLIC_ONESIGNAL_APP_ID` to that value in Vercel to load the OneSignal Web SDK.
+
+The required service worker is served from `/OneSignalSDKWorker.js`. OneSignal controls the visible permission prompt from its dashboard, so the product can keep reminder setup out of the normal meeting UI.
 
 ## Dashboard
 
