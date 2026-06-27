@@ -44,9 +44,9 @@ The sign out button calls the Neon Auth client sign out method, then posts to `/
 
 ## Push Notifications
 
-The production OneSignal web app is configured for `https://meeting-note-swart.vercel.app` with app id `117c1d1c-ada4-4b49-bb2e-9f4b5cb747ef`. Set `NEXT_PUBLIC_ONESIGNAL_APP_ID` to that value in Vercel to load the OneSignal Web SDK. Set `ONESIGNAL_REST_API_KEY` in server environments so the reminder worker can send push notifications.
+The production OneSignal web app is configured for `https://meeting-note-swart.vercel.app` with app id `117c1d1c-ada4-4b49-bb2e-9f4b5cb747ef`. The client uses that app id by default and `NEXT_PUBLIC_ONESIGNAL_APP_ID` can override it for another OneSignal app. Set `ONESIGNAL_REST_API_KEY` in server environments so the reminder worker can send push notifications.
 
-The required service worker is served from `/OneSignalSDKWorker.js`. Signed in app pages identify the browser to OneSignal with the local workspace user id. OneSignal controls the visible permission prompt from its dashboard, so the product can keep reminder setup out of the normal meeting UI.
+The required service worker from the OneSignal v16 package is served from `/OneSignalSDKWorker.js`, and the SDK init points to that root worker path. Signed in app pages identify the browser to OneSignal with the local workspace user id. OneSignal controls the visible permission prompt from its dashboard, so the product can keep reminder setup out of the normal meeting UI.
 
 Location based calendar events create an in person meeting row and a reminder scheduled for two minutes before the event. Run the `meeting/send.location-reminders` worker event from a scheduler every minute, or wire the same helper to an Inngest cron, so due reminders are delivered through OneSignal.
 

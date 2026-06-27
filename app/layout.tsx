@@ -2,22 +2,16 @@ import type { Metadata } from "next";
 import { Geist } from "next/font/google";
 import Script from "next/script";
 
+import {
+  buildOneSignalInitScript,
+  getOneSignalAppId,
+} from "@/lib/onesignal-web-sdk";
 import { cn } from "@/lib/utils";
 
 import "./globals.css";
 
 const geist = Geist({ subsets: ["latin"], variable: "--font-geist-sans" });
-const oneSignalAppId = process.env.NEXT_PUBLIC_ONESIGNAL_APP_ID?.trim();
-const oneSignalInitScript = oneSignalAppId
-  ? `
-window.OneSignalDeferred = window.OneSignalDeferred || [];
-OneSignalDeferred.push(async function(OneSignal) {
-  await OneSignal.init({
-    appId: ${JSON.stringify(oneSignalAppId)}
-  });
-});
-`
-  : null;
+const oneSignalInitScript = buildOneSignalInitScript(getOneSignalAppId());
 
 export const metadata: Metadata = {
   title: "Meeting Transcript",
@@ -30,17 +24,13 @@ export default function RootLayout({
   return (
     <html lang="en" className={cn("font-sans", geist.variable)}>
       <body>{children}</body>
-      {oneSignalInitScript ? (
-        <>
-          <Script
-            src="https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.page.js"
-            strategy="afterInteractive"
-          />
-          <Script id="onesignal-init" strategy="afterInteractive">
-            {oneSignalInitScript}
-          </Script>
-        </>
-      ) : null}
+      <Script
+        src="https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.page.js"
+        strategy="afterInteractive"
+      />
+      <Script id="onesignal-init" strategy="afterInteractive">
+        {oneSignalInitScript}
+      </Script>
     </html>
   );
 }
