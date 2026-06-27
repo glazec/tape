@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, ilike, ne, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, ilike, inArray, ne, or, sql } from "drizzle-orm";
 import { z } from "zod";
 
 import { db } from "@/db/client";
@@ -7,6 +7,7 @@ import {
   mediaAssets,
   meetingAccess,
   meetingAttendees,
+  meetingEntities,
   meetings,
   teamMemberships,
   transcriptJobs,
@@ -28,6 +29,7 @@ import {
   getOrCreateWorkspaceForSessionUser,
   type WorkspaceContext,
 } from "@/lib/workspace";
+import { groupRelatedMeetings } from "@/lib/meeting-intelligence";
 
 const uuidSchema = z.string().uuid();
 
@@ -107,7 +109,11 @@ export async function listMeetingsForWorkspace(
     .orderBy(desc(meetings.startedAt), desc(meetings.createdAt))
     .limit(50);
 
-  return rows.map((meeting) => ({
+  const primaryEntityByMeetingId = await getPrimaryEntitiesForMeetings(
+    rows.map((meeting) => meeting.id),
+  );
+  const items: Array<MeetingListItem & { primaryEntity: string | null }> =
+    rows.map((meeting) => ({
     id: meeting.id,
     title: meeting.title,
     platform: meeting.platform,
@@ -116,7 +122,26 @@ export async function listMeetingsForWorkspace(
     hasRecallBot: Boolean(meeting.recallBotId),
     startedAt: (meeting.startedAt ?? meeting.createdAt).toISOString(),
     accessScope: meeting.teamId === workspace.teamId ? "workspace" : "shared",
+    primaryEntity: primaryEntityByMeetingId.get(meeting.id) ?? null,
   }));
+  const grouped = groupRelatedMeetings(items);
+  const groupedById = new Map(
+    grouped.map((meeting) => [meeting.id, meeting.relatedMeetings]),
+  );
+
+  return items
+    .filter((meeting) => groupedById.has(meeting.id))
+    .map((meeting) => ({
+      id: meeting.id,
+      title: meeting.title,
+      platform: meeting.platform,
+      status: meeting.status,
+      transcriptJobStatus: meeting.transcriptJobStatus,
+      hasRecallBot: meeting.hasRecallBot,
+      startedAt: meeting.startedAt,
+      accessScope: meeting.accessScope,
+      relatedMeetings: groupedById.get(meeting.id),
+    }));
 }
 
 export async function getMeetingDashboardSummaryForWorkspace(
@@ -223,6 +248,9 @@ export async function getMeetingTranscriptForWorkspace(
       startMs: transcriptSegments.startMs,
       endMs: transcriptSegments.endMs,
       text: transcriptSegments.text,
+      translatedText: transcriptSegments.translatedText,
+      emotionLabel: transcriptSegments.emotionLabel,
+      emotionReason: transcriptSegments.emotionReason,
     })
     .from(transcriptSegments)
     .where(eq(transcriptSegments.meetingId, meeting.id))
@@ -246,10 +274,38 @@ export async function getMeetingTranscriptForWorkspace(
       (meeting.audioObjectKey || meeting.recallRecordingId)
         ? `/api/meetings/${meeting.id}/audio`
         : null,
-    segments,
+    segments: segments.map((segment) => ({
+      ...segment,
+      emotionLabel: normalizeEmotionLabel(segment.emotionLabel),
+    })),
     speakerSuggestions,
     accessScope: meeting.teamId === workspace.teamId ? "workspace" : "shared",
   };
+}
+
+async function getPrimaryEntitiesForMeetings(meetingIds: string[]) {
+  const primaryEntityByMeetingId = new Map<string, string>();
+
+  if (meetingIds.length === 0) {
+    return primaryEntityByMeetingId;
+  }
+
+  const rows = await db
+    .select({
+      meetingId: meetingEntities.meetingId,
+      normalizedValue: meetingEntities.normalizedValue,
+    })
+    .from(meetingEntities)
+    .where(inArray(meetingEntities.meetingId, meetingIds))
+    .orderBy(asc(meetingEntities.createdAt));
+
+  for (const row of rows) {
+    if (!primaryEntityByMeetingId.has(row.meetingId)) {
+      primaryEntityByMeetingId.set(row.meetingId, row.normalizedValue);
+    }
+  }
+
+  return primaryEntityByMeetingId;
 }
 
 async function listMeetingSpeakerSuggestions(
@@ -302,6 +358,12 @@ function formatNameFromEmail(email: string) {
   return words
     .map((word) => `${word.charAt(0).toUpperCase()}${word.slice(1)}`)
     .join(" ");
+}
+
+function normalizeEmotionLabel(value: string | null) {
+  return value === "hard" || value === "chill" || value === "neutral"
+    ? value
+    : null;
 }
 
 export async function listWorkspaceShareRecipients(

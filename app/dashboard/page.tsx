@@ -52,6 +52,7 @@ export default async function DashboardPage({
     <AppShell
       activeHref="/dashboard"
       canCreateMeetings={accessSummary.canCreateMeetings}
+      oneSignalExternalId={workspace.userId}
     >
       <section className="flex flex-col gap-6">
         <div className="grid gap-4 lg:grid-cols-[1fr_22rem] lg:items-start">

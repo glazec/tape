@@ -21,7 +21,7 @@ export default async function NewMeetingPage() {
   }
 
   return (
-    <AppShell activeHref="/meetings/new">
+    <AppShell activeHref="/meetings/new" oneSignalExternalId={workspace.userId}>
       <section className="flex max-w-3xl flex-col gap-6">
         <div>
           <p className="text-sm font-medium uppercase tracking-normal text-primary">

@@ -44,6 +44,7 @@ export default async function MeetingPage({
     <AppShell
       activeHref="/dashboard"
       canCreateMeetings={meeting.accessScope === "workspace"}
+      oneSignalExternalId={workspace.userId}
     >
       <div className="grid min-w-0 gap-8 lg:grid-cols-[1fr_20rem]">
         <section className="min-w-0">
@@ -137,6 +138,10 @@ export default async function MeetingPage({
 function formatPlatform(platform: string) {
   if (platform === "google_meet") {
     return "Google Meet";
+  }
+
+  if (platform === "in_person") {
+    return "In person";
   }
 
   if (platform === "zoom") {

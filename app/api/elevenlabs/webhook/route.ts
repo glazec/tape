@@ -8,6 +8,7 @@ import {
   recordVendorWebhookEvent,
 } from "@/lib/vendor-webhook-events";
 import { applyElevenLabsTranscriptEvent } from "@/lib/elevenlabs-transcripts";
+import { inngest } from "@/inngest/client";
 import {
   verifyElevenLabsWebhook,
   webhookVerificationResponse,
@@ -43,7 +44,17 @@ export async function POST(request: Request) {
     });
 
     if (recorded.shouldProcess) {
-      await applyElevenLabsTranscriptEvent(event);
+      const persistence = await applyElevenLabsTranscriptEvent(event);
+
+      if (persistence.action === "complete") {
+        await inngest
+          .send({
+            name: "meeting/enrich.transcript",
+            data: { meetingId: persistence.meetingId },
+          })
+          .catch(() => undefined);
+      }
+
       await markVendorWebhookEventProcessed({
         provider: "elevenlabs",
         idempotencyKey,

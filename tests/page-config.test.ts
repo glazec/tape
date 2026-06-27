@@ -16,6 +16,10 @@ vi.mock("@/lib/share-links", () => ({
   getSharedTranscriptByToken: vi.fn(),
 }));
 
+vi.mock("@/lib/team-vocabulary", () => ({
+  listTeamVocabularyTerms: vi.fn(),
+}));
+
 vi.mock("@/lib/meeting-queries", () => ({
   getMeetingTranscriptForWorkspace: vi.fn(),
   getWorkspaceMeetingTranscript: vi.fn(),

@@ -43,6 +43,13 @@
       "when": 1782800000000,
       "tag": "0005_meeting_share_invites",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1782900000000,
+      "tag": "0006_meeting_intelligence",
+      "breakpoints": true
     }
   ]
 }

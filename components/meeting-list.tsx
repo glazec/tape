@@ -20,12 +20,17 @@ import { LocalDateTime } from "@/components/local-date-time";
 export type MeetingListItem = {
   id: string;
   title: string;
-  platform: "google_meet" | "zoom" | "upload";
+  platform: "google_meet" | "in_person" | "zoom" | "upload";
   startedAt: string;
   status: MeetingRecordStatus;
   transcriptJobStatus?: TranscriptJobStatus | null;
   hasRecallBot?: boolean;
   accessScope?: "workspace" | "shared";
+  relatedMeetings?: Array<{
+    id: string;
+    title: string;
+    startedAt: string;
+  }>;
 };
 
 type MeetingListProps = {
@@ -35,6 +40,7 @@ type MeetingListProps = {
 
 const platformLabels: Record<MeetingListItem["platform"], string> = {
   google_meet: "Google Meet",
+  in_person: "In person",
   zoom: "Zoom",
   upload: "Upload",
 };
@@ -97,6 +103,25 @@ export function MeetingList({
                     displayStatus={displayStatus}
                     hasRecallBot={meeting.hasRecallBot}
                   />
+                  {meeting.relatedMeetings?.length ? (
+                    <div className="mt-3 border-l pl-3">
+                      <p className="mb-1 text-xs font-medium text-muted-foreground">
+                        Related
+                      </p>
+                      <ul className="space-y-1">
+                        {meeting.relatedMeetings.map((related) => (
+                          <li key={related.id}>
+                            <Link
+                              className="text-xs font-medium text-muted-foreground hover:text-foreground hover:underline"
+                              href={`/meetings/${related.id}`}
+                            >
+                              {related.title}
+                            </Link>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  ) : null}
                 </TableCell>
                 <TableCell className="hidden text-muted-foreground sm:table-cell">
                   {platformLabels[meeting.platform]}
