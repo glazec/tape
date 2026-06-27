@@ -136,24 +136,37 @@ export const oauthAccounts = pgTable(
   ],
 );
 
-export const calendarConnections = pgTable("calendar_connections", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  teamId: uuid("team_id")
-    .notNull()
-    .references(() => teams.id, { onDelete: "cascade" }),
-  userId: uuid("user_id")
-    .notNull()
-    .references(() => users.id, { onDelete: "cascade" }),
-  provider: text("provider").notNull().default("google"),
-  externalCalendarId: text("external_calendar_id").notNull(),
-  autoJoinEnabled: boolean("auto_join_enabled").notNull().default(false),
-  oauthAccessToken: text("oauth_access_token"),
-  oauthRefreshToken: text("oauth_refresh_token"),
-  oauthAccessTokenExpiresAt: timestamp("oauth_access_token_expires_at", {
-    withTimezone: true,
-  }),
-  ...timestamps,
-});
+export const calendarConnections = pgTable(
+  "calendar_connections",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    teamId: uuid("team_id")
+      .notNull()
+      .references(() => teams.id, { onDelete: "cascade" }),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    provider: text("provider").notNull().default("google"),
+    externalCalendarId: text("external_calendar_id").notNull(),
+    autoJoinEnabled: boolean("auto_join_enabled").notNull().default(false),
+    oauthAccessToken: text("oauth_access_token"),
+    oauthRefreshToken: text("oauth_refresh_token"),
+    oauthAccessTokenExpiresAt: timestamp("oauth_access_token_expires_at", {
+      withTimezone: true,
+    }),
+    recallCalendarId: text("recall_calendar_id"),
+    recallCalendarStatus: text("recall_calendar_status"),
+    recallCalendarLastSyncedAt: timestamp("recall_calendar_last_synced_at", {
+      withTimezone: true,
+    }),
+    ...timestamps,
+  },
+  (table) => [
+    uniqueIndex("calendar_connections_recall_calendar_id_unique")
+      .on(table.recallCalendarId)
+      .where(sql`${table.recallCalendarId} is not null`),
+  ],
+);
 
 export const calendarEvents = pgTable(
   "calendar_events",

@@ -18,11 +18,13 @@ import {
 const {
   applyElevenLabsTranscriptEvent,
   applyRecallMeetingEvent,
+  markVendorWebhookEventProcessed,
   recordVendorWebhookEvent,
   MissingWebhookIdempotencyKeyError,
 } = vi.hoisted(() => ({
     applyElevenLabsTranscriptEvent: vi.fn(),
     applyRecallMeetingEvent: vi.fn(),
+    markVendorWebhookEventProcessed: vi.fn(),
     recordVendorWebhookEvent: vi.fn(),
     MissingWebhookIdempotencyKeyError: class MissingWebhookIdempotencyKeyError extends Error {
       constructor() {
@@ -34,6 +36,7 @@ const {
 vi.mock("@/lib/vendor-webhook-events", () => {
   return {
     MissingWebhookIdempotencyKeyError,
+    markVendorWebhookEventProcessed,
     recordVendorWebhookEvent,
   };
 });
@@ -165,7 +168,11 @@ async function postRecallWebhookWithHeaders(
 
 describe("vendor webhook normalization", () => {
   beforeEach(() => {
-    recordVendorWebhookEvent.mockResolvedValue({ inserted: true });
+    recordVendorWebhookEvent.mockResolvedValue({
+      inserted: true,
+      shouldProcess: true,
+    });
+    markVendorWebhookEventProcessed.mockResolvedValue(undefined);
     applyElevenLabsTranscriptEvent.mockResolvedValue({ action: "skip" });
     applyRecallMeetingEvent.mockResolvedValue({ action: "skip" });
   });
@@ -174,6 +181,7 @@ describe("vendor webhook normalization", () => {
     vi.unstubAllGlobals();
     vi.unstubAllEnvs();
     vi.resetModules();
+    markVendorWebhookEventProcessed.mockReset();
     recordVendorWebhookEvent.mockReset();
     applyElevenLabsTranscriptEvent.mockReset();
     applyRecallMeetingEvent.mockReset();
@@ -397,7 +405,10 @@ describe("vendor webhook normalization", () => {
   });
 
   it("skips ElevenLabs transcript persistence for duplicate webhooks", async () => {
-    recordVendorWebhookEvent.mockResolvedValueOnce({ inserted: false });
+    recordVendorWebhookEvent.mockResolvedValueOnce({
+      inserted: false,
+      shouldProcess: false,
+    });
 
     const response = await postElevenLabsWebhook({
       type: "speech_to_text_transcription",
@@ -559,7 +570,10 @@ describe("vendor webhook normalization", () => {
   });
 
   it("skips Recall meeting updates for duplicate webhooks", async () => {
-    recordVendorWebhookEvent.mockResolvedValueOnce({ inserted: false });
+    recordVendorWebhookEvent.mockResolvedValueOnce({
+      inserted: false,
+      shouldProcess: false,
+    });
 
     const response = await postRecallWebhook({
       event: "bot.status_change",

@@ -12,6 +12,10 @@ import { getNeonAuthCookieSecret } from "@/lib/auth-config";
 import { env } from "@/lib/env";
 import { parseGoogleCalendarOAuthEnv } from "@/lib/google-calendar-oauth-env";
 import { GOOGLE_CALENDAR_EVENT_READ_SCOPE } from "@/lib/google-calendar-constants";
+import {
+  createRecallCalendar,
+  updateRecallCalendar,
+} from "@/lib/vendors/recall";
 import type { WorkspaceContext } from "@/lib/workspace";
 
 const GOOGLE_OAUTH_AUTHORIZE_URL =
@@ -120,6 +124,15 @@ export async function storeGoogleCalendarTokens(input: {
   const encryptedRefreshToken = input.refreshToken
     ? encryptToken(input.refreshToken)
     : existing?.oauthRefreshToken;
+  const recallCalendar = await ensureRecallCalendar({
+    workspace: input.workspace,
+    existing,
+    refreshToken:
+      input.refreshToken ??
+      (existing?.oauthRefreshToken
+        ? decryptToken(existing.oauthRefreshToken)
+        : null),
+  });
 
   if (!encryptedRefreshToken) {
     throw new GoogleCalendarOAuthError("Google did not return a refresh token");
@@ -133,6 +146,9 @@ export async function storeGoogleCalendarTokens(input: {
         oauthAccessToken: encryptedAccessToken,
         oauthRefreshToken: encryptedRefreshToken,
         oauthAccessTokenExpiresAt: input.accessTokenExpiresAt,
+        recallCalendarId: recallCalendar.id ?? existing.recallCalendarId,
+        recallCalendarStatus:
+          recallCalendar.status ?? existing.recallCalendarStatus,
         updatedAt: new Date(),
       })
       .where(eq(calendarConnections.id, existing.id));
@@ -151,10 +167,61 @@ export async function storeGoogleCalendarTokens(input: {
       oauthAccessToken: encryptedAccessToken,
       oauthRefreshToken: encryptedRefreshToken,
       oauthAccessTokenExpiresAt: input.accessTokenExpiresAt,
+      recallCalendarId: recallCalendar.id,
+      recallCalendarStatus: recallCalendar.status,
     })
     .returning({ id: calendarConnections.id });
 
   return connection.id;
+}
+
+async function ensureRecallCalendar(input: {
+  workspace: WorkspaceContext;
+  existing: Awaited<ReturnType<typeof findGoogleCalendarConnection>>;
+  refreshToken: string | null;
+}) {
+  if (!input.refreshToken) {
+    return {
+      id: input.existing?.recallCalendarId ?? null,
+      status: input.existing?.recallCalendarStatus ?? null,
+    };
+  }
+
+  const googleEnv = parseGoogleCalendarOAuthEnv(process.env);
+  const metadata = {
+    teamId: input.workspace.teamId,
+    userId: input.workspace.userId,
+  };
+
+  if (input.existing?.recallCalendarId) {
+    const calendar = await updateRecallCalendar({
+      calendarId: input.existing.recallCalendarId,
+      oauthRefreshToken: input.refreshToken,
+      metadata,
+    });
+
+    return {
+      id:
+        getString((calendar as { id?: unknown }).id) ??
+        input.existing.recallCalendarId,
+      status:
+        getString((calendar as { status?: unknown }).status) ??
+        input.existing.recallCalendarStatus,
+    };
+  }
+
+  const calendar = await createRecallCalendar({
+    oauthClientId: googleEnv.GOOGLE_CALENDAR_CLIENT_ID,
+    oauthClientSecret: googleEnv.GOOGLE_CALENDAR_CLIENT_SECRET,
+    oauthRefreshToken: input.refreshToken,
+    platform: "google_calendar",
+    metadata,
+  });
+
+  return {
+    id: getString((calendar as { id?: unknown }).id),
+    status: getString((calendar as { status?: unknown }).status),
+  };
 }
 
 async function refreshGoogleCalendarAccessToken(refreshToken: string) {
@@ -210,6 +277,8 @@ async function findGoogleCalendarConnection(workspace: WorkspaceContext) {
       oauthAccessToken: calendarConnections.oauthAccessToken,
       oauthRefreshToken: calendarConnections.oauthRefreshToken,
       oauthAccessTokenExpiresAt: calendarConnections.oauthAccessTokenExpiresAt,
+      recallCalendarId: calendarConnections.recallCalendarId,
+      recallCalendarStatus: calendarConnections.recallCalendarStatus,
     })
     .from(calendarConnections)
     .where(

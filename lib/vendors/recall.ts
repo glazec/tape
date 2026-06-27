@@ -56,6 +56,36 @@ const recallBotDeleteInputSchema = z.object({
   botId: z.string().trim().min(1),
 });
 
+const recallCalendarInputSchema = z.object({
+  oauthClientId: z.string().trim().min(1),
+  oauthClientSecret: z.string().trim().min(1),
+  oauthRefreshToken: z.string().trim().min(1),
+  platform: z.enum(["google_calendar", "microsoft_outlook"]),
+  metadata: z.record(z.string(), z.string()).optional(),
+});
+
+const recallCalendarUpdateInputSchema = z.object({
+  calendarId: z.string().trim().min(1),
+  oauthRefreshToken: z.string().trim().min(1).optional(),
+  metadata: z.record(z.string(), z.string()).optional(),
+});
+
+const recallCalendarEventListInputSchema = z.object({
+  calendarId: z.string().trim().min(1),
+  updatedAtGte: z.string().datetime().optional(),
+});
+
+const recallCalendarEventBotInputSchema = z.object({
+  calendarEventId: z.string().trim().min(1),
+  deduplicationKey: z.string().trim().min(1).max(2000),
+  botName: z.string().trim().min(1).max(100).default(DEFAULT_RECALL_BOT_NAME),
+  metadata: z.record(z.string(), z.string()).optional(),
+});
+
+const recallCalendarEventBotDeleteInputSchema = z.object({
+  calendarEventId: z.string().trim().min(1),
+});
+
 const optionalRecallApiBaseUrl = z.preprocess(
   (value) =>
     typeof value === "string" && value.trim() === "" ? undefined : value,
@@ -147,6 +177,201 @@ export async function scheduleRecallBot(input: {
     throw new Error(
       `Recall bot scheduling failed with ${response.status} ${response.statusText}`,
     );
+  }
+
+  return response.json();
+}
+
+export async function createRecallCalendar(input: {
+  oauthClientId: string;
+  oauthClientSecret: string;
+  oauthRefreshToken: string;
+  platform: "google_calendar" | "microsoft_outlook";
+  metadata?: Record<string, string>;
+}) {
+  const parsedInput = recallCalendarInputSchema.parse(input);
+  const env = recallApiEnvSchema.parse(process.env);
+
+  const response = await fetch(buildRecallApiUrl(env, "/api/v2/calendars/"), {
+    method: "POST",
+    headers: buildRecallJsonHeaders(env),
+    body: JSON.stringify({
+      oauth_client_id: parsedInput.oauthClientId,
+      oauth_client_secret: parsedInput.oauthClientSecret,
+      oauth_refresh_token: parsedInput.oauthRefreshToken,
+      platform: parsedInput.platform,
+      metadata: parsedInput.metadata,
+    }),
+  });
+
+  if (!response.ok) {
+    throw new Error(
+      `Recall calendar creation failed with ${response.status} ${response.statusText}`,
+    );
+  }
+
+  return response.json();
+}
+
+export async function updateRecallCalendar(input: {
+  calendarId: string;
+  oauthRefreshToken?: string;
+  metadata?: Record<string, string>;
+}) {
+  const parsedInput = recallCalendarUpdateInputSchema.parse(input);
+  const env = recallApiEnvSchema.parse(process.env);
+
+  const response = await fetch(
+    buildRecallApiUrl(
+      env,
+      `/api/v2/calendars/${encodeURIComponent(parsedInput.calendarId)}/`,
+    ),
+    {
+      method: "PATCH",
+      headers: buildRecallJsonHeaders(env),
+      body: JSON.stringify({
+        oauth_refresh_token: parsedInput.oauthRefreshToken,
+        metadata: parsedInput.metadata,
+      }),
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error(
+      `Recall calendar update failed with ${response.status} ${response.statusText}`,
+    );
+  }
+
+  return response.json();
+}
+
+export async function retrieveRecallCalendar(calendarId: string) {
+  const env = recallApiEnvSchema.parse(process.env);
+  const response = await fetch(
+    buildRecallApiUrl(env, `/api/v2/calendars/${encodeURIComponent(calendarId)}/`),
+    {
+      method: "GET",
+      headers: buildRecallReadHeaders(env),
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error(
+      `Recall calendar retrieval failed with ${response.status} ${response.statusText}`,
+    );
+  }
+
+  return response.json();
+}
+
+export async function listRecallCalendarEvents(input: {
+  calendarId: string;
+  updatedAtGte?: string;
+}) {
+  const parsedInput = recallCalendarEventListInputSchema.parse(input);
+  const env = recallApiEnvSchema.parse(process.env);
+  const initialUrl = new URL(buildRecallApiUrl(env, "/api/v2/calendar-events/"));
+
+  initialUrl.searchParams.set("calendar_id", parsedInput.calendarId);
+  if (parsedInput.updatedAtGte) {
+    initialUrl.searchParams.set("updated_at__gte", parsedInput.updatedAtGte);
+  }
+
+  const events: unknown[] = [];
+  let nextUrl: string | null = initialUrl.toString();
+
+  while (nextUrl) {
+    const response = await fetch(nextUrl, {
+      method: "GET",
+      headers: buildRecallReadHeaders(env),
+    });
+
+    if (!response.ok) {
+      throw new Error(
+        `Recall calendar event listing failed with ${response.status} ${response.statusText}`,
+      );
+    }
+
+    const page = (await response.json()) as {
+      next?: unknown;
+      results?: unknown;
+    };
+
+    if (Array.isArray(page.results)) {
+      events.push(...page.results);
+    }
+
+    nextUrl = typeof page.next === "string" && page.next ? page.next : null;
+  }
+
+  return events;
+}
+
+export async function scheduleRecallCalendarEventBot(input: {
+  calendarEventId: string;
+  deduplicationKey: string;
+  botName?: string;
+  metadata?: Record<string, string>;
+}) {
+  const parsedInput = recallCalendarEventBotInputSchema.parse(input);
+  const env = recallApiEnvSchema.parse(process.env);
+
+  const response = await fetch(
+    buildRecallApiUrl(
+      env,
+      `/api/v2/calendar-events/${encodeURIComponent(
+        parsedInput.calendarEventId,
+      )}/bot/`,
+    ),
+    {
+      method: "POST",
+      headers: buildRecallJsonHeaders(env),
+      body: JSON.stringify({
+        deduplication_key: parsedInput.deduplicationKey,
+        bot_config: {
+          bot_name: parsedInput.botName,
+          metadata: parsedInput.metadata,
+        },
+      }),
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error(
+      `Recall calendar bot scheduling failed with ${response.status} ${response.statusText}`,
+    );
+  }
+
+  return response.json();
+}
+
+export async function deleteRecallCalendarEventBot(input: {
+  calendarEventId: string;
+}) {
+  const parsedInput = recallCalendarEventBotDeleteInputSchema.parse(input);
+  const env = recallApiEnvSchema.parse(process.env);
+
+  const response = await fetch(
+    buildRecallApiUrl(
+      env,
+      `/api/v2/calendar-events/${encodeURIComponent(
+        parsedInput.calendarEventId,
+      )}/bot/`,
+    ),
+    {
+      method: "DELETE",
+      headers: buildRecallReadHeaders(env),
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error(
+      `Recall calendar bot deletion failed with ${response.status} ${response.statusText}`,
+    );
+  }
+
+  if (response.status === 204) {
+    return {};
   }
 
   return response.json();
@@ -246,6 +471,20 @@ function buildRecallApiUrl(
     pathname,
     env.RECALL_API_BASE_URL ?? DEFAULT_RECALL_API_BASE_URL,
   ).toString();
+}
+
+function buildRecallJsonHeaders(env: z.infer<typeof recallApiEnvSchema>) {
+  return {
+    ...buildRecallReadHeaders(env),
+    "Content-Type": "application/json",
+  };
+}
+
+function buildRecallReadHeaders(env: z.infer<typeof recallApiEnvSchema>) {
+  return {
+    Authorization: `Token ${env.RECALL_API_KEY}`,
+    Accept: "application/json",
+  };
 }
 
 export function findRecallRecordingMediaUrl(

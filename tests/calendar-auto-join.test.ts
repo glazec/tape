@@ -1,15 +1,19 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 const {
+  deleteRecallCalendarEventBot,
   deleteScheduledRecallBot,
   insert,
+  scheduleRecallCalendarEventBot,
   scheduleRecallBot,
   select,
   update,
   updateScheduledRecallBot,
 } = vi.hoisted(() => ({
+  deleteRecallCalendarEventBot: vi.fn(),
   deleteScheduledRecallBot: vi.fn(),
   insert: vi.fn(),
+  scheduleRecallCalendarEventBot: vi.fn(),
   scheduleRecallBot: vi.fn(),
   select: vi.fn(),
   update: vi.fn(),
@@ -26,15 +30,19 @@ vi.mock("@/db/client", () => ({
 
 vi.mock("@/lib/vendors/recall", () => ({
   DEFAULT_RECALL_BOT_NAME: "IOSG Old Friend",
+  deleteRecallCalendarEventBot,
   deleteScheduledRecallBot,
+  scheduleRecallCalendarEventBot,
   scheduleRecallBot,
   updateScheduledRecallBot,
 }));
 
 describe("calendar auto join", () => {
   afterEach(() => {
+    deleteRecallCalendarEventBot.mockReset();
     deleteScheduledRecallBot.mockReset();
     insert.mockReset();
+    scheduleRecallCalendarEventBot.mockReset();
     scheduleRecallBot.mockReset();
     select.mockReset();
     update.mockReset();
@@ -62,6 +70,19 @@ describe("calendar auto join", () => {
         },
       }),
     ).toBe("https://meet.google.com/abc-defg-hij");
+  });
+
+  it("ignores physical map URLs in the calendar location", async () => {
+    const { findCalendarMeetingUrl } = await import("@/lib/calendar-auto-join");
+
+    expect(
+      findCalendarMeetingUrl({
+        externalEventId: "google_event_123",
+        title: "Office sync",
+        startsAt: "2026-06-30T12:00:00.000Z",
+        location: "HQ 12F https://maps.google.com/?q=HQ",
+      }),
+    ).toBeNull();
   });
 
   it("schedules Recall for an auto join event with a meeting link and no location", async () => {
@@ -189,6 +210,147 @@ describe("calendar auto join", () => {
         recallBotId: "bot_123",
       }),
     );
+  });
+
+  it("stores the nested Recall Calendar V2 bot id instead of the calendar event id", async () => {
+    const calendarEventReturning = vi
+      .fn()
+      .mockResolvedValue([{ id: "33333333-3333-4333-8333-333333333333" }]);
+    const calendarEventOnConflictDoUpdate = vi
+      .fn()
+      .mockReturnValue({ returning: calendarEventReturning });
+    const calendarEventValues = vi
+      .fn()
+      .mockReturnValue({ onConflictDoUpdate: calendarEventOnConflictDoUpdate });
+
+    const meetingReturning = vi
+      .fn()
+      .mockResolvedValue([{ id: "44444444-4444-4444-8444-444444444444" }]);
+    const meetingValues = vi.fn().mockReturnValue({ returning: meetingReturning });
+
+    const existingLimit = vi.fn().mockResolvedValue([]);
+    const updateWhere = vi.fn().mockResolvedValue(undefined);
+    const updateSet = vi.fn().mockReturnValue({ where: updateWhere });
+
+    insert
+      .mockReturnValueOnce({ values: calendarEventValues })
+      .mockReturnValueOnce({ values: meetingValues });
+    select.mockReturnValue({
+      from: () => ({
+        where: () => ({
+          limit: existingLimit,
+        }),
+      }),
+    });
+    update.mockReturnValue({ set: updateSet });
+    scheduleRecallCalendarEventBot.mockResolvedValue({
+      id: "55555555-5555-4555-8555-555555555555",
+      bots: [
+        {
+          bot_id: "bot_123",
+          deduplication_key: "shared_event_123@example.com",
+        },
+      ],
+    });
+
+    const { autoJoinCalendarEvent } = await import("@/lib/calendar-auto-join");
+
+    await expect(
+      autoJoinCalendarEvent({
+        connection: {
+          id: "11111111-1111-4111-8111-111111111111",
+          teamId: "22222222-2222-4222-8222-222222222222",
+          userId: "55555555-5555-4555-8555-555555555555",
+          autoJoinEnabled: true,
+        },
+        event: {
+          externalEventId: "google_event_123",
+          recallCalendarEventId: "55555555-5555-4555-8555-555555555555",
+          recallCalendarEventDeduplicationKey: "shared_event_123@example.com",
+          title: "Partner sync",
+          startsAt: "2026-06-30T12:00:00.000Z",
+          meetingUrl: "https://meet.google.com/abc-defg-hij",
+        },
+      }),
+    ).resolves.toEqual(
+      expect.objectContaining({
+        action: "scheduled",
+        recallBotId: "bot_123",
+      }),
+    );
+
+    expect(scheduleRecallCalendarEventBot).toHaveBeenCalledWith({
+      calendarEventId: "55555555-5555-4555-8555-555555555555",
+      deduplicationKey: "shared_event_123@example.com",
+      botName: "IOSG Old Friend",
+      metadata: {
+        calendarEventId: "33333333-3333-4333-8333-333333333333",
+        meetingId: "44444444-4444-4444-8444-444444444444",
+      },
+    });
+    expect(updateSet).toHaveBeenCalledWith(
+      expect.objectContaining({
+        recallBotId: "bot_123",
+      }),
+    );
+  });
+
+  it("rejects a Recall Calendar V2 bot response without a nested bot id", async () => {
+    const calendarEventReturning = vi
+      .fn()
+      .mockResolvedValue([{ id: "33333333-3333-4333-8333-333333333333" }]);
+    const calendarEventOnConflictDoUpdate = vi
+      .fn()
+      .mockReturnValue({ returning: calendarEventReturning });
+    const calendarEventValues = vi
+      .fn()
+      .mockReturnValue({ onConflictDoUpdate: calendarEventOnConflictDoUpdate });
+
+    const meetingReturning = vi
+      .fn()
+      .mockResolvedValue([{ id: "44444444-4444-4444-8444-444444444444" }]);
+    const meetingValues = vi.fn().mockReturnValue({ returning: meetingReturning });
+
+    const existingLimit = vi.fn().mockResolvedValue([]);
+    const updateWhere = vi.fn().mockResolvedValue(undefined);
+    const updateSet = vi.fn().mockReturnValue({ where: updateWhere });
+
+    insert
+      .mockReturnValueOnce({ values: calendarEventValues })
+      .mockReturnValueOnce({ values: meetingValues });
+    select.mockReturnValue({
+      from: () => ({
+        where: () => ({
+          limit: existingLimit,
+        }),
+      }),
+    });
+    update.mockReturnValue({ set: updateSet });
+    scheduleRecallCalendarEventBot.mockResolvedValue({
+      id: "55555555-5555-4555-8555-555555555555",
+      bots: [],
+    });
+
+    const { autoJoinCalendarEvent } = await import("@/lib/calendar-auto-join");
+
+    await expect(
+      autoJoinCalendarEvent({
+        connection: {
+          id: "11111111-1111-4111-8111-111111111111",
+          teamId: "22222222-2222-4222-8222-222222222222",
+          userId: "55555555-5555-4555-8555-555555555555",
+          autoJoinEnabled: true,
+        },
+        event: {
+          externalEventId: "google_event_123",
+          recallCalendarEventId: "55555555-5555-4555-8555-555555555555",
+          recallCalendarEventDeduplicationKey: "shared_event_123@example.com",
+          title: "Partner sync",
+          startsAt: "2026-06-30T12:00:00.000Z",
+          meetingUrl: "https://meet.google.com/abc-defg-hij",
+        },
+      }),
+    ).rejects.toThrow("Recall bot response missing id");
   });
 
   it("retries Recall scheduling for an existing calendar meeting without a bot", async () => {

@@ -10,7 +10,9 @@ import {
 } from "@/lib/meeting-links";
 import {
   DEFAULT_RECALL_BOT_NAME,
+  deleteRecallCalendarEventBot,
   deleteScheduledRecallBot,
+  scheduleRecallCalendarEventBot,
   scheduleRecallBot,
   updateScheduledRecallBot,
 } from "@/lib/vendors/recall";
@@ -37,6 +39,9 @@ export type SyncedCalendarEvent = {
   location?: string | null;
   description?: string | null;
   hangoutLink?: string | null;
+  isDeleted?: boolean;
+  recallCalendarEventId?: string | null;
+  recallCalendarEventDeduplicationKey?: string | null;
   conferenceData?: {
     entryPoints?: CalendarEventEntryPoint[] | null;
   } | null;
@@ -49,6 +54,10 @@ type AutoJoinInput = {
 
 type RecallBotResponse = {
   id?: unknown;
+  bots?: Array<{
+    bot_id?: unknown;
+    deduplication_key?: unknown;
+  }>;
 };
 
 type ExistingMeeting = {
@@ -60,19 +69,27 @@ type ExistingMeeting = {
 };
 
 export function findCalendarMeetingUrl(event: SyncedCalendarEvent) {
-  const candidates = [
+  const structuredCandidates = [
     event.meetingUrl,
     ...getConferenceEntryPointUris(event),
     event.hangoutLink,
+  ];
+  const textCandidates = [
     ...extractUrls(event.location),
     ...extractUrls(event.description),
   ];
 
-  return candidates.find(isSupportedMeetingUrl) ?? candidates.find(isHttpUrl) ?? null;
+  return (
+    [...structuredCandidates, ...textCandidates].find(isSupportedMeetingUrl) ??
+    structuredCandidates.find(isHttpUrl) ??
+    null
+  );
 }
 
 export async function autoJoinCalendarEvent(input: AutoJoinInput) {
-  const meetingUrl = findCalendarMeetingUrl(input.event);
+  const meetingUrl = input.event.isDeleted
+    ? null
+    : findCalendarMeetingUrl(input.event);
   const platform = meetingUrl ? detectMeetingPlatform(meetingUrl) : null;
   const title = normalizeEventTitle(input.event, platform);
   const startsAt = parseEventDate(input.event.startsAt);
@@ -137,6 +154,7 @@ export async function autoJoinCalendarEvent(input: AutoJoinInput) {
         endsAt,
         meetingId: existingMeeting.id,
         meetingUrl: null,
+        recallCalendarEventId: input.event.recallCalendarEventId,
         startsAt,
         title,
       });
@@ -163,6 +181,7 @@ export async function autoJoinCalendarEvent(input: AutoJoinInput) {
         endsAt,
         meetingId: existingMeeting.id,
         meetingUrl,
+        recallCalendarEventId: input.event.recallCalendarEventId,
         startsAt,
         title,
       });
@@ -199,18 +218,22 @@ export async function autoJoinCalendarEvent(input: AutoJoinInput) {
       meetingUrl,
       startsAt,
     });
+    let recallBotId = existingMeeting.recallBotId;
 
     try {
       if (shouldUpdateBot) {
-        await updateScheduledRecallBot({
-          botId: existingMeeting.recallBotId,
+        const bot = await scheduleBotForCalendarEvent({
+          event: input.event,
           meetingUrl,
-          startAt: startsAt.toISOString(),
-          metadata: {
-            calendarEventId: calendarEvent.id,
-            meetingId: existingMeeting.id,
-          },
+          startsAt,
+          calendarEventId: calendarEvent.id,
+          meetingId: existingMeeting.id,
+          existingBotId: existingMeeting.recallBotId,
         });
+        recallBotId = getRecallBotResponseId(
+          bot,
+          input.event.recallCalendarEventDeduplicationKey,
+        ) ?? existingMeeting.recallBotId;
       }
 
       await updateMeetingFromCalendar({
@@ -220,6 +243,7 @@ export async function autoJoinCalendarEvent(input: AutoJoinInput) {
         meetingUrl,
         startsAt,
         endsAt,
+        recallBotId,
       });
     } catch (error) {
       await markMeetingFailed(existingMeeting.id);
@@ -233,7 +257,7 @@ export async function autoJoinCalendarEvent(input: AutoJoinInput) {
         meetingId: existingMeeting.id,
         meetingUrl,
         platform,
-        recallBotId: existingMeeting.recallBotId,
+        recallBotId,
       };
     }
 
@@ -282,25 +306,26 @@ export async function autoJoinCalendarEvent(input: AutoJoinInput) {
   }
 
   try {
-    const bot = (await scheduleRecallBot({
+    const bot = await scheduleBotForCalendarEvent({
+      event: input.event,
       meetingUrl,
-      botName: DEFAULT_RECALL_BOT_NAME,
-      startAt: startsAt.toISOString(),
-      webhookUrl: buildAppUrl("/api/recall/webhook"),
-      metadata: {
-        calendarEventId: calendarEvent.id,
-        meetingId: meeting.id,
-      },
-    })) as RecallBotResponse;
+      startsAt,
+      calendarEventId: calendarEvent.id,
+      meetingId: meeting.id,
+    });
+    const recallBotId = getRecallBotResponseId(
+      bot,
+      input.event.recallCalendarEventDeduplicationKey,
+    );
 
-    if (typeof bot.id !== "string") {
+    if (!recallBotId) {
       throw new Error("Recall bot response missing id");
     }
 
     await db
       .update(meetings)
       .set({
-        recallBotId: bot.id,
+        recallBotId,
         title,
         platform,
         meetingUrl,
@@ -317,7 +342,7 @@ export async function autoJoinCalendarEvent(input: AutoJoinInput) {
       meetingId: meeting.id,
       meetingUrl,
       platform,
-      recallBotId: bot.id,
+      recallBotId,
     };
   } catch (error) {
     await markMeetingFailed(meeting.id);
@@ -333,6 +358,7 @@ async function updateMeetingFromCalendar(input: {
   meetingUrl: string;
   startsAt: Date;
   endsAt: Date | null;
+  recallBotId?: string | null;
 }) {
   await db
     .update(meetings)
@@ -342,6 +368,7 @@ async function updateMeetingFromCalendar(input: {
       meetingUrl: input.meetingUrl,
       startedAt: input.startsAt,
       endedAt: input.endsAt,
+      recallBotId: input.recallBotId,
       updatedAt: new Date(),
     })
     .where(eq(meetings.id, input.meetingId));
@@ -362,10 +389,17 @@ async function cancelScheduledMeetingBotFromCalendar(input: {
   meetingId: string;
   title: string;
   meetingUrl: string | null;
+  recallCalendarEventId?: string | null;
   startsAt: Date;
   endsAt: Date | null;
 }) {
-  await deleteScheduledRecallBot({ botId: input.botId });
+  if (input.recallCalendarEventId) {
+    await deleteRecallCalendarEventBot({
+      calendarEventId: input.recallCalendarEventId,
+    });
+  } else {
+    await deleteScheduledRecallBot({ botId: input.botId });
+  }
   await db
     .update(meetings)
     .set({
@@ -378,6 +412,72 @@ async function cancelScheduledMeetingBotFromCalendar(input: {
       updatedAt: new Date(),
     })
     .where(eq(meetings.id, input.meetingId));
+}
+
+async function scheduleBotForCalendarEvent(input: {
+  event: SyncedCalendarEvent;
+  meetingUrl: string;
+  startsAt: Date;
+  calendarEventId: string;
+  meetingId: string;
+  existingBotId?: string;
+}) {
+  const metadata = {
+    calendarEventId: input.calendarEventId,
+    meetingId: input.meetingId,
+  };
+
+  if (input.event.recallCalendarEventId) {
+    return (await scheduleRecallCalendarEventBot({
+      calendarEventId: input.event.recallCalendarEventId,
+      deduplicationKey:
+        input.event.recallCalendarEventDeduplicationKey ??
+        input.event.recallCalendarEventId,
+      botName: DEFAULT_RECALL_BOT_NAME,
+      metadata,
+    })) as RecallBotResponse;
+  }
+
+  if (input.existingBotId) {
+    return (await updateScheduledRecallBot({
+      botId: input.existingBotId,
+      meetingUrl: input.meetingUrl,
+      startAt: input.startsAt.toISOString(),
+      metadata,
+    })) as RecallBotResponse;
+  }
+
+  return (await scheduleRecallBot({
+    meetingUrl: input.meetingUrl,
+    botName: DEFAULT_RECALL_BOT_NAME,
+    startAt: input.startsAt.toISOString(),
+    webhookUrl: buildAppUrl("/api/recall/webhook"),
+    metadata,
+  })) as RecallBotResponse;
+}
+
+function getRecallBotResponseId(
+  bot: RecallBotResponse,
+  deduplicationKey?: string | null,
+) {
+  const botEntry =
+    bot.bots?.find(
+      (candidate) =>
+        deduplicationKey &&
+        candidate.deduplication_key === deduplicationKey &&
+        typeof candidate.bot_id === "string",
+    ) ??
+    bot.bots?.find((candidate) => typeof candidate.bot_id === "string");
+
+  if (typeof botEntry?.bot_id === "string") {
+    return botEntry.bot_id;
+  }
+
+  if (deduplicationKey) {
+    return null;
+  }
+
+  return typeof bot.id === "string" ? bot.id : null;
 }
 
 function hasScheduledBotChange(

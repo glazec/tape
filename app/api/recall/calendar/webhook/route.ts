@@ -1,13 +1,12 @@
 import {
-  getRecallWebhookIdempotencyKey,
-  normalizeRecallWebhook,
-} from "@/lib/vendors/recall";
+  normalizeRecallCalendarWebhook,
+  processRecallCalendarWebhook,
+} from "@/lib/recall-calendar";
 import {
   markVendorWebhookEventProcessed,
   MissingWebhookIdempotencyKeyError,
   recordVendorWebhookEvent,
 } from "@/lib/vendor-webhook-events";
-import { applyRecallMeetingEvent } from "@/lib/recall-meetings";
 import {
   verifyRecallWebhook,
   webhookVerificationResponse,
@@ -33,33 +32,39 @@ export async function POST(request: Request) {
     return webhookVerificationResponse(error);
   }
 
-  let event: ReturnType<typeof normalizeRecallWebhook>;
+  let event: ReturnType<typeof normalizeRecallCalendarWebhook>;
 
   try {
-    event = normalizeRecallWebhook(body);
+    event = normalizeRecallCalendarWebhook(body);
   } catch {
     return Response.json({ error: "Invalid webhook payload" }, { status: 400 });
   }
 
   try {
-    const idempotencyKey =
-      getRecallWebhookIdempotencyKey(event, request.headers) ?? "";
+    const idempotencyKey = getRecallCalendarWebhookIdempotencyKey(
+      request.headers,
+    );
     const recorded = await recordVendorWebhookEvent({
       provider: "recall",
       eventType: event.eventType,
       idempotencyKey,
       payload: body,
     });
+    let result: Awaited<ReturnType<typeof processRecallCalendarWebhook>> | {
+      action: "duplicate";
+    };
 
     if (recorded.shouldProcess) {
-      await applyRecallMeetingEvent(event);
+      result = await processRecallCalendarWebhook(event);
       await markVendorWebhookEventProcessed({
         provider: "recall",
         idempotencyKey,
       });
+    } else {
+      result = { action: "duplicate" };
     }
 
-    return Response.json({ received: true, event });
+    return Response.json({ received: true, result });
   } catch (error) {
     if (error instanceof MissingWebhookIdempotencyKeyError) {
       return Response.json(
@@ -73,4 +78,8 @@ export async function POST(request: Request) {
       { status: 500 },
     );
   }
+}
+
+function getRecallCalendarWebhookIdempotencyKey(headers: Headers) {
+  return headers.get("webhook-id") ?? headers.get("svix-id") ?? "";
 }

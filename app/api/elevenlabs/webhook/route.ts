@@ -3,6 +3,7 @@ import {
   normalizeElevenLabsWebhook,
 } from "@/lib/vendors/elevenlabs";
 import {
+  markVendorWebhookEventProcessed,
   MissingWebhookIdempotencyKeyError,
   recordVendorWebhookEvent,
 } from "@/lib/vendor-webhook-events";
@@ -33,15 +34,20 @@ export async function POST(request: Request) {
   }
 
   try {
+    const idempotencyKey = getElevenLabsWebhookIdempotencyKey(event) ?? "";
     const recorded = await recordVendorWebhookEvent({
       provider: "elevenlabs",
       eventType: event.eventType,
-      idempotencyKey: getElevenLabsWebhookIdempotencyKey(event) ?? "",
+      idempotencyKey,
       payload: body,
     });
 
-    if (recorded.inserted) {
+    if (recorded.shouldProcess) {
       await applyElevenLabsTranscriptEvent(event);
+      await markVendorWebhookEventProcessed({
+        provider: "elevenlabs",
+        idempotencyKey,
+      });
     }
 
     return Response.json({ received: true, event });
