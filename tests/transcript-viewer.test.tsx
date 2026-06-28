@@ -101,7 +101,10 @@ describe("TranscriptViewer", () => {
     expect(html).toContain('aria-label="Audio waveform, Speaker 1 · Hard, 120 wpm"');
     expect(html).toContain("<svg");
     expect(html).toContain("<polyline");
-    expect(html).toContain("background-color:#2563eb");
+    expect((html.match(/background-color:#2563eb/g) ?? []).length).toBeGreaterThanOrEqual(2);
+    expect(html).toContain('title="Speaker 1"');
+    expect(html).toContain('title="Hard emotion"');
+    expect(html).toContain('stroke="#f97316"');
   });
 
   it("keeps neutral waveform labels to the speaker name", () => {
@@ -119,5 +122,6 @@ describe("TranscriptViewer", () => {
 
     expect(html).toContain('aria-label="Audio waveform, Speaker 1, 120 wpm"');
     expect(html).not.toContain("Speaker 1 · Neutral");
+    expect(html).toContain('title="Neutral emotion"');
   });
 });

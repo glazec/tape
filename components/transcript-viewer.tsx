@@ -341,9 +341,19 @@ export function TranscriptViewer({
               <h3 className="text-sm font-semibold">Speakers</h3>
               <div className="mt-3 flex min-w-0 flex-wrap gap-2">
                 {speakerStats.map((speaker) => {
+                  const speakerLabel = speaker.speaker ?? "Unknown speaker";
                   const content = (
                     <>
-                      <span>{speaker.speaker ?? "Unknown speaker"}</span>
+                      <span
+                        aria-hidden="true"
+                        className="size-2.5 rounded-full"
+                        style={{
+                          backgroundColor: getWaveformSpeakerColor(
+                            speaker.speaker,
+                          ),
+                        }}
+                      />
+                      <span>{speakerLabel}</span>
                       <span className="text-xs text-muted-foreground">
                         {speaker.percent}%
                       </span>
@@ -355,6 +365,7 @@ export function TranscriptViewer({
                       className="inline-flex h-8 items-center gap-2 rounded-md border px-2 text-sm font-medium outline-none hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/50"
                       key={getSpeakerKey(speaker.speaker)}
                       onClick={() => startEditing(speaker.speaker)}
+                      title={speakerLabel}
                       type="button"
                     >
                       {content}
@@ -363,6 +374,7 @@ export function TranscriptViewer({
                     <span
                       className="inline-flex h-8 items-center gap-2 rounded-md border px-2 text-sm font-medium"
                       key={getSpeakerKey(speaker.speaker)}
+                      title={speakerLabel}
                     >
                       {content}
                     </span>
@@ -846,7 +858,7 @@ function TranscriptAudioPlayer({
           >
             {sectionMarkers.map((section) => (
               <span
-                className="absolute inset-y-0 box-border flex min-w-0 items-center px-1.5 text-[0.68rem] font-semibold leading-none text-white"
+                className="absolute inset-y-0"
                 key={`${section.id}-speaker`}
                 style={{
                   backgroundColor: getWaveformSpeakerColor(section.speaker),
@@ -854,9 +866,8 @@ function TranscriptAudioPlayer({
                   opacity: section.id === activeSegmentId ? 0.96 : 0.78,
                   width: `${section.width}%`,
                 }}
-              >
-                <span className="truncate">{section.speakerLabel}</span>
-              </span>
+                title={section.speakerLabel}
+              />
             ))}
           </span>
           <span
@@ -895,15 +906,17 @@ function TranscriptAudioPlayer({
                 stroke="var(--background)"
                 strokeLinecap="round"
                 strokeLinejoin="round"
-                strokeWidth="7"
+                strokeWidth="8"
+                vectorEffect="non-scaling-stroke"
               />
               <polyline
                 fill="none"
                 points={wpmLinePoints}
-                stroke="currentColor"
+                stroke="#f97316"
                 strokeLinecap="round"
                 strokeLinejoin="round"
-                strokeWidth="3"
+                strokeWidth="4"
+                vectorEffect="non-scaling-stroke"
               />
             </svg>
           ) : null}
@@ -929,6 +942,7 @@ function TranscriptAudioPlayer({
                   opacity: section.id === activeSegmentId ? 0.95 : 0.55,
                   width: `${section.width}%`,
                 }}
+                title={formatEmotionTooltip(section.emotionLabel)}
               />
             ))}
           </span>
@@ -1257,6 +1271,14 @@ function formatWaveformSectionLabel(
   }
 
   return speakerLabel;
+}
+
+function formatEmotionTooltip(emotionLabel?: TranscriptSegment["emotionLabel"]) {
+  if (emotionLabel && emotionLabel !== "neutral") {
+    return `${formatEmotionLabel(emotionLabel)} emotion`;
+  }
+
+  return "Neutral emotion";
 }
 
 function formatWpmLabel(wpm: number) {
