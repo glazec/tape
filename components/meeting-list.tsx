@@ -22,6 +22,8 @@ export type MeetingListItem = {
   title: string;
   platform: "google_meet" | "in_person" | "zoom" | "upload";
   startedAt: string;
+  endedAt?: string | null;
+  participantCount?: number;
   status: MeetingRecordStatus;
   transcriptJobStatus?: TranscriptJobStatus | null;
   hasRecallBot?: boolean;
@@ -65,6 +67,8 @@ export function MeetingList({
         <TableRow>
           <TableHead>Meeting</TableHead>
           <TableHead className="hidden sm:table-cell">Platform</TableHead>
+          <TableHead className="hidden md:table-cell">Participants</TableHead>
+          <TableHead className="hidden md:table-cell">Duration</TableHead>
           <TableHead className="hidden md:table-cell">Started</TableHead>
           <TableHead className="text-right">Status</TableHead>
         </TableRow>
@@ -73,7 +77,7 @@ export function MeetingList({
         {meetings.length === 0 ? (
           <TableRow>
             <TableCell
-              colSpan={4}
+              colSpan={6}
               className="h-24 text-center text-muted-foreground"
             >
               {emptyMessage}
@@ -125,6 +129,12 @@ export function MeetingList({
                 </TableCell>
                 <TableCell className="hidden text-muted-foreground sm:table-cell">
                   {platformLabels[meeting.platform]}
+                </TableCell>
+                <TableCell className="hidden text-muted-foreground md:table-cell">
+                  {formatParticipantCount(meeting.participantCount)}
+                </TableCell>
+                <TableCell className="hidden text-muted-foreground md:table-cell">
+                  {formatMeetingDuration(meeting.startedAt, meeting.endedAt)}
                 </TableCell>
                 <TableCell className="hidden text-muted-foreground md:table-cell">
                   <LocalDateTime value={meeting.startedAt} />
@@ -201,4 +211,40 @@ function getStatusVariant(status: MeetingDisplayStatus) {
   }
 
   return "default";
+}
+
+function formatParticipantCount(count: number | undefined) {
+  if (typeof count !== "number") {
+    return "Unknown";
+  }
+
+  return count === 1 ? "1 person" : `${count} people`;
+}
+
+function formatMeetingDuration(startedAt: string, endedAt?: string | null) {
+  if (!endedAt) {
+    return "Unknown";
+  }
+
+  const startedTime = new Date(startedAt).getTime();
+  const endedTime = new Date(endedAt).getTime();
+  const durationMs = endedTime - startedTime;
+
+  if (!Number.isFinite(durationMs) || durationMs <= 0) {
+    return "Unknown";
+  }
+
+  const totalMinutes = Math.max(1, Math.round(durationMs / 60000));
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+
+  if (hours && minutes) {
+    return `${hours}h ${minutes}m`;
+  }
+
+  if (hours) {
+    return `${hours}h`;
+  }
+
+  return `${minutes}m`;
 }

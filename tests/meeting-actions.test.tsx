@@ -11,20 +11,19 @@ vi.mock("next/navigation", () => ({
 }));
 
 describe("MeetingActions", () => {
-  it("renders text, MP3, all, and copy export actions", () => {
+  it("renders a single export dropdown with transcript and MP3 choices", () => {
     const html = renderToStaticMarkup(
       <MeetingActions meetingId="11111111-1111-4111-8111-111111111111" />,
     );
 
-    expect(html).toContain("Export text");
-    expect(html).toContain(
-      "/api/meetings/11111111-1111-4111-8111-111111111111/export?format=text",
-    );
-    expect(html).toContain("Export MP3");
-    expect(html).toContain(
-      "/api/meetings/11111111-1111-4111-8111-111111111111/export?format=mp3",
-    );
-    expect(html).toContain("Export all");
+    expect(html).toContain("Export");
+    expect(html).toContain("Transcript");
+    expect(html).toContain("MP3");
+    expect(html).toContain("Download selected");
+    expect(html).not.toContain("Export text");
+    expect(html).not.toContain("Export MP3");
+    expect(html).not.toContain("Export all");
     expect(html).toContain("Copy");
+    expect(html).toContain("Delete");
   });
 });

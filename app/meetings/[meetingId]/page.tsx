@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 
 import { AppShell } from "@/components/app-shell";
+import { MeetingAccessSummary } from "@/components/meeting-access-summary";
 import { MeetingAutoRefresh } from "@/components/meeting-auto-refresh";
 import { MeetingActions } from "@/components/meeting-actions";
 import { MeetingTitleEditor } from "@/components/meeting-title-editor";
@@ -92,10 +93,11 @@ export default async function MeetingPage({
               <dt className="text-xs font-medium uppercase tracking-normal text-muted-foreground">
                 Access
               </dt>
-              <dd className="mt-1 text-sm font-semibold">
-                {meeting.accessScope === "workspace"
-                  ? "Organization"
-                  : "Shared with you"}
+              <dd className="mt-1">
+                <MeetingAccessSummary
+                  accessPeople={meeting.accessPeople}
+                  accessScope={meeting.accessScope}
+                />
               </dd>
             </div>
           </dl>

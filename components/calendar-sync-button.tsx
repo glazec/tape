@@ -93,7 +93,7 @@ export function CalendarSyncButton({
       ? "Syncing..."
       : needsConnection
         ? "Check Recall calendar"
-        : "Sync Recall calendar";
+        : "Sync calendar";
   const alertTitle =
     state === "error"
       ? "Calendar not synced"
@@ -107,6 +107,7 @@ export function CalendarSyncButton({
         type="button"
         onClick={syncCalendar}
         disabled={isBusy}
+        variant="outline"
       >
         {needsConnection ? (
           <CalendarCheck data-icon="inline-start" />

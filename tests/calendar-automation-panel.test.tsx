@@ -13,7 +13,9 @@ describe("CalendarAutomationPanel", () => {
   it("groups Recall calendar status and sync action when connected", () => {
     const html = renderToStaticMarkup(
       <CalendarAutomationPanel
+        accountLabel="member@iosg.vc"
         autoSync={false}
+        nextJoinTitle="IOSG Weekly Team Meeting"
         status={{
           connected: true,
           autoJoinEnabled: true,
@@ -25,9 +27,11 @@ describe("CalendarAutomationPanel", () => {
 
     expect(html).toContain("Calendar capture");
     expect(html).toContain("Calendar connected");
+    expect(html).toContain("member@iosg.vc");
     expect(html).toContain("Recording coverage on");
+    expect(html).toContain("Next join: IOSG Weekly Team Meeting");
     expect(html).toContain("Last checked");
-    expect(html).toContain("Sync Recall calendar");
+    expect(html).toContain("Sync calendar");
   });
 
   it("shows a connect action when Recall Calendar is not connected", () => {

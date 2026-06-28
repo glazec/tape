@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { AlertTriangle, Bot, FileCheck2 } from "lucide-react";
+import { Bot } from "lucide-react";
 
 import { LocalDateTime } from "@/components/local-date-time";
 import { Badge } from "@/components/ui/badge";
@@ -16,7 +16,7 @@ export function DashboardWorkflowSummary({
   return (
     <section
       aria-label="Meeting workflow summary"
-      className="grid gap-3 md:grid-cols-3"
+      className="w-full"
     >
       <SummaryTile
         icon={<Bot />}
@@ -25,23 +25,6 @@ export function DashboardWorkflowSummary({
         badge="Auto join"
         badgeVariant={summary.scheduledWithoutBot ? "destructive" : "secondary"}
         detail={<UpcomingJoinDetail summary={summary} />}
-      />
-      <SummaryTile
-        icon={<FileCheck2 />}
-        label="Ready for review"
-        value={summary.readyTranscripts}
-        badge="Transcript"
-        badgeVariant="secondary"
-        detail={formatReadyDetail(summary)}
-      />
-      <SummaryTile
-        icon={<AlertTriangle />}
-        label="Needs attention"
-        value={summary.needsAttention}
-        badge={summary.needsAttention ? "Review" : "Clean"}
-        badgeVariant={summary.needsAttention ? "destructive" : "secondary"}
-        detail={formatAttentionDetail(summary)}
-        urgent={summary.needsAttention > 0}
       />
     </section>
   );
@@ -112,34 +95,4 @@ function UpcomingJoinDetail({
   }
 
   return "No upcoming calendar joins.";
-}
-
-function formatReadyDetail(summary: DashboardWorkflowSummaryModel) {
-  if (summary.activeWork > 0) {
-    return `${summary.activeWork} transcript jobs in progress. Ready notes are available for IC and CRM follow up.`;
-  }
-
-  return "Open for IC notes, CRM follow up, and sharing.";
-}
-
-function formatAttentionDetail(summary: DashboardWorkflowSummaryModel) {
-  const parts: string[] = [];
-
-  if (summary.failedMeetings) {
-    parts.push(`${summary.failedMeetings} failed`);
-  }
-
-  if (summary.scheduledWithoutBot) {
-    parts.push(`${summary.scheduledWithoutBot} missing bot`);
-  }
-
-  if (summary.overdueScheduled) {
-    parts.push(`${summary.overdueScheduled} stale scheduled`);
-  }
-
-  if (!parts.length) {
-    return "No failed or uncovered meetings.";
-  }
-
-  return parts.join(", ");
 }

@@ -39,6 +39,18 @@ describe("AppShell", () => {
     expect(html).toContain('aria-current="page"');
   });
 
+  it("renders New meeting as the primary navigation action", () => {
+    const html = renderToStaticMarkup(
+      <AppShell activeHref="/dashboard">Dashboard body</AppShell>,
+    );
+    const newMeetingLink =
+      html.match(/<a[^>]+href="\/meetings\/new"[^>]*>New meeting<\/a>/)?.[0] ??
+      "";
+
+    expect(newMeetingLink).toContain("bg-primary");
+    expect(newMeetingLink).toContain("text-primary-foreground");
+  });
+
   it("hides creator navigation for read only users", () => {
     const html = renderToStaticMarkup(
       <AppShell activeHref="/dashboard" canCreateMeetings={false}>

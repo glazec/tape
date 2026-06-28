@@ -49,9 +49,15 @@ export type MeetingTranscript = {
   segments: TranscriptSegment[];
   speakerSuggestions: SpeakerSuggestion[];
   accessScope: "workspace" | "shared";
+  accessPeople: MeetingAccessPerson[];
 };
 
 export type ShareRecipient = {
+  email: string;
+  name: string | null;
+};
+
+export type MeetingAccessPerson = {
   email: string;
   name: string | null;
 };
@@ -141,6 +147,7 @@ export async function listMeetingLibraryPageForWorkspace(
       calendarAttendeeEmails: calendarEvents.attendeeEmails,
       recallBotId: meetings.recallBotId,
       startedAt: meetings.startedAt,
+      endedAt: meetings.endedAt,
       createdAt: meetings.createdAt,
     })
     .from(meetings)
@@ -164,6 +171,8 @@ export async function listMeetingLibraryPageForWorkspace(
       transcriptJobStatus: meeting.transcriptJobStatus,
       hasRecallBot: Boolean(meeting.recallBotId),
       startedAt: (meeting.startedAt ?? meeting.createdAt).toISOString(),
+      endedAt: meeting.endedAt?.toISOString() ?? null,
+      participantCount: getAttendeeCount(meeting.calendarAttendeeEmails),
       accessScope: meeting.teamId === workspace.teamId ? "workspace" : "shared",
       externalParticipantKeys: getExternalParticipantKeys(
         meeting.calendarAttendeeEmails,
@@ -186,6 +195,8 @@ export async function listMeetingLibraryPageForWorkspace(
       transcriptJobStatus: meeting.transcriptJobStatus,
       hasRecallBot: meeting.hasRecallBot,
       startedAt: meeting.startedAt,
+      endedAt: meeting.endedAt,
+      participantCount: meeting.participantCount,
       accessScope: meeting.accessScope,
       relatedMeetings: groupedById.get(meeting.id),
     }));
@@ -333,6 +344,17 @@ function getExternalParticipantKeys(
   return Array.from(keys);
 }
 
+function getAttendeeCount(attendeeEmails: unknown) {
+  if (!Array.isArray(attendeeEmails)) {
+    return undefined;
+  }
+
+  return attendeeEmails.filter(
+    (email): email is string =>
+      typeof email === "string" && email.trim().length > 0,
+  ).length;
+}
+
 export async function getMeetingDashboardSummaryForWorkspace(
   workspace: WorkspaceContext,
 ): Promise<DashboardWorkflowSummaryModel> {
@@ -430,27 +452,30 @@ export async function getMeetingTranscriptForWorkspace(
     return null;
   }
 
-  const segments = await db
-    .select({
-      id: transcriptSegments.id,
-      speaker: transcriptSegments.speaker,
-      startMs: transcriptSegments.startMs,
-      endMs: transcriptSegments.endMs,
-      text: transcriptSegments.text,
-      translatedText: transcriptSegments.translatedText,
-      emotionLabel: transcriptSegments.emotionLabel,
-      emotionReason: transcriptSegments.emotionReason,
-    })
-    .from(transcriptSegments)
-    .where(eq(transcriptSegments.meetingId, meeting.id))
-    .orderBy(asc(transcriptSegments.startMs));
-  const speakerSuggestions =
-    meeting.teamId === workspace.teamId
-      ? await listMeetingSpeakerSuggestions(
-          meeting.id,
-          meeting.calendarAttendeeEmails,
-        )
-      : [];
+  const accessScope =
+    meeting.teamId === workspace.teamId ? "workspace" : "shared";
+  const [segments, speakerSuggestions, accessPeople] = await Promise.all([
+    db
+      .select({
+        id: transcriptSegments.id,
+        speaker: transcriptSegments.speaker,
+        startMs: transcriptSegments.startMs,
+        endMs: transcriptSegments.endMs,
+        text: transcriptSegments.text,
+        translatedText: transcriptSegments.translatedText,
+        emotionLabel: transcriptSegments.emotionLabel,
+        emotionReason: transcriptSegments.emotionReason,
+      })
+      .from(transcriptSegments)
+      .where(eq(transcriptSegments.meetingId, meeting.id))
+      .orderBy(asc(transcriptSegments.startMs)),
+    accessScope === "workspace"
+      ? listMeetingSpeakerSuggestions(meeting.id, meeting.calendarAttendeeEmails)
+      : Promise.resolve([]),
+    accessScope === "shared"
+      ? listMeetingAccessPeople(meeting.id)
+      : Promise.resolve([]),
+  ]);
 
   return {
     id: meeting.id,
@@ -468,7 +493,8 @@ export async function getMeetingTranscriptForWorkspace(
       emotionLabel: normalizeEmotionLabel(segment.emotionLabel),
     })),
     speakerSuggestions,
-    accessScope: meeting.teamId === workspace.teamId ? "workspace" : "shared",
+    accessScope,
+    accessPeople,
   };
 }
 
@@ -534,6 +560,21 @@ async function listMeetingSpeakerSuggestions(
       email,
       name: namesByEmail.get(email) || formatNameFromEmail(email),
     }));
+}
+
+async function listMeetingAccessPeople(
+  meetingId: string,
+): Promise<MeetingAccessPerson[]> {
+  return db
+    .select({
+      email: users.email,
+      name: users.name,
+    })
+    .from(meetingAccess)
+    .innerJoin(users, eq(meetingAccess.userId, users.id))
+    .where(eq(meetingAccess.meetingId, meetingId))
+    .orderBy(asc(users.email))
+    .limit(20);
 }
 
 function formatNameFromEmail(email: string) {

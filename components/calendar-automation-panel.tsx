@@ -14,12 +14,16 @@ import { CalendarSyncButton } from "@/components/calendar-sync-button";
 import type { CalendarConnectionSummary } from "@/lib/calendar-connection-queries";
 
 type CalendarAutomationPanelProps = {
+  accountLabel?: string | null;
   autoSync: boolean;
+  nextJoinTitle?: string | null;
   status: CalendarConnectionSummary;
 };
 
 export function CalendarAutomationPanel({
+  accountLabel,
   autoSync,
+  nextJoinTitle,
   status,
 }: CalendarAutomationPanelProps) {
   const connected = status.connected;
@@ -47,7 +51,11 @@ export function CalendarAutomationPanel({
                 ? "Calendar connected"
                 : "Calendar not connected"
             }
-            value={formatRecallStatus(status.recallCalendarStatus)}
+            value={
+              connected
+                ? (accountLabel ?? "Connected account")
+                : "Connect calendar in Recall first"
+            }
           />
           <StatusRow
             icon={<Bot />}
@@ -58,7 +66,9 @@ export function CalendarAutomationPanel({
             }
             value={
               autoJoinActive
-                ? "Eligible online meetings are recorded"
+                ? nextJoinTitle
+                  ? `Next join: ${nextJoinTitle}`
+                  : "Supported online meetings will be recorded"
                 : connected
                   ? "Sync calendar to enable recording"
                   : "Connect calendar in Recall first"
@@ -94,14 +104,6 @@ function StatusRow({
       </span>
     </div>
   );
-}
-
-function formatRecallStatus(status: string | null) {
-  if (!status) {
-    return "Connect once to start watching events";
-  }
-
-  return status;
 }
 
 function formatLastSynced(value: string | null) {

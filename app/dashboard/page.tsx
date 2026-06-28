@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ChevronLeft, ChevronRight, Plus, Search } from "lucide-react";
+import { ChevronLeft, ChevronRight, Search } from "lucide-react";
 
 import { AppShell } from "@/components/app-shell";
 import { CalendarAutomationPanel } from "@/components/calendar-automation-panel";
@@ -65,7 +65,7 @@ export default async function DashboardPage({
       oneSignalExternalId={workspace.userId}
     >
       <section className="flex flex-col gap-6">
-        <div className="grid gap-4 lg:grid-cols-[1fr_22rem] lg:items-start">
+        <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_18rem_18rem] md:items-start xl:grid-cols-[1fr_22rem_22rem]">
           <div>
             <p className="text-sm font-medium uppercase tracking-normal text-primary">
               Dashboard
@@ -78,27 +78,19 @@ export default async function DashboardPage({
                 ? "Open transcripts that teammates shared with you."
                 : "Track founder calls, IC discussions, and team syncs from calendar invite to reviewed transcript."}
             </p>
-            {accessSummary.canCreateMeetings ? (
-              <Link
-                href="/meetings/new"
-                className={cn(buttonVariants(), "mt-5 w-fit")}
-              >
-                <Plus data-icon="inline-start" />
-                Add meeting
-              </Link>
-            ) : null}
           </div>
           {calendarStatus ? (
             <CalendarAutomationPanel
+              accountLabel={user.email}
               autoSync={getSearchParamValue(syncCalendar) === "1"}
+              nextJoinTitle={dashboardSummary?.nextBotJoin?.title ?? null}
               status={calendarStatus}
             />
           ) : null}
+          {dashboardSummary ? (
+            <DashboardWorkflowSummary summary={dashboardSummary} />
+          ) : null}
         </div>
-
-        {dashboardSummary ? (
-          <DashboardWorkflowSummary summary={dashboardSummary} />
-        ) : null}
 
         <Card>
           <CardHeader>
@@ -111,7 +103,9 @@ export default async function DashboardPage({
           </CardHeader>
           <CardContent className="flex flex-col gap-4">
             <form className="max-w-xl">
-              <Label htmlFor="meeting-search">Search meetings</Label>
+              <Label htmlFor="meeting-search" className="sr-only">
+                Search meetings
+              </Label>
               <div className="mt-2 flex items-center gap-2">
                 <Search
                   className="text-muted-foreground"

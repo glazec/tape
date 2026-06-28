@@ -1,32 +1,72 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   Check,
+  ChevronDown,
   Copy,
   Download,
-  FileText,
-  Music2,
   Trash2,
 } from "lucide-react";
 
-import { Button, buttonVariants } from "@/components/ui/button";
-import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
 
 type MeetingActionsProps = {
   meetingId: string;
 };
 
+type ExportFormat = "transcript" | "mp3";
+
 export function MeetingActions({ meetingId }: MeetingActionsProps) {
   const router = useRouter();
+  const exportMenuRef = useRef<HTMLDivElement>(null);
+  const [isExportMenuOpen, setIsExportMenuOpen] = useState(false);
+  const [selectedExportFormats, setSelectedExportFormats] = useState<
+    Record<ExportFormat, boolean>
+  >({
+    mp3: true,
+    transcript: true,
+  });
   const [isDeleting, setIsDeleting] = useState(false);
   const [isCopying, setIsCopying] = useState(false);
   const [copyStatus, setCopyStatus] = useState<"idle" | "copied">("idle");
   const [error, setError] = useState<string | null>(null);
   const encodedMeetingId = encodeURIComponent(meetingId);
+  const exportMenuId = `meeting-export-menu-${meetingId}`;
   const textExportUrl = `/api/meetings/${encodedMeetingId}/export?format=text`;
   const mp3ExportUrl = `/api/meetings/${encodedMeetingId}/export?format=mp3`;
+  const hasSelectedExport =
+    selectedExportFormats.transcript || selectedExportFormats.mp3;
+
+  useEffect(() => {
+    if (!isExportMenuOpen) {
+      return;
+    }
+
+    function closeOnOutsideClick(event: MouseEvent) {
+      if (
+        event.target instanceof Node &&
+        !exportMenuRef.current?.contains(event.target)
+      ) {
+        setIsExportMenuOpen(false);
+      }
+    }
+
+    function closeOnEscape(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        setIsExportMenuOpen(false);
+      }
+    }
+
+    document.addEventListener("mousedown", closeOnOutsideClick);
+    document.addEventListener("keydown", closeOnEscape);
+
+    return () => {
+      document.removeEventListener("mousedown", closeOnOutsideClick);
+      document.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [isExportMenuOpen]);
 
   function downloadFile(url: string) {
     const link = document.createElement("a");
@@ -37,9 +77,27 @@ export function MeetingActions({ meetingId }: MeetingActionsProps) {
     link.remove();
   }
 
-  function exportAll() {
-    downloadFile(textExportUrl);
-    window.setTimeout(() => downloadFile(mp3ExportUrl), 0);
+  function toggleExportFormat(format: ExportFormat) {
+    setSelectedExportFormats((current) => ({
+      ...current,
+      [format]: !current[format],
+    }));
+  }
+
+  function exportSelected() {
+    if (!hasSelectedExport) {
+      return;
+    }
+
+    const urls = [
+      selectedExportFormats.transcript ? textExportUrl : null,
+      selectedExportFormats.mp3 ? mp3ExportUrl : null,
+    ].filter((url): url is string => Boolean(url));
+
+    urls.forEach((url, index) => {
+      window.setTimeout(() => downloadFile(url), index * 100);
+    });
+    setIsExportMenuOpen(false);
   }
 
   async function copyTranscript() {
@@ -89,24 +147,55 @@ export function MeetingActions({ meetingId }: MeetingActionsProps) {
 
   return (
     <div className="flex min-w-0 flex-wrap items-center gap-2">
-      <a
-        className={cn(buttonVariants({ variant: "outline" }))}
-        href={textExportUrl}
-      >
-        <FileText data-icon="inline-start" />
-        Export text
-      </a>
-      <a
-        className={cn(buttonVariants({ variant: "outline" }))}
-        href={mp3ExportUrl}
-      >
-        <Music2 data-icon="inline-start" />
-        Export MP3
-      </a>
-      <Button onClick={exportAll} type="button" variant="outline">
-        <Download data-icon="inline-start" />
-        Export all
-      </Button>
+      <div className="relative" ref={exportMenuRef}>
+        <Button
+          aria-controls={isExportMenuOpen ? exportMenuId : undefined}
+          aria-expanded={isExportMenuOpen}
+          aria-haspopup="menu"
+          onClick={() => setIsExportMenuOpen((current) => !current)}
+          type="button"
+          variant="outline"
+        >
+          <Download data-icon="inline-start" />
+          Export
+          <ChevronDown data-icon="inline-end" />
+        </Button>
+        <div
+          aria-label="Export options"
+          className="absolute right-0 z-20 mt-2 w-56 rounded-lg border bg-popover p-2 text-sm text-popover-foreground shadow-lg"
+          hidden={!isExportMenuOpen}
+          id={exportMenuId}
+          role="menu"
+        >
+          <label className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-2 hover:bg-muted">
+            <input
+              checked={selectedExportFormats.transcript}
+              className="size-4 rounded border-input accent-primary"
+              onChange={() => toggleExportFormat("transcript")}
+              type="checkbox"
+            />
+            <span className="font-medium">Transcript</span>
+          </label>
+          <label className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-2 hover:bg-muted">
+            <input
+              checked={selectedExportFormats.mp3}
+              className="size-4 rounded border-input accent-primary"
+              onChange={() => toggleExportFormat("mp3")}
+              type="checkbox"
+            />
+            <span className="font-medium">MP3</span>
+          </label>
+          <Button
+            className="mt-2 w-full"
+            disabled={!hasSelectedExport}
+            onClick={exportSelected}
+            type="button"
+          >
+            <Download data-icon="inline-start" />
+            Download selected
+          </Button>
+        </div>
+      </div>
       <Button
         disabled={isCopying}
         onClick={copyTranscript}

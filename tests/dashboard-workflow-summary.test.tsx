@@ -59,7 +59,7 @@ describe("DashboardWorkflowSummary", () => {
     });
   });
 
-  it("renders investor and ops workflow labels", () => {
+  it("renders only upcoming join status", () => {
     const html = renderToStaticMarkup(
       <DashboardWorkflowSummary
         summary={getDashboardWorkflowSummary([
@@ -75,10 +75,9 @@ describe("DashboardWorkflowSummary", () => {
     );
 
     expect(html).toContain("Upcoming joins");
-    expect(html).toContain("Ready for review");
-    expect(html).toContain("Needs attention");
-    expect(html).toContain("IC notes");
     expect(html).toContain("Founder follow up");
+    expect(html).not.toContain("Ready for review");
+    expect(html).not.toContain("Needs attention");
   });
 });
 

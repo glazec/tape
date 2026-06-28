@@ -41,24 +41,32 @@ export function AppShell({
               aria-label="Primary navigation"
               className="flex flex-wrap gap-2"
             >
-              {visibleNavItems.map((item) => (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  aria-current={activeHref === item.href ? "page" : undefined}
-                  className={cn(
-                    buttonVariants({
-                      variant: activeHref === item.href ? "secondary" : "ghost",
-                      size: "sm",
-                    }),
-                    activeHref === item.href
-                      ? "text-foreground"
-                      : "text-muted-foreground",
-                  )}
-                >
-                  {item.label}
-                </Link>
-              ))}
+              {visibleNavItems.map((item) => {
+                const isPrimaryAction = item.href === "/meetings/new";
+                const isActive = activeHref === item.href;
+
+                return (
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                    aria-current={isActive ? "page" : undefined}
+                    className={cn(
+                      buttonVariants({
+                        variant: isPrimaryAction
+                          ? "default"
+                          : isActive
+                            ? "secondary"
+                            : "ghost",
+                        size: "sm",
+                      }),
+                      !isPrimaryAction &&
+                        (isActive ? "text-foreground" : "text-muted-foreground"),
+                    )}
+                  >
+                    {item.label}
+                  </Link>
+                );
+              })}
             </nav>
             <SignOutButton />
           </div>

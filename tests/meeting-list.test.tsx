@@ -13,6 +13,8 @@ describe("MeetingList", () => {
             title: "Customer sync",
             platform: "google_meet",
             startedAt: "2026-01-01T12:00:00.000Z",
+            endedAt: "2026-01-01T13:30:00.000Z",
+            participantCount: 3,
             status: "ready",
           },
         ]}
@@ -20,6 +22,10 @@ describe("MeetingList", () => {
     );
 
     expect(html).toContain('dateTime="2026-01-01T12:00:00.000Z"');
+    expect(html).toContain("Participants");
+    expect(html).toContain("Duration");
+    expect(html).toContain("3 people");
+    expect(html).toContain("1h 30m");
   });
 
   it("renders a custom empty message for shared transcript readers", () => {

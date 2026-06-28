@@ -149,6 +149,22 @@ describe("getWorkspaceMeetingTranscript", () => {
             orderBy: vi.fn().mockResolvedValue([]),
           }),
         }),
+      })
+      .mockReturnValueOnce({
+        from: () => ({
+          innerJoin: () => ({
+            where: () => ({
+              orderBy: () => ({
+                limit: vi.fn().mockResolvedValue([
+                  {
+                    email: "user@example.com",
+                    name: "Shared User",
+                  },
+                ]),
+              }),
+            }),
+          }),
+        }),
       });
     const { getWorkspaceMeetingTranscript } = await import(
       "@/lib/meeting-queries"
@@ -165,6 +181,12 @@ describe("getWorkspaceMeetingTranscript", () => {
       ),
     ).resolves.toMatchObject({
       accessScope: "shared",
+      accessPeople: [
+        {
+          email: "user@example.com",
+          name: "Shared User",
+        },
+      ],
       audioUrl: null,
     });
   });
@@ -193,8 +215,9 @@ describe("listMeetingsForWorkspace", () => {
                   transcriptJobStatus: "queued",
                   recallBotId: null,
                   startedAt: new Date("2026-06-27T12:00:00.000Z"),
+                  endedAt: new Date("2026-06-27T12:45:00.000Z"),
                   createdAt: new Date("2026-06-27T11:59:00.000Z"),
-                  calendarAttendeeEmails: null,
+                  calendarAttendeeEmails: ["alice@iosg.vc", "founder@example.com"],
                 },
               ]),
             }),
@@ -226,6 +249,8 @@ describe("listMeetingsForWorkspace", () => {
         transcriptJobStatus: "queued",
         hasRecallBot: false,
         startedAt: "2026-06-27T12:00:00.000Z",
+        endedAt: "2026-06-27T12:45:00.000Z",
+        participantCount: 2,
         accessScope: "workspace",
         relatedMeetings: [],
       },
