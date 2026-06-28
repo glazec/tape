@@ -225,7 +225,9 @@ describe("buildElevenLabsTranscriptPersistence", () => {
         transcriptionText: "Nascent asked about the follow up.",
         transcriptionEntities: [
           {
+            end: null,
             source: "elevenlabs",
+            start: null,
             type: "organization",
             value: "Nascent.xyz",
           },
@@ -270,7 +272,9 @@ describe("buildElevenLabsTranscriptPersistence", () => {
           transcriptionText: "Nascent asked about the follow up.",
           transcriptionEntities: [
             {
+              end: null,
               source: "elevenlabs",
+              start: null,
               type: "organization",
               value: "Nascent.xyz",
             },

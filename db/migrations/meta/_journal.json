@@ -57,6 +57,13 @@
       "when": 1783000000000,
       "tag": "0007_participant_timeline",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1783100000000,
+      "tag": "0008_equal_sway",
+      "breakpoints": true
     }
   ]
 }

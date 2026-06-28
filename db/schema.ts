@@ -510,6 +510,33 @@ export const meetingReminders = pgTable(
   ],
 );
 
+export const meetingLibraryViews = pgTable(
+  "meeting_library_views",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    teamId: uuid("team_id")
+      .notNull()
+      .references(() => teams.id, { onDelete: "cascade" }),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    name: text("name").notNull().default("My view"),
+    isDefault: boolean("is_default").notNull().default(true),
+    query: text("query"),
+    searchScope: text("search_scope").notNull().default("all"),
+    status: text("status").notNull().default("all"),
+    sort: text("sort").notNull().default("smart"),
+    ...timestamps,
+  },
+  (table) => [
+    uniqueIndex("meeting_library_views_user_team_default_unique").on(
+      table.userId,
+      table.teamId,
+      table.isDefault,
+    ),
+  ],
+);
+
 export const vendorWebhookEvents = pgTable(
   "vendor_webhook_events",
   {

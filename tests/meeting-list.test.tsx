@@ -87,4 +87,25 @@ describe("MeetingList", () => {
     expect(html).toContain("In progress");
     expect(html).not.toContain("Queued");
   });
+
+  it("renders sortable headers for meeting name, participants, duration, and time", () => {
+    const html = renderToStaticMarkup(
+      <MeetingList
+        meetings={[]}
+        sort="duration_desc"
+        sortLinks={{
+          title: "/dashboard?sort=title_asc",
+          participantCount: "/dashboard?sort=participants_desc",
+          duration: "/dashboard?sort=duration_desc",
+          startedAt: "/dashboard?sort=time_desc",
+        }}
+      />,
+    );
+
+    expect(html).toContain('href="/dashboard?sort=title_asc"');
+    expect(html).toContain('href="/dashboard?sort=participants_desc"');
+    expect(html).toContain('href="/dashboard?sort=duration_desc"');
+    expect(html).toContain('href="/dashboard?sort=time_desc"');
+    expect(html).toContain('aria-sort="descending"');
+  });
 });

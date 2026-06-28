@@ -61,7 +61,12 @@ const WAVEFORM_SECTION_COLORS = [
   "#0891b2",
 ];
 const WPM_GRAPH_MAX = 260;
-const TRANSCRIPT_WORD_PATTERN = /[A-Za-z0-9]+(?:'[A-Za-z0-9]+)?/g;
+const WPM_GRAPH_WINDOW_SECONDS = 30;
+const WPM_GRAPH_MAX_WINDOW_SECONDS = 90;
+const WPM_GRAPH_MIN_SAMPLE_SECONDS = 8;
+const TRANSCRIPT_FALLBACK_WORD_PATTERN = /[A-Za-z0-9]+(?:['’][A-Za-z0-9]+)?/g;
+const TRANSCRIPT_CJK_CHARACTER_PATTERN = /[\u3400-\u9fff\uf900-\ufaff]/g;
+const transcriptWordSegmenter = createTranscriptWordSegmenter();
 
 type TranscriptViewerProps = {
   audioUrl?: string | null;
@@ -78,7 +83,12 @@ type WaveformSection = {
   speaker: string | null;
   speakerLabel: string;
   width: number;
-  wpm: number;
+};
+
+type WpmSample = {
+  endSecond: number;
+  startSecond: number;
+  wordCount: number;
 };
 
 function formatTimestamp(startMs: number) {
@@ -679,14 +689,31 @@ function TranscriptAudioPlayer({
     () => buildWaveformSections(segments, timelineDuration),
     [segments, timelineDuration],
   );
+  const wpmSamples = useMemo(
+    () => buildWaveformWpmSamples(segments, timelineDuration),
+    [segments, timelineDuration],
+  );
   const wpmLinePoints = useMemo(
-    () => buildWaveformWpmLinePoints(sectionMarkers, waveformBarCount),
-    [sectionMarkers, waveformBarCount],
+    () =>
+      buildWaveformWpmLinePoints(
+        wpmSamples,
+        timelineDuration,
+        waveformBarCount,
+      ),
+    [timelineDuration, waveformBarCount, wpmSamples],
+  );
+  const activeWaveformWpm = useMemo(
+    () => calculateSmoothedWpmAtSecond(wpmSamples, currentTime, timelineDuration),
+    [currentTime, timelineDuration, wpmSamples],
   );
   const activeWaveformSection =
     sectionMarkers.find((section) => section.id === activeSegmentId) ?? null;
+  const activeWpmLabel =
+    activeWaveformWpm > 0 ? formatWpmLabel(activeWaveformWpm) : null;
   const activeWaveformLabel = activeWaveformSection
-    ? `${activeWaveformSection.label}, ${formatWpmLabel(activeWaveformSection.wpm)}`
+    ? activeWpmLabel
+      ? `${activeWaveformSection.label}, ${activeWpmLabel}`
+      : activeWaveformSection.label
     : null;
   const progressPercent = timelineDuration
     ? clamp((currentTime / timelineDuration) * 100, 0, 100)
@@ -854,7 +881,7 @@ function TranscriptAudioPlayer({
         >
           <span
             aria-hidden="true"
-            className="absolute inset-x-2 top-1.5 h-5 overflow-hidden rounded-sm bg-muted sm:inset-x-1"
+            className="absolute inset-x-2 top-1 h-1 overflow-hidden rounded-full bg-muted sm:inset-x-1"
           >
             {sectionMarkers.map((section) => (
               <span
@@ -872,7 +899,7 @@ function TranscriptAudioPlayer({
           </span>
           <span
             aria-hidden="true"
-            className="absolute inset-x-2 bottom-3 top-7 flex items-center gap-[2px] sm:inset-x-1 sm:gap-px"
+            className="absolute inset-x-2 bottom-3 top-3 flex items-center gap-[2px] sm:inset-x-1 sm:gap-px"
           >
             {waveformValues.map((peak, index) => {
               const barPercent =
@@ -896,7 +923,7 @@ function TranscriptAudioPlayer({
           {wpmLinePoints ? (
             <svg
               aria-hidden="true"
-              className="pointer-events-none absolute inset-x-2 bottom-3 top-7 text-foreground sm:inset-x-1"
+              className="pointer-events-none absolute inset-x-2 bottom-3 top-3 z-10 sm:inset-x-1"
               preserveAspectRatio="none"
               viewBox="0 0 100 100"
             >
@@ -920,17 +947,17 @@ function TranscriptAudioPlayer({
               />
             </svg>
           ) : null}
-          {activeWaveformSection ? (
+          {activeWaveformSection && activeWpmLabel ? (
             <span
               aria-hidden="true"
-              className="absolute right-2 top-7 rounded-sm bg-background/90 px-1.5 py-0.5 text-[0.65rem] font-medium leading-none text-muted-foreground ring-1 ring-border sm:right-1"
+              className="absolute right-2 top-3 z-20 rounded-sm bg-background/90 px-1.5 py-0.5 text-[0.65rem] font-medium leading-none text-muted-foreground ring-1 ring-border sm:right-1"
             >
-              {formatWpmLabel(activeWaveformSection.wpm)}
+              {activeWpmLabel}
             </span>
           ) : null}
           <span
             aria-hidden="true"
-            className="absolute inset-x-2 bottom-1 h-1 overflow-hidden rounded-full bg-muted sm:inset-x-1"
+            className="absolute inset-x-2 bottom-1 z-20 h-1 overflow-hidden rounded-full bg-muted sm:inset-x-1"
           >
             {sectionMarkers.map((section) => (
               <span
@@ -948,7 +975,7 @@ function TranscriptAudioPlayer({
           </span>
           <span
             aria-hidden="true"
-            className="absolute bottom-1 top-1 w-0.5 rounded-full bg-primary shadow-[0_0_0_1px_var(--background)]"
+            className="absolute bottom-1 top-1 z-30 w-0.5 rounded-full bg-primary shadow-[0_0_0_1px_var(--background)]"
             style={{ left: `${progressPercent}%` }}
           />
           <span aria-live="polite" className="sr-only">
@@ -1175,42 +1202,71 @@ function buildWaveformSections(
         speaker: segment.speaker,
         speakerLabel,
         width,
-        wpm: calculateSegmentWpm(segment.text, segment.startMs, endMs),
       };
     })
     .filter((section) => section.width > 0);
 }
 
+function buildWaveformWpmSamples(
+  segments: TranscriptSegment[],
+  timelineDuration: number,
+): WpmSample[] {
+  if (!timelineDuration) {
+    return [];
+  }
+
+  return segments
+    .map((segment, index) => {
+      const endMs = getWaveformSegmentEndMs(
+        segment,
+        index,
+        segments,
+        timelineDuration,
+      );
+      const startSecond = segment.startMs / 1000;
+      const endSecond = Math.max(startSecond, endMs / 1000);
+
+      return {
+        endSecond,
+        startSecond,
+        wordCount: countTranscriptWords(segment.text),
+      };
+    })
+    .filter(
+      (sample) =>
+        sample.wordCount > 0 && sample.endSecond > sample.startSecond,
+    );
+}
+
 function buildWaveformWpmLinePoints(
-  sections: WaveformSection[],
+  samples: WpmSample[],
+  timelineDuration: number,
   pointCount: number,
 ) {
-  if (sections.length === 0 || pointCount < 2) {
+  if (samples.length === 0 || !timelineDuration || pointCount < 2) {
     return "";
   }
 
-  return Array.from({ length: pointCount }, (_, index) => {
+  let hasPace = false;
+  const points = Array.from({ length: pointCount }, (_, index) => {
     const x = (index / (pointCount - 1)) * 100;
-    const section = findWaveformSectionAtPercent(sections, x);
-    const normalizedWpm = section ? clamp(section.wpm / WPM_GRAPH_MAX, 0, 1) : 0;
+    const currentSecond = (x / 100) * timelineDuration;
+    const wpm = calculateSmoothedWpmAtSecond(
+      samples,
+      currentSecond,
+      timelineDuration,
+    );
+    const normalizedWpm = clamp(wpm / WPM_GRAPH_MAX, 0, 1);
     const y = 92 - normalizedWpm * 76;
+
+    if (wpm > 0) {
+      hasPace = true;
+    }
 
     return `${formatChartCoordinate(x)},${formatChartCoordinate(y)}`;
   }).join(" ");
-}
 
-function findWaveformSectionAtPercent(
-  sections: WaveformSection[],
-  percent: number,
-) {
-  return (
-    sections.find(
-      (section) =>
-        percent >= section.left && percent <= section.left + section.width,
-    ) ??
-    sections.at(-1) ??
-    null
-  );
+  return hasPace ? points : "";
 }
 
 function getWaveformSegmentEndMs(
@@ -1224,11 +1280,87 @@ function getWaveformSegmentEndMs(
   return segment.endMs ?? nextSegment?.startMs ?? timelineDuration * 1000;
 }
 
-function calculateSegmentWpm(text: string, startMs: number, endMs: number) {
-  const wordCount = text.match(TRANSCRIPT_WORD_PATTERN)?.length ?? 0;
-  const durationMinutes = Math.max(1, endMs - startMs) / 60000;
+function calculateSmoothedWpmAtSecond(
+  samples: WpmSample[],
+  currentSecond: number,
+  timelineDuration: number,
+) {
+  if (samples.length === 0 || !timelineDuration) {
+    return 0;
+  }
 
-  return Math.round(wordCount / durationMinutes);
+  const windowSeconds = getWpmSmoothingWindowSeconds(timelineDuration);
+  const windowStart = clamp(currentSecond - windowSeconds / 2, 0, timelineDuration);
+  const windowEnd = clamp(currentSecond + windowSeconds / 2, 0, timelineDuration);
+  let spokenSeconds = 0;
+  let wordCount = 0;
+
+  for (const sample of samples) {
+    const overlapStart = Math.max(sample.startSecond, windowStart);
+    const overlapEnd = Math.min(sample.endSecond, windowEnd);
+    const overlapSeconds = Math.max(0, overlapEnd - overlapStart);
+
+    if (!overlapSeconds) {
+      continue;
+    }
+
+    const sampleSeconds = sample.endSecond - sample.startSecond;
+
+    spokenSeconds += overlapSeconds;
+    wordCount += sample.wordCount * (overlapSeconds / sampleSeconds);
+  }
+
+  if (spokenSeconds < WPM_GRAPH_MIN_SAMPLE_SECONDS) {
+    return 0;
+  }
+
+  return Math.round(wordCount / (spokenSeconds / 60));
+}
+
+function getWpmSmoothingWindowSeconds(timelineDuration: number) {
+  return Math.min(
+    WPM_GRAPH_MAX_WINDOW_SECONDS,
+    Math.max(WPM_GRAPH_WINDOW_SECONDS, timelineDuration / 20),
+  );
+}
+
+function countTranscriptWords(text: string) {
+  const trimmedText = text.trim();
+
+  if (!trimmedText) {
+    return 0;
+  }
+
+  if (transcriptWordSegmenter) {
+    let wordCount = 0;
+
+    for (const segment of transcriptWordSegmenter.segment(trimmedText)) {
+      if (segment.isWordLike) {
+        wordCount += 1;
+      }
+    }
+
+    if (wordCount > 0) {
+      return wordCount;
+    }
+  }
+
+  const latinWordCount =
+    trimmedText
+      .replace(TRANSCRIPT_CJK_CHARACTER_PATTERN, " ")
+      .match(TRANSCRIPT_FALLBACK_WORD_PATTERN)?.length ?? 0;
+  const cjkCharacterCount =
+    trimmedText.match(TRANSCRIPT_CJK_CHARACTER_PATTERN)?.length ?? 0;
+
+  return latinWordCount + cjkCharacterCount;
+}
+
+function createTranscriptWordSegmenter() {
+  if (typeof Intl.Segmenter !== "function") {
+    return null;
+  }
+
+  return new Intl.Segmenter(undefined, { granularity: "word" });
 }
 
 function getWaveformSpeakerColor(speaker: string | null) {

@@ -12,6 +12,9 @@ const segments = [
     text: "Hello team",
   },
 ];
+const pacedText = Array.from({ length: 60 }, (_, index) => `word${index}`).join(
+  " ",
+);
 
 describe("TranscriptViewer", () => {
   it("hides speaker editing when no meeting id is provided", () => {
@@ -90,7 +93,9 @@ describe("TranscriptViewer", () => {
         segments={[
           {
             ...segments[0],
+            endMs: 30000,
             emotionLabel: "hard",
+            text: pacedText,
           },
         ]}
       />,
@@ -98,10 +103,16 @@ describe("TranscriptViewer", () => {
 
     expect(html).toContain("Speaker 1 · Hard");
     expect(html).toContain("120 wpm");
-    expect(html).toContain('aria-label="Audio waveform, Speaker 1 · Hard, 120 wpm"');
+    expect(html).toContain(
+      'aria-label="Audio waveform, Speaker 1 · Hard, 120 wpm"',
+    );
     expect(html).toContain("<svg");
     expect(html).toContain("<polyline");
-    expect((html.match(/background-color:#2563eb/g) ?? []).length).toBeGreaterThanOrEqual(2);
+    expect(html).toContain("top-1 h-1 overflow-hidden rounded-full");
+    expect(html).toContain("bottom-1 z-20 h-1 overflow-hidden rounded-full");
+    expect(
+      (html.match(/background-color:#2563eb/g) ?? []).length,
+    ).toBeGreaterThanOrEqual(2);
     expect(html).toContain('title="Speaker 1"');
     expect(html).toContain('title="Hard emotion"');
     expect(html).toContain('stroke="#f97316"');
@@ -114,7 +125,9 @@ describe("TranscriptViewer", () => {
         segments={[
           {
             ...segments[0],
+            endMs: 30000,
             emotionLabel: "neutral",
+            text: pacedText,
           },
         ]}
       />,
@@ -123,5 +136,23 @@ describe("TranscriptViewer", () => {
     expect(html).toContain('aria-label="Audio waveform, Speaker 1, 120 wpm"');
     expect(html).not.toContain("Speaker 1 · Neutral");
     expect(html).toContain('title="Neutral emotion"');
+  });
+
+  it("uses multilingual words for smoothed waveform pace", () => {
+    const html = renderToStaticMarkup(
+      <TranscriptViewer
+        audioUrl="/api/meetings/11111111-1111-4111-8111-111111111111/audio"
+        segments={[
+          {
+            ...segments[0],
+            endMs: 30000,
+            text: "听得到吗我们开始讨论会议记录和后续事项".repeat(6),
+          },
+        ]}
+      />,
+    );
+
+    expect(html).toMatch(/Audio waveform, Speaker 1, (?!0 wpm)\d+ wpm/);
+    expect(html).toContain('stroke="#f97316"');
   });
 });

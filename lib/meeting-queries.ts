@@ -8,6 +8,7 @@ import {
   meetingAccess,
   meetingAttendees,
   meetingEntities,
+  meetingParticipantTimeline,
   meetings,
   teamMemberships,
   transcriptJobs,
@@ -29,7 +30,18 @@ import {
   isCommonPersonalEmailDomain,
   normalizeEmailAddress,
 } from "@/lib/email-domains";
-import type { TranscriptJobStatus } from "@/lib/meeting-display-status";
+import {
+  getMeetingDisplayStatus,
+  type TranscriptJobStatus,
+} from "@/lib/meeting-display-status";
+import {
+  parseMeetingLibrarySearchScope,
+  parseMeetingLibrarySort,
+  parseMeetingLibraryStatusFilter,
+  type MeetingLibrarySearchScope,
+  type MeetingLibrarySort,
+  type MeetingLibraryStatusFilter,
+} from "@/lib/meeting-library-view-options";
 import {
   getOrCreateWorkspaceForSessionUser,
   type WorkspaceContext,
@@ -75,6 +87,9 @@ export type MeetingLibraryPageOptions = {
   page?: number;
   pageSize?: number;
   query?: string;
+  searchScope?: MeetingLibrarySearchScope;
+  sort?: MeetingLibrarySort;
+  status?: MeetingLibraryStatusFilter;
 };
 
 export async function listWorkspaceMeetings(
@@ -104,25 +119,20 @@ export async function listMeetingLibraryPageForWorkspace(
   options: MeetingLibraryPageOptions = {},
 ): Promise<MeetingLibraryPage> {
   const search = options.query?.trim();
+  const searchScope = parseMeetingLibrarySearchScope(options.searchScope);
   const hasMeetingAccess = sql`exists (
     select 1
     from ${meetingAccess}
     where ${meetingAccess.meetingId} = ${meetings.id}
       and ${meetingAccess.userId} = ${workspace.userId}
   )`;
-  const where = search
+  const searchCondition = search
+    ? getMeetingLibrarySearchCondition(search, searchScope)
+    : undefined;
+  const where = searchCondition
     ? and(
         or(eq(meetings.teamId, workspace.teamId), hasMeetingAccess),
-        or(
-          ilike(meetings.title, `%${search}%`),
-          ilike(meetings.meetingUrl, `%${search}%`),
-          sql`exists (
-            select 1
-            from ${transcriptSegments}
-            where ${transcriptSegments.meetingId} = ${meetings.id}
-              and ${transcriptSegments.text} ilike ${`%${search}%`}
-          )`,
-        ),
+        searchCondition,
       )
     : or(eq(meetings.teamId, workspace.teamId), hasMeetingAccess);
   const activeWorkRank = sql<number>`case
@@ -209,6 +219,8 @@ export function buildMeetingLibraryPage(
   options: MeetingLibraryPageOptions = {},
 ): MeetingLibraryPage {
   const nowTime = (options.now ?? new Date()).getTime();
+  const sort = parseMeetingLibrarySort(options.sort);
+  const status = parseMeetingLibraryStatusFilter(options.status);
   const scheduledBotMeetingIds = new Set(
     meetingsForLibrary
       .filter((meeting) => isFutureScheduledBotMeeting(meeting, nowTime))
@@ -226,8 +238,9 @@ export function buildMeetingLibraryPage(
         meeting.status !== "scheduled" ||
         scheduledBotMeetingIds.has(meeting.id),
     )
+    .filter((meeting) => matchesMeetingLibraryStatus(meeting, status))
     .toSorted((left, right) =>
-      compareMeetingLibraryItems(left, right, scheduledBotMeetingIds),
+      compareMeetingLibraryItems(left, right, scheduledBotMeetingIds, sort),
     );
   const page = normalizePage(options.page);
   const pageSize = normalizePageSize(options.pageSize);
@@ -257,7 +270,20 @@ function compareMeetingLibraryItems(
   left: MeetingListItem,
   right: MeetingListItem,
   scheduledBotMeetingIds: Set<string>,
+  sort: MeetingLibrarySort,
 ) {
+  if (sort !== "smart") {
+    const explicitSortResult = compareMeetingLibraryItemsBySort(
+      left,
+      right,
+      sort,
+    );
+
+    if (explicitSortResult !== 0) {
+      return explicitSortResult;
+    }
+  }
+
   const rankDifference =
     getMeetingLibraryRank(left, scheduledBotMeetingIds) -
     getMeetingLibraryRank(right, scheduledBotMeetingIds);
@@ -277,6 +303,168 @@ function compareMeetingLibraryItems(
 
   return (
     new Date(right.startedAt).getTime() - new Date(left.startedAt).getTime()
+  );
+}
+
+function compareMeetingLibraryItemsBySort(
+  left: MeetingListItem,
+  right: MeetingListItem,
+  sort: MeetingLibrarySort,
+) {
+  if (sort === "time_asc") {
+    return compareNumbers(
+      new Date(left.startedAt).getTime(),
+      new Date(right.startedAt).getTime(),
+      "asc",
+    );
+  }
+
+  if (sort === "time_desc") {
+    return compareNumbers(
+      new Date(left.startedAt).getTime(),
+      new Date(right.startedAt).getTime(),
+      "desc",
+    );
+  }
+
+  if (sort === "duration_asc" || sort === "duration_desc") {
+    return compareNumbers(
+      getMeetingDurationMs(left),
+      getMeetingDurationMs(right),
+      sort === "duration_asc" ? "asc" : "desc",
+    );
+  }
+
+  if (sort === "participants_asc" || sort === "participants_desc") {
+    return compareNumbers(
+      left.participantCount ?? null,
+      right.participantCount ?? null,
+      sort === "participants_asc" ? "asc" : "desc",
+    );
+  }
+
+  if (sort === "title_asc") {
+    return left.title.localeCompare(right.title);
+  }
+
+  if (sort === "title_desc") {
+    return right.title.localeCompare(left.title);
+  }
+
+  return 0;
+}
+
+function compareNumbers(
+  left: number | null,
+  right: number | null,
+  direction: "asc" | "desc",
+) {
+  if (left === null && right === null) {
+    return 0;
+  }
+
+  if (left === null) {
+    return 1;
+  }
+
+  if (right === null) {
+    return -1;
+  }
+
+  return direction === "asc" ? left - right : right - left;
+}
+
+function getMeetingDurationMs(meeting: MeetingListItem) {
+  if (!meeting.endedAt) {
+    return null;
+  }
+
+  const startedAt = new Date(meeting.startedAt).getTime();
+  const endedAt = new Date(meeting.endedAt).getTime();
+
+  if (!Number.isFinite(startedAt) || !Number.isFinite(endedAt)) {
+    return null;
+  }
+
+  return Math.max(0, endedAt - startedAt);
+}
+
+function matchesMeetingLibraryStatus(
+  meeting: MeetingListItem,
+  status: MeetingLibraryStatusFilter,
+) {
+  if (status === "all") {
+    return true;
+  }
+
+  const displayStatus = getMeetingDisplayStatus({
+    meetingStatus: meeting.status,
+    transcriptJobStatus: meeting.transcriptJobStatus,
+  });
+
+  if (status === "in_progress") {
+    return (
+      displayStatus === "recording" ||
+      displayStatus === "queued" ||
+      displayStatus === "transcribing" ||
+      displayStatus === "processing"
+    );
+  }
+
+  return displayStatus === status;
+}
+
+function getMeetingLibrarySearchCondition(
+  search: string,
+  scope: MeetingLibrarySearchScope,
+) {
+  const pattern = `%${search}%`;
+  const titleCondition = ilike(meetings.title, pattern);
+  const participantCondition = or(
+    sql`${calendarEvents.attendeeEmails}::text ilike ${pattern}`,
+    sql`exists (
+      select 1
+      from ${meetingAttendees}
+      where ${meetingAttendees.meetingId} = ${meetings.id}
+        and ${meetingAttendees.email} ilike ${pattern}
+    )`,
+    sql`exists (
+      select 1
+      from ${meetingParticipantTimeline}
+      where ${meetingParticipantTimeline.meetingId} = ${meetings.id}
+        and (
+          ${meetingParticipantTimeline.name} ilike ${pattern}
+          or ${meetingParticipantTimeline.email} ilike ${pattern}
+        )
+    )`,
+  );
+  const transcriptCondition = sql`exists (
+    select 1
+    from ${transcriptSegments}
+    where ${transcriptSegments.meetingId} = ${meetings.id}
+      and (
+        ${transcriptSegments.text} ilike ${pattern}
+        or ${transcriptSegments.speaker} ilike ${pattern}
+      )
+  )`;
+
+  if (scope === "title") {
+    return titleCondition;
+  }
+
+  if (scope === "participants") {
+    return participantCondition;
+  }
+
+  if (scope === "transcript") {
+    return transcriptCondition;
+  }
+
+  return or(
+    titleCondition,
+    ilike(meetings.meetingUrl, pattern),
+    participantCondition,
+    transcriptCondition,
   );
 }
 

@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { ArrowDown, ArrowUp } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import {
@@ -16,6 +17,7 @@ import {
   type TranscriptJobStatus,
 } from "@/lib/meeting-display-status";
 import { LocalDateTime } from "@/components/local-date-time";
+import type { MeetingLibrarySort } from "@/lib/meeting-library-view-options";
 
 export type MeetingListItem = {
   id: string;
@@ -38,6 +40,10 @@ export type MeetingListItem = {
 type MeetingListProps = {
   emptyMessage?: string;
   meetings: MeetingListItem[];
+  sort?: MeetingLibrarySort;
+  sortLinks?: Partial<
+    Record<"duration" | "participantCount" | "startedAt" | "title", string>
+  >;
 };
 
 const platformLabels: Record<MeetingListItem["platform"], string> = {
@@ -60,16 +66,51 @@ const statusLabels: Record<MeetingDisplayStatus, string> = {
 export function MeetingList({
   emptyMessage = "No meetings found",
   meetings,
+  sort = "smart",
+  sortLinks,
 }: MeetingListProps) {
   return (
     <Table>
       <TableHeader>
         <TableRow>
-          <TableHead>Meeting</TableHead>
+          <TableHead aria-sort={getHeaderAriaSort("title", sort)}>
+            <SortableHeader
+              activeDirection={getSortDirection("title", sort)}
+              href={sortLinks?.title}
+              label="Meeting"
+            />
+          </TableHead>
           <TableHead className="hidden sm:table-cell">Platform</TableHead>
-          <TableHead className="hidden md:table-cell">Participants</TableHead>
-          <TableHead className="hidden md:table-cell">Duration</TableHead>
-          <TableHead className="hidden md:table-cell">Started</TableHead>
+          <TableHead
+            aria-sort={getHeaderAriaSort("participantCount", sort)}
+            className="hidden md:table-cell"
+          >
+            <SortableHeader
+              activeDirection={getSortDirection("participantCount", sort)}
+              href={sortLinks?.participantCount}
+              label="Participants"
+            />
+          </TableHead>
+          <TableHead
+            aria-sort={getHeaderAriaSort("duration", sort)}
+            className="hidden md:table-cell"
+          >
+            <SortableHeader
+              activeDirection={getSortDirection("duration", sort)}
+              href={sortLinks?.duration}
+              label="Duration"
+            />
+          </TableHead>
+          <TableHead
+            aria-sort={getHeaderAriaSort("startedAt", sort)}
+            className="hidden md:table-cell"
+          >
+            <SortableHeader
+              activeDirection={getSortDirection("startedAt", sort)}
+              href={sortLinks?.startedAt}
+              label="Started"
+            />
+          </TableHead>
           <TableHead className="text-right">Status</TableHead>
         </TableRow>
       </TableHeader>
@@ -93,39 +134,7 @@ export function MeetingList({
             return (
               <TableRow key={meeting.id}>
                 <TableCell className="min-w-48">
-                  <Link
-                    href={`/meetings/${meeting.id}`}
-                    className="font-medium text-foreground hover:underline"
-                  >
-                    {meeting.title}
-                  </Link>
-                  <span className="mt-1 block text-xs text-muted-foreground sm:hidden">
-                    {platformLabels[meeting.platform]}
-                  </span>
-                  <MeetingCoverageNote
-                    accessScope={meeting.accessScope}
-                    displayStatus={displayStatus}
-                    hasRecallBot={meeting.hasRecallBot}
-                  />
-                  {meeting.relatedMeetings?.length ? (
-                    <div className="mt-3 border-l pl-3">
-                      <p className="mb-1 text-xs font-medium text-muted-foreground">
-                        Related
-                      </p>
-                      <ul className="space-y-1">
-                        {meeting.relatedMeetings.map((related) => (
-                          <li key={related.id}>
-                            <Link
-                              className="text-xs font-medium text-muted-foreground hover:text-foreground hover:underline"
-                              href={`/meetings/${related.id}`}
-                            >
-                              {related.title}
-                            </Link>
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  ) : null}
+                  <MeetingTitleCell meeting={meeting} />
                 </TableCell>
                 <TableCell className="hidden text-muted-foreground sm:table-cell">
                   {platformLabels[meeting.platform]}
@@ -151,6 +160,127 @@ export function MeetingList({
       </TableBody>
     </Table>
   );
+}
+
+function MeetingTitleCell({ meeting }: { meeting: MeetingListItem }) {
+  const displayStatus = getMeetingDisplayStatus({
+    meetingStatus: meeting.status,
+    transcriptJobStatus: meeting.transcriptJobStatus,
+  });
+
+  return (
+    <>
+      <Link
+        href={`/meetings/${meeting.id}`}
+        className="font-medium text-foreground hover:underline"
+      >
+        {meeting.title}
+      </Link>
+      <span className="mt-1 block text-xs text-muted-foreground sm:hidden">
+        {platformLabels[meeting.platform]}
+      </span>
+      <MeetingCoverageNote
+        accessScope={meeting.accessScope}
+        displayStatus={displayStatus}
+        hasRecallBot={meeting.hasRecallBot}
+      />
+      {meeting.relatedMeetings?.length ? (
+        <div className="mt-3 border-l pl-3">
+          <p className="mb-1 text-xs font-medium text-muted-foreground">
+            Related
+          </p>
+          <ul className="space-y-1">
+            {meeting.relatedMeetings.map((related) => (
+              <li key={related.id}>
+                <Link
+                  className="text-xs font-medium text-muted-foreground hover:text-foreground hover:underline"
+                  href={`/meetings/${related.id}`}
+                >
+                  {related.title}
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+    </>
+  );
+}
+
+function SortableHeader({
+  activeDirection,
+  href,
+  label,
+}: {
+  activeDirection: "asc" | "desc" | null;
+  href?: string;
+  label: string;
+}) {
+  const content = (
+    <>
+      {label}
+      {activeDirection === "asc" ? (
+        <ArrowUp aria-hidden="true" />
+      ) : activeDirection === "desc" ? (
+        <ArrowDown aria-hidden="true" />
+      ) : null}
+    </>
+  );
+
+  if (!href) {
+    return <span className="inline-flex items-center gap-1">{content}</span>;
+  }
+
+  return (
+    <Link
+      className="inline-flex items-center gap-1 hover:text-primary hover:underline"
+      href={href}
+    >
+      {content}
+    </Link>
+  );
+}
+
+function getHeaderAriaSort(columnId: string, sort: MeetingLibrarySort) {
+  const direction = getSortDirection(columnId, sort);
+
+  if (direction === "asc") {
+    return "ascending";
+  }
+
+  if (direction === "desc") {
+    return "descending";
+  }
+
+  return undefined;
+}
+
+function getSortDirection(columnId: string, sort: MeetingLibrarySort) {
+  if (columnId === "title") {
+    return sort === "title_asc" ? "asc" : sort === "title_desc" ? "desc" : null;
+  }
+
+  if (columnId === "participantCount") {
+    return sort === "participants_asc"
+      ? "asc"
+      : sort === "participants_desc"
+        ? "desc"
+        : null;
+  }
+
+  if (columnId === "duration") {
+    return sort === "duration_asc"
+      ? "asc"
+      : sort === "duration_desc"
+        ? "desc"
+        : null;
+  }
+
+  if (columnId === "startedAt") {
+    return sort === "time_asc" ? "asc" : sort === "time_desc" ? "desc" : null;
+  }
+
+  return null;
 }
 
 function MeetingCoverageNote({

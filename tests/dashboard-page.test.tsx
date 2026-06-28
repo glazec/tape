@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 const {
   getCalendarConnectionSummaryForWorkspace,
+  getDefaultMeetingLibraryView,
   getMeetingDashboardSummaryForWorkspace,
   getWorkspace,
   getWorkspaceAccessSummary,
@@ -11,6 +12,7 @@ const {
   requireCurrentUser,
 } = vi.hoisted(() => ({
   getCalendarConnectionSummaryForWorkspace: vi.fn(),
+  getDefaultMeetingLibraryView: vi.fn(),
   getMeetingDashboardSummaryForWorkspace: vi.fn(),
   getWorkspace: vi.fn(),
   getWorkspaceAccessSummary: vi.fn(),
@@ -39,6 +41,10 @@ vi.mock("@/lib/meeting-queries", () => ({
   listMeetingLibraryPageForWorkspace,
 }));
 
+vi.mock("@/lib/meeting-library-views", () => ({
+  getDefaultMeetingLibraryView,
+}));
+
 vi.mock("@/lib/workspace", () => ({
   getOrCreateWorkspaceForSessionUser: getWorkspace,
   getWorkspaceAccessSummary,
@@ -47,6 +53,7 @@ vi.mock("@/lib/workspace", () => ({
 describe("DashboardPage", () => {
   afterEach(() => {
     getCalendarConnectionSummaryForWorkspace.mockReset();
+    getDefaultMeetingLibraryView.mockReset();
     getMeetingDashboardSummaryForWorkspace.mockReset();
     getWorkspace.mockReset();
     getWorkspaceAccessSummary.mockReset();
@@ -74,6 +81,7 @@ describe("DashboardPage", () => {
       hasWorkspaceMeetings: true,
       isSharedOnly: false,
     });
+    getDefaultMeetingLibraryView.mockResolvedValue(null);
     getMeetingDashboardSummaryForWorkspace.mockResolvedValue({
       upcomingBotJoins: 0,
       readyTranscripts: 0,
@@ -107,6 +115,9 @@ describe("DashboardPage", () => {
         searchParams: Promise.resolve({
           page: "2",
           q: "founder",
+          scope: "participants",
+          sort: "duration_desc",
+          status: "ready",
           syncCalendar: "1",
         }),
       }),
@@ -115,11 +126,83 @@ describe("DashboardPage", () => {
     expect(listMeetingLibraryPageForWorkspace).toHaveBeenCalledWith(workspace, {
       page: 2,
       query: "founder",
+      searchScope: "participants",
+      sort: "duration_desc",
+      status: "ready",
     });
+    expect(html).toContain('name="scope"');
+    expect(html).toContain('value="participants" selected="">Participants</option>');
+    expect(html).toContain('name="sort"');
+    expect(html).toContain('value="duration_desc" selected="">Longest first</option>');
+    expect(html).toContain("Save as my view");
     expect(html).toContain("Page 2");
-    expect(html).toContain("/dashboard?q=founder&amp;syncCalendar=1");
     expect(html).toContain(
-      "/dashboard?q=founder&amp;syncCalendar=1&amp;page=3",
+      "/dashboard?q=founder&amp;scope=participants&amp;status=ready&amp;sort=duration_desc&amp;syncCalendar=1",
     );
+    expect(html).toContain(
+      "/dashboard?q=founder&amp;scope=participants&amp;status=ready&amp;sort=duration_desc&amp;syncCalendar=1&amp;page=3",
+    );
+  });
+
+  it("uses a saved default meeting view when the dashboard opens without filters", async () => {
+    const workspace = {
+      userId: "user_123",
+      teamId: "team_123",
+      domain: "iosg.vc",
+      canCreateMeetings: true,
+    };
+    requireCurrentUser.mockResolvedValue({
+      id: "auth_user_123",
+      email: "member@iosg.vc",
+      name: null,
+    });
+    getWorkspace.mockResolvedValue(workspace);
+    getWorkspaceAccessSummary.mockResolvedValue({
+      canCreateMeetings: true,
+      hasExternalShares: false,
+      hasWorkspaceMeetings: true,
+      isSharedOnly: false,
+    });
+    getDefaultMeetingLibraryView.mockResolvedValue({
+      query: "alice",
+      searchScope: "participants",
+      status: "all",
+      sort: "participants_desc",
+    });
+    getMeetingDashboardSummaryForWorkspace.mockResolvedValue({
+      upcomingBotJoins: 0,
+      readyTranscripts: 0,
+      activeWork: 0,
+      failedMeetings: 0,
+      scheduledWithoutBot: 0,
+      overdueScheduled: 0,
+      needsAttention: 0,
+      nextBotJoin: null,
+    });
+    getCalendarConnectionSummaryForWorkspace.mockResolvedValue(null);
+    listMeetingLibraryPageForWorkspace.mockResolvedValue({
+      meetings: [],
+      page: 1,
+      pageSize: 50,
+      hasPreviousPage: false,
+      hasNextPage: false,
+    });
+
+    const { default: DashboardPage } = await import("@/app/dashboard/page");
+    const html = renderToStaticMarkup(
+      await DashboardPage({
+        searchParams: Promise.resolve({}),
+      }),
+    );
+
+    expect(listMeetingLibraryPageForWorkspace).toHaveBeenCalledWith(workspace, {
+      page: 1,
+      query: "alice",
+      searchScope: "participants",
+      sort: "participants_desc",
+      status: "all",
+    });
+    expect(html).toContain('value="alice"');
+    expect(html).toContain("My view");
   });
 });

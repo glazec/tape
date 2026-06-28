@@ -481,6 +481,102 @@ describe("buildMeetingLibraryPage", () => {
       "Older upload",
     ]);
   });
+
+  it("sorts visible library meetings by duration when requested", async () => {
+    const { buildMeetingLibraryPage } = await import("@/lib/meeting-queries");
+
+    const page = buildMeetingLibraryPage(
+      [
+        libraryMeeting({
+          id: "11111111-1111-4111-8111-111111111111",
+          title: "Short sync",
+          platform: "zoom",
+          startedAt: "2026-06-27T10:00:00.000Z",
+          endedAt: "2026-06-27T10:20:00.000Z",
+        }),
+        libraryMeeting({
+          id: "22222222-2222-4222-8222-222222222222",
+          title: "Deep diligence",
+          platform: "google_meet",
+          startedAt: "2026-06-27T09:00:00.000Z",
+          endedAt: "2026-06-27T10:30:00.000Z",
+        }),
+      ],
+      {
+        now: new Date("2026-06-28T12:00:00.000Z"),
+        sort: "duration_desc",
+      },
+    );
+
+    expect(page.meetings.map((meeting) => meeting.title)).toEqual([
+      "Deep diligence",
+      "Short sync",
+    ]);
+  });
+
+  it("sorts visible library meetings by participant count when requested", async () => {
+    const { buildMeetingLibraryPage } = await import("@/lib/meeting-queries");
+
+    const page = buildMeetingLibraryPage(
+      [
+        libraryMeeting({
+          id: "11111111-1111-4111-8111-111111111111",
+          title: "Small sync",
+          platform: "zoom",
+          startedAt: "2026-06-27T12:00:00.000Z",
+          participantCount: 2,
+        }),
+        libraryMeeting({
+          id: "22222222-2222-4222-8222-222222222222",
+          title: "Large review",
+          platform: "google_meet",
+          startedAt: "2026-06-27T11:00:00.000Z",
+          participantCount: 8,
+        }),
+      ],
+      {
+        now: new Date("2026-06-28T12:00:00.000Z"),
+        sort: "participants_desc",
+      },
+    );
+
+    expect(page.meetings.map((meeting) => meeting.title)).toEqual([
+      "Large review",
+      "Small sync",
+    ]);
+  });
+
+  it("filters visible library meetings by review status", async () => {
+    const { buildMeetingLibraryPage } = await import("@/lib/meeting-queries");
+
+    const page = buildMeetingLibraryPage(
+      [
+        libraryMeeting({
+          id: "11111111-1111-4111-8111-111111111111",
+          title: "Ready transcript",
+          platform: "google_meet",
+          startedAt: "2026-06-27T12:00:00.000Z",
+        }),
+        {
+          ...libraryMeeting({
+            id: "22222222-2222-4222-8222-222222222222",
+            title: "Failed recording",
+            platform: "zoom",
+            startedAt: "2026-06-27T11:00:00.000Z",
+          }),
+          status: "failed" as const,
+        },
+      ],
+      {
+        now: new Date("2026-06-28T12:00:00.000Z"),
+        status: "failed",
+      },
+    );
+
+    expect(page.meetings.map((meeting) => meeting.title)).toEqual([
+      "Failed recording",
+    ]);
+  });
 });
 
 describe("getMeetingDashboardSummaryForWorkspace", () => {
@@ -579,6 +675,8 @@ function libraryMeeting(overrides: {
   title: string;
   platform: "google_meet" | "in_person" | "zoom" | "upload";
   startedAt: string;
+  endedAt?: string;
+  participantCount?: number;
 }) {
   return {
     id: overrides.id,
@@ -588,6 +686,8 @@ function libraryMeeting(overrides: {
     transcriptJobStatus: null,
     hasRecallBot: false,
     startedAt: overrides.startedAt,
+    endedAt: overrides.endedAt ?? null,
+    participantCount: overrides.participantCount,
     accessScope: "workspace" as const,
     relatedMeetings: [],
   };
