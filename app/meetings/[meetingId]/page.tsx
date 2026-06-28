@@ -4,6 +4,7 @@ import { AppShell } from "@/components/app-shell";
 import { MeetingAccessSummary } from "@/components/meeting-access-summary";
 import { MeetingAutoRefresh } from "@/components/meeting-auto-refresh";
 import { MeetingActions } from "@/components/meeting-actions";
+import { MeetingEntityLinks } from "@/components/meeting-entity-links";
 import { MeetingTitleEditor } from "@/components/meeting-title-editor";
 import { ShareDialog } from "@/components/share-dialog";
 import { TranscriptViewer } from "@/components/transcript-viewer";
@@ -103,6 +104,7 @@ export default async function MeetingPage({
               </dd>
             </div>
           </dl>
+          <MeetingEntityLinks entities={meeting.entities} />
           <Separator />
           <div className="mt-8">
             <TranscriptViewer

@@ -84,7 +84,10 @@ export default async function DashboardPage({
         status: activeViewConfig.status,
       }),
       accessSummary.canCreateMeetings
-        ? getMeetingDashboardSummaryForWorkspace(workspace)
+        ? getMeetingDashboardSummaryForWorkspace(workspace, {
+            userEmail: user.email,
+            userName: user.name,
+          })
         : Promise.resolve(null),
       accessSummary.canCreateMeetings
         ? getCalendarConnectionSummaryForWorkspace(workspace)
@@ -145,9 +148,6 @@ export default async function DashboardPage({
                 activeViewConfig={activeViewConfig}
                 isSharedOnly={accessSummary.isSharedOnly}
                 syncCalendar={syncCalendar}
-              />
-              <SaveMeetingLibraryViewForm
-                activeViewConfig={activeViewConfig}
               />
             </div>
 
@@ -336,32 +336,6 @@ function MeetingLibraryControls({
       />
       <button className={cn(buttonVariants())} type="submit">
         Apply
-      </button>
-    </form>
-  );
-}
-
-function SaveMeetingLibraryViewForm({
-  activeViewConfig,
-}: {
-  activeViewConfig: MeetingLibraryViewConfig;
-}) {
-  return (
-    <form action="/api/meeting-library-view" method="post">
-      <input name="q" type="hidden" value={activeViewConfig.query ?? ""} />
-      <input
-        name="scope"
-        type="hidden"
-        value={activeViewConfig.searchScope}
-      />
-      <input name="status" type="hidden" value={activeViewConfig.status} />
-      <input name="sort" type="hidden" value={activeViewConfig.sort} />
-      <button
-        className={cn(buttonVariants({ variant: "outline" }), "w-full")}
-        type="submit"
-      >
-        <Star data-icon="inline-start" />
-        Save as my view
       </button>
     </form>
   );

@@ -91,6 +91,15 @@ describe("DashboardPage", () => {
       overdueScheduled: 0,
       needsAttention: 0,
       nextBotJoin: null,
+      userStats: {
+        last7DaysMeetings: 0,
+        previous7DaysMeetings: 0,
+        meetingChangePercent: 0,
+        meetingHours: 0,
+        spokenWords: 0,
+        talkSharePercent: null,
+        dominantEmotion: null,
+      },
     });
     getCalendarConnectionSummaryForWorkspace.mockResolvedValue(null);
     listMeetingLibraryPageForWorkspace.mockResolvedValue({
@@ -130,11 +139,18 @@ describe("DashboardPage", () => {
       sort: "duration_desc",
       status: "ready",
     });
+    expect(getMeetingDashboardSummaryForWorkspace).toHaveBeenCalledWith(
+      workspace,
+      {
+        userEmail: "member@iosg.vc",
+        userName: null,
+      },
+    );
     expect(html).toContain('name="scope"');
     expect(html).toContain('value="participants" selected="">Participants</option>');
     expect(html).toContain('name="sort"');
     expect(html).toContain('value="duration_desc" selected="">Longest first</option>');
-    expect(html).toContain("Save as my view");
+    expect(html).not.toContain("Save as my view");
     expect(html).toContain("Page 2");
     expect(html).toContain(
       "/dashboard?q=founder&amp;scope=participants&amp;status=ready&amp;sort=duration_desc&amp;syncCalendar=1",
@@ -178,6 +194,15 @@ describe("DashboardPage", () => {
       overdueScheduled: 0,
       needsAttention: 0,
       nextBotJoin: null,
+      userStats: {
+        last7DaysMeetings: 0,
+        previous7DaysMeetings: 0,
+        meetingChangePercent: 0,
+        meetingHours: 0,
+        spokenWords: 0,
+        talkSharePercent: null,
+        dominantEmotion: null,
+      },
     });
     getCalendarConnectionSummaryForWorkspace.mockResolvedValue(null);
     listMeetingLibraryPageForWorkspace.mockResolvedValue({

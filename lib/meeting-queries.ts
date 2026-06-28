@@ -15,7 +15,10 @@ import {
   transcriptSegments,
   users,
 } from "@/db/schema";
-import type { MeetingListItem } from "@/components/meeting-list";
+import type {
+  MeetingListItem,
+  MeetingListRelatedItem,
+} from "@/components/meeting-list";
 import type {
   SpeakerSuggestion,
   TranscriptSegment,
@@ -23,6 +26,7 @@ import type {
 import type { SessionUser } from "@/lib/auth";
 import {
   getDashboardWorkflowSummary,
+  type DashboardWorkflowSegment,
   type DashboardWorkflowSummaryModel,
 } from "@/lib/dashboard-workflow-summary";
 import {
@@ -50,6 +54,17 @@ import { groupRelatedMeetings } from "@/lib/meeting-intelligence";
 
 const uuidSchema = z.string().uuid();
 export const MEETING_LIBRARY_PAGE_SIZE = 50;
+const genericMeetingGroupTitles = new Set([
+  "google meet",
+  "google meet recording",
+  "meeting",
+  "recording",
+  "untitled meeting",
+  "uploaded audio",
+  "zoom",
+  "zoom meeting",
+  "zoom recording",
+]);
 
 export type MeetingTranscript = {
   id: string;
@@ -62,6 +77,13 @@ export type MeetingTranscript = {
   speakerSuggestions: SpeakerSuggestion[];
   accessScope: "workspace" | "shared";
   accessPeople: MeetingAccessPerson[];
+  entities: MeetingTranscriptEntity[];
+};
+
+export type MeetingTranscriptEntity = {
+  normalizedValue: string;
+  type: string;
+  value: string;
 };
 
 export type ShareRecipient = {
@@ -159,6 +181,26 @@ export async function listMeetingLibraryPageForWorkspace(
       startedAt: meetings.startedAt,
       endedAt: meetings.endedAt,
       createdAt: meetings.createdAt,
+      recognizedSpeakerCount: sql<number>`(
+        select count(distinct lower(btrim(${transcriptSegments.speaker})))::int
+        from ${transcriptSegments}
+        where ${transcriptSegments.meetingId} = ${meetings.id}
+          and ${transcriptSegments.speaker} is not null
+          and btrim(${transcriptSegments.speaker}) <> ''
+      )`,
+      transcriptSegmentCount: sql<number>`(
+        select count(*)::int
+        from ${transcriptSegments}
+        where ${transcriptSegments.meetingId} = ${meetings.id}
+      )`,
+      transcriptDurationMs: sql<number | null>`(
+        select max(greatest(
+          ${transcriptSegments.startMs},
+          coalesce(${transcriptSegments.endMs}, ${transcriptSegments.startMs})
+        ))::int
+        from ${transcriptSegments}
+        where ${transcriptSegments.meetingId} = ${meetings.id}
+      )`,
     })
     .from(meetings)
     .leftJoin(calendarEvents, eq(calendarEvents.id, meetings.calendarEventId))
@@ -182,7 +224,13 @@ export async function listMeetingLibraryPageForWorkspace(
       hasRecallBot: Boolean(meeting.recallBotId),
       startedAt: (meeting.startedAt ?? meeting.createdAt).toISOString(),
       endedAt: meeting.endedAt?.toISOString() ?? null,
-      participantCount: getAttendeeCount(meeting.calendarAttendeeEmails),
+      durationMs: getTranscriptDurationMs(meeting.transcriptDurationMs),
+      participantCount: getMeetingParticipantCount({
+        attendeeEmails: meeting.calendarAttendeeEmails,
+        recognizedSpeakerCount: meeting.recognizedSpeakerCount,
+        transcriptSegmentCount: meeting.transcriptSegmentCount,
+        status: meeting.status,
+      }),
       accessScope: meeting.teamId === workspace.teamId ? "workspace" : "shared",
       externalParticipantKeys: getExternalParticipantKeys(
         meeting.calendarAttendeeEmails,
@@ -191,8 +239,16 @@ export async function listMeetingLibraryPageForWorkspace(
       primaryEntity: primaryEntityByMeetingId.get(meeting.id) ?? null,
     }));
   const grouped = groupRelatedMeetings(items);
+  const itemById = new Map(items.map((meeting) => [meeting.id, meeting]));
   const groupedById = new Map(
-    grouped.map((meeting) => [meeting.id, meeting.relatedMeetings]),
+    grouped.map((meeting) => [
+      meeting.id,
+      meeting.relatedMeetings.flatMap((relatedMeeting) => {
+        const fullMeeting = itemById.get(relatedMeeting.id);
+
+        return fullMeeting ? [toRelatedMeeting(fullMeeting)] : [];
+      }),
+    ]),
   );
 
   const meetingsForLibrary = items
@@ -206,8 +262,12 @@ export async function listMeetingLibraryPageForWorkspace(
       hasRecallBot: meeting.hasRecallBot,
       startedAt: meeting.startedAt,
       endedAt: meeting.endedAt,
+      durationMs: meeting.durationMs,
       participantCount: meeting.participantCount,
       accessScope: meeting.accessScope,
+      ...(meeting.primaryEntity
+        ? { primaryEntity: meeting.primaryEntity }
+        : {}),
       relatedMeetings: groupedById.get(meeting.id),
     }));
 
@@ -232,7 +292,7 @@ export function buildMeetingLibraryPage(
       .slice(0, 3)
       .map((meeting) => meeting.id),
   );
-  const visibleMeetings = meetingsForLibrary
+  const sortedMeetings = meetingsForLibrary
     .filter(
       (meeting) =>
         meeting.status !== "scheduled" ||
@@ -242,6 +302,8 @@ export function buildMeetingLibraryPage(
     .toSorted((left, right) =>
       compareMeetingLibraryItems(left, right, scheduledBotMeetingIds, sort),
     );
+  const visibleMeetings =
+    sort === "smart" ? foldSimilarMeetings(sortedMeetings) : sortedMeetings;
   const page = normalizePage(options.page);
   const pageSize = normalizePageSize(options.pageSize);
   const start = (page - 1) * pageSize;
@@ -253,6 +315,86 @@ export function buildMeetingLibraryPage(
     hasNextPage: start + pageSize < visibleMeetings.length,
     hasPreviousPage: page > 1,
   };
+}
+
+function foldSimilarMeetings(meetingsForLibrary: MeetingListItem[]) {
+  const roots: MeetingListItem[] = [];
+  const rootByTitle = new Map<string, MeetingListItem>();
+
+  for (const meeting of meetingsForLibrary) {
+    const titleKey = getSimilarMeetingTitleKey(meeting.title);
+
+    if (!titleKey) {
+      roots.push(meeting);
+      continue;
+    }
+
+    const existingRoot = rootByTitle.get(titleKey);
+
+    if (!existingRoot) {
+      const root = {
+        ...meeting,
+        relatedMeetings: [...(meeting.relatedMeetings ?? [])],
+      };
+
+      rootByTitle.set(titleKey, root);
+      roots.push(root);
+      continue;
+    }
+
+    existingRoot.relatedMeetings = mergeRelatedMeetings(
+      existingRoot.relatedMeetings,
+      [toRelatedMeeting(meeting), ...(meeting.relatedMeetings ?? [])],
+    );
+  }
+
+  return roots;
+}
+
+function getSimilarMeetingTitleKey(title: string) {
+  const normalized = title.trim().toLowerCase().replace(/\s+/g, " ");
+
+  if (!normalized || genericMeetingGroupTitles.has(normalized)) {
+    return null;
+  }
+
+  return normalized;
+}
+
+function toRelatedMeeting(meeting: MeetingListItem): MeetingListRelatedItem {
+  return {
+    id: meeting.id,
+    title: meeting.title,
+    platform: meeting.platform,
+    startedAt: meeting.startedAt,
+    endedAt: meeting.endedAt,
+    durationMs: meeting.durationMs,
+    participantCount: meeting.participantCount,
+    status: meeting.status,
+    transcriptJobStatus: meeting.transcriptJobStatus,
+    hasRecallBot: meeting.hasRecallBot,
+    accessScope: meeting.accessScope,
+    primaryEntity: meeting.primaryEntity,
+  };
+}
+
+function mergeRelatedMeetings(
+  existing: MeetingListRelatedItem[] | undefined,
+  incoming: MeetingListRelatedItem[],
+) {
+  const merged: MeetingListRelatedItem[] = [];
+  const seenIds = new Set<string>();
+
+  for (const meeting of [...(existing ?? []), ...incoming]) {
+    if (seenIds.has(meeting.id)) {
+      continue;
+    }
+
+    seenIds.add(meeting.id);
+    merged.push(meeting);
+  }
+
+  return merged;
 }
 
 function isFutureScheduledBotMeeting(
@@ -375,18 +517,20 @@ function compareNumbers(
 }
 
 function getMeetingDurationMs(meeting: MeetingListItem) {
-  if (!meeting.endedAt) {
-    return null;
+  if (meeting.endedAt) {
+    const startedAt = new Date(meeting.startedAt).getTime();
+    const endedAt = new Date(meeting.endedAt).getTime();
+
+    if (Number.isFinite(startedAt) && Number.isFinite(endedAt)) {
+      const durationMs = endedAt - startedAt;
+
+      if (durationMs > 0) {
+        return durationMs;
+      }
+    }
   }
 
-  const startedAt = new Date(meeting.startedAt).getTime();
-  const endedAt = new Date(meeting.endedAt).getTime();
-
-  if (!Number.isFinite(startedAt) || !Number.isFinite(endedAt)) {
-    return null;
-  }
-
-  return Math.max(0, endedAt - startedAt);
+  return getTranscriptDurationMs(meeting.durationMs) ?? null;
 }
 
 function matchesMeetingLibraryStatus(
@@ -532,37 +676,118 @@ function getExternalParticipantKeys(
   return Array.from(keys);
 }
 
+function getMeetingParticipantCount(input: {
+  attendeeEmails: unknown;
+  recognizedSpeakerCount?: number | null;
+  transcriptSegmentCount?: number | null;
+  status: MeetingListItem["status"];
+}) {
+  const attendeeCount = getAttendeeCount(input.attendeeEmails);
+
+  if (typeof attendeeCount === "number" && attendeeCount > 0) {
+    return attendeeCount;
+  }
+
+  if (
+    input.status === "ready" &&
+    typeof input.recognizedSpeakerCount === "number" &&
+    input.recognizedSpeakerCount > 0
+  ) {
+    return input.recognizedSpeakerCount;
+  }
+
+  if (
+    input.status === "ready" &&
+    typeof input.transcriptSegmentCount === "number" &&
+    input.transcriptSegmentCount > 0
+  ) {
+    return 1;
+  }
+
+  return attendeeCount;
+}
+
+function getTranscriptDurationMs(durationMs?: number | null) {
+  return typeof durationMs === "number" && durationMs > 0
+    ? durationMs
+    : undefined;
+}
+
 function getAttendeeCount(attendeeEmails: unknown) {
   if (!Array.isArray(attendeeEmails)) {
     return undefined;
   }
 
-  return attendeeEmails.filter(
+  const count = attendeeEmails.filter(
     (email): email is string =>
       typeof email === "string" && email.trim().length > 0,
   ).length;
+
+  return count > 0 ? count : undefined;
 }
 
 export async function getMeetingDashboardSummaryForWorkspace(
   workspace: WorkspaceContext,
+  options: {
+    now?: Date;
+    userEmail?: string | null;
+    userName?: string | null;
+  } = {},
 ): Promise<DashboardWorkflowSummaryModel> {
-  const rows = await db
-    .select({
-      title: meetings.title,
-      status: meetings.status,
-      transcriptJobStatus: sql<TranscriptJobStatus | null>`(
-        select ${transcriptJobs.status}
-        from ${transcriptJobs}
-        where ${transcriptJobs.meetingId} = ${meetings.id}
-        order by ${transcriptJobs.createdAt} desc
-        limit 1
-      )`,
-      recallBotId: meetings.recallBotId,
-      startedAt: meetings.startedAt,
-      createdAt: meetings.createdAt,
-    })
-    .from(meetings)
-    .where(eq(meetings.teamId, workspace.teamId));
+  const now = options.now ?? new Date();
+  const statsCutoff = new Date(now.getTime() - 14 * 24 * 60 * 60 * 1000);
+  const [rows, segmentRows] = await Promise.all([
+    db
+      .select({
+        id: meetings.id,
+        title: meetings.title,
+        status: meetings.status,
+        transcriptJobStatus: sql<TranscriptJobStatus | null>`(
+          select ${transcriptJobs.status}
+          from ${transcriptJobs}
+          where ${transcriptJobs.meetingId} = ${meetings.id}
+          order by ${transcriptJobs.createdAt} desc
+          limit 1
+        )`,
+        recallBotId: meetings.recallBotId,
+        startedAt: meetings.startedAt,
+        endedAt: meetings.endedAt,
+        createdAt: meetings.createdAt,
+      })
+      .from(meetings)
+      .where(eq(meetings.teamId, workspace.teamId)),
+    db
+      .select({
+        meetingId: transcriptSegments.meetingId,
+        speaker: transcriptSegments.speaker,
+        startMs: transcriptSegments.startMs,
+        endMs: transcriptSegments.endMs,
+        text: transcriptSegments.text,
+        emotionLabel: transcriptSegments.emotionLabel,
+      })
+      .from(transcriptSegments)
+      .innerJoin(meetings, eq(transcriptSegments.meetingId, meetings.id))
+      .where(
+        and(
+          eq(meetings.teamId, workspace.teamId),
+          sql`coalesce(${meetings.startedAt}, ${meetings.createdAt}) >= ${statsCutoff}`,
+          sql`coalesce(${meetings.startedAt}, ${meetings.createdAt}) <= ${now}`,
+        ),
+      ),
+  ]);
+  const segmentsByMeetingId = new Map<string, DashboardWorkflowSegment[]>();
+
+  for (const segment of segmentRows) {
+    const meetingSegments = segmentsByMeetingId.get(segment.meetingId) ?? [];
+    meetingSegments.push({
+      speaker: segment.speaker,
+      startMs: segment.startMs,
+      endMs: segment.endMs,
+      text: segment.text,
+      emotionLabel: normalizeEmotionLabel(segment.emotionLabel),
+    });
+    segmentsByMeetingId.set(segment.meetingId, meetingSegments);
+  }
 
   return getDashboardWorkflowSummary(
     rows.map((meeting) => ({
@@ -571,7 +796,14 @@ export async function getMeetingDashboardSummaryForWorkspace(
       transcriptJobStatus: meeting.transcriptJobStatus,
       hasRecallBot: Boolean(meeting.recallBotId),
       startedAt: (meeting.startedAt ?? meeting.createdAt).toISOString(),
+      endedAt: meeting.endedAt?.toISOString() ?? null,
+      segments: segmentsByMeetingId.get(meeting.id) ?? [],
     })),
+    now,
+    {
+      userEmail: options.userEmail,
+      userName: options.userName,
+    },
   );
 }
 
@@ -642,7 +874,7 @@ export async function getMeetingTranscriptForWorkspace(
 
   const accessScope =
     meeting.teamId === workspace.teamId ? "workspace" : "shared";
-  const [segments, speakerSuggestions, accessPeople] = await Promise.all([
+  const [segments, speakerSuggestions, accessPeople, entities] = await Promise.all([
     db
       .select({
         id: transcriptSegments.id,
@@ -663,6 +895,15 @@ export async function getMeetingTranscriptForWorkspace(
     accessScope === "shared"
       ? listMeetingAccessPeople(meeting.id)
       : Promise.resolve([]),
+    db
+      .select({
+        normalizedValue: meetingEntities.normalizedValue,
+        type: meetingEntities.type,
+        value: meetingEntities.value,
+      })
+      .from(meetingEntities)
+      .where(eq(meetingEntities.meetingId, meeting.id))
+      .orderBy(asc(meetingEntities.createdAt)),
   ]);
 
   return {
@@ -683,7 +924,38 @@ export async function getMeetingTranscriptForWorkspace(
     speakerSuggestions,
     accessScope,
     accessPeople,
+    entities: normalizeMeetingTranscriptEntities(entities),
   };
+}
+
+function normalizeMeetingTranscriptEntities(rows: MeetingTranscriptEntity[]) {
+  const entities: MeetingTranscriptEntity[] = [];
+  const seen = new Set<string>();
+
+  for (const row of rows) {
+    const normalizedValue = row.normalizedValue.trim().toLowerCase();
+    const type = row.type.trim().toLowerCase();
+    const value = row.value.trim();
+
+    if (!normalizedValue || !value || !isDisplayableMeetingEntityType(type)) {
+      continue;
+    }
+
+    const key = `${type}:${normalizedValue}`;
+
+    if (seen.has(key)) {
+      continue;
+    }
+
+    seen.add(key);
+    entities.push({ normalizedValue, type, value });
+  }
+
+  return entities;
+}
+
+function isDisplayableMeetingEntityType(type: string) {
+  return type === "organization" || type === "product";
 }
 
 async function getPrimaryEntitiesForMeetings(meetingIds: string[]) {

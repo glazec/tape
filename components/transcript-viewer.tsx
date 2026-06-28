@@ -1061,7 +1061,10 @@ function TranscriptAudioPlayer({
                     className="absolute inset-x-0 bottom-1 h-1 rounded-full"
                     style={{
                       backgroundColor: getWaveformEmotionColor(section.emotionLabel),
-                      opacity: section.id === activeSegmentId ? 0.95 : 0.55,
+                      opacity: getWaveformEmotionOpacity(
+                        section.emotionLabel,
+                        section.id === activeSegmentId,
+                      ),
                     }}
                   />
                   <span
@@ -1542,7 +1545,18 @@ function getWaveformEmotionColor(
     return "#059669";
   }
 
-  return "#94a3b8";
+  return "transparent";
+}
+
+function getWaveformEmotionOpacity(
+  emotionLabel: TranscriptSegment["emotionLabel"],
+  isActive: boolean,
+) {
+  if (emotionLabel !== "hard" && emotionLabel !== "chill") {
+    return 0;
+  }
+
+  return isActive ? 0.95 : 0.6;
 }
 
 function formatEmotionLabel(label: NonNullable<TranscriptSegment["emotionLabel"]>) {
@@ -1563,6 +1577,10 @@ function formatWaveformSectionLabel(
 }
 
 function formatEmotionTooltip(emotionLabel?: TranscriptSegment["emotionLabel"]) {
+  if (!emotionLabel || emotionLabel === "neutral") {
+    return "No emotion signal";
+  }
+
   return `${formatEmotionName(emotionLabel)} emotion`;
 }
 
@@ -1571,7 +1589,7 @@ function formatEmotionName(emotionLabel?: TranscriptSegment["emotionLabel"]) {
     return formatEmotionLabel(emotionLabel);
   }
 
-  return "Neutral";
+  return "None";
 }
 
 function getWaveformTooltipAlignClass(left: number, width: number) {

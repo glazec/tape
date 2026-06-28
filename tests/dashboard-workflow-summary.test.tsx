@@ -5,6 +5,7 @@ import { DashboardWorkflowSummary } from "@/components/dashboard-workflow-summar
 import {
   getDashboardWorkflowSummary,
   type DashboardWorkflowMeeting,
+  type DashboardWorkflowSegment,
 } from "@/lib/dashboard-workflow-summary";
 
 describe("DashboardWorkflowSummary", () => {
@@ -59,6 +60,68 @@ describe("DashboardWorkflowSummary", () => {
     });
   });
 
+  it("builds user stats from recent transcript activity", () => {
+    const summary = getDashboardWorkflowSummary(
+      [
+        meeting({
+          title: "Current founder call",
+          startedAt: "2026-06-27T10:00:00.000Z",
+          endedAt: "2026-06-27T11:30:00.000Z",
+          segments: [
+            segment({
+              speaker: "Yiping",
+              text: "one two three four",
+              startMs: 0,
+              endMs: 10000,
+              emotionLabel: "chill",
+            }),
+            segment({
+              speaker: "Founder",
+              text: "one two three four five six",
+              startMs: 10000,
+              endMs: 30000,
+              emotionLabel: "hard",
+            }),
+          ],
+        }),
+        meeting({
+          title: "Current partner sync",
+          startedAt: "2026-06-26T10:00:00.000Z",
+          endedAt: "2026-06-26T10:30:00.000Z",
+        }),
+        meeting({
+          title: "Previous review",
+          startedAt: "2026-06-18T10:00:00.000Z",
+          endedAt: "2026-06-18T11:00:00.000Z",
+          segments: [
+            segment({
+              speaker: "Yiping",
+              text: "one two",
+              startMs: 0,
+              endMs: 8000,
+            }),
+          ],
+        }),
+      ],
+      new Date("2026-06-28T12:00:00.000Z"),
+      {
+        userEmail: "yiping@iosg.vc",
+        userName: "Yiping",
+      },
+    );
+
+    expect(summary.userStats).toEqual({
+      last7DaysMeetings: 2,
+      previous7DaysMeetings: 1,
+      meetingChangePercent: 100,
+      meetingHours: 2,
+      spokenWords: 4,
+      talkSharePercent: 33,
+      dominantEmotion: "hard",
+      dominantEmotionPercent: 67,
+    });
+  });
+
   it("renders only upcoming join status", () => {
     const html = renderToStaticMarkup(
       <DashboardWorkflowSummary
@@ -79,6 +142,67 @@ describe("DashboardWorkflowSummary", () => {
     expect(html).not.toContain("Ready for review");
     expect(html).not.toContain("Needs attention");
   });
+
+  it("renders the user activity card", () => {
+    const summary = getDashboardWorkflowSummary(
+      [
+        meeting({
+          startedAt: "2026-06-27T10:00:00.000Z",
+          endedAt: "2026-06-27T11:30:00.000Z",
+          segments: [
+            segment({
+              speaker: "Yiping",
+              text: "one two three four",
+              startMs: 0,
+              endMs: 10000,
+              emotionLabel: "chill",
+            }),
+            segment({
+              speaker: "Founder",
+              text: "one two three four five six",
+              startMs: 10000,
+              endMs: 30000,
+              emotionLabel: "hard",
+            }),
+          ],
+        }),
+        meeting({
+          startedAt: "2026-06-26T10:00:00.000Z",
+          endedAt: "2026-06-26T10:30:00.000Z",
+        }),
+        meeting({
+          startedAt: "2026-06-18T10:00:00.000Z",
+          endedAt: "2026-06-18T11:00:00.000Z",
+          segments: [
+            segment({
+              speaker: "Yiping",
+              text: "one two",
+              startMs: 0,
+              endMs: 8000,
+            }),
+          ],
+        }),
+      ],
+      new Date("2026-06-28T12:00:00.000Z"),
+      {
+        userEmail: "yiping@iosg.vc",
+        userName: "Yiping",
+      },
+    );
+    const html = renderToStaticMarkup(
+      <DashboardWorkflowSummary summary={summary} />,
+    );
+
+    expect(html).toContain("Your 7 days");
+    expect(html).toContain("Meetings");
+    expect(html).toContain("Meeting time");
+    expect(html).toContain("+100% vs previous 7 days");
+    expect(html).toContain("2h");
+    expect(html).toContain("Words");
+    expect(html).toContain("4 words, 33% talk share");
+    expect(html).toContain("Tone");
+    expect(html).toContain("Hard 67%");
+  });
 });
 
 function meeting(
@@ -90,6 +214,19 @@ function meeting(
     status: "ready",
     transcriptJobStatus: null,
     hasRecallBot: false,
+    ...overrides,
+  };
+}
+
+function segment(
+  overrides: Partial<DashboardWorkflowSegment>,
+): DashboardWorkflowSegment {
+  return {
+    speaker: "Yiping",
+    startMs: 0,
+    endMs: 10000,
+    text: "hello world",
+    emotionLabel: "neutral",
     ...overrides,
   };
 }

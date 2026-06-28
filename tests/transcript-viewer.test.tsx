@@ -164,7 +164,7 @@ describe("TranscriptViewer", () => {
     });
   });
 
-  it("keeps neutral waveform labels to the speaker name", () => {
+  it("keeps neutral waveform labels to the speaker name without a colored emotion", () => {
     const html = renderToStaticMarkup(
       <TranscriptViewer
         audioUrl="/api/meetings/11111111-1111-4111-8111-111111111111/audio"
@@ -181,7 +181,47 @@ describe("TranscriptViewer", () => {
 
     expect(html).toContain('aria-label="Audio waveform, Speaker 1, 120 wpm"');
     expect(html).not.toContain("Speaker 1 · Neutral");
-    expect(html).toContain('title="Neutral emotion"');
+    expect(html).not.toContain('title="Neutral emotion"');
+    expect(html).not.toContain("background-color:#94a3b8");
+    expect(html).toContain("No emotion signal");
+  });
+
+  it("limits waveform emotion colors to hard and chill", () => {
+    const html = renderToStaticMarkup(
+      <TranscriptViewer
+        audioUrl="/api/meetings/11111111-1111-4111-8111-111111111111/audio"
+        segments={[
+          {
+            ...segments[0],
+            emotionLabel: "hard",
+            id: "segment_hard",
+            startMs: 0,
+            endMs: 10000,
+            text: pacedText,
+          },
+          {
+            ...segments[0],
+            emotionLabel: "chill",
+            id: "segment_chill",
+            startMs: 10000,
+            endMs: 20000,
+            text: pacedText,
+          },
+          {
+            ...segments[0],
+            emotionLabel: "neutral",
+            id: "segment_neutral",
+            startMs: 20000,
+            endMs: 30000,
+            text: pacedText,
+          },
+        ]}
+      />,
+    );
+
+    expect(html).toContain("background-color:#dc2626");
+    expect(html).toContain("background-color:#059669");
+    expect(html).not.toContain("background-color:#94a3b8");
   });
 
   it("uses multilingual words for smoothed waveform pace", () => {
