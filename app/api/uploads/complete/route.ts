@@ -67,7 +67,12 @@ export async function POST(request: Request) {
     revalidatePath("/dashboard");
 
     return Response.json(
-      { queued: true, key, meetingId: transcription.meetingId },
+      {
+        queued: true,
+        key,
+        meetingId: transcription.meetingId,
+        redirectTo: "/dashboard",
+      },
       { status: 202 },
     );
   } catch (error) {

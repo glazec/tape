@@ -1,6 +1,7 @@
 "use client";
 
 import { ChangeEvent, FormEvent, useState } from "react";
+import { useRouter } from "next/navigation";
 import { AlertCircle, CheckCircle2, UploadCloud } from "lucide-react";
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -17,7 +18,12 @@ import { Label } from "@/components/ui/label";
 
 type UploadState = "idle" | "uploading" | "complete" | "error";
 
+type UploadQueuedResponse = {
+  redirectTo?: string;
+};
+
 export function UploadDropzone() {
+  const router = useRouter();
   const [state, setState] = useState<UploadState>("idle");
   const [message, setMessage] = useState<string | null>(null);
   const [signInRequired, setSignInRequired] = useState(false);
@@ -80,8 +86,10 @@ export function UploadDropzone() {
 
       const uploadedDirectly = await uploadDirectly(uploadUrl, selectedFile);
 
+      let queuedResult: UploadQueuedResponse;
+
       if (!uploadedDirectly) {
-        await uploadViaServer(selectedFile);
+        queuedResult = await uploadViaServer(selectedFile);
       } else {
         const completeResponse = await fetch("/api/uploads/complete", {
           method: "POST",
@@ -92,10 +100,14 @@ export function UploadDropzone() {
         if (!completeResponse.ok) {
           throw new Error("Upload completion failed");
         }
+
+        queuedResult = await readUploadQueuedResponse(completeResponse);
       }
 
       setState("complete");
       setMessage("Upload complete. Transcription queued");
+      router.replace(getPostUploadPath(queuedResult.redirectTo));
+      router.refresh();
     } catch {
       setState("error");
       setMessage("Upload failed");
@@ -185,4 +197,14 @@ async function uploadViaServer(file: File) {
   if (!response.ok) {
     throw new Error("Server upload failed");
   }
+
+  return readUploadQueuedResponse(response);
+}
+
+async function readUploadQueuedResponse(response: Response) {
+  return (await response.json().catch(() => ({}))) as UploadQueuedResponse;
+}
+
+function getPostUploadPath(path: string | undefined) {
+  return path === "/dashboard" ? path : "/dashboard";
 }

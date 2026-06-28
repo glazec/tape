@@ -48,9 +48,9 @@ const platformLabels: Record<MeetingListItem["platform"], string> = {
 const statusLabels: Record<MeetingDisplayStatus, string> = {
   scheduled: "Scheduled",
   recording: "Recording",
-  queued: "Queued",
-  transcribing: "Transcribing",
-  processing: "Processing",
+  queued: "In progress",
+  transcribing: "In progress",
+  processing: "In progress",
   ready: "Ready",
   failed: "Failed",
 };

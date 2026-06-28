@@ -75,6 +75,7 @@ test("uploads a selected MP3 through a signed upload URL", async ({ page }) => {
       body: JSON.stringify({
         queued: true,
         key: "users/user_123/uploads/upload_123.mp3",
+        redirectTo: "/dashboard",
       }),
     });
   });
@@ -87,9 +88,7 @@ test("uploads a selected MP3 through a signed upload URL", async ({ page }) => {
   });
   await page.getByRole("button", { name: "Upload", exact: true }).click();
 
-  await expect(
-    page.getByText("Upload complete. Transcription queued"),
-  ).toBeVisible();
+  await expect(page).toHaveURL(/\/dashboard$/);
   expect(requestedUploadUrl).toBe(true);
   expect(uploadedFile).toBe(true);
   expect(queuedTranscription).toBe(true);
@@ -128,6 +127,7 @@ test("falls back to server upload when the signed upload fails", async ({
       body: JSON.stringify({
         queued: true,
         key: "users/user_123/uploads/upload_456.mp3",
+        redirectTo: "/dashboard",
       }),
     });
   });
@@ -140,9 +140,7 @@ test("falls back to server upload when the signed upload fails", async ({
   });
   await page.getByRole("button", { name: "Upload", exact: true }).click();
 
-  await expect(
-    page.getByText("Upload complete. Transcription queued"),
-  ).toBeVisible();
+  await expect(page).toHaveURL(/\/dashboard$/);
   expect(fallbackUpload).toBe(true);
 });
 

@@ -127,6 +127,7 @@ describe("POST /api/uploads/complete", () => {
       queued: true,
       key: "users/user_123/uploads/11111111-1111-4111-8111-111111111111.mp3",
       meetingId: "22222222-2222-4222-8222-222222222222",
+      redirectTo: "/dashboard",
     });
     expect(getObjectMetadata).toHaveBeenCalledWith({
       key: "users/user_123/uploads/11111111-1111-4111-8111-111111111111.mp3",

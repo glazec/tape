@@ -60,4 +60,25 @@ describe("MeetingList", () => {
     expect(html).toContain("Nascent intro");
     expect(html).toContain("Related");
   });
+
+  it("shows uploaded queued audio as in progress", () => {
+    const html = renderToStaticMarkup(
+      <MeetingList
+        meetings={[
+          {
+            id: "33333333-3333-4333-8333-333333333333",
+            title: "Investment review",
+            platform: "upload",
+            startedAt: "2026-06-27T12:00:00.000Z",
+            status: "processing",
+            transcriptJobStatus: "queued",
+          },
+        ]}
+      />,
+    );
+
+    expect(html).toContain("Investment review");
+    expect(html).toContain("In progress");
+    expect(html).not.toContain("Queued");
+  });
 });
