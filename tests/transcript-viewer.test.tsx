@@ -83,7 +83,7 @@ describe("TranscriptViewer", () => {
     expect(html).not.toContain("High pressure words or fast pace");
   });
 
-  it("overlays speaker and non-neutral emotion labels on the waveform", () => {
+  it("overlays speaker, emotion, and wpm labels on the waveform", () => {
     const html = renderToStaticMarkup(
       <TranscriptViewer
         audioUrl="/api/meetings/11111111-1111-4111-8111-111111111111/audio"
@@ -97,7 +97,11 @@ describe("TranscriptViewer", () => {
     );
 
     expect(html).toContain("Speaker 1 · Hard");
-    expect(html).toContain('aria-label="Audio waveform, Speaker 1 · Hard"');
+    expect(html).toContain("120 wpm");
+    expect(html).toContain('aria-label="Audio waveform, Speaker 1 · Hard, 120 wpm"');
+    expect(html).toContain("<svg");
+    expect(html).toContain("<polyline");
+    expect(html).toContain("background-color:#2563eb");
   });
 
   it("keeps neutral waveform labels to the speaker name", () => {
@@ -113,7 +117,7 @@ describe("TranscriptViewer", () => {
       />,
     );
 
-    expect(html).toContain('aria-label="Audio waveform, Speaker 1"');
+    expect(html).toContain('aria-label="Audio waveform, Speaker 1, 120 wpm"');
     expect(html).not.toContain("Speaker 1 · Neutral");
   });
 });

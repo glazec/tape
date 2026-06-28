@@ -60,12 +60,25 @@ const WAVEFORM_SECTION_COLORS = [
   "#dc2626",
   "#0891b2",
 ];
+const WPM_GRAPH_MAX = 260;
+const TRANSCRIPT_WORD_PATTERN = /[A-Za-z0-9]+(?:'[A-Za-z0-9]+)?/g;
 
 type TranscriptViewerProps = {
   audioUrl?: string | null;
   meetingId?: string | null;
   segments: TranscriptSegment[];
   speakerSuggestions?: SpeakerSuggestion[];
+};
+
+type WaveformSection = {
+  emotionLabel: TranscriptSegment["emotionLabel"];
+  id: string;
+  label: string;
+  left: number;
+  speaker: string | null;
+  speakerLabel: string;
+  width: number;
+  wpm: number;
 };
 
 function formatTimestamp(startMs: number) {
@@ -654,9 +667,15 @@ function TranscriptAudioPlayer({
     () => buildWaveformSections(segments, timelineDuration),
     [segments, timelineDuration],
   );
-  const activeWaveformLabel =
-    sectionMarkers.find((section) => section.id === activeSegmentId)?.label ??
-    null;
+  const wpmLinePoints = useMemo(
+    () => buildWaveformWpmLinePoints(sectionMarkers, waveformBarCount),
+    [sectionMarkers, waveformBarCount],
+  );
+  const activeWaveformSection =
+    sectionMarkers.find((section) => section.id === activeSegmentId) ?? null;
+  const activeWaveformLabel = activeWaveformSection
+    ? `${activeWaveformSection.label}, ${formatWpmLabel(activeWaveformSection.wpm)}`
+    : null;
   const progressPercent = timelineDuration
     ? clamp((currentTime / timelineDuration) * 100, 0, 100)
     : 0;
@@ -821,33 +840,22 @@ function TranscriptAudioPlayer({
           onPointerDown={seekFromWaveform}
           type="button"
         >
-          {sectionMarkers.map((section) => (
-            <span
-              aria-hidden="true"
-              className="absolute inset-y-1 rounded-md"
-              key={section.id}
-              style={{
-                backgroundColor: getWaveformSectionColor(section.speaker),
-                left: `${section.left}%`,
-                opacity: section.id === activeSegmentId ? 0.16 : 0.06,
-                width: `${section.width}%`,
-              }}
-            />
-          ))}
           <span
             aria-hidden="true"
-            className="absolute inset-x-2 top-1.5 h-5 sm:inset-x-1"
+            className="absolute inset-x-2 top-1.5 h-5 overflow-hidden rounded-sm bg-muted sm:inset-x-1"
           >
             {sectionMarkers.map((section) => (
               <span
-                className="absolute inset-y-0 box-border flex min-w-0 items-center rounded-sm bg-background/90 px-1.5 text-[0.68rem] font-medium leading-none text-foreground ring-1 ring-border/70"
-                key={`${section.id}-label`}
+                className="absolute inset-y-0 box-border flex min-w-0 items-center px-1.5 text-[0.68rem] font-semibold leading-none text-white"
+                key={`${section.id}-speaker`}
                 style={{
+                  backgroundColor: getWaveformSpeakerColor(section.speaker),
                   left: `${section.left}%`,
+                  opacity: section.id === activeSegmentId ? 0.96 : 0.78,
                   width: `${section.width}%`,
                 }}
               >
-                <span className="truncate">{section.label}</span>
+                <span className="truncate">{section.speakerLabel}</span>
               </span>
             ))}
           </span>
@@ -874,6 +882,39 @@ function TranscriptAudioPlayer({
               );
             })}
           </span>
+          {wpmLinePoints ? (
+            <svg
+              aria-hidden="true"
+              className="pointer-events-none absolute inset-x-2 bottom-3 top-7 text-foreground sm:inset-x-1"
+              preserveAspectRatio="none"
+              viewBox="0 0 100 100"
+            >
+              <polyline
+                fill="none"
+                points={wpmLinePoints}
+                stroke="var(--background)"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth="7"
+              />
+              <polyline
+                fill="none"
+                points={wpmLinePoints}
+                stroke="currentColor"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth="3"
+              />
+            </svg>
+          ) : null}
+          {activeWaveformSection ? (
+            <span
+              aria-hidden="true"
+              className="absolute right-2 top-7 rounded-sm bg-background/90 px-1.5 py-0.5 text-[0.65rem] font-medium leading-none text-muted-foreground ring-1 ring-border sm:right-1"
+            >
+              {formatWpmLabel(activeWaveformSection.wpm)}
+            </span>
+          ) : null}
           <span
             aria-hidden="true"
             className="absolute inset-x-2 bottom-1 h-1 overflow-hidden rounded-full bg-muted sm:inset-x-1"
@@ -883,10 +924,7 @@ function TranscriptAudioPlayer({
                 className="absolute inset-y-0"
                 key={`${section.id}-rail`}
                 style={{
-                  backgroundColor: getWaveformSectionColor(
-                    section.speaker,
-                    section.emotionLabel,
-                  ),
+                  backgroundColor: getWaveformEmotionColor(section.emotionLabel),
                   left: `${section.left}%`,
                   opacity: section.id === activeSegmentId ? 0.95 : 0.55,
                   width: `${section.width}%`,
@@ -1091,21 +1129,26 @@ function normalizePeaks(peaks: number[]) {
 function buildWaveformSections(
   segments: TranscriptSegment[],
   timelineDuration: number,
-) {
+): WaveformSection[] {
   if (!timelineDuration) {
     return [];
   }
 
   return segments
     .map((segment, index) => {
-      const nextSegment = segments[index + 1];
-      const endMs = segment.endMs ?? nextSegment?.startMs ?? timelineDuration * 1000;
+      const endMs = getWaveformSegmentEndMs(
+        segment,
+        index,
+        segments,
+        timelineDuration,
+      );
       const left = clamp((segment.startMs / 1000 / timelineDuration) * 100, 0, 100);
       const width = clamp(
         ((endMs - segment.startMs) / 1000 / timelineDuration) * 100,
         0.4,
         100 - left,
       );
+      const speakerLabel = segment.speaker ?? "Unknown speaker";
 
       return {
         emotionLabel: segment.emotionLabel,
@@ -1116,14 +1159,76 @@ function buildWaveformSections(
         ),
         left,
         speaker: segment.speaker,
+        speakerLabel,
         width,
+        wpm: calculateSegmentWpm(segment.text, segment.startMs, endMs),
       };
     })
     .filter((section) => section.width > 0);
 }
 
-function getWaveformSectionColor(
-  speaker: string | null,
+function buildWaveformWpmLinePoints(
+  sections: WaveformSection[],
+  pointCount: number,
+) {
+  if (sections.length === 0 || pointCount < 2) {
+    return "";
+  }
+
+  return Array.from({ length: pointCount }, (_, index) => {
+    const x = (index / (pointCount - 1)) * 100;
+    const section = findWaveformSectionAtPercent(sections, x);
+    const normalizedWpm = section ? clamp(section.wpm / WPM_GRAPH_MAX, 0, 1) : 0;
+    const y = 92 - normalizedWpm * 76;
+
+    return `${formatChartCoordinate(x)},${formatChartCoordinate(y)}`;
+  }).join(" ");
+}
+
+function findWaveformSectionAtPercent(
+  sections: WaveformSection[],
+  percent: number,
+) {
+  return (
+    sections.find(
+      (section) =>
+        percent >= section.left && percent <= section.left + section.width,
+    ) ??
+    sections.at(-1) ??
+    null
+  );
+}
+
+function getWaveformSegmentEndMs(
+  segment: TranscriptSegment,
+  index: number,
+  segments: TranscriptSegment[],
+  timelineDuration: number,
+) {
+  const nextSegment = segments[index + 1];
+
+  return segment.endMs ?? nextSegment?.startMs ?? timelineDuration * 1000;
+}
+
+function calculateSegmentWpm(text: string, startMs: number, endMs: number) {
+  const wordCount = text.match(TRANSCRIPT_WORD_PATTERN)?.length ?? 0;
+  const durationMinutes = Math.max(1, endMs - startMs) / 60000;
+
+  return Math.round(wordCount / durationMinutes);
+}
+
+function getWaveformSpeakerColor(speaker: string | null) {
+  const speakerKey = getSpeakerKey(speaker);
+  let hash = 0;
+
+  for (let index = 0; index < speakerKey.length; index += 1) {
+    hash = (hash * 31 + speakerKey.charCodeAt(index)) >>> 0;
+  }
+
+  return WAVEFORM_SECTION_COLORS[hash % WAVEFORM_SECTION_COLORS.length];
+}
+
+function getWaveformEmotionColor(
   emotionLabel?: TranscriptSegment["emotionLabel"],
 ) {
   if (emotionLabel === "hard") {
@@ -1134,14 +1239,7 @@ function getWaveformSectionColor(
     return "#059669";
   }
 
-  const speakerKey = getSpeakerKey(speaker);
-  let hash = 0;
-
-  for (let index = 0; index < speakerKey.length; index += 1) {
-    hash = (hash * 31 + speakerKey.charCodeAt(index)) >>> 0;
-  }
-
-  return WAVEFORM_SECTION_COLORS[hash % WAVEFORM_SECTION_COLORS.length];
+  return "#94a3b8";
 }
 
 function formatEmotionLabel(label: NonNullable<TranscriptSegment["emotionLabel"]>) {
@@ -1159,6 +1257,14 @@ function formatWaveformSectionLabel(
   }
 
   return speakerLabel;
+}
+
+function formatWpmLabel(wpm: number) {
+  return `${wpm} wpm`;
+}
+
+function formatChartCoordinate(value: number) {
+  return Number(value.toFixed(2)).toString();
 }
 
 function getSegmentTimelineDuration(segments: TranscriptSegment[]) {
