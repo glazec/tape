@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 import { OneSignalLogin } from "@/components/onesignal-login";
 import { SignOutButton } from "@/components/sign-out-button";
 import { buttonVariants } from "@/components/ui/button";
+import { getOneSignalAllowedOrigins } from "@/lib/onesignal-web-sdk";
 import { cn } from "@/lib/utils";
 
 type AppShellProps = {
@@ -28,6 +29,7 @@ export function AppShell({
   const visibleNavItems = canCreateMeetings
     ? navItems
     : navItems.filter((item) => item.href === "/dashboard");
+  const oneSignalAllowedOrigins = getOneSignalAllowedOrigins();
 
   return (
     <div className="min-h-screen bg-background text-foreground">
@@ -76,7 +78,10 @@ export function AppShell({
         {children}
       </main>
       {oneSignalExternalId ? (
-        <OneSignalLogin externalId={oneSignalExternalId} />
+        <OneSignalLogin
+          allowedOrigins={oneSignalAllowedOrigins}
+          externalId={oneSignalExternalId}
+        />
       ) : null}
     </div>
   );

@@ -8,21 +8,42 @@ type OneSignalSdk = {
 
 declare global {
   interface Window {
+    MeetingNoteOneSignalReady?: Promise<OneSignalSdk | null>;
     OneSignalDeferred?: Array<(oneSignal: OneSignalSdk) => Promise<void> | void>;
   }
 }
 
-export function OneSignalLogin({ externalId }: { externalId: string }) {
+type OneSignalLoginProps = {
+  allowedOrigins?: string[];
+  externalId: string;
+};
+
+export function OneSignalLogin({
+  allowedOrigins = [],
+  externalId,
+}: OneSignalLoginProps) {
+  const allowedOriginsKey = allowedOrigins.join("\n");
+
   useEffect(() => {
     if (!externalId) {
       return;
     }
 
-    window.OneSignalDeferred = window.OneSignalDeferred || [];
-    window.OneSignalDeferred.push(async (oneSignal) => {
-      await oneSignal.login?.(externalId);
+    const currentOriginIsAllowed = allowedOriginsKey
+      .split("\n")
+      .includes(window.location.origin);
+    if (!currentOriginIsAllowed) {
+      return;
+    }
+
+    void window.MeetingNoteOneSignalReady?.then(async (oneSignal) => {
+      try {
+        await oneSignal?.login?.(externalId);
+      } catch (error) {
+        console.warn("OneSignal login failed", error);
+      }
     });
-  }, [externalId]);
+  }, [allowedOriginsKey, externalId]);
 
   return null;
 }

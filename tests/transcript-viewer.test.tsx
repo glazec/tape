@@ -1,7 +1,10 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
-import { TranscriptViewer } from "@/components/transcript-viewer";
+import {
+  getWaveformHoverSnapshot,
+  TranscriptViewer,
+} from "@/components/transcript-viewer";
 
 const segments = [
   {
@@ -107,15 +110,58 @@ describe("TranscriptViewer", () => {
       'aria-label="Audio waveform, Speaker 1 · Hard, 120 wpm"',
     );
     expect(html).toContain("<svg");
+    expect(html).toContain("Words per minute trend");
+    expect(html).not.toContain("<polygon");
+    expect(html).toContain('stroke-dasharray="2 3"');
     expect(html).toContain("<polyline");
-    expect(html).toContain("top-1 h-1 overflow-hidden rounded-full");
-    expect(html).toContain("bottom-1 z-20 h-1 overflow-hidden rounded-full");
+    expect(html).toContain("group-hover/rail:opacity-100");
+    expect(html).toContain("top-0 z-40 h-6");
+    expect(html).toContain("bottom-0 z-40 h-6");
+    expect(html).toContain("group-hover/wpm:opacity-100");
+    expect(html).toContain("WPM trend: 120 wpm");
+    expect(html).toContain("Speaker: Speaker 1");
+    expect(html).toContain("Emotion: Hard");
+    expect(html).toContain("WPM: 120 wpm");
     expect(
       (html.match(/background-color:#2563eb/g) ?? []).length,
     ).toBeGreaterThanOrEqual(2);
     expect(html).toContain('title="Speaker 1"');
     expect(html).toContain('title="Hard emotion"');
     expect(html).toContain('stroke="#f97316"');
+  });
+
+  it("calculates the WPM tooltip from the hovered waveform position", () => {
+    const lowPace = getWaveformHoverSnapshot({
+      boundsLeft: 0,
+      boundsWidth: 100,
+      clientX: 25,
+      samples: [
+        { endSecond: 120, startSecond: 0, wordCount: 120 },
+        { endSecond: 240, startSecond: 120, wordCount: 480 },
+      ],
+      timelineDuration: 240,
+    });
+    const highPace = getWaveformHoverSnapshot({
+      boundsLeft: 0,
+      boundsWidth: 100,
+      clientX: 75,
+      samples: [
+        { endSecond: 120, startSecond: 0, wordCount: 120 },
+        { endSecond: 240, startSecond: 120, wordCount: 480 },
+      ],
+      timelineDuration: 240,
+    });
+
+    expect(lowPace).toEqual({
+      leftPercent: 25,
+      timeSecond: 60,
+      wpmLabel: "60 wpm",
+    });
+    expect(highPace).toEqual({
+      leftPercent: 75,
+      timeSecond: 180,
+      wpmLabel: "240 wpm",
+    });
   });
 
   it("keeps neutral waveform labels to the speaker name", () => {

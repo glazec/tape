@@ -14,11 +14,15 @@ import { Button } from "@/components/ui/button";
 
 type MeetingActionsProps = {
   meetingId: string;
+  instanceId?: string;
 };
 
 type ExportFormat = "transcript" | "mp3";
 
-export function MeetingActions({ meetingId }: MeetingActionsProps) {
+export function MeetingActions({
+  meetingId,
+  instanceId = "default",
+}: MeetingActionsProps) {
   const router = useRouter();
   const exportMenuRef = useRef<HTMLDivElement>(null);
   const [isExportMenuOpen, setIsExportMenuOpen] = useState(false);
@@ -33,7 +37,7 @@ export function MeetingActions({ meetingId }: MeetingActionsProps) {
   const [copyStatus, setCopyStatus] = useState<"idle" | "copied">("idle");
   const [error, setError] = useState<string | null>(null);
   const encodedMeetingId = encodeURIComponent(meetingId);
-  const exportMenuId = `meeting-export-menu-${meetingId}`;
+  const exportMenuId = `meeting-export-menu-${instanceId}-${meetingId}`;
   const textExportUrl = `/api/meetings/${encodedMeetingId}/export?format=text`;
   const mp3ExportUrl = `/api/meetings/${encodedMeetingId}/export?format=mp3`;
   const hasSelectedExport =

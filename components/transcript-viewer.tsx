@@ -304,7 +304,7 @@ export function TranscriptViewer({
 
   return (
     <>
-      <section className={audioUrl ? "pb-44" : undefined}>
+      <section className={audioUrl ? "pb-48" : undefined}>
         <header className="mb-5">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <h2 className="text-lg font-semibold">Transcript</h2>
@@ -671,6 +671,11 @@ function TranscriptAudioPlayer({
   const [waveformStatus, setWaveformStatus] = useState<
     "idle" | "loading" | "ready" | "fallback"
   >("idle");
+  const [hoveredWpmSnapshot, setHoveredWpmSnapshot] = useState<{
+    leftPercent: number;
+    timeSecond: number;
+    wpmLabel: string;
+  } | null>(null);
   const waveformBarCount = useWaveformBarCount();
   const safeDuration = Number.isFinite(duration) && duration > 0 ? duration : 0;
   const segmentDuration = useMemo(() => getSegmentTimelineDuration(segments), [
@@ -710,11 +715,21 @@ function TranscriptAudioPlayer({
     sectionMarkers.find((section) => section.id === activeSegmentId) ?? null;
   const activeWpmLabel =
     activeWaveformWpm > 0 ? formatWpmLabel(activeWaveformWpm) : null;
+  const wpmTooltipLabel = hoveredWpmSnapshot?.wpmLabel ?? activeWpmLabel;
   const activeWaveformLabel = activeWaveformSection
     ? activeWpmLabel
       ? `${activeWaveformSection.label}, ${activeWpmLabel}`
       : activeWaveformSection.label
     : null;
+  const wpmTooltipPositionStyle = {
+    left: hoveredWpmSnapshot
+      ? `${hoveredWpmSnapshot.leftPercent}%`
+      : "0.25rem",
+    opacity: hoveredWpmSnapshot ? 1 : undefined,
+    transform: hoveredWpmSnapshot
+      ? getWaveformHoverTooltipTransform(hoveredWpmSnapshot.leftPercent)
+      : undefined,
+  };
   const progressPercent = timelineDuration
     ? clamp((currentTime / timelineDuration) * 100, 0, 100)
     : 0;
@@ -841,6 +856,20 @@ function TranscriptAudioPlayer({
     setCurrentTime(nextTime);
   }
 
+  function updateWpmHover(event: PointerEvent<HTMLSpanElement>) {
+    const bounds = event.currentTarget.getBoundingClientRect();
+
+    setHoveredWpmSnapshot(
+      getWaveformHoverSnapshot({
+        boundsLeft: bounds.left,
+        boundsWidth: bounds.width,
+        clientX: event.clientX,
+        samples: wpmSamples,
+        timelineDuration,
+      }),
+    );
+  }
+
   function changePlaybackRate(event: ChangeEvent<HTMLSelectElement>) {
     const audio = audioRef.current;
     const nextRate = Number(event.currentTarget.value);
@@ -875,31 +904,53 @@ function TranscriptAudioPlayer({
               ? `Audio waveform, ${activeWaveformLabel}`
               : "Audio waveform"
           }
-          className="relative h-20 w-full overflow-hidden rounded-lg border bg-background px-2 outline-none focus-visible:ring-3 focus-visible:ring-ring/50 sm:px-1"
+          className="relative h-24 w-full overflow-hidden rounded-lg border bg-background px-2 outline-none focus-visible:ring-3 focus-visible:ring-ring/50 sm:px-1"
           onPointerDown={seekFromWaveform}
           type="button"
         >
           <span
             aria-hidden="true"
-            className="absolute inset-x-2 top-1 h-1 overflow-hidden rounded-full bg-muted sm:inset-x-1"
+            className="absolute inset-x-2 top-0 z-40 h-6 sm:inset-x-1"
           >
-            {sectionMarkers.map((section) => (
-              <span
-                className="absolute inset-y-0"
-                key={`${section.id}-speaker`}
-                style={{
-                  backgroundColor: getWaveformSpeakerColor(section.speaker),
-                  left: `${section.left}%`,
-                  opacity: section.id === activeSegmentId ? 0.96 : 0.78,
-                  width: `${section.width}%`,
-                }}
-                title={section.speakerLabel}
-              />
-            ))}
+            <span className="pointer-events-none absolute inset-x-0 top-1 h-1 rounded-full bg-muted" />
+            {sectionMarkers.map((section) => {
+              const tooltipAlignClass = getWaveformTooltipAlignClass(
+                section.left,
+                section.width,
+              );
+
+              return (
+                <span
+                  className="group/rail absolute inset-y-0"
+                  key={`${section.id}-speaker`}
+                  style={{
+                    left: `${section.left}%`,
+                    width: `${section.width}%`,
+                  }}
+                  title={section.speakerLabel}
+                >
+                  <span
+                    className="absolute inset-x-0 top-1 h-1 rounded-full"
+                    style={{
+                      backgroundColor: getWaveformSpeakerColor(section.speaker),
+                      opacity: section.id === activeSegmentId ? 0.96 : 0.78,
+                    }}
+                  />
+                  <span
+                    className={cn(
+                      "pointer-events-none absolute top-6 z-50 whitespace-nowrap rounded-sm border bg-background px-1.5 py-1 text-[0.65rem] font-medium leading-none text-foreground opacity-0 shadow-sm ring-1 ring-border transition-opacity group-hover/rail:opacity-100",
+                      tooltipAlignClass,
+                    )}
+                  >
+                    Speaker: {section.speakerLabel}
+                  </span>
+                </span>
+              );
+            })}
           </span>
           <span
             aria-hidden="true"
-            className="absolute inset-x-2 bottom-3 top-3 flex items-center gap-[2px] sm:inset-x-1 sm:gap-px"
+            className="absolute inset-x-2 bottom-4 top-8 z-0 flex items-center gap-[2px] opacity-70 sm:inset-x-1 sm:gap-px"
           >
             {waveformValues.map((peak, index) => {
               const barPercent =
@@ -921,63 +972,133 @@ function TranscriptAudioPlayer({
             })}
           </span>
           {wpmLinePoints ? (
-            <svg
-              aria-hidden="true"
-              className="pointer-events-none absolute inset-x-2 bottom-3 top-3 z-10 sm:inset-x-1"
-              preserveAspectRatio="none"
-              viewBox="0 0 100 100"
-            >
-              <polyline
-                fill="none"
-                points={wpmLinePoints}
-                stroke="var(--background)"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth="8"
-                vectorEffect="non-scaling-stroke"
-              />
-              <polyline
-                fill="none"
-                points={wpmLinePoints}
-                stroke="#f97316"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth="4"
-                vectorEffect="non-scaling-stroke"
-              />
-            </svg>
-          ) : null}
-          {activeWaveformSection && activeWpmLabel ? (
             <span
               aria-hidden="true"
-              className="absolute right-2 top-3 z-20 rounded-sm bg-background/90 px-1.5 py-0.5 text-[0.65rem] font-medium leading-none text-muted-foreground ring-1 ring-border sm:right-1"
+              className="group/wpm absolute inset-x-2 bottom-5 top-4 z-10 sm:inset-x-1"
+              onPointerLeave={() => setHoveredWpmSnapshot(null)}
+              onPointerMove={updateWpmHover}
             >
-              {activeWpmLabel}
+              <svg
+                className="h-full w-full"
+                preserveAspectRatio="none"
+                viewBox="0 0 100 100"
+              >
+                {[24, 50, 76].map((gridY) => (
+                  <line
+                    key={gridY}
+                    stroke="var(--border)"
+                    strokeDasharray="2 3"
+                    strokeWidth="0.8"
+                    vectorEffect="non-scaling-stroke"
+                    x1="0"
+                    x2="100"
+                    y1={gridY}
+                    y2={gridY}
+                  />
+                ))}
+                <polyline
+                  fill="none"
+                  points={wpmLinePoints}
+                  pointerEvents="stroke"
+                  stroke="transparent"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth="16"
+                  vectorEffect="non-scaling-stroke"
+                />
+                <polyline
+                  fill="none"
+                  points={wpmLinePoints}
+                  stroke="var(--background)"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth="6"
+                  vectorEffect="non-scaling-stroke"
+                />
+                <polyline
+                  fill="none"
+                  points={wpmLinePoints}
+                  stroke="#f97316"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth="3"
+                  vectorEffect="non-scaling-stroke"
+                />
+              </svg>
+              <span
+                className="pointer-events-none absolute top-1 z-50 whitespace-nowrap rounded-sm border bg-background px-1.5 py-1 text-[0.65rem] font-medium leading-none text-foreground opacity-0 shadow-sm ring-1 ring-border transition-opacity group-hover/wpm:opacity-100"
+                style={wpmTooltipPositionStyle}
+              >
+                WPM trend{wpmTooltipLabel ? `: ${wpmTooltipLabel}` : null}
+              </span>
             </span>
+          ) : null}
+          {wpmLinePoints ? (
+            <span className="sr-only">Words per minute trend</span>
           ) : null}
           <span
             aria-hidden="true"
-            className="absolute inset-x-2 bottom-1 z-20 h-1 overflow-hidden rounded-full bg-muted sm:inset-x-1"
+            className="absolute inset-x-2 bottom-0 z-40 h-6 sm:inset-x-1"
           >
-            {sectionMarkers.map((section) => (
-              <span
-                className="absolute inset-y-0"
-                key={`${section.id}-rail`}
-                style={{
-                  backgroundColor: getWaveformEmotionColor(section.emotionLabel),
-                  left: `${section.left}%`,
-                  opacity: section.id === activeSegmentId ? 0.95 : 0.55,
-                  width: `${section.width}%`,
-                }}
-                title={formatEmotionTooltip(section.emotionLabel)}
-              />
-            ))}
+            <span className="pointer-events-none absolute inset-x-0 bottom-1 h-1 rounded-full bg-muted" />
+            {sectionMarkers.map((section) => {
+              const tooltipAlignClass = getWaveformTooltipAlignClass(
+                section.left,
+                section.width,
+              );
+
+              return (
+                <span
+                  className="group/rail absolute inset-y-0"
+                  key={`${section.id}-rail`}
+                  style={{
+                    left: `${section.left}%`,
+                    width: `${section.width}%`,
+                  }}
+                  title={formatEmotionTooltip(section.emotionLabel)}
+                >
+                  <span
+                    className="absolute inset-x-0 bottom-1 h-1 rounded-full"
+                    style={{
+                      backgroundColor: getWaveformEmotionColor(section.emotionLabel),
+                      opacity: section.id === activeSegmentId ? 0.95 : 0.55,
+                    }}
+                  />
+                  <span
+                    className={cn(
+                      "pointer-events-none absolute bottom-6 z-50 whitespace-nowrap rounded-sm border bg-background px-1.5 py-1 text-[0.65rem] font-medium leading-none text-foreground opacity-0 shadow-sm ring-1 ring-border transition-opacity group-hover/rail:opacity-100",
+                      tooltipAlignClass,
+                    )}
+                  >
+                    Emotion: {formatEmotionName(section.emotionLabel)}
+                  </span>
+                </span>
+              );
+            })}
           </span>
           <span
             aria-hidden="true"
             className="absolute bottom-1 top-1 z-30 w-0.5 rounded-full bg-primary shadow-[0_0_0_1px_var(--background)]"
             style={{ left: `${progressPercent}%` }}
           />
+          {activeWaveformSection ? (
+            <span
+              aria-hidden="true"
+              className="pointer-events-none absolute right-2 top-3 z-30 flex max-w-[calc(100%-1rem)] flex-wrap justify-end gap-1.5 text-[0.65rem] leading-none sm:right-1"
+            >
+              <span className="rounded-sm border bg-background/95 px-1.5 py-1 font-medium text-foreground shadow-sm ring-1 ring-border">
+                Speaker: {activeWaveformSection.speakerLabel}
+              </span>
+              <span className="rounded-sm border bg-background/95 px-1.5 py-1 font-medium text-foreground shadow-sm ring-1 ring-border">
+                Emotion: {formatEmotionName(activeWaveformSection.emotionLabel)}
+              </span>
+              {activeWpmLabel ? (
+                <span className="rounded-sm border bg-background/95 px-1.5 py-1 font-medium text-foreground shadow-sm ring-1 ring-border">
+                  WPM: {activeWpmLabel}
+                </span>
+              ) : null}
+            </span>
+          ) : null}
           <span aria-live="polite" className="sr-only">
             {activeWaveformLabel
               ? `Current section: ${activeWaveformLabel}`
@@ -1317,6 +1438,42 @@ function calculateSmoothedWpmAtSecond(
   return Math.round(wordCount / (spokenSeconds / 60));
 }
 
+export function getWaveformHoverSnapshot({
+  boundsLeft,
+  boundsWidth,
+  clientX,
+  samples,
+  timelineDuration,
+}: {
+  boundsLeft: number;
+  boundsWidth: number;
+  clientX: number;
+  samples: WpmSample[];
+  timelineDuration: number;
+}) {
+  if (!boundsWidth || !timelineDuration) {
+    return null;
+  }
+
+  const leftPercent = clamp(((clientX - boundsLeft) / boundsWidth) * 100, 0, 100);
+  const timeSecond = (leftPercent / 100) * timelineDuration;
+  const wpm = calculateSmoothedWpmAtSecond(
+    samples,
+    timeSecond,
+    timelineDuration,
+  );
+
+  if (!wpm) {
+    return null;
+  }
+
+  return {
+    leftPercent,
+    timeSecond,
+    wpmLabel: formatWpmLabel(wpm),
+  };
+}
+
 function getWpmSmoothingWindowSeconds(timelineDuration: number) {
   return Math.min(
     WPM_GRAPH_MAX_WINDOW_SECONDS,
@@ -1406,11 +1563,41 @@ function formatWaveformSectionLabel(
 }
 
 function formatEmotionTooltip(emotionLabel?: TranscriptSegment["emotionLabel"]) {
+  return `${formatEmotionName(emotionLabel)} emotion`;
+}
+
+function formatEmotionName(emotionLabel?: TranscriptSegment["emotionLabel"]) {
   if (emotionLabel && emotionLabel !== "neutral") {
-    return `${formatEmotionLabel(emotionLabel)} emotion`;
+    return formatEmotionLabel(emotionLabel);
   }
 
-  return "Neutral emotion";
+  return "Neutral";
+}
+
+function getWaveformTooltipAlignClass(left: number, width: number) {
+  const midpoint = left + width / 2;
+
+  if (midpoint < 12) {
+    return "left-0";
+  }
+
+  if (midpoint > 88) {
+    return "right-0";
+  }
+
+  return "left-1/2 -translate-x-1/2";
+}
+
+function getWaveformHoverTooltipTransform(leftPercent: number) {
+  if (leftPercent < 12) {
+    return "translateX(0)";
+  }
+
+  if (leftPercent > 88) {
+    return "translateX(-100%)";
+  }
+
+  return "translateX(-50%)";
 }
 
 function formatWpmLabel(wpm: number) {

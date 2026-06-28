@@ -69,7 +69,9 @@ export default async function MeetingPage({
               </h1>
             )}
             {meeting.accessScope === "workspace" ? (
-              <MeetingActions meetingId={meetingId} />
+              <div className="lg:hidden">
+                <MeetingActions instanceId="mobile" meetingId={meetingId} />
+              </div>
             ) : null}
           </div>
           <dl className="mt-5 grid gap-4 py-4 sm:grid-cols-3">
@@ -115,13 +117,24 @@ export default async function MeetingPage({
           </div>
         </section>
 
-        <aside className="min-w-0 lg:pt-24">
+        <aside
+          className={`min-w-0 ${
+            meeting.accessScope === "workspace" ? "lg:pt-8" : "lg:pt-24"
+          }`}
+        >
           {meeting.accessScope === "workspace" ? (
-            <ShareDialog
-              meetingId={meetingId}
-              organizationDomain={workspace.domain}
-              teamMembers={shareRecipients}
-            />
+            <>
+              <div className="hidden lg:flex">
+                <MeetingActions instanceId="desktop" meetingId={meetingId} />
+              </div>
+              <div className="lg:mt-8">
+                <ShareDialog
+                  meetingId={meetingId}
+                  organizationDomain={workspace.domain}
+                  teamMembers={shareRecipients}
+                />
+              </div>
+            </>
           ) : (
             <div className="rounded-lg border bg-card p-5">
               <p className="text-sm font-semibold">Shared transcript</p>

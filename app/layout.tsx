@@ -4,6 +4,7 @@ import Script from "next/script";
 
 import {
   buildOneSignalInitScript,
+  getOneSignalAllowedOrigins,
   getOneSignalAppId,
 } from "@/lib/onesignal-web-sdk";
 import { cn } from "@/lib/utils";
@@ -11,7 +12,11 @@ import { cn } from "@/lib/utils";
 import "./globals.css";
 
 const geist = Geist({ subsets: ["latin"], variable: "--font-geist-sans" });
-const oneSignalInitScript = buildOneSignalInitScript(getOneSignalAppId());
+const oneSignalAllowedOrigins = getOneSignalAllowedOrigins();
+const oneSignalInitScript = buildOneSignalInitScript(
+  getOneSignalAppId(),
+  oneSignalAllowedOrigins,
+);
 
 export const metadata: Metadata = {
   title: "Meeting Transcript",
@@ -23,14 +28,16 @@ export default function RootLayout({
 }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="en" className={cn("font-sans", geist.variable)}>
-      <body>{children}</body>
-      <Script
-        src="https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.page.js"
-        strategy="afterInteractive"
-      />
-      <Script id="onesignal-init" strategy="afterInteractive">
-        {oneSignalInitScript}
-      </Script>
+      <body>
+        {children}
+        <Script id="onesignal-init" strategy="beforeInteractive">
+          {oneSignalInitScript}
+        </Script>
+        <Script
+          src="https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.page.js"
+          strategy="afterInteractive"
+        />
+      </body>
     </html>
   );
 }

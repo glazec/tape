@@ -54,7 +54,7 @@ The sign out button calls the Neon Auth client sign out method, then posts to `/
 
 ## Push Notifications
 
-The production OneSignal web app is configured for `https://meeting-note-swart.vercel.app` with app id `117c1d1c-ada4-4b49-bb2e-9f4b5cb747ef`. The client uses that app id by default and `NEXT_PUBLIC_ONESIGNAL_APP_ID` can override it for another OneSignal app. Set `ONESIGNAL_REST_API_KEY` in server environments so the reminder worker can send push notifications.
+The production OneSignal web app is configured for `https://meeting-note-swart.vercel.app` with app id `117c1d1c-ada4-4b49-bb2e-9f4b5cb747ef`. The client uses that app id by default and `NEXT_PUBLIC_ONESIGNAL_APP_ID` can override it for another OneSignal app. The browser SDK only initializes on `NEXT_PUBLIC_ONESIGNAL_ALLOWED_ORIGINS`, which defaults to the production origin, so local development does not call the production OneSignal app. Set `ONESIGNAL_REST_API_KEY` in server environments so the reminder worker can send push notifications.
 
 The required service worker from the OneSignal v16 package is served from `/OneSignalSDKWorker.js`, and the SDK init points to that root worker path. Signed in app pages identify the browser to OneSignal with the local workspace user id. OneSignal controls the visible permission prompt from its dashboard, so the product can keep reminder setup out of the normal meeting UI.
 
