@@ -89,12 +89,16 @@ describe("GET /api/meetings/[meetingId]/export", () => {
               {
                 speaker: "Speaker 1",
                 startMs: 20000,
-                text: "First line.",
+                endMs: 23000,
+                text: "We should ship this update now.",
+                emotionLabel: "hard",
               },
               {
                 speaker: null,
                 startMs: 80500,
+                endMs: null,
                 text: "Second line.",
+                emotionLabel: null,
               },
             ]),
           }),
@@ -108,8 +112,13 @@ describe("GET /api/meetings/[meetingId]/export", () => {
     expect(response.headers.get("content-disposition")).toContain(
       "Nascent Sync transcript.txt",
     );
-    await expect(response.text()).resolves.toContain(
-      "[0:20] Speaker 1: First line.",
+    const body = await response.text();
+
+    expect(body).toContain(
+      "[0:20] Speaker 1 | emotion: Hard | wpm: 120: We should ship this update now.",
+    );
+    expect(body).toContain(
+      "[1:20] Unknown speaker | emotion: unknown | wpm: unknown: Second line.",
     );
     expect(select).toHaveBeenCalledTimes(2);
   });
@@ -142,14 +151,18 @@ describe("GET /api/meetings/[meetingId]/export", () => {
               {
                 speaker: "Speaker 1",
                 startMs: 20000,
+                endMs: 23000,
                 text: "First line.",
                 translatedText: "第一句。",
+                emotionLabel: "neutral",
               },
               {
                 speaker: null,
                 startMs: 80500,
+                endMs: null,
                 text: "Second line.",
                 translatedText: null,
+                emotionLabel: null,
               },
             ]),
           }),
@@ -165,7 +178,61 @@ describe("GET /api/meetings/[meetingId]/export", () => {
       "Nascent Sync Chinese transcript.txt",
     );
     await expect(response.text()).resolves.toContain(
-      "[0:20] Speaker 1: 第一句。",
+      "[0:20] Speaker 1 | emotion: Neutral | wpm: 40: 第一句。",
+    );
+  });
+
+  it("uses the next segment timestamp for wpm when segment end time is missing", async () => {
+    getCurrentUser.mockResolvedValue({
+      id: "user_123",
+      email: "user@example.com",
+      name: null,
+    });
+    getWorkspace.mockResolvedValue({ teamId: "team_123" });
+
+    select
+      .mockReturnValueOnce({
+        from: () => ({
+          where: () => ({
+            limit: vi.fn().mockResolvedValue([
+              {
+                id: "11111111-1111-4111-8111-111111111111",
+                title: "Nascent Sync",
+              },
+            ]),
+          }),
+        }),
+      })
+      .mockReturnValueOnce({
+        from: () => ({
+          where: () => ({
+            orderBy: vi.fn().mockResolvedValue([
+              {
+                speaker: "Speaker 1",
+                startMs: 20000,
+                endMs: null,
+                text: "Follow up now.",
+                translatedText: null,
+                emotionLabel: "neutral",
+              },
+              {
+                speaker: "Speaker 2",
+                startMs: 26000,
+                endMs: null,
+                text: "Done.",
+                translatedText: null,
+                emotionLabel: "chill",
+              },
+            ]),
+          }),
+        }),
+      });
+
+    const response = await getMeetingExport();
+
+    expect(response.status).toBe(200);
+    await expect(response.text()).resolves.toContain(
+      "[0:20] Speaker 1 | emotion: Neutral | wpm: 30: Follow up now.",
     );
   });
 
