@@ -10,6 +10,7 @@ import { getOrCreateWorkspaceForSessionUser } from "@/lib/workspace";
 export const runtime = "nodejs";
 
 const meetingIdSchema = z.string().uuid();
+const transcriptLanguageSchema = z.enum(["original", "zh"]);
 
 export async function GET(
   request: Request,
@@ -28,7 +29,8 @@ export async function GET(
     return Response.json({ error: "Meeting not found" }, { status: 404 });
   }
 
-  const format = new URL(request.url).searchParams.get("format") ?? "text";
+  const searchParams = new URL(request.url).searchParams;
+  const format = searchParams.get("format") ?? "text";
 
   if (format === "mp3") {
     return Response.redirect(
@@ -42,6 +44,17 @@ export async function GET(
   if (format !== "text") {
     return Response.json(
       { error: "Unsupported export format" },
+      { status: 400 },
+    );
+  }
+
+  const parsedLanguage = transcriptLanguageSchema.safeParse(
+    searchParams.get("language") ?? "original",
+  );
+
+  if (!parsedLanguage.success) {
+    return Response.json(
+      { error: "Unsupported transcript language" },
       { status: 400 },
     );
   }
@@ -71,34 +84,64 @@ export async function GET(
       speaker: transcriptSegments.speaker,
       startMs: transcriptSegments.startMs,
       text: transcriptSegments.text,
+      translatedText: transcriptSegments.translatedText,
     })
     .from(transcriptSegments)
     .where(eq(transcriptSegments.meetingId, meeting.id))
     .orderBy(asc(transcriptSegments.startMs));
-  const filename = `${sanitizeFilename(meeting.title)} transcript.txt`;
+  const filename = getTranscriptFilename(meeting.title, parsedLanguage.data);
 
-  return new Response(formatTranscriptExport(meeting.title, segments), {
-    headers: {
-      "content-disposition": `attachment; filename="${filename}"`,
-      "content-type": "text/plain; charset=utf-8",
+  return new Response(
+    formatTranscriptExport(meeting.title, segments, parsedLanguage.data),
+    {
+      headers: {
+        "content-disposition": `attachment; filename="${filename}"`,
+        "content-type": "text/plain; charset=utf-8",
+      },
     },
-  });
+  );
 }
 
 function formatTranscriptExport(
   title: string,
-  segments: Array<{ speaker: string | null; startMs: number; text: string }>,
+  segments: Array<{
+    speaker: string | null;
+    startMs: number;
+    text: string;
+    translatedText: string | null;
+  }>,
+  language: z.infer<typeof transcriptLanguageSchema>,
 ) {
   const lines = [
     title,
     "",
     ...segments.map(
       (segment) =>
-        `[${formatTimestamp(segment.startMs)}] ${segment.speaker ?? "Unknown speaker"}: ${segment.text}`,
+        `[${formatTimestamp(segment.startMs)}] ${segment.speaker ?? "Unknown speaker"}: ${getTranscriptText(segment, language)}`,
     ),
   ];
 
   return `${lines.join("\n")}\n`;
+}
+
+function getTranscriptText(
+  segment: { text: string; translatedText: string | null },
+  language: z.infer<typeof transcriptLanguageSchema>,
+) {
+  if (language === "zh") {
+    return segment.translatedText?.trim() || segment.text;
+  }
+
+  return segment.text;
+}
+
+function getTranscriptFilename(
+  title: string,
+  language: z.infer<typeof transcriptLanguageSchema>,
+) {
+  const languageLabel = language === "zh" ? " Chinese" : "";
+
+  return `${sanitizeFilename(title)}${languageLabel} transcript.txt`;
 }
 
 function formatTimestamp(startMs: number) {

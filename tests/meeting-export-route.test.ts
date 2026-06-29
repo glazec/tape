@@ -114,6 +114,61 @@ describe("GET /api/meetings/[meetingId]/export", () => {
     expect(select).toHaveBeenCalledTimes(2);
   });
 
+  it("exports Chinese transcript text when requested", async () => {
+    getCurrentUser.mockResolvedValue({
+      id: "user_123",
+      email: "user@example.com",
+      name: null,
+    });
+    getWorkspace.mockResolvedValue({ teamId: "team_123" });
+
+    select
+      .mockReturnValueOnce({
+        from: () => ({
+          where: () => ({
+            limit: vi.fn().mockResolvedValue([
+              {
+                id: "11111111-1111-4111-8111-111111111111",
+                title: "Nascent Sync",
+              },
+            ]),
+          }),
+        }),
+      })
+      .mockReturnValueOnce({
+        from: () => ({
+          where: () => ({
+            orderBy: vi.fn().mockResolvedValue([
+              {
+                speaker: "Speaker 1",
+                startMs: 20000,
+                text: "First line.",
+                translatedText: "第一句。",
+              },
+              {
+                speaker: null,
+                startMs: 80500,
+                text: "Second line.",
+                translatedText: null,
+              },
+            ]),
+          }),
+        }),
+      });
+
+    const response = await getMeetingExport(
+      "https://app.example.com/api/meetings/11111111-1111-4111-8111-111111111111/export?format=text&language=zh",
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("content-disposition")).toContain(
+      "Nascent Sync Chinese transcript.txt",
+    );
+    await expect(response.text()).resolves.toContain(
+      "[0:20] Speaker 1: 第一句。",
+    );
+  });
+
   it("uses explicit share access for shared only text exports", async () => {
     const where = vi.fn(() => ({
       limit: vi.fn().mockResolvedValue([]),

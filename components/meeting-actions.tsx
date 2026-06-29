@@ -13,13 +13,16 @@ import {
 import { Button } from "@/components/ui/button";
 
 type MeetingActionsProps = {
+  hasTranslations?: boolean;
   meetingId: string;
   instanceId?: string;
 };
 
 type ExportFormat = "transcript" | "mp3";
+type TranscriptLanguage = "zh" | "original";
 
 export function MeetingActions({
+  hasTranslations = false,
   meetingId,
   instanceId = "default",
 }: MeetingActionsProps) {
@@ -32,6 +35,8 @@ export function MeetingActions({
     mp3: true,
     transcript: true,
   });
+  const [selectedTranscriptLanguage, setSelectedTranscriptLanguage] =
+    useState<TranscriptLanguage>(hasTranslations ? "zh" : "original");
   const [isDeleting, setIsDeleting] = useState(false);
   const [isCopying, setIsCopying] = useState(false);
   const [copyStatus, setCopyStatus] = useState<"idle" | "copied">("idle");
@@ -39,6 +44,7 @@ export function MeetingActions({
   const encodedMeetingId = encodeURIComponent(meetingId);
   const exportMenuId = `meeting-export-menu-${instanceId}-${meetingId}`;
   const textExportUrl = `/api/meetings/${encodedMeetingId}/export?format=text`;
+  const selectedTextExportUrl = `${textExportUrl}&language=${selectedTranscriptLanguage}`;
   const mp3ExportUrl = `/api/meetings/${encodedMeetingId}/export?format=mp3`;
   const hasSelectedExport =
     selectedExportFormats.transcript || selectedExportFormats.mp3;
@@ -94,7 +100,7 @@ export function MeetingActions({
     }
 
     const urls = [
-      selectedExportFormats.transcript ? textExportUrl : null,
+      selectedExportFormats.transcript ? selectedTextExportUrl : null,
       selectedExportFormats.mp3 ? mp3ExportUrl : null,
     ].filter((url): url is string => Boolean(url));
 
@@ -189,6 +195,33 @@ export function MeetingActions({
             />
             <span className="font-medium">MP3</span>
           </label>
+          {hasTranslations ? (
+            <fieldset className="mt-2 border-t pt-2">
+              <legend className="px-2 text-xs font-medium text-muted-foreground">
+                Transcript language
+              </legend>
+              <label className="mt-1 flex cursor-pointer items-center gap-2 rounded-md px-2 py-2 hover:bg-muted">
+                <input
+                  checked={selectedTranscriptLanguage === "zh"}
+                  className="size-4 border-input accent-primary"
+                  name={`${exportMenuId}-language`}
+                  onChange={() => setSelectedTranscriptLanguage("zh")}
+                  type="radio"
+                />
+                <span className="font-medium">中文</span>
+              </label>
+              <label className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-2 hover:bg-muted">
+                <input
+                  checked={selectedTranscriptLanguage === "original"}
+                  className="size-4 border-input accent-primary"
+                  name={`${exportMenuId}-language`}
+                  onChange={() => setSelectedTranscriptLanguage("original")}
+                  type="radio"
+                />
+                <span className="font-medium">Original</span>
+              </label>
+            </fieldset>
+          ) : null}
           <Button
             className="mt-2 w-full"
             disabled={!hasSelectedExport}

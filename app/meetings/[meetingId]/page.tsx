@@ -41,6 +41,9 @@ export default async function MeetingPage({
     meetingStatus: meeting.status,
     transcriptJobStatus: meeting.transcriptJobStatus,
   });
+  const hasTranslations = meeting.segments.some((segment) =>
+    Boolean(segment.translatedText?.trim()),
+  );
 
   return (
     <AppShell
@@ -71,7 +74,11 @@ export default async function MeetingPage({
             )}
             {meeting.accessScope === "workspace" ? (
               <div className="lg:hidden">
-                <MeetingActions instanceId="mobile" meetingId={meetingId} />
+                <MeetingActions
+                  hasTranslations={hasTranslations}
+                  instanceId="mobile"
+                  meetingId={meetingId}
+                />
               </div>
             ) : null}
           </div>
@@ -127,7 +134,11 @@ export default async function MeetingPage({
           {meeting.accessScope === "workspace" ? (
             <>
               <div className="hidden lg:flex">
-                <MeetingActions instanceId="desktop" meetingId={meetingId} />
+                <MeetingActions
+                  hasTranslations={hasTranslations}
+                  instanceId="desktop"
+                  meetingId={meetingId}
+                />
               </div>
               <div className="lg:mt-8">
                 <ShareDialog

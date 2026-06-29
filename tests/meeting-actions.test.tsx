@@ -26,4 +26,17 @@ describe("MeetingActions", () => {
     expect(html).toContain("Copy");
     expect(html).toContain("Delete");
   });
+
+  it("asks for transcript language when translations are available", () => {
+    const html = renderToStaticMarkup(
+      <MeetingActions
+        hasTranslations
+        meetingId="11111111-1111-4111-8111-111111111111"
+      />,
+    );
+
+    expect(html).toContain("Transcript language");
+    expect(html).toContain("中文");
+    expect(html).toContain("Original");
+  });
 });
