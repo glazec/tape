@@ -114,11 +114,8 @@ export function TranscriptViewer({
     useState<SpeakerApplyScope>("matching_speaker");
   const [savingSpeakerKey, setSavingSpeakerKey] = useState<string | null>(null);
   const [errorSpeakerKey, setErrorSpeakerKey] = useState<string | null>(null);
-  const [editingTranslationId, setEditingTranslationId] = useState<string | null>(
-    null,
-  );
-  const [draftTranslation, setDraftTranslation] = useState("");
   const audioRef = useRef<HTMLAudioElement>(null);
+  const segmentRefs = useRef(new Map<string, HTMLLIElement>());
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -252,38 +249,6 @@ export function TranscriptViewer({
     setEditingSpeaker(null);
   }
 
-  async function saveTranslation(segmentId: string) {
-    const translatedText = draftTranslation.trim();
-
-    if (!meetingId || !translatedText) {
-      return;
-    }
-
-    const response = await fetch(
-      `/api/meetings/${encodeURIComponent(meetingId)}/segments/${encodeURIComponent(segmentId)}/translation`,
-      {
-        method: "PATCH",
-        headers: {
-          "content-type": "application/json",
-        },
-        body: JSON.stringify({ translatedText }),
-      },
-    );
-
-    if (!response.ok) {
-      return;
-    }
-
-    setSegments((currentSegments) =>
-      currentSegments.map((segment) =>
-        segment.id === segmentId
-          ? { ...segment, translatedText }
-          : segment,
-      ),
-    );
-    setEditingTranslationId(null);
-  }
-
   async function seekTo(startMs: number) {
     const audio = audioRef.current;
 
@@ -300,6 +265,23 @@ export function TranscriptViewer({
     } catch {
       setIsPlaying(false);
     }
+  }
+
+  function scrollTranscriptToTime(timeSecond: number) {
+    const targetSegment = findNearestSegmentAtTime(segments, timeSecond * 1000);
+    const targetNode = targetSegment
+      ? segmentRefs.current.get(targetSegment.id)
+      : null;
+
+    if (!targetNode) {
+      return;
+    }
+
+    const topOffset = 96;
+    const targetTop =
+      targetNode.getBoundingClientRect().top + window.scrollY - topOffset;
+
+    window.scrollTo({ behavior: "smooth", top: Math.max(0, targetTop) });
   }
 
   return (
@@ -405,12 +387,17 @@ export function TranscriptViewer({
                 const displayedText = shouldShowTranslation
                   ? translatedText
                   : segment.text;
-                const isEditingTranslation =
-                  editingTranslationId === segment.id;
-
                 return (
                   <li
                     key={segment.id}
+                    ref={(node) => {
+                      if (node) {
+                        segmentRefs.current.set(segment.id, node);
+                        return;
+                      }
+
+                      segmentRefs.current.delete(segment.id);
+                    }}
                     className={cn(
                       "grid gap-4 border-b py-5 transition-colors sm:grid-cols-[6rem_minmax(0,1fr)]",
                       isActive ? "bg-primary/5 px-3 sm:-mx-3" : undefined,
@@ -555,62 +542,28 @@ export function TranscriptViewer({
                           </span>
                         ) : null}
                       </div>
-                      <p className="text-[0.95rem] leading-7 text-foreground">
-                        {displayedText}
-                      </p>
-                      {canEditSpeakers && shouldShowTranslation ? (
-                        <div className="mt-2">
-                          {isEditingTranslation ? (
-                            <div className="flex max-w-xl flex-col gap-2">
-                              <textarea
-                                aria-label="Chinese translation"
-                                className="min-h-24 rounded-md border bg-background p-2 text-sm outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
-                                onChange={(event) =>
-                                  setDraftTranslation(event.currentTarget.value)
-                                }
-                                value={draftTranslation}
-                              />
-                              <div className="flex gap-2">
-                                <Button
-                                  onClick={() => saveTranslation(segment.id)}
-                                  size="sm"
-                                  type="button"
-                                >
-                                  Save
-                                </Button>
-                                <Button
-                                  onClick={() => setEditingTranslationId(null)}
-                                  size="sm"
-                                  type="button"
-                                  variant="outline"
-                                >
-                                  Cancel
-                                </Button>
-                              </div>
-                            </div>
-                          ) : (
-                            <Button
-                              onClick={() => {
-                                setEditingTranslationId(segment.id);
-                                setDraftTranslation(translatedText ?? "");
-                              }}
-                              size="sm"
-                              type="button"
-                              variant="ghost"
-                            >
-                              Edit translation
-                            </Button>
-                          )}
-                        </div>
-                      ) : null}
-                      {shouldShowTranslation ? (
-                        <details className="mt-2 text-sm text-muted-foreground">
-                          <summary className="cursor-pointer font-medium text-foreground">
-                            Original sentence
-                          </summary>
-                          <p className="mt-2 leading-6">{segment.text}</p>
-                        </details>
-                      ) : null}
+                      <div className="group/original relative inline-block max-w-full">
+                        <p
+                          aria-describedby={
+                            shouldShowTranslation
+                              ? `${segment.id}-original-text`
+                              : undefined
+                          }
+                          className="text-[0.95rem] leading-7 text-foreground outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+                          tabIndex={shouldShowTranslation ? 0 : undefined}
+                        >
+                          {displayedText}
+                        </p>
+                        {shouldShowTranslation ? (
+                          <div
+                            className="pointer-events-none absolute left-0 top-full z-30 mt-2 w-[min(32rem,calc(100vw-3rem))] translate-y-1 rounded-md border bg-background p-3 text-sm text-foreground opacity-0 shadow-lg ring-1 ring-border transition group-hover/original:translate-y-0 group-hover/original:opacity-100 group-focus-within/original:translate-y-0 group-focus-within/original:opacity-100"
+                            id={`${segment.id}-original-text`}
+                            role="tooltip"
+                          >
+                            <p className="leading-6">{segment.text}</p>
+                          </div>
+                        ) : null}
+                      </div>
                     </div>
                   </li>
                 );
@@ -630,6 +583,7 @@ export function TranscriptViewer({
           isPlaying={isPlaying}
           playbackRate={playbackRate}
           segments={segments}
+          onTimelineSeek={scrollTranscriptToTime}
           setCurrentTime={setCurrentTime}
           setDuration={setDuration}
           setIsPlaying={setIsPlaying}
@@ -649,6 +603,7 @@ function TranscriptAudioPlayer({
   isPlaying,
   playbackRate,
   segments,
+  onTimelineSeek,
   setCurrentTime,
   setDuration,
   setIsPlaying,
@@ -662,6 +617,7 @@ function TranscriptAudioPlayer({
   isPlaying: boolean;
   playbackRate: number;
   segments: TranscriptSegment[];
+  onTimelineSeek: (timeSecond: number) => void;
   setCurrentTime: (value: number) => void;
   setDuration: (value: number) => void;
   setIsPlaying: (value: boolean) => void;
@@ -839,6 +795,7 @@ function TranscriptAudioPlayer({
 
     audio.currentTime = nextTime;
     setCurrentTime(nextTime);
+    onTimelineSeek(nextTime);
   }
 
   function seekFromWaveform(event: PointerEvent<HTMLButtonElement>) {
@@ -854,6 +811,7 @@ function TranscriptAudioPlayer({
 
     audio.currentTime = nextTime;
     setCurrentTime(nextTime);
+    onTimelineSeek(nextTime);
   }
 
   function updateWpmHover(event: PointerEvent<HTMLSpanElement>) {
@@ -1646,6 +1604,37 @@ function findSegmentAtTime(segments: TranscriptSegment[], currentMs: number) {
       return currentMs >= segment.startMs && currentMs < endMs;
     }) ?? null
   );
+}
+
+function findNearestSegmentAtTime(
+  segments: TranscriptSegment[],
+  currentMs: number,
+) {
+  const directSegment = findSegmentAtTime(segments, currentMs);
+
+  if (directSegment) {
+    return directSegment;
+  }
+
+  return segments.reduce<TranscriptSegment | null>((closest, segment) => {
+    const endMs = segment.endMs ?? segment.startMs;
+    const distance =
+      currentMs < segment.startMs
+        ? segment.startMs - currentMs
+        : Math.max(0, currentMs - endMs);
+
+    if (!closest) {
+      return segment;
+    }
+
+    const closestEndMs = closest.endMs ?? closest.startMs;
+    const closestDistance =
+      currentMs < closest.startMs
+        ? closest.startMs - currentMs
+        : Math.max(0, currentMs - closestEndMs);
+
+    return distance < closestDistance ? segment : closest;
+  }, null);
 }
 
 function clamp(value: number, min: number, max: number) {

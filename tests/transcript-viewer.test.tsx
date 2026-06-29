@@ -38,7 +38,7 @@ describe("TranscriptViewer", () => {
     expect(html).toContain("Edit speaker");
   });
 
-  it("shows Chinese translation first while keeping original text available", () => {
+  it("shows Chinese translation first with original text on hover", () => {
     const html = renderToStaticMarkup(
       <TranscriptViewer
         segments={[
@@ -52,11 +52,13 @@ describe("TranscriptViewer", () => {
 
     expect(html).toContain("中文");
     expect(html).toContain("大家好");
-    expect(html).toContain("Original sentence");
+    expect(html).toContain('role="tooltip"');
+    expect(html).toContain("group-hover/original:opacity-100");
     expect(html).toContain("Hello team");
+    expect(html).not.toContain("Original sentence");
   });
 
-  it("shows translation correction controls for workspace meetings", () => {
+  it("hides translation correction controls on workspace meetings", () => {
     const html = renderToStaticMarkup(
       <TranscriptViewer
         meetingId="11111111-1111-4111-8111-111111111111"
@@ -69,7 +71,7 @@ describe("TranscriptViewer", () => {
       />,
     );
 
-    expect(html).toContain("Edit translation");
+    expect(html).not.toContain("Edit translation");
   });
 
   it("shows emotion labels without exposing model details", () => {
