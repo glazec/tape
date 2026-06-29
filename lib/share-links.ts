@@ -5,6 +5,7 @@ import { and, asc, eq, gt, isNull } from "drizzle-orm";
 import { db } from "@/db/client";
 import { meetings, shareLinks, transcriptSegments } from "@/db/schema";
 import type { TranscriptSegment } from "@/components/transcript-viewer";
+import { currentTranscriptJobIdSubquery } from "@/lib/current-transcript-job";
 
 export type SharedTranscript = {
   title: string;
@@ -29,7 +30,13 @@ export async function getSharedTranscriptByToken(
     })
     .from(shareLinks)
     .innerJoin(meetings, eq(shareLinks.meetingId, meetings.id))
-    .leftJoin(transcriptSegments, eq(transcriptSegments.meetingId, meetings.id))
+    .leftJoin(
+      transcriptSegments,
+      and(
+        eq(transcriptSegments.meetingId, meetings.id),
+        eq(transcriptSegments.jobId, currentTranscriptJobIdSubquery(meetings.id)),
+      ),
+    )
     .where(
       and(
         eq(shareLinks.tokenHash, hashShareToken(token)),

@@ -74,7 +74,6 @@ const WPM_GRAPH_MAX_WINDOW_SECONDS = 90;
 const WPM_GRAPH_MIN_SAMPLE_SECONDS = 8;
 const TRANSCRIPT_FALLBACK_WORD_PATTERN = /[A-Za-z0-9]+(?:['’][A-Za-z0-9]+)?/g;
 const TRANSCRIPT_CJK_CHARACTER_PATTERN = /[\u3400-\u9fff\uf900-\ufaff]/g;
-const transcriptWordSegmenter = createTranscriptWordSegmenter();
 
 type TranscriptViewerProps = {
   audioUrl?: string | null;
@@ -239,20 +238,14 @@ export function TranscriptViewer({
     hasTranslations ? "zh" : "original",
   );
   const canSeekTranscript = Boolean(audioUrl);
-  const activeSegmentId = useMemo(() => {
-    const currentMs = currentTime * 1000;
-
-    return (
-      segments.find((segment, index) => {
-        const nextSegment = segments[index + 1];
-        const endMs =
-          segment.endMs ?? nextSegment?.startMs ?? Number.POSITIVE_INFINITY;
-
-        return currentMs >= segment.startMs && currentMs < endMs;
-      })?.id ?? null
-    );
-  }, [currentTime, segments]);
-  const speakerStats = useMemo(() => buildSpeakerStats(segments), [segments]);
+  const rawDisplaySegments = useMemo(
+    () => getTranscriptDisplaySegments(segments),
+    [segments],
+  );
+  const speakerStats = useMemo(
+    () => buildSpeakerStats(rawDisplaySegments),
+    [rawDisplaySegments],
+  );
   const speakerStatByRawKey = useMemo(() => {
     const statsByRawKey = new Map<string, SpeakerStat>();
 
@@ -268,21 +261,34 @@ export function TranscriptViewer({
   }, [speakerStats]);
   const displaySegments = useMemo(
     () =>
-      segments.map((segment) => ({
+      rawDisplaySegments.map((segment) => ({
         ...segment,
         speaker:
           speakerStatByRawKey.get(getSpeakerKey(segment.speaker))?.speaker ??
           segment.speaker,
       })),
-    [segments, speakerStatByRawKey],
+    [rawDisplaySegments, speakerStatByRawKey],
   );
+  const activeSegmentId = useMemo(() => {
+    const currentMs = currentTime * 1000;
+
+    return (
+      displaySegments.find((segment, index) => {
+        const nextSegment = displaySegments[index + 1];
+        const endMs =
+          segment.endMs ?? nextSegment?.startMs ?? Number.POSITIVE_INFINITY;
+
+        return currentMs >= segment.startMs && currentMs < endMs;
+      })?.id ?? null
+    );
+  }, [currentTime, displaySegments]);
 
   function startEditing(speaker: string | null, segmentId?: string) {
     const speakerStat = speakerStatByRawKey.get(getSpeakerKey(speaker));
     const speakerKey = speakerStat?.speakerKey ?? getSpeakerKey(speaker);
     const targetSegmentId =
       segmentId ??
-      segments.find((segment) =>
+      rawDisplaySegments.find((segment) =>
         speakerStat
           ? isSpeakerInStat(segment.speaker, speakerStat)
           : getSpeakerKey(segment.speaker) === speakerKey,
@@ -545,7 +551,10 @@ export function TranscriptViewer({
   }
 
   function scrollTranscriptToTime(timeSecond: number) {
-    const targetSegment = findNearestSegmentAtTime(segments, timeSecond * 1000);
+    const targetSegment = findNearestSegmentAtTime(
+      displaySegments,
+      timeSecond * 1000,
+    );
     const targetNode = targetSegment
       ? segmentRefs.current.get(targetSegment.id)
       : null;
@@ -600,8 +609,8 @@ export function TranscriptViewer({
           </div>
         </header>
 
-        {segments.length === 0 ? (
-          <p className="border-t py-8 text-sm text-muted-foreground">
+        {displaySegments.length === 0 ? (
+          <p className="py-8 text-sm text-muted-foreground">
             No transcript text yet.
           </p>
         ) : (
@@ -643,7 +652,7 @@ export function TranscriptViewer({
                 </div>
               </div>
             ) : null}
-            <div className="mb-5 border-t py-4">
+            <div className="mb-6">
               <h3 className="text-sm font-semibold">Speakers</h3>
               <div className="mt-3 grid min-w-0 gap-2 sm:grid-cols-2">
                 {speakerStats.map((speaker) => {
@@ -725,8 +734,8 @@ export function TranscriptViewer({
                 })}
               </div>
             </div>
-            <ol className="border-t">
-              {segments.map((segment, index) => {
+            <ol className="space-y-2">
+              {displaySegments.map((segment, index) => {
                 const speakerStat = speakerStatByRawKey.get(
                   getSpeakerKey(segment.speaker),
                 );
@@ -749,7 +758,7 @@ export function TranscriptViewer({
                 const textTokens = getTranscriptTextTokens(displayedText);
                 const segmentEndMs = getSegmentDisplayEndMs(
                   segment,
-                  segments,
+                  displaySegments,
                   index,
                 );
                 const activeWordIndex = isActive
@@ -772,8 +781,8 @@ export function TranscriptViewer({
                       segmentRefs.current.delete(segment.id);
                     }}
                     className={cn(
-                      "grid grid-cols-[2rem_minmax(0,1fr)] gap-3 border-b py-4 transition-colors",
-                      isActive ? "bg-primary/5 px-3 sm:-mx-3" : undefined,
+                      "grid grid-cols-[2rem_minmax(0,1fr)] gap-3 rounded-lg px-3 py-3 transition-colors sm:-mx-3",
+                      isActive ? "bg-primary/5" : "hover:bg-muted/35",
                     )}
                   >
                     <span
@@ -917,6 +926,76 @@ export function TranscriptViewer({
       ) : null}
     </>
   );
+}
+
+function getTranscriptDisplaySegments(segments: TranscriptSegment[]) {
+  const displaySegments: TranscriptSegment[] = [];
+  const seenSegmentKeys = new Map<string, number>();
+
+  for (const segment of segments) {
+    const keys = getTranscriptDisplayKeys(segment);
+    const existingIndex = keys
+      .map((key) => seenSegmentKeys.get(key))
+      .find((index) => index !== undefined);
+
+    if (existingIndex === undefined) {
+      for (const key of keys) {
+        seenSegmentKeys.set(key, displaySegments.length);
+      }
+
+      displaySegments.push(segment);
+      continue;
+    }
+
+    const existing = displaySegments[existingIndex];
+
+    for (const key of keys) {
+      seenSegmentKeys.set(key, existingIndex);
+    }
+
+    if (!existing.translatedText?.trim() && segment.translatedText?.trim()) {
+      displaySegments[existingIndex] = {
+        ...existing,
+        translatedText: segment.translatedText,
+      };
+    }
+  }
+
+  return displaySegments;
+}
+
+function getTranscriptDisplayKeys(segment: TranscriptSegment) {
+  const baseParts = [
+    getSpeakerKey(segment.speaker).trim().toLowerCase(),
+    formatTimestamp(segment.startMs),
+    getDisplayedEmotionKey(segment.emotionLabel),
+  ];
+  const keys = [
+    [...baseParts, normalizeTranscriptDisplayText(segment.text)].join("\u0000"),
+  ];
+  const translatedText = segment.translatedText?.trim();
+
+  if (translatedText) {
+    keys.push(
+      [...baseParts, normalizeTranscriptDisplayText(translatedText)].join(
+        "\u0000",
+      ),
+    );
+  }
+
+  return keys;
+}
+
+function getDisplayedEmotionKey(label: TranscriptSegment["emotionLabel"]) {
+  if (!label || label === "neutral") {
+    return "";
+  }
+
+  return label;
+}
+
+function normalizeTranscriptDisplayText(text: string) {
+  return text.replace(/\s+/g, " ").trim().toLowerCase();
 }
 
 function TranscriptText({
@@ -1813,20 +1892,6 @@ function countTranscriptWords(text: string) {
     return 0;
   }
 
-  if (transcriptWordSegmenter) {
-    let wordCount = 0;
-
-    for (const segment of transcriptWordSegmenter.segment(trimmedText)) {
-      if (segment.isWordLike) {
-        wordCount += 1;
-      }
-    }
-
-    if (wordCount > 0) {
-      return wordCount;
-    }
-  }
-
   const latinWordCount =
     trimmedText
       .replace(TRANSCRIPT_CJK_CHARACTER_PATTERN, " ")
@@ -1837,39 +1902,9 @@ function countTranscriptWords(text: string) {
   return latinWordCount + cjkCharacterCount;
 }
 
-function createTranscriptWordSegmenter() {
-  if (typeof Intl.Segmenter !== "function") {
-    return null;
-  }
-
-  return new Intl.Segmenter(undefined, { granularity: "word" });
-}
-
 function getTranscriptTextTokens(text: string): TranscriptTextToken[] {
   if (!text) {
     return [];
-  }
-
-  if (transcriptWordSegmenter) {
-    const tokens: TranscriptTextToken[] = [];
-    let wordIndex = 0;
-
-    for (const segment of transcriptWordSegmenter.segment(text)) {
-      const isWordLike = Boolean(segment.isWordLike);
-      tokens.push({
-        isWordLike,
-        text: segment.segment,
-        wordIndex: isWordLike ? wordIndex : null,
-      });
-
-      if (isWordLike) {
-        wordIndex += 1;
-      }
-    }
-
-    if (tokens.length > 0) {
-      return tokens;
-    }
   }
 
   let wordIndex = 0;

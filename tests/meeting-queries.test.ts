@@ -1,3 +1,5 @@
+import type { SQL } from "drizzle-orm";
+import { PgDialect } from "drizzle-orm/pg-core";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 const { getWorkspace, select } = vi.hoisted(() => ({
@@ -15,6 +17,20 @@ vi.mock("@/db/client", () => ({
   },
 }));
 
+const dialect = new PgDialect();
+
+function toQuery(condition: SQL) {
+  return dialect.sqlToQuery(condition);
+}
+
+function expectUsesCurrentTranscriptJob(condition: SQL) {
+  const query = toQuery(condition);
+
+  expect(query.sql).toContain('"transcript_segments"."job_id"');
+  expect(query.sql).toContain('"transcript_jobs"');
+  expect(query.sql).toContain('"transcript_jobs"."status" = \'completed\'');
+}
+
 describe("getWorkspaceMeetingTranscript", () => {
   afterEach(() => {
     getWorkspace.mockReset();
@@ -23,6 +39,14 @@ describe("getWorkspaceMeetingTranscript", () => {
   });
 
   it("exposes the audio route for Recall recordings without an R2 asset", async () => {
+    const segmentWhere = vi.fn((condition: SQL) => {
+      void condition;
+
+      return {
+        orderBy: vi.fn().mockResolvedValue([]),
+      };
+    });
+
     getWorkspace.mockResolvedValue({ teamId: "team_123", userId: "user_123" });
     select
       .mockReturnValueOnce({
@@ -55,9 +79,7 @@ describe("getWorkspaceMeetingTranscript", () => {
       })
       .mockReturnValueOnce({
         from: () => ({
-          where: () => ({
-            orderBy: vi.fn().mockResolvedValue([]),
-          }),
+          where: segmentWhere,
         }),
       })
       .mockReturnValueOnce({
@@ -133,6 +155,8 @@ describe("getWorkspaceMeetingTranscript", () => {
       ],
       transcriptJobStatus: "running",
     });
+
+    expectUsesCurrentTranscriptJob(segmentWhere.mock.calls[0][0]);
   });
 
   it("exposes audio for transcripts shared from another workspace", async () => {
@@ -333,6 +357,43 @@ describe("listMeetingsForWorkspace", () => {
         participantCount: 2,
       },
     ]);
+
+    const projection = select.mock.calls[0][0] as {
+      recognizedSpeakerCount: SQL;
+      transcriptDurationMs: SQL;
+      transcriptSegmentCount: SQL;
+    };
+    expectUsesCurrentTranscriptJob(projection.recognizedSpeakerCount);
+    expectUsesCurrentTranscriptJob(projection.transcriptSegmentCount);
+    expectUsesCurrentTranscriptJob(projection.transcriptDurationMs);
+  });
+
+  it("searches only the current transcript job text", async () => {
+    const meetingWhere = vi.fn(() => ({
+      orderBy: vi.fn().mockResolvedValue([]),
+    }));
+
+    select.mockReturnValueOnce({
+      from: () => ({
+        leftJoin: () => ({
+          where: meetingWhere,
+        }),
+      }),
+    });
+    const { listMeetingsForWorkspace } = await import("@/lib/meeting-queries");
+
+    await listMeetingsForWorkspace(
+      {
+        teamId: "team_123",
+        userId: "user_123",
+        domain: "iosg.vc",
+        canCreateMeetings: true,
+      },
+      "hello",
+      { searchScope: "transcript" },
+    );
+
+    expectUsesCurrentTranscriptJob(meetingWhere.mock.calls[0][0]);
   });
 
   it("counts an unlabeled ready transcript as one participant", async () => {
@@ -1123,6 +1184,8 @@ describe("getMeetingDashboardSummaryForWorkspace", () => {
   });
 
   it("builds global dashboard counts from Neon rows instead of the visible table", async () => {
+    const segmentWhere = vi.fn().mockResolvedValue([]);
+
     select
       .mockReturnValueOnce({
         from: () => ({
@@ -1169,7 +1232,7 @@ describe("getMeetingDashboardSummaryForWorkspace", () => {
       .mockReturnValueOnce({
         from: () => ({
           innerJoin: () => ({
-            where: vi.fn().mockResolvedValue([]),
+            where: segmentWhere,
           }),
         }),
       });
@@ -1194,6 +1257,8 @@ describe("getMeetingDashboardSummaryForWorkspace", () => {
         startedAt: "2999-01-01T14:00:00.000Z",
       },
     });
+
+    expectUsesCurrentTranscriptJob(segmentWhere.mock.calls[0][0]);
   });
 
   it("builds user stats from transcript segments", async () => {

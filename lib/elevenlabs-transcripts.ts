@@ -174,7 +174,7 @@ export async function applyElevenLabsTranscriptEvent(
 
   await db
     .delete(transcriptSegments)
-    .where(eq(transcriptSegments.jobId, persistence.transcriptJobId));
+    .where(eq(transcriptSegments.meetingId, persistence.meetingId));
 
   const insertedSegments = await db
     .insert(transcriptSegments)

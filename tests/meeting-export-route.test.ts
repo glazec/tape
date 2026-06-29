@@ -62,6 +62,29 @@ describe("GET /api/meetings/[meetingId]/export", () => {
   });
 
   it("exports transcript text for an authenticated workspace meeting", async () => {
+    const segmentWhere = vi.fn((condition: SQL) => {
+      void condition;
+
+      return {
+        orderBy: vi.fn().mockResolvedValue([
+          {
+            speaker: "Speaker 1",
+            startMs: 20000,
+            endMs: 23000,
+            text: "We should ship this update now.",
+            emotionLabel: "hard",
+          },
+          {
+            speaker: null,
+            startMs: 80500,
+            endMs: null,
+            text: "Second line.",
+            emotionLabel: null,
+          },
+        ]),
+      };
+    });
+
     getCurrentUser.mockResolvedValue({
       id: "user_123",
       email: "user@example.com",
@@ -84,24 +107,7 @@ describe("GET /api/meetings/[meetingId]/export", () => {
       })
       .mockReturnValueOnce({
         from: () => ({
-          where: () => ({
-            orderBy: vi.fn().mockResolvedValue([
-              {
-                speaker: "Speaker 1",
-                startMs: 20000,
-                endMs: 23000,
-                text: "We should ship this update now.",
-                emotionLabel: "hard",
-              },
-              {
-                speaker: null,
-                startMs: 80500,
-                endMs: null,
-                text: "Second line.",
-                emotionLabel: null,
-              },
-            ]),
-          }),
+          where: segmentWhere,
         }),
       });
 
@@ -121,6 +127,10 @@ describe("GET /api/meetings/[meetingId]/export", () => {
       "[1:20] Unknown speaker | emotion: unknown | wpm: unknown: Second line.",
     );
     expect(select).toHaveBeenCalledTimes(2);
+    const segmentQuery = toQuery(segmentWhere.mock.calls[0][0]);
+    expect(segmentQuery.sql).toContain('"transcript_segments"."job_id"');
+    expect(segmentQuery.sql).toContain('"transcript_jobs"');
+    expect(segmentQuery.sql).toContain('"transcript_jobs"."status" = \'completed\'');
   });
 
   it("exports Chinese transcript text when requested", async () => {

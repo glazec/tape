@@ -4,6 +4,7 @@ import { z } from "zod";
 import { db } from "@/db/client";
 import { meetings, transcriptSegments } from "@/db/schema";
 import { getCurrentUser } from "@/lib/auth";
+import { currentTranscriptJobIdSubquery } from "@/lib/current-transcript-job";
 import { getOrCreateWorkspaceForSessionUser } from "@/lib/workspace";
 
 export const runtime = "nodejs";
@@ -48,6 +49,10 @@ export async function PATCH(
         eq(meetings.id, parsedMeetingId.data),
         eq(meetings.teamId, workspace.teamId),
         eq(transcriptSegments.id, parsedSegmentId.data),
+        eq(
+          transcriptSegments.jobId,
+          currentTranscriptJobIdSubquery(parsedMeetingId.data),
+        ),
       ),
     )
     .limit(1);

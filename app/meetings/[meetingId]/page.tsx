@@ -9,7 +9,6 @@ import { MeetingTitleEditor } from "@/components/meeting-title-editor";
 import { ShareDialog } from "@/components/share-dialog";
 import { TranscriptViewer } from "@/components/transcript-viewer";
 import { Badge } from "@/components/ui/badge";
-import { Separator } from "@/components/ui/separator";
 import { requireCurrentUser } from "@/lib/auth-guards";
 import { getMeetingDisplayStatus } from "@/lib/meeting-display-status";
 import {
@@ -110,19 +109,20 @@ export default async function MeetingPage({
               </dd>
             </div>
           </dl>
-          <MeetingEntityLinks entities={meeting.entities} />
-          <Separator />
-          <div className="mt-8">
-            <TranscriptViewer
-              audioUrl={meeting.audioUrl}
-              key={`${meetingId}:${displayStatus}:${meeting.segments.length}`}
-              meetingId={
-                meeting.accessScope === "workspace" ? meetingId : null
-              }
-              segments={meeting.segments}
-              speakerSuggestions={meeting.speakerSuggestions}
-              translationSummary={meeting.translationSummary}
-            />
+          <div className="mt-6 border-t pt-6">
+            <MeetingEntityLinks entities={meeting.entities} />
+            <div className={meeting.entities.length > 0 ? "mt-8" : undefined}>
+              <TranscriptViewer
+                audioUrl={meeting.audioUrl}
+                key={`${meetingId}:${displayStatus}:${meeting.segments.length}`}
+                meetingId={
+                  meeting.accessScope === "workspace" ? meetingId : null
+                }
+                segments={meeting.segments}
+                speakerSuggestions={meeting.speakerSuggestions}
+                translationSummary={meeting.translationSummary}
+              />
+            </div>
           </div>
         </section>
 

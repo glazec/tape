@@ -4,6 +4,7 @@ import { z } from "zod";
 import { db } from "@/db/client";
 import { meetings, transcriptSegments } from "@/db/schema";
 import { getCurrentUser } from "@/lib/auth";
+import { currentTranscriptJobIdSubquery } from "@/lib/current-transcript-job";
 import { getOrCreateWorkspaceForSessionUser } from "@/lib/workspace";
 
 export const runtime = "nodejs";
@@ -83,7 +84,14 @@ export async function PATCH(
       updatedAt: new Date(),
     })
     .where(
-      and(eq(transcriptSegments.meetingId, parsedMeetingId.data), targetFilter),
+      and(
+        eq(transcriptSegments.meetingId, parsedMeetingId.data),
+        eq(
+          transcriptSegments.jobId,
+          currentTranscriptJobIdSubquery(parsedMeetingId.data),
+        ),
+        targetFilter,
+      ),
     );
 
   return Response.json({

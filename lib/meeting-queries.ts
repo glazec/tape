@@ -29,6 +29,7 @@ import {
   type DashboardWorkflowSegment,
   type DashboardWorkflowSummaryModel,
 } from "@/lib/dashboard-workflow-summary";
+import { currentTranscriptJobIdSubquery } from "@/lib/current-transcript-job";
 import {
   getEmailDomain,
   isCommonPersonalEmailDomain,
@@ -195,6 +196,7 @@ export async function listMeetingLibraryPageForWorkspace(
         select count(distinct lower(btrim(${transcriptSegments.speaker})))::int
         from ${transcriptSegments}
         where ${transcriptSegments.meetingId} = ${meetings.id}
+          and ${transcriptSegments.jobId} = ${currentTranscriptJobIdSubquery(meetings.id)}
           and ${transcriptSegments.speaker} is not null
           and btrim(${transcriptSegments.speaker}) <> ''
       )`,
@@ -202,6 +204,7 @@ export async function listMeetingLibraryPageForWorkspace(
         select count(*)::int
         from ${transcriptSegments}
         where ${transcriptSegments.meetingId} = ${meetings.id}
+          and ${transcriptSegments.jobId} = ${currentTranscriptJobIdSubquery(meetings.id)}
       )`,
       transcriptDurationMs: sql<number | null>`(
         select max(greatest(
@@ -210,6 +213,7 @@ export async function listMeetingLibraryPageForWorkspace(
         ))::int
         from ${transcriptSegments}
         where ${transcriptSegments.meetingId} = ${meetings.id}
+          and ${transcriptSegments.jobId} = ${currentTranscriptJobIdSubquery(meetings.id)}
       )`,
     })
     .from(meetings)
@@ -692,6 +696,7 @@ function getMeetingLibrarySearchCondition(
     select 1
     from ${transcriptSegments}
     where ${transcriptSegments.meetingId} = ${meetings.id}
+      and ${transcriptSegments.jobId} = ${currentTranscriptJobIdSubquery(meetings.id)}
       and (
         ${transcriptSegments.text} ilike ${pattern}
         or ${transcriptSegments.speaker} ilike ${pattern}
@@ -887,6 +892,10 @@ export async function getMeetingDashboardSummaryForWorkspace(
       .where(
         and(
           eq(meetings.teamId, workspace.teamId),
+          eq(
+            transcriptSegments.jobId,
+            currentTranscriptJobIdSubquery(meetings.id),
+          ),
           sql`coalesce(${meetings.startedAt}, ${meetings.createdAt}) >= ${statsCutoff}`,
           sql`coalesce(${meetings.startedAt}, ${meetings.createdAt}) <= ${now}`,
         ),
@@ -997,7 +1006,15 @@ export async function getMeetingTranscriptForWorkspace(
         emotionReason: transcriptSegments.emotionReason,
       })
       .from(transcriptSegments)
-      .where(eq(transcriptSegments.meetingId, meeting.id))
+      .where(
+        and(
+          eq(transcriptSegments.meetingId, meeting.id),
+          eq(
+            transcriptSegments.jobId,
+            currentTranscriptJobIdSubquery(meeting.id),
+          ),
+        ),
+      )
       .orderBy(asc(transcriptSegments.startMs)),
     accessScope === "workspace"
       ? listMeetingSpeakerSuggestions(meeting.id, meeting.calendarAttendeeEmails)

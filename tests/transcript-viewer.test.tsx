@@ -53,6 +53,46 @@ describe("TranscriptViewer", () => {
     expect(html.indexOf("0:00")).toBeLessThan(html.indexOf("Hello"));
   });
 
+  it("collapses duplicate transcript rows with the same speaker, time, and text", () => {
+    const html = renderToStaticMarkup(
+      <TranscriptViewer
+        segments={[
+          segments[0],
+          {
+            ...segments[0],
+            id: "segment_456",
+          },
+          {
+            ...segments[0],
+            id: "segment_789",
+            translatedText: "大家好",
+          },
+          {
+            ...segments[0],
+            emotionLabel: "neutral",
+            id: "segment_999",
+            startMs: 450,
+            speaker: " Speaker 1 ",
+            text: "Different source line",
+            translatedText: "大家好",
+          },
+        ]}
+      />,
+    );
+
+    expect(html.match(/Hello team/g)).toHaveLength(1);
+    expect(html).not.toContain("Different source line");
+    expect(html).toContain("大家");
+    expect(html).toContain("好");
+  });
+
+  it("renders transcript rows without divider classes", () => {
+    const html = renderToStaticMarkup(<TranscriptViewer segments={segments} />);
+
+    expect(html).not.toContain("border-t");
+    expect(html).not.toContain("border-b");
+  });
+
   it("makes transcript words seekable when audio is available", () => {
     const html = renderToStaticMarkup(
       <TranscriptViewer audioUrl="/audio.mp3" segments={segments} />,
@@ -61,6 +101,25 @@ describe("TranscriptViewer", () => {
     expect(html).toContain('aria-label="Play transcript from 0:00"');
     expect(html).toContain('data-transcript-word-index="0"');
     expect(html).toContain('data-transcript-word-index="1"');
+  });
+
+  it("keeps dotted product names in one deterministic transcript token", () => {
+    const html = renderToStaticMarkup(
+      <TranscriptViewer
+        audioUrl="/audio.mp3"
+        segments={[
+          {
+            ...segments[0],
+            text: "Ether.fi is mentioned",
+          },
+        ]}
+      />,
+    );
+
+    expect(html).toContain(">Ether.fi<");
+    expect(html).toContain('data-transcript-word-index="0"');
+    expect(html).toContain('data-transcript-word-index="1"');
+    expect(html).toContain('data-transcript-word-index="2"');
   });
 
   it("keeps transcript words read only when audio is unavailable", () => {

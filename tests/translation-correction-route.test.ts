@@ -1,3 +1,5 @@
+import type { SQL } from "drizzle-orm";
+import { PgDialect } from "drizzle-orm/pg-core";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 const { getCurrentUser, getWorkspace, select, update } = vi.hoisted(() => ({
@@ -19,6 +21,12 @@ vi.mock("@/lib/workspace", () => ({
   getOrCreateWorkspaceForSessionUser: getWorkspace,
 }));
 
+const dialect = new PgDialect();
+
+function toQuery(condition: SQL) {
+  return dialect.sqlToQuery(condition);
+}
+
 describe("PATCH /api/meetings/[meetingId]/segments/[segmentId]/translation", () => {
   afterEach(() => {
     getCurrentUser.mockReset();
@@ -39,12 +47,18 @@ describe("PATCH /api/meetings/[meetingId]/segments/[segmentId]/translation", () 
       teamId: "22222222-2222-4222-8222-222222222222",
       domain: "iosg.vc",
     });
+    const segmentWhere = vi.fn((condition: SQL) => {
+      void condition;
+
+      return {
+        limit: vi.fn().mockResolvedValue([{ id: "segment_123" }]),
+      };
+    });
+
     select.mockReturnValue({
       from: () => ({
         innerJoin: () => ({
-          where: () => ({
-            limit: vi.fn().mockResolvedValue([{ id: "segment_123" }]),
-          }),
+          where: segmentWhere,
         }),
       }),
     });
@@ -76,5 +90,10 @@ describe("PATCH /api/meetings/[meetingId]/segments/[segmentId]/translation", () 
         translationEditedAt: expect.any(Date),
       }),
     );
+
+    const segmentQuery = toQuery(segmentWhere.mock.calls[0][0]);
+    expect(segmentQuery.sql).toContain('"transcript_segments"."job_id"');
+    expect(segmentQuery.sql).toContain('"transcript_jobs"');
+    expect(segmentQuery.sql).toContain('"transcript_jobs"."status" = \'completed\'');
   });
 });

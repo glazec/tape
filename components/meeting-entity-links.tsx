@@ -16,7 +16,7 @@ export function MeetingEntityLinks({
   }
 
   return (
-    <div className="mt-1 border-t py-4">
+    <div>
       <p className="text-xs font-medium uppercase tracking-normal text-muted-foreground">
         Detected entities
       </p>

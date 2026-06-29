@@ -5,6 +5,7 @@ import { db } from "@/db/client";
 import { meetings, transcriptSegments } from "@/db/schema";
 import { inngest } from "@/inngest/client";
 import { getCurrentUser } from "@/lib/auth";
+import { currentTranscriptJobIdSubquery } from "@/lib/current-transcript-job";
 import { markMeetingTranslationQueued } from "@/lib/meeting-translation-jobs";
 import { getOrCreateWorkspaceForSessionUser } from "@/lib/workspace";
 
@@ -48,7 +49,15 @@ export async function POST(
   const segmentRows = await db
     .select({ id: transcriptSegments.id })
     .from(transcriptSegments)
-    .where(eq(transcriptSegments.meetingId, parsedMeetingId.data))
+    .where(
+      and(
+        eq(transcriptSegments.meetingId, parsedMeetingId.data),
+        eq(
+          transcriptSegments.jobId,
+          currentTranscriptJobIdSubquery(parsedMeetingId.data),
+        ),
+      ),
+    )
     .limit(1);
 
   if (!segmentRows[0]) {

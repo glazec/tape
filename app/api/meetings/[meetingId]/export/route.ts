@@ -4,6 +4,7 @@ import { z } from "zod";
 import { db } from "@/db/client";
 import { meetings, transcriptSegments } from "@/db/schema";
 import { getCurrentUser } from "@/lib/auth";
+import { currentTranscriptJobIdSubquery } from "@/lib/current-transcript-job";
 import { getReadableMeetingsCondition } from "@/lib/meeting-access-policy";
 import { getOrCreateWorkspaceForSessionUser } from "@/lib/workspace";
 
@@ -92,7 +93,12 @@ export async function GET(
       emotionLabel: transcriptSegments.emotionLabel,
     })
     .from(transcriptSegments)
-    .where(eq(transcriptSegments.meetingId, meeting.id))
+    .where(
+      and(
+        eq(transcriptSegments.meetingId, meeting.id),
+        eq(transcriptSegments.jobId, currentTranscriptJobIdSubquery(meeting.id)),
+      ),
+    )
     .orderBy(asc(transcriptSegments.startMs));
   const filename = getTranscriptFilename(meeting.title, parsedLanguage.data);
 
