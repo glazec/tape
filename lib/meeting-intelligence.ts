@@ -52,6 +52,10 @@ type MeetingForGrouping = {
   externalParticipantKeys?: string[];
 };
 
+type GroupRelatedMeetingsOptions = {
+  includeTitleKeys?: boolean;
+};
+
 const genericMeetingTitles = new Set([
   "google meet",
   "google meet recording",
@@ -59,6 +63,12 @@ const genericMeetingTitles = new Set([
   "zoom",
   "zoom meeting",
   "zoom recording",
+]);
+const genericMeetingGroupingTitles = new Set([
+  ...genericMeetingTitles,
+  "recording",
+  "untitled meeting",
+  "uploaded audio",
 ]);
 
 const knownProductEntities = ["SAFE", "Solana", "TCG"];
@@ -122,9 +132,14 @@ export function extractMeetingEntities(
   context: EntityExtractionContext = {},
 ): ExtractedMeetingEntity[] {
   const entities: ExtractedMeetingEntity[] = [];
+  const workspaceEntity = getWorkspaceOrganizationEntity(context.workspaceDomain);
 
   segments.forEach((segment) => {
     for (const value of knownOrganizationEntities) {
+      if (isWorkspaceOrganizationEntity(value, workspaceEntity)) {
+        continue;
+      }
+
       if (new RegExp(`\\b${escapeRegExp(value)}\\b`, "i").test(segment.text)) {
         addOrMergeEntity({
           entities,
@@ -151,6 +166,13 @@ export function extractMeetingEntities(
 
   for (const entity of context.transcriptEntities ?? []) {
     if (!isSupportedEntityType(entity.type)) {
+      continue;
+    }
+
+    if (
+      entity.type.toLowerCase() === "organization" &&
+      isWorkspaceOrganizationEntity(entity.value, workspaceEntity)
+    ) {
       continue;
     }
 
@@ -229,7 +251,10 @@ export function classifySegmentEmotion(input: {
   return { label: "neutral", reason: "No strong signal" };
 }
 
-export function groupRelatedMeetings(meetings: MeetingForGrouping[]) {
+export function groupRelatedMeetings(
+  meetings: MeetingForGrouping[],
+  options: GroupRelatedMeetingsOptions = {},
+) {
   const sorted = [...meetings].sort((left, right) =>
     right.startedAt.localeCompare(left.startedAt),
   );
@@ -238,7 +263,7 @@ export function groupRelatedMeetings(meetings: MeetingForGrouping[]) {
   const roots: MeetingForGrouping[] = [];
 
   for (const meeting of sorted) {
-    const keys = getMeetingGroupingKeys(meeting);
+    const keys = getMeetingGroupingKeys(meeting, options);
 
     if (keys.length === 0) {
       roots.push(meeting);
@@ -431,12 +456,18 @@ function buildMeetingLinkEntity(meetingUrl?: string | null) {
   }
 }
 
-function getMeetingGroupingKeys(meeting: MeetingForGrouping) {
+function getMeetingGroupingKeys(
+  meeting: MeetingForGrouping,
+  options: GroupRelatedMeetingsOptions,
+) {
   const keys: string[] = [];
-  const entity = meeting.primaryEntity?.trim().toLowerCase();
 
-  if (entity) {
-    keys.push(`entity:${entity}`);
+  if (options.includeTitleKeys !== false) {
+    const titleKey = getMeetingTitleGroupingKey(meeting.title);
+
+    if (titleKey) {
+      keys.push(`title:${titleKey}`);
+    }
   }
 
   for (const participant of meeting.externalParticipantKeys ?? []) {
@@ -448,6 +479,34 @@ function getMeetingGroupingKeys(meeting: MeetingForGrouping) {
   }
 
   return keys;
+}
+
+function getMeetingTitleGroupingKey(title: string) {
+  const normalized = title.trim().toLowerCase().replace(/\s+/g, " ");
+
+  if (!normalized || genericMeetingGroupingTitles.has(normalized)) {
+    return null;
+  }
+
+  return normalized;
+}
+
+function getWorkspaceOrganizationEntity(workspaceDomain?: string | null) {
+  if (!workspaceDomain) {
+    return null;
+  }
+
+  return normalizeEntityValue(formatOrganizationName(workspaceDomain));
+}
+
+function isWorkspaceOrganizationEntity(
+  value: string,
+  workspaceEntity: string | null,
+) {
+  return (
+    Boolean(workspaceEntity) &&
+    normalizeEntityValue(canonicalizeOrganizationName(value)) === workspaceEntity
+  );
 }
 
 function formatOrganizationName(domainOrName: string) {

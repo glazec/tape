@@ -70,7 +70,7 @@ The authenticated dashboard is a meeting operations hub for investors and team o
 
 The Calendar automation panel shows whether Recall Calendar is connected, whether team bot coverage is on, when the calendar was last checked, and the Sync Recall calendar repair action. Normal calendar capture is driven by Recall Calendar V2 webhooks, so users should not need to click Sync calendar for every new event.
 
-The Meeting library remains the searchable recent meeting table. It is filtered by the search box and capped for browsing, while the dashboard summary is computed separately from all workspace meetings in Neon so search does not hide bot coverage or exception counts. Scheduled rows show whether a bot is linked, recording rows show that the bot is in the meeting, and failed rows are marked for review. Related rows are grouped by extracted entities first and shared external attendee emails when transcript entities are not available yet.
+The Meeting library remains the searchable recent meeting table. It is filtered by the search box and capped for browsing, while the dashboard summary is computed separately from all workspace meetings in Neon so search does not hide bot coverage or exception counts. Scheduled rows show whether a bot is linked, recording rows show that the bot is in the meeting, and failed rows are marked for review. Related rows are grouped by shared external attendee emails, while smart order folds repeated stable meeting titles. Extracted entities remain visible search context instead of grouping evidence.
 
 ## Meeting Links
 

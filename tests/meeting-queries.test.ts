@@ -626,7 +626,7 @@ describe("listMeetingsForWorkspace", () => {
     ]);
   });
 
-  it("surfaces the detected primary entity on the grouped root meeting", async () => {
+  it("surfaces detected entities without grouping by entity alone", async () => {
     select
       .mockReturnValueOnce({
         from: () => ({
@@ -668,7 +668,15 @@ describe("listMeetingsForWorkspace", () => {
             orderBy: vi.fn().mockResolvedValue([
               {
                 meetingId: "11111111-1111-4111-8111-111111111111",
+                normalizedValue: "iosg",
+              },
+              {
+                meetingId: "11111111-1111-4111-8111-111111111111",
                 normalizedValue: "nascent",
+              },
+              {
+                meetingId: "22222222-2222-4222-8222-222222222222",
+                normalizedValue: "iosg",
               },
               {
                 meetingId: "22222222-2222-4222-8222-222222222222",
@@ -691,16 +699,12 @@ describe("listMeetingsForWorkspace", () => {
       expect.objectContaining({
         id: "22222222-2222-4222-8222-222222222222",
         primaryEntity: "nascent",
-        relatedMeetings: [
-          expect.objectContaining({
-            id: "11111111-1111-4111-8111-111111111111",
-            title: "Nascent intro",
-            platform: "google_meet",
-            primaryEntity: "nascent",
-            startedAt: "2026-06-20T10:00:00.000Z",
-            status: "ready",
-          }),
-        ],
+        relatedMeetings: [],
+      }),
+      expect.objectContaining({
+        id: "11111111-1111-4111-8111-111111111111",
+        primaryEntity: "nascent",
+        relatedMeetings: [],
       }),
     ]);
   });
@@ -811,14 +815,14 @@ describe("buildMeetingLibraryPage", () => {
         id: "11111111-1111-4111-8111-111111111111",
         title: "Nascent follow up",
         platform: "google_meet",
-        primaryEntity: "nascent",
+        externalParticipantKeys: ["email:founder@nascent.xyz"],
         startedAt: "2026-06-27T12:00:00.000Z",
       }),
       libraryMeeting({
         id: "22222222-2222-4222-8222-222222222222",
         title: "Nascent intro",
         platform: "google_meet",
-        primaryEntity: "nascent",
+        externalParticipantKeys: ["email:founder@nascent.xyz"],
         startedAt: "2025-11-27T12:00:00.000Z",
       }),
       libraryMeeting({
@@ -849,6 +853,44 @@ describe("buildMeetingLibraryPage", () => {
     expect(expandedPage.meetings[0]).toMatchObject({
       title: "Nascent follow up",
       relatedMeetings: [expect.objectContaining({ title: "Nascent intro" })],
+    });
+  });
+
+  it("uses stable meeting titles when searching older related meetings", async () => {
+    const { buildMeetingLibraryPage } = await import("@/lib/meeting-queries");
+    const meetings = [
+      libraryMeeting({
+        id: "11111111-1111-4111-8111-111111111111",
+        title: "David <> YP",
+        platform: "zoom",
+        startedAt: "2026-06-27T12:00:00.000Z",
+      }),
+      libraryMeeting({
+        id: "22222222-2222-4222-8222-222222222222",
+        title: "David <> YP",
+        platform: "zoom",
+        startedAt: "2025-11-27T12:00:00.000Z",
+      }),
+    ];
+
+    const page = buildMeetingLibraryPage(meetings, {
+      now: new Date("2026-06-28T12:00:00.000Z"),
+    });
+
+    expect(page.meetings[0]).toMatchObject({
+      title: "David <> YP",
+      hasMoreRelatedMeetings: true,
+      relatedMeetings: [],
+    });
+
+    const expandedPage = buildMeetingLibraryPage(meetings, {
+      now: new Date("2026-06-28T12:00:00.000Z"),
+      relatedHistoryMonths: 12,
+    });
+
+    expect(expandedPage.meetings[0]).toMatchObject({
+      title: "David <> YP",
+      relatedMeetings: [expect.objectContaining({ title: "David <> YP" })],
     });
   });
 

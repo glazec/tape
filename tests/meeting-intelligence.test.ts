@@ -74,6 +74,37 @@ describe("meeting intelligence helpers", () => {
     ]);
   });
 
+  it("does not use the workspace organization as a meeting entity", () => {
+    expect(
+      extractMeetingEntities(
+        [
+          {
+            id: "segment_1",
+            text: "IOSG and Nascent talked through the Solana follow up.",
+          },
+        ],
+        { workspaceDomain: "iosg.vc" },
+      ),
+    ).toEqual([
+      {
+        aliases: [],
+        segmentId: "segment_1",
+        source: "transcript",
+        type: "organization",
+        value: "Nascent",
+        normalizedValue: "nascent",
+      },
+      {
+        aliases: [],
+        segmentId: "segment_1",
+        source: "transcript",
+        type: "product",
+        value: "Solana",
+        normalizedValue: "solana",
+      },
+    ]);
+  });
+
   it("adds canonical organization aliases and meeting link context", () => {
     expect(
       extractMeetingEntities(
@@ -160,7 +191,7 @@ describe("meeting intelligence helpers", () => {
     ).toMatchObject({ label: "chill" });
   });
 
-  it("groups related meetings under the newest meeting with the same entity", () => {
+  it("does not group meetings by entity alone", () => {
     expect(
       groupRelatedMeetings([
         {
@@ -171,7 +202,7 @@ describe("meeting intelligence helpers", () => {
         },
         {
           id: "meeting_2",
-          title: "Nascent follow up",
+          title: "Portfolio review",
           startedAt: "2026-06-27T10:00:00.000Z",
           primaryEntity: "nascent",
         },
@@ -185,16 +216,72 @@ describe("meeting intelligence helpers", () => {
     ).toEqual([
       {
         id: "meeting_2",
+        relatedMeetings: [],
+      },
+      {
+        id: "meeting_3",
+        relatedMeetings: [],
+      },
+      {
+        id: "meeting_1",
+        relatedMeetings: [],
+      },
+    ]);
+  });
+
+  it("groups related meetings by stable meeting title", () => {
+    expect(
+      groupRelatedMeetings([
+        {
+          id: "meeting_1",
+          title: "David <> YP",
+          startedAt: "2026-06-20T10:00:00.000Z",
+          primaryEntity: null,
+        },
+        {
+          id: "meeting_2",
+          title: "David <> YP",
+          startedAt: "2026-06-27T10:00:00.000Z",
+          primaryEntity: null,
+        },
+      ]),
+    ).toEqual([
+      {
+        id: "meeting_2",
         relatedMeetings: [
           {
             id: "meeting_1",
-            title: "Nascent intro",
+            title: "David <> YP",
             startedAt: "2026-06-20T10:00:00.000Z",
           },
         ],
       },
+    ]);
+  });
+
+  it("does not group generic meeting titles", () => {
+    expect(
+      groupRelatedMeetings([
+        {
+          id: "meeting_1",
+          title: "Zoom Meeting",
+          startedAt: "2026-06-20T10:00:00.000Z",
+          primaryEntity: null,
+        },
+        {
+          id: "meeting_2",
+          title: "Zoom Meeting",
+          startedAt: "2026-06-27T10:00:00.000Z",
+          primaryEntity: null,
+        },
+      ]),
+    ).toEqual([
       {
-        id: "meeting_3",
+        id: "meeting_2",
+        relatedMeetings: [],
+      },
+      {
+        id: "meeting_1",
         relatedMeetings: [],
       },
     ]);

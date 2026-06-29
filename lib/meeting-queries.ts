@@ -76,6 +76,7 @@ const genericMeetingGroupTitles = new Set([
   "zoom meeting",
   "zoom recording",
 ]);
+const nonInformativePrimaryEntities = new Set(["iosg"]);
 
 export type MeetingTranscript = {
   id: string;
@@ -273,8 +274,11 @@ export function buildMeetingLibraryPage(
   );
   const relatedMeetingsByRoot = getRelatedMeetingsByRoot(
     relatedMeetingsForLibrary,
+    { includeTitleKeys: sort === "smart" },
   );
-  const allRelatedMeetingsByRoot = getRelatedMeetingsByRoot(meetingsForLibrary);
+  const allRelatedMeetingsByRoot = getRelatedMeetingsByRoot(meetingsForLibrary, {
+    includeTitleKeys: sort === "smart",
+  });
   const hasMoreRelatedMeetingByRoot = new Map(
     Array.from(allRelatedMeetingsByRoot, ([meetingId, relatedMeetings]) => [
       meetingId,
@@ -345,8 +349,11 @@ export function buildMeetingLibraryPage(
   };
 }
 
-function getRelatedMeetingsByRoot(meetingsForLibrary: MeetingListItem[]) {
-  const grouped = groupRelatedMeetings(meetingsForLibrary);
+function getRelatedMeetingsByRoot(
+  meetingsForLibrary: MeetingListItem[],
+  options: { includeTitleKeys: boolean },
+) {
+  const grouped = groupRelatedMeetings(meetingsForLibrary, options);
   const itemById = new Map(
     meetingsForLibrary.map((meeting) => [meeting.id, meeting]),
   );
@@ -1085,8 +1092,14 @@ async function getPrimaryEntitiesForMeetings(meetingIds: string[]) {
     .orderBy(asc(meetingEntities.createdAt));
 
   for (const row of rows) {
-    if (!primaryEntityByMeetingId.has(row.meetingId)) {
-      primaryEntityByMeetingId.set(row.meetingId, row.normalizedValue);
+    const normalizedValue = row.normalizedValue.trim().toLowerCase();
+
+    if (
+      !primaryEntityByMeetingId.has(row.meetingId) &&
+      normalizedValue &&
+      !nonInformativePrimaryEntities.has(normalizedValue)
+    ) {
+      primaryEntityByMeetingId.set(row.meetingId, normalizedValue);
     }
   }
 
