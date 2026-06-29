@@ -237,9 +237,13 @@ describe("GET /api/meetings/[meetingId]/export", () => {
   });
 
   it("uses explicit share access for shared only text exports", async () => {
-    const where = vi.fn(() => ({
-      limit: vi.fn().mockResolvedValue([]),
-    }));
+    const where = vi.fn((condition: SQL) => {
+      void condition;
+
+      return {
+        limit: vi.fn().mockResolvedValue([]),
+      };
+    });
 
     getCurrentUser.mockResolvedValue({
       id: "auth_user_123",
@@ -261,7 +265,7 @@ describe("GET /api/meetings/[meetingId]/export", () => {
     const response = await getMeetingExport();
 
     expect(response.status).toBe(404);
-    const query = toQuery(where.mock.calls[0][0] as SQL);
+    const query = toQuery(where.mock.calls[0][0]);
     expect(query.sql).not.toContain('"meetings"."team_id" =');
     expect(query.sql).toContain('"meeting_access"');
     expect(query.params).toEqual([

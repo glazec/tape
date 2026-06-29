@@ -157,6 +157,18 @@ describe("TranscriptViewer", () => {
     expect(html).toContain('stroke="#f97316"');
   });
 
+  it("shows 5 second backward and forward controls on the audio player", () => {
+    const html = renderToStaticMarkup(
+      <TranscriptViewer audioUrl="/audio.mp3" segments={segments} />,
+    );
+
+    expect(html).toContain('aria-label="Skip back 5 seconds"');
+    expect(html).toContain('aria-label="Skip forward 5 seconds"');
+    expect((html.match(/5s/g) ?? []).length).toBeGreaterThanOrEqual(2);
+    expect(html).toContain("grid-cols-2");
+    expect(html).toContain("col-span-2");
+  });
+
   it("calculates the WPM tooltip from the hovered waveform position", () => {
     const lowPace = getWaveformHoverSnapshot({
       boundsLeft: 0,

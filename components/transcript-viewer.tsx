@@ -16,8 +16,8 @@ import {
   Pause,
   Pencil,
   Play,
-  SkipBack,
-  SkipForward,
+  RotateCcw,
+  RotateCw,
   X,
 } from "lucide-react";
 
@@ -1204,19 +1204,21 @@ function TranscriptAudioPlayer({
           type="range"
           value={progressValue}
         />
-        <div className="grid min-w-0 grid-cols-[4rem_1fr_4rem] items-center gap-3 sm:grid-cols-[5rem_1fr_5rem]">
-          <p className="text-xs font-medium tabular-nums text-muted-foreground">
+        <div className="grid min-w-0 grid-cols-2 items-center gap-x-3 gap-y-2 sm:grid-cols-[5rem_1fr_5rem]">
+          <p className="order-2 text-xs font-medium tabular-nums text-muted-foreground sm:order-none">
             {formatPlayerTime(currentTime)}
           </p>
-          <div className="flex min-w-0 items-center justify-center gap-2">
+          <div className="order-1 col-span-2 flex min-w-0 items-center justify-center gap-2 sm:order-none sm:col-span-1">
             <Button
+              className="min-w-12 gap-1 rounded-full px-2"
               aria-label="Skip back 5 seconds"
               onClick={() => skipBy(-5)}
-              size="icon"
+              size="sm"
               type="button"
               variant="ghost"
             >
-              <SkipBack />
+              <RotateCcw className="size-3.5" />
+              <span className="text-xs font-semibold tabular-nums">5s</span>
             </Button>
             <Button
               aria-label={isPlaying ? "Pause audio" : "Play audio"}
@@ -1227,13 +1229,15 @@ function TranscriptAudioPlayer({
               {isPlaying ? <Pause /> : <Play />}
             </Button>
             <Button
+              className="min-w-12 gap-1 rounded-full px-2"
               aria-label="Skip forward 5 seconds"
               onClick={() => skipBy(5)}
-              size="icon"
+              size="sm"
               type="button"
               variant="ghost"
             >
-              <SkipForward />
+              <span className="text-xs font-semibold tabular-nums">5s</span>
+              <RotateCw className="size-3.5" />
             </Button>
             <label className="flex items-center gap-1 text-xs font-medium text-muted-foreground">
               <span className="sr-only">Playback speed</span>
@@ -1250,7 +1254,7 @@ function TranscriptAudioPlayer({
               </select>
             </label>
           </div>
-          <p className="text-right text-xs font-medium tabular-nums text-muted-foreground">
+          <p className="order-3 text-right text-xs font-medium tabular-nums text-muted-foreground sm:order-none">
             {formatPlayerTime(safeDuration)}
           </p>
         </div>
