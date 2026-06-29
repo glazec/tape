@@ -368,6 +368,8 @@ export const mediaAssets = pgTable(
     mimeType: text("mime_type").notNull(),
     fileSizeBytes: integer("file_size_bytes"),
     checksum: text("checksum"),
+    capturedAt: timestamp("captured_at", { withTimezone: true }),
+    timestampMs: integer("timestamp_ms"),
     ...timestamps,
   },
   (table) => [

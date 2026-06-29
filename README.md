@@ -85,6 +85,7 @@ Recall Calendar V2 sends `calendar.sync_events` webhooks when calendar events ar
 `/api/calendar/sync` remains as a repair action. It no longer reads Google Calendar events directly. It finds the connected Recall calendar in Neon, lists upcoming Recall Calendar V2 events, stores Neon event and meeting rows, then schedules Recall Calendar V2 bots for eligible Google Meet or Zoom events.
 
 When Recall reports a completed recording, the webhook handler retrieves the bot, reads the recording media download URL, creates a local ElevenLabs transcript job, and queues `meeting/transcribe.audio` with that URL. Meeting pages can play Recall recording audio through the authenticated meeting audio route once Recall exposes the recording media.
+The same completion flow also imports available Recall screenshots into R2 as meeting image assets. Meeting pages show captured images above the transcript, with image preview and jump to transcript controls for timestamped review.
 
 ## MP3 Uploads
 

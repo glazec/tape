@@ -8,8 +8,10 @@ import {
 } from "@/lib/vendors/elevenlabs";
 import {
   deleteScheduledRecallBot,
+  extractRecallBotScreenshots,
   findRecallRecordingMediaUrl,
   findRecallSpeakerTimelineUrl,
+  listRecallBotScreenshots,
   sendRecallChatMessage,
   normalizeRecallWebhook,
   retrieveRecallBot,
@@ -1012,6 +1014,69 @@ describe("vendor job creation", () => {
         },
       },
     );
+  });
+
+  it("lists and normalizes Recall bot screenshots", async () => {
+    vi.stubEnv("RECALL_API_KEY", "recall-key\n");
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          results: [
+            {
+              id: "screenshot_123",
+              recorded_at: "2026-06-29T14:01:05.000Z",
+              data: {
+                download_url: "https://recall.example.com/screenshot.jpg",
+              },
+            },
+          ],
+        }),
+        {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        },
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(listRecallBotScreenshots("bot_123")).resolves.toEqual([
+      {
+        id: "screenshot_123",
+        capturedAt: "2026-06-29T14:01:05.000Z",
+        downloadUrl: "https://recall.example.com/screenshot.jpg",
+      },
+    ]);
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://us-east-1.recall.ai/api/v1/bot/bot_123/screenshots/",
+      {
+        method: "GET",
+        headers: {
+          Authorization: "Token recall-key",
+          Accept: "application/json",
+        },
+      },
+    );
+  });
+
+  it("extracts Recall bot screenshots from alternate payload shapes", () => {
+    expect(
+      extractRecallBotScreenshots({
+        screenshots: [
+          {
+            uuid: "screenshot_456",
+            timestamp: "2026-06-29T14:02:10.000Z",
+            image_url: "https://recall.example.com/alternate.png",
+          },
+        ],
+      }),
+    ).toEqual([
+      {
+        id: "screenshot_456",
+        capturedAt: "2026-06-29T14:02:10.000Z",
+        downloadUrl: "https://recall.example.com/alternate.png",
+      },
+    ]);
   });
 
   it("extracts Recall recording media URLs", () => {

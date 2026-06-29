@@ -49,6 +49,12 @@ type RecallAutomaticVideoOutput = {
   in_call_recording: RecallVideoOutput;
 };
 
+export type RecallBotScreenshot = {
+  id: string;
+  capturedAt: string | null;
+  downloadUrl: string;
+};
+
 let recallBotLogoJpegBase64: string | null = null;
 
 export function getDefaultRecallBotVideoOutput(): RecallAutomaticVideoOutput {
@@ -577,6 +583,77 @@ export async function retrieveRecallBot(botId: string) {
   return response.json();
 }
 
+export async function listRecallBotScreenshots(botId: string) {
+  const env = recallApiEnvSchema.parse(process.env);
+  const response = await fetch(
+    buildRecallApiUrl(
+      env,
+      `/api/v1/bot/${encodeURIComponent(botId)}/screenshots/`,
+    ),
+    {
+      method: "GET",
+      headers: buildRecallReadHeaders(env),
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error(
+      `Recall bot screenshot retrieval failed with ${response.status} ${response.statusText}`,
+    );
+  }
+
+  return extractRecallBotScreenshots(await response.json());
+}
+
+export function extractRecallBotScreenshots(
+  payload: unknown,
+): RecallBotScreenshot[] {
+  const screenshots = getRecallScreenshotRecords(payload);
+  const seen = new Set<string>();
+  const normalized: RecallBotScreenshot[] = [];
+
+  for (const screenshot of screenshots) {
+    if (!screenshot || typeof screenshot !== "object") {
+      continue;
+    }
+
+    const record = screenshot as Record<string, unknown>;
+    const data = getRecord(record.data);
+    const downloadUrl =
+      getString(data?.download_url) ??
+      getString(data?.url) ??
+      getString(record.download_url) ??
+      getString(record.downloadUrl) ??
+      getString(record.image_url) ??
+      getString(record.imageUrl) ??
+      getString(record.url);
+
+    if (!downloadUrl || seen.has(downloadUrl)) {
+      continue;
+    }
+
+    seen.add(downloadUrl);
+    normalized.push({
+      id:
+        getString(record.id) ??
+        getString(record.uuid) ??
+        getString(record.screenshot_id) ??
+        getString(record.screenshotId) ??
+        downloadUrl,
+      capturedAt:
+        getString(record.recorded_at) ??
+        getString(record.recordedAt) ??
+        getString(record.captured_at) ??
+        getString(record.capturedAt) ??
+        getString(record.timestamp) ??
+        null,
+      downloadUrl,
+    });
+  }
+
+  return normalized;
+}
+
 function buildRecallApiUrl(
   env: z.infer<typeof recallApiEnvSchema>,
   pathname: string,
@@ -724,4 +801,33 @@ function getDownloadUrl(mediaShortcut: unknown) {
   return typeof downloadUrl === "string" && downloadUrl.trim()
     ? downloadUrl.trim()
     : null;
+}
+
+function getRecallScreenshotRecords(payload: unknown) {
+  if (Array.isArray(payload)) {
+    return payload;
+  }
+
+  const record = getRecord(payload);
+
+  return (
+    getArray(record?.results) ??
+    getArray(record?.screenshots) ??
+    getArray(record?.data) ??
+    []
+  );
+}
+
+function getArray(value: unknown) {
+  return Array.isArray(value) ? value : null;
+}
+
+function getRecord(value: unknown) {
+  return value && typeof value === "object"
+    ? (value as Record<string, unknown>)
+    : null;
+}
+
+function getString(value: unknown) {
+  return typeof value === "string" && value.trim() ? value.trim() : null;
 }

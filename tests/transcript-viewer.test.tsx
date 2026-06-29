@@ -91,6 +91,28 @@ describe("TranscriptViewer", () => {
     expect(html).not.toContain("High pressure words or fast pace");
   });
 
+  it("shows captured meeting images with transcript jump controls", () => {
+    const html = renderToStaticMarkup(
+      <TranscriptViewer
+        segments={segments}
+        visualAssets={[
+          {
+            id: "image_123",
+            capturedAt: "2026-06-29T14:01:05.000Z",
+            timestampMs: 65000,
+            url: "/api/meetings/11111111-1111-4111-8111-111111111111/images/image_123",
+          },
+        ]}
+      />,
+    );
+
+    expect(html).toContain("Meeting images");
+    expect(html).toContain("Open image from 1:05");
+    expect(html).toContain("Jump to transcript");
+    expect(html).toContain('loading="lazy"');
+    expect(html).toContain('id="segment_123"');
+  });
+
   it("overlays speaker, emotion, and wpm labels on the waveform", () => {
     const html = renderToStaticMarkup(
       <TranscriptViewer

@@ -64,6 +64,13 @@
       "when": 1783100000000,
       "tag": "0008_equal_sway",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1783200000000,
+      "tag": "0009_meeting_visual_assets",
+      "breakpoints": true
     }
   ]
 }

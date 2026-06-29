@@ -8,6 +8,7 @@ import {
 const {
   createRecallRecordingTranscription,
   fetchAndPersistRecallParticipantTimeline,
+  persistRecallBotScreenshots,
   retrieveRecallBot,
   send,
   update,
@@ -15,6 +16,7 @@ const {
 } = vi.hoisted(() => ({
   createRecallRecordingTranscription: vi.fn(),
   fetchAndPersistRecallParticipantTimeline: vi.fn(),
+  persistRecallBotScreenshots: vi.fn(),
   retrieveRecallBot: vi.fn(),
   send: vi.fn(),
   update: vi.fn(),
@@ -41,6 +43,10 @@ vi.mock("@/lib/meeting-participant-timeline", () => ({
   fetchAndPersistRecallParticipantTimeline,
 }));
 
+vi.mock("@/lib/meeting-screenshots", () => ({
+  persistRecallBotScreenshots,
+}));
+
 vi.mock("@/lib/vendors/recall", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/vendors/recall")>();
 
@@ -53,6 +59,7 @@ vi.mock("@/lib/vendors/recall", async (importOriginal) => {
 afterEach(() => {
   createRecallRecordingTranscription.mockReset();
   fetchAndPersistRecallParticipantTimeline.mockReset();
+  persistRecallBotScreenshots.mockReset();
   retrieveRecallBot.mockReset();
   send.mockReset();
   update.mockReset();
@@ -178,6 +185,10 @@ describe("applyRecallMeetingEvent", () => {
     expect(fetchAndPersistRecallParticipantTimeline).toHaveBeenCalledWith({
       meetingId: "11111111-1111-4111-8111-111111111111",
       timelineUrl: "https://recall.example.com/speaker-timeline.json",
+    });
+    expect(persistRecallBotScreenshots).toHaveBeenCalledWith({
+      botId: "bot_123",
+      meetingId: "11111111-1111-4111-8111-111111111111",
     });
     expect(send).toHaveBeenCalledWith({
       name: "meeting/transcribe.audio",

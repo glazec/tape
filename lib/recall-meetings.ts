@@ -4,6 +4,7 @@ import { db } from "@/db/client";
 import { meetings } from "@/db/schema";
 import { inngest } from "@/inngest/client";
 import { fetchAndPersistRecallParticipantTimeline } from "@/lib/meeting-participant-timeline";
+import { persistRecallBotScreenshots } from "@/lib/meeting-screenshots";
 import { createRecallRecordingTranscription } from "@/lib/transcription-records";
 import type { normalizeRecallWebhook } from "@/lib/vendors/recall";
 import {
@@ -101,6 +102,15 @@ async function queueRecallRecordingTranscription(
     } catch {
       // Keep transcription moving when Recall has not finished speaker timeline media.
     }
+  }
+
+  try {
+    await persistRecallBotScreenshots({
+      botId: update.recallBotId,
+      meetingId: update.meetingId,
+    });
+  } catch {
+    // Keep transcription moving when visual capture is unavailable.
   }
 
   const transcription = await createRecallRecordingTranscription({

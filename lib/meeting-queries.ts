@@ -77,11 +77,19 @@ export type MeetingTranscript = {
   status: MeetingListItem["status"];
   transcriptJobStatus: TranscriptJobStatus | null;
   audioUrl: string | null;
+  visualAssets: MeetingVisualAsset[];
   segments: TranscriptSegment[];
   speakerSuggestions: SpeakerSuggestion[];
   accessScope: "workspace" | "shared";
   accessPeople: MeetingAccessPerson[];
   entities: MeetingTranscriptEntity[];
+};
+
+export type MeetingVisualAsset = {
+  id: string;
+  capturedAt: string | null;
+  timestampMs: number | null;
+  url: string;
 };
 
 export type MeetingTranscriptEntity = {
@@ -861,7 +869,8 @@ export async function getMeetingTranscriptForWorkspace(
   }
 
   const accessScope = getMeetingAccessScope(meeting.teamId, workspace);
-  const [segments, speakerSuggestions, accessPeople, entities] = await Promise.all([
+  const [segments, speakerSuggestions, accessPeople, entities, visualAssets] =
+    await Promise.all([
     db
       .select({
         id: transcriptSegments.id,
@@ -891,6 +900,23 @@ export async function getMeetingTranscriptForWorkspace(
       .from(meetingEntities)
       .where(eq(meetingEntities.meetingId, meeting.id))
       .orderBy(asc(meetingEntities.createdAt)),
+    db
+      .select({
+        id: mediaAssets.id,
+        capturedAt: mediaAssets.capturedAt,
+        timestampMs: mediaAssets.timestampMs,
+      })
+      .from(mediaAssets)
+      .where(
+        and(
+          eq(mediaAssets.meetingId, meeting.id),
+          or(
+            eq(mediaAssets.type, "screenshot"),
+            eq(mediaAssets.type, "video_frame"),
+          ),
+        ),
+      )
+      .orderBy(asc(mediaAssets.timestampMs), asc(mediaAssets.createdAt)),
   ]);
 
   return {
@@ -903,6 +929,12 @@ export async function getMeetingTranscriptForWorkspace(
       meeting.audioObjectKey || meeting.recallRecordingId
         ? `/api/meetings/${meeting.id}/audio`
         : null,
+    visualAssets: visualAssets.map((asset) => ({
+      id: asset.id,
+      capturedAt: asset.capturedAt?.toISOString() ?? null,
+      timestampMs: asset.timestampMs,
+      url: `/api/meetings/${meeting.id}/images/${asset.id}`,
+    })),
     segments: segments.map((segment) => ({
       ...segment,
       emotionLabel: normalizeEmotionLabel(segment.emotionLabel),
