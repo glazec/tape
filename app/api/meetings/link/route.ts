@@ -17,11 +17,9 @@ import { SharedOnlyAccessError } from "@/lib/access-errors";
 
 export const runtime = "nodejs";
 
-const requestSchema = z
-  .object({
-    meetingUrl: z.string().url(),
-  })
-  .strict();
+const requestSchema = z.strictObject({
+  meetingUrl: z.url(),
+});
 
 type RecallBotResponse = {
   id?: unknown;

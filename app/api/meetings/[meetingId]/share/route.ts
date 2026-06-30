@@ -15,12 +15,14 @@ import { getOrCreateWorkspaceForSessionUser } from "@/lib/workspace";
 
 export const runtime = "nodejs";
 
-const meetingIdSchema = z.string().uuid();
-const shareRequestSchema = z
-  .object({
-    email: z.string().trim().email().max(320).transform(normalizeEmail),
-  })
-  .strict();
+const meetingIdSchema = z.uuid();
+const shareRequestSchema = z.strictObject({
+  email: z
+    .string()
+    .trim()
+    .pipe(z.email().max(320))
+    .transform(normalizeEmail),
+});
 
 export async function POST(
   request: Request,

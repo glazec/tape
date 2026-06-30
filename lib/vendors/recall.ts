@@ -8,7 +8,7 @@ const oldRecallWebhookSchema = z.object({
     .object({
       bot_id: z.string().min(1).optional().nullable(),
       recording_id: z.string().min(1).optional().nullable(),
-      meeting_url: z.string().url().optional().nullable(),
+      meeting_url: z.url().optional().nullable(),
     })
     .refine((data) => data.bot_id || data.recording_id || data.meeting_url),
 });
@@ -89,20 +89,20 @@ function getRecallBotVideoOutput(input?: string | null) {
 }
 
 const recallBotInputSchema = z.object({
-  meetingUrl: z.string().url(),
+  meetingUrl: z.url(),
   botName: z.string().trim().min(1).max(100).default(DEFAULT_RECALL_BOT_NAME),
   avatarJpegBase64: z.string().trim().min(1).optional(),
-  startAt: z.string().datetime().optional(),
-  webhookUrl: z.string().url(),
+  startAt: z.iso.datetime().optional(),
+  webhookUrl: z.url(),
   metadata: z.record(z.string(), z.string()).optional(),
 });
 
 const recallBotUpdateInputSchema = z.object({
   botId: z.string().trim().min(1),
-  meetingUrl: z.string().url(),
+  meetingUrl: z.url(),
   botName: z.string().trim().min(1).max(100).optional(),
   avatarJpegBase64: z.string().trim().min(1).optional(),
-  startAt: z.string().datetime(),
+  startAt: z.iso.datetime(),
   metadata: z.record(z.string(), z.string()).optional(),
 });
 
@@ -122,8 +122,8 @@ const recallCalendarUpdateInputSchema = z.object({
 
 const recallCalendarEventListInputSchema = z.object({
   calendarId: z.string().trim().min(1),
-  updatedAtGte: z.string().datetime().optional(),
-  startTimeGte: z.string().datetime().optional(),
+  updatedAtGte: z.iso.datetime().optional(),
+  startTimeGte: z.iso.datetime().optional(),
   isDeleted: z.boolean().optional(),
 });
 

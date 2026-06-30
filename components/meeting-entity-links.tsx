@@ -62,12 +62,14 @@ export function MeetingEntityLinks({
             <p className="text-xs font-medium text-muted-foreground">
               {section.label}
             </p>
-            <p className="mt-1 text-sm leading-6 text-foreground">
+            <div className="mt-1 flex flex-wrap items-center gap-x-1.5 gap-y-1 text-sm leading-6 text-foreground">
               {section.entities.map((entity, index) => (
-                <span key={`${entity.type}:${entity.normalizedValue}`}>
-                  {index > 0 ? <span className="text-muted-foreground">, </span> : null}
+                <span
+                  className="inline-flex h-6 items-center gap-0.5"
+                  key={`${entity.type}:${entity.normalizedValue}`}
+                >
                   <Link
-                    className="inline-flex items-center gap-1.5 align-baseline font-medium text-foreground underline decoration-border underline-offset-4 hover:text-primary hover:decoration-primary focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+                    className="inline-flex h-6 items-center gap-1.5 font-medium text-foreground underline decoration-border underline-offset-4 hover:text-primary hover:decoration-primary focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
                     href={getEntityDashboardHref(entity.normalizedValue)}
                   >
                     {section.type === "organization" ? (
@@ -75,9 +77,12 @@ export function MeetingEntityLinks({
                     ) : null}
                     {entity.value}
                   </Link>
+                  {index < section.entities.length - 1 ? (
+                    <span className="text-muted-foreground">,</span>
+                  ) : null}
                 </span>
               ))}
-            </p>
+            </div>
           </div>
         ))}
       </div>
@@ -98,7 +103,7 @@ function OrganizationLogo({ entity }: { entity: MeetingEntityLink }) {
     <Image
       alt=""
       aria-hidden="true"
-      className="size-4 rounded-sm"
+      className="size-4 shrink-0 rounded-sm"
       height={16}
       loading="lazy"
       referrerPolicy="no-referrer"

@@ -9,7 +9,7 @@ import { getOrCreateWorkspaceForSessionUser } from "@/lib/workspace";
 
 export const runtime = "nodejs";
 
-const idSchema = z.string().uuid();
+const idSchema = z.uuid();
 const bodySchema = z.object({
   translatedText: z.string().trim().min(1).max(5000),
 });

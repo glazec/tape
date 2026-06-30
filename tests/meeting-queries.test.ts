@@ -38,27 +38,83 @@ describe("getWorkspaceMeetingTranscript", () => {
     vi.resetModules();
   });
 
-  it("does not load cancelled meetings by direct id", async () => {
+  it("loads cancelled meetings by direct id", async () => {
     const meetingWhere = vi.fn((condition: SQL) => {
       void condition;
 
       return {
-      orderBy: () => ({
-        limit: vi.fn().mockResolvedValue([]),
-      }),
+        orderBy: () => ({
+          limit: vi.fn().mockResolvedValue([
+            {
+              id: "11111111-1111-4111-8111-111111111111",
+              teamId: "team_123",
+              title: "Cancelled partner sync",
+              platform: "zoom",
+              status: "cancelled",
+              transcriptJobStatus: null,
+              audioObjectKey: null,
+              calendarAttendeeEmails: [],
+              recallRecordingId: null,
+              translationErrorMessage: null,
+              translationStatus: null,
+            },
+          ]),
+        }),
       };
     });
 
     getWorkspace.mockResolvedValue({ teamId: "team_123", userId: "user_123" });
-    select.mockReturnValueOnce({
-      from: () => ({
-        leftJoin: () => ({
+    select
+      .mockReturnValueOnce({
+        from: () => ({
           leftJoin: () => ({
-            where: meetingWhere,
+            leftJoin: () => ({
+              where: meetingWhere,
+            }),
           }),
         }),
-      }),
-    });
+      })
+      .mockReturnValueOnce({
+        from: () => ({
+          where: () => ({
+            orderBy: vi.fn().mockResolvedValue([]),
+          }),
+        }),
+      })
+      .mockReturnValueOnce({
+        from: () => ({
+          leftJoin: () => ({
+            where: () => ({
+              orderBy: () => ({
+                limit: vi.fn().mockResolvedValue([]),
+              }),
+            }),
+          }),
+        }),
+      })
+      .mockReturnValueOnce({
+        from: () => ({
+          where: () => ({
+            orderBy: () => ({
+              limit: vi.fn().mockResolvedValue([]),
+            }),
+          }),
+        }),
+      })
+      .mockReturnValueOnce({
+        from: () => ({
+          where: () => ({
+            orderBy: vi.fn().mockResolvedValue([]),
+          }),
+        }),
+      })
+      .mockReturnValueOnce({
+        from: () => ({
+          where: () => ({
+            orderBy: vi.fn().mockResolvedValue([]),
+          }),
+        }),
+      });
     const { getWorkspaceMeetingTranscript } = await import(
       "@/lib/meeting-queries"
     );
@@ -72,11 +128,15 @@ describe("getWorkspaceMeetingTranscript", () => {
         },
         "11111111-1111-4111-8111-111111111111",
       ),
-    ).resolves.toBeNull();
+    ).resolves.toMatchObject({
+      id: "11111111-1111-4111-8111-111111111111",
+      status: "cancelled",
+      title: "Cancelled partner sync",
+    });
 
     const query = toQuery(meetingWhere.mock.calls[0][0]);
-    expect(query.sql).toContain('"meetings"."status" <>');
-    expect(query.params).toContain("cancelled");
+    expect(query.sql).not.toContain('"meetings"."status" <>');
+    expect(query.params).not.toContain("cancelled");
   });
 
   it("exposes the audio route for Recall recordings without an R2 asset", async () => {

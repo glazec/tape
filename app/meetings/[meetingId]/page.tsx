@@ -24,8 +24,10 @@ export default async function MeetingPage({
 }: {
   params: Promise<{ meetingId: string }>;
 }) {
-  const user = await requireCurrentUser();
-  const { meetingId } = await params;
+  const [user, { meetingId }] = await Promise.all([
+    requireCurrentUser(),
+    params,
+  ]);
   const workspace = await getOrCreateWorkspaceForSessionUser(user);
   const [meeting, shareRecipients] = await Promise.all([
     getMeetingTranscriptForWorkspace(workspace, meetingId),

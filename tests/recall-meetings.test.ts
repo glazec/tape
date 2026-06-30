@@ -104,6 +104,30 @@ describe("buildRecallMeetingUpdate", () => {
     });
   });
 
+  it("leaves terminal bot done without a recording status unchanged", () => {
+    expect(
+      buildRecallMeetingUpdate({
+        eventType: "bot.done",
+        botId: "bot_123",
+        recordingId: null,
+        meetingUrl: null,
+        statusCode: "done",
+        code: "done",
+        subCode: null,
+        updatedAt: "2026-06-23T12:00:00Z",
+        metadata: {
+          meetingId: "11111111-1111-4111-8111-111111111111",
+        },
+      }),
+    ).toEqual({
+      action: "update",
+      meetingId: "11111111-1111-4111-8111-111111111111",
+      recallBotId: "bot_123",
+      recallRecordingId: null,
+      status: null,
+    });
+  });
+
   it("marks Recall bot fatal join failures as missed", () => {
     expect(
       buildRecallMeetingUpdate({
@@ -271,5 +295,46 @@ describe("applyRecallMeetingEvent", () => {
     expect(retrieveRecallBot).not.toHaveBeenCalled();
     expect(createRecallRecordingTranscription).not.toHaveBeenCalled();
     expect(send).not.toHaveBeenCalled();
+  });
+
+  it("does not downgrade a recorded meeting to missed from a late call ended event", async () => {
+    const updateSet = vi.fn().mockReturnValue({ where });
+    update.mockReturnValue({ set: updateSet });
+    select
+      .mockReturnValueOnce({ from: selectFrom })
+      .mockReturnValueOnce({ from: selectFrom });
+    selectFrom
+      .mockReturnValueOnce({ where: selectWhere })
+      .mockReturnValueOnce({ where: selectWhere });
+    selectWhere
+      .mockReturnValueOnce({ limit: selectLimit })
+      .mockReturnValueOnce({ limit: selectLimit });
+    selectLimit
+      .mockResolvedValueOnce([
+        {
+          recallRecordingId: "recording_123",
+        },
+      ])
+      .mockResolvedValueOnce([]);
+
+    await applyRecallMeetingEvent({
+      eventType: "bot.call_ended",
+      botId: "bot_123",
+      recordingId: null,
+      meetingUrl: null,
+      statusCode: "call_ended",
+      code: "call_ended",
+      subCode: "call_ended_by_host",
+      updatedAt: "2026-06-23T12:00:00Z",
+      metadata: {
+        meetingId: "11111111-1111-4111-8111-111111111111",
+      },
+    });
+
+    expect(updateSet).toHaveBeenCalledWith(
+      expect.objectContaining({
+        status: undefined,
+      }),
+    );
   });
 });

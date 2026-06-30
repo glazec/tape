@@ -66,7 +66,7 @@ import {
   getReadableMeetingsCondition,
 } from "@/lib/meeting-access-policy";
 
-const uuidSchema = z.string().uuid();
+const uuidSchema = z.uuid();
 export const MEETING_LIBRARY_PAGE_SIZE = 50;
 export const DEFAULT_MEETING_LIBRARY_HISTORY_MONTHS = 6;
 export const MEETING_LIBRARY_HISTORY_MONTH_STEP = 6;
@@ -1003,7 +1003,6 @@ export async function getMeetingTranscriptForWorkspace(
     .where(
       and(
         eq(meetings.id, parsedMeetingId.data),
-        ne(meetings.status, "cancelled"),
         getReadableMeetingsCondition(workspace),
       ),
     )

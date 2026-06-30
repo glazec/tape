@@ -10,36 +10,30 @@ const oldElevenLabsWebhookSchema = z.object({
 
 const transcriptionSchema = z.union([
   z.string().min(1),
-  z
-    .object({
-      text: z.string().optional().nullable(),
-      status: z.string().optional().nullable(),
-    })
-    .passthrough(),
+  z.looseObject({
+    text: z.string().optional().nullable(),
+    status: z.string().optional().nullable(),
+  }),
 ]);
 
-const transcriptionWordSchema = z
-  .object({
-    text: z.string(),
-    type: z.string().optional().nullable(),
-    start: z.number().optional().nullable(),
-    end: z.number().optional().nullable(),
-    speaker_id: z.string().optional().nullable(),
-  })
-  .passthrough();
+const transcriptionWordSchema = z.looseObject({
+  text: z.string(),
+  type: z.string().optional().nullable(),
+  start: z.number().optional().nullable(),
+  end: z.number().optional().nullable(),
+  speaker_id: z.string().optional().nullable(),
+});
 
-const transcriptionEntitySchema = z
-  .object({
-    entity_type: z.string().optional().nullable(),
-    end_char: z.number().optional().nullable(),
-    text: z.string().optional().nullable(),
-    type: z.string().optional().nullable(),
-    start_char: z.number().optional().nullable(),
-    value: z.string().optional().nullable(),
-    start: z.number().optional().nullable(),
-    end: z.number().optional().nullable(),
-  })
-  .passthrough();
+const transcriptionEntitySchema = z.looseObject({
+  entity_type: z.string().optional().nullable(),
+  end_char: z.number().optional().nullable(),
+  text: z.string().optional().nullable(),
+  type: z.string().optional().nullable(),
+  start_char: z.number().optional().nullable(),
+  value: z.string().optional().nullable(),
+  start: z.number().optional().nullable(),
+  end: z.number().optional().nullable(),
+});
 
 const elevenLabsWebhookSchema = z.object({
   type: z.string().min(1),
@@ -51,8 +45,8 @@ const elevenLabsWebhookSchema = z.object({
 });
 
 const elevenLabsTranscriptInputSchema = z.object({
-  audioUrl: z.string().url(),
-  webhookUrl: z.string().url(),
+  audioUrl: z.url(),
+  webhookUrl: z.url(),
   keyterms: z.array(z.string().trim().min(1)).optional(),
   metadata: z.record(z.string(), z.string()).optional(),
 });

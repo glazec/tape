@@ -10,7 +10,7 @@ import { getOrCreateWorkspaceForSessionUser } from "@/lib/workspace";
 export const runtime = "nodejs";
 
 const speakerUpdateSchema = z
-  .object({
+  .strictObject({
     applyTo: z.enum(["matching_speaker", "segment"]).default("matching_speaker"),
     currentSpeaker: z.preprocess(
       (value) =>
@@ -21,10 +21,9 @@ const speakerUpdateSchema = z
       .array(z.string().trim().min(1).max(80))
       .max(20)
       .default([]),
-    segmentId: z.string().uuid().optional(),
+    segmentId: z.uuid().optional(),
     speaker: z.string().trim().min(1).max(80),
   })
-  .strict()
   .refine(
     (value) => value.applyTo === "matching_speaker" || Boolean(value.segmentId),
     {
@@ -33,7 +32,7 @@ const speakerUpdateSchema = z
     },
   );
 
-const meetingIdSchema = z.string().uuid();
+const meetingIdSchema = z.uuid();
 
 export async function PATCH(
   request: Request,

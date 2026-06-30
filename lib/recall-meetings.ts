@@ -63,17 +63,22 @@ export async function applyRecallMeetingEvent(event: RecallWebhookEvent) {
     return update;
   }
 
+  const status =
+    update.status === "missed" && (await hasRecordingEvidence(update.meetingId))
+      ? null
+      : update.status;
+
   await db
     .update(meetings)
     .set({
       recallBotId: update.recallBotId ?? undefined,
       recallRecordingId: update.recallRecordingId ?? undefined,
-      status: update.status ?? undefined,
+      status: status ?? undefined,
       updatedAt: new Date(),
     })
     .where(eq(meetings.id, update.meetingId));
 
-  if (update.status === "processing" && update.recallBotId) {
+  if (status === "processing" && update.recallBotId) {
     await queueRecallRecordingTranscription({
       ...update,
       recallBotId: update.recallBotId,
@@ -151,6 +156,16 @@ async function hasActiveTranscriptJob(meetingId: string) {
   return Boolean(rows[0]);
 }
 
+async function hasRecordingEvidence(meetingId: string) {
+  const rows = await db
+    .select({ recallRecordingId: meetings.recallRecordingId })
+    .from(meetings)
+    .where(eq(meetings.id, meetingId))
+    .limit(1);
+
+  return Boolean(rows[0]?.recallRecordingId);
+}
+
 function getMetadataString(
   metadata: Record<string, unknown>,
   ...keys: string[]
@@ -186,6 +201,10 @@ function mapRecallStatus(event: RecallWebhookEvent) {
   }
 
   if (/recording_done|\bdone\b|complete/.test(statusText)) {
+    if (!event.recordingId && event.eventType === "bot.done") {
+      return null;
+    }
+
     return "processing";
   }
 

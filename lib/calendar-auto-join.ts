@@ -126,7 +126,7 @@ export async function autoJoinCalendarEvent(input: AutoJoinInput) {
           startsAt,
           meetingUrl,
         })
-      : location
+      : location && !input.event.isDeleted
         ? buildLocationMeetingKey({
             teamId: input.connection.teamId,
             startsAt,
@@ -187,7 +187,7 @@ export async function autoJoinCalendarEvent(input: AutoJoinInput) {
   });
 
   if (!meetingUrl) {
-    if (location) {
+    if (location && !input.event.isDeleted) {
       return syncLocationCalendarMeeting({
         connection: input.connection,
         calendarEvent,
@@ -530,7 +530,9 @@ async function syncExistingCalendarMeeting(input: {
   teamMeetingKey?: string | null;
   forceScheduleBot?: boolean;
 }) {
-  if (input.meeting.status !== "scheduled") {
+  const canRecoverMissedMeeting = shouldRecoverMissedMeeting(input);
+
+  if (input.meeting.status !== "scheduled" && !canRecoverMissedMeeting) {
     return {
       action: "skipped" as const,
       calendarEventId: input.calendarEvent.id,
@@ -549,7 +551,10 @@ async function syncExistingCalendarMeeting(input: {
       input.meeting.calendarEventId !== input.calendarEvent.id,
   );
   const shouldScheduleBot =
-    input.forceScheduleBot || shouldUpdateBot || shouldLinkRecallCalendarEvent;
+    input.forceScheduleBot ||
+    shouldUpdateBot ||
+    shouldLinkRecallCalendarEvent ||
+    canRecoverMissedMeeting;
   let recallBotId = input.meeting.recallBotId;
 
   try {
@@ -588,6 +593,7 @@ async function syncExistingCalendarMeeting(input: {
       endsAt: input.endsAt,
       teamMeetingKey: input.teamMeetingKey,
       recallBotId,
+      status: canRecoverMissedMeeting ? "scheduled" : undefined,
     });
   } catch (error) {
     await markMeetingFailed(input.meeting.id);
@@ -634,19 +640,23 @@ async function updateMeetingFromCalendar(input: {
   endsAt: Date | null;
   teamMeetingKey?: string | null;
   recallBotId?: string | null;
+  status?: "scheduled";
 }) {
+  const updates = {
+    title: input.title,
+    platform: input.platform,
+    teamMeetingKey: input.teamMeetingKey,
+    meetingUrl: input.meetingUrl,
+    startedAt: input.startsAt,
+    endedAt: input.endsAt,
+    recallBotId: input.recallBotId,
+    ...(input.status ? { status: input.status } : {}),
+    updatedAt: new Date(),
+  };
+
   await db
     .update(meetings)
-    .set({
-      title: input.title,
-      platform: input.platform,
-      teamMeetingKey: input.teamMeetingKey,
-      meetingUrl: input.meetingUrl,
-      startedAt: input.startsAt,
-      endedAt: input.endsAt,
-      recallBotId: input.recallBotId,
-      updatedAt: new Date(),
-    })
+    .set(updates)
     .where(eq(meetings.id, input.meetingId));
 }
 
@@ -760,6 +770,7 @@ async function cancelScheduledMeetingBotFromCalendar(input: {
     .set({
       title: input.title,
       meetingUrl: input.meetingUrl,
+      teamMeetingKey: null,
       startedAt: input.startsAt,
       endedAt: input.endsAt,
       recallBotId: null,
@@ -908,6 +919,21 @@ function hasScheduledBotChange(
   return (
     meeting.meetingUrl !== next.meetingUrl ||
     meeting.startedAt?.getTime() !== next.startsAt.getTime()
+  );
+}
+
+function shouldRecoverMissedMeeting(input: {
+  meeting: ExistingMeeting;
+  meetingUrl: string;
+  startsAt: Date;
+}) {
+  return (
+    input.meeting.status === "missed" &&
+    input.startsAt.getTime() > Date.now() &&
+    hasScheduledBotChange(input.meeting, {
+      meetingUrl: input.meetingUrl,
+      startsAt: input.startsAt,
+    })
   );
 }
 

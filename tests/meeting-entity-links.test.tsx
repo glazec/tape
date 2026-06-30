@@ -51,6 +51,8 @@ describe("MeetingEntityLinks", () => {
     expect(html).toContain("solana.com");
     expect(html).not.toContain("babylonlabs.io");
     expect(html).not.toContain("domain_url=https%3A%2F%2Fetf");
+    expect(html).toContain("flex flex-wrap items-center");
+    expect(html).toContain("inline-flex h-6 items-center");
     expect(html).toContain(
       "/dashboard?q=babylon&amp;scope=all&amp;status=all&amp;sort=smart",
     );

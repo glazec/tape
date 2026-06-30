@@ -8,12 +8,10 @@ import { getOrCreateWorkspaceForSessionUser } from "@/lib/workspace";
 
 export const runtime = "nodejs";
 
-const meetingIdSchema = z.string().uuid();
-const renameMeetingSchema = z
-  .object({
-    title: z.string().trim().min(1).max(200),
-  })
-  .strict();
+const meetingIdSchema = z.uuid();
+const renameMeetingSchema = z.strictObject({
+  title: z.string().trim().min(1).max(200),
+});
 
 export async function PATCH(
   request: Request,

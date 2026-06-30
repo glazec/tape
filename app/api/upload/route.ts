@@ -14,12 +14,10 @@ import {
 
 export const runtime = "nodejs";
 
-const uploadRequestSchema = z
-  .object({
-    extension: z.literal("mp3"),
-    contentType: z.literal("audio/mpeg"),
-  })
-  .strict();
+const uploadRequestSchema = z.strictObject({
+  extension: z.literal("mp3"),
+  contentType: z.literal("audio/mpeg"),
+});
 
 export async function POST(request: Request) {
   const user = await getCurrentUser();

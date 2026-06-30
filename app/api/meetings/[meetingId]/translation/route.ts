@@ -11,7 +11,7 @@ import { getOrCreateWorkspaceForSessionUser } from "@/lib/workspace";
 
 export const runtime = "nodejs";
 
-const meetingIdSchema = z.string().uuid();
+const meetingIdSchema = z.uuid();
 
 export async function POST(
   _request: Request,

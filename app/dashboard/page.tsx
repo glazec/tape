@@ -60,7 +60,10 @@ export default async function DashboardPage({
     view?: string | string[];
   }>;
 }) {
-  const user = await requireCurrentUser();
+  const [user, resolvedSearchParams] = await Promise.all([
+    requireCurrentUser(),
+    searchParams,
+  ]);
   const {
     page,
     historyMonths: historyMonthsParam,
@@ -71,8 +74,7 @@ export default async function DashboardPage({
     status,
     syncCalendar,
     view,
-  } =
-    await searchParams;
+  } = resolvedSearchParams;
   const currentPage = parseMeetingLibraryPage(page);
   const historyMonths = parseMeetingLibraryHistoryMonths(historyMonthsParam);
   const relatedHistoryMonths = Math.max(
@@ -86,8 +88,10 @@ export default async function DashboardPage({
     sort,
   });
   const workspace = await getOrCreateWorkspaceForSessionUser(user);
-  const accessSummary = await getWorkspaceAccessSummary(workspace);
-  const savedViewConfig = await getDefaultMeetingLibraryView(workspace);
+  const [accessSummary, savedViewConfig] = await Promise.all([
+    getWorkspaceAccessSummary(workspace),
+    getDefaultMeetingLibraryView(workspace),
+  ]);
   const activeViewConfig =
     shouldUseSavedMeetingLibraryView({ q, scope, sort, status, view }) &&
     savedViewConfig

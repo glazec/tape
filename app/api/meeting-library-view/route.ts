@@ -12,8 +12,10 @@ export async function POST(request: Request) {
     return Response.redirect(new URL("/auth/sign-in", request.url), 303);
   }
 
-  const formData = await request.formData().catch(() => null);
-  const workspace = await getOrCreateWorkspaceForSessionUser(user);
+  const [formData, workspace] = await Promise.all([
+    request.formData().catch(() => null),
+    getOrCreateWorkspaceForSessionUser(user),
+  ]);
   const config = normalizeMeetingLibraryViewConfig({
     q: formData?.get("q"),
     scope: formData?.get("scope"),

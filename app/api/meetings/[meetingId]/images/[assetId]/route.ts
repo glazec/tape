@@ -10,7 +10,7 @@ import { getOrCreateWorkspaceForSessionUser } from "@/lib/workspace";
 
 export const runtime = "nodejs";
 
-const idSchema = z.string().uuid();
+const idSchema = z.uuid();
 
 export async function GET(
   _request: Request,

@@ -19,12 +19,10 @@ import { titleFromUploadFileName } from "@/lib/upload-titles";
 
 export const runtime = "nodejs";
 
-const completeUploadSchema = z
-  .object({
-    uploadId: z.string().min(1),
-    fileName: z.string().optional(),
-  })
-  .strict();
+const completeUploadSchema = z.strictObject({
+  uploadId: z.string().min(1),
+  fileName: z.string().optional(),
+});
 
 export async function POST(request: Request) {
   const user = await getCurrentUser();

@@ -10,7 +10,7 @@ import { getOrCreateWorkspaceForSessionUser } from "@/lib/workspace";
 
 export const runtime = "nodejs";
 
-const meetingIdSchema = z.string().uuid();
+const meetingIdSchema = z.uuid();
 const transcriptFallbackWordPattern = /[A-Za-z0-9]+(?:['\u2019][A-Za-z0-9]+)?/g;
 const transcriptCjkCharacterPattern = /[\u3400-\u9fff\uf900-\ufaff]/g;
 const transcriptWordSegmenter = createTranscriptWordSegmenter();

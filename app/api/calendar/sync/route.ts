@@ -13,11 +13,9 @@ import {
 
 export const runtime = "nodejs";
 
-const requestSchema = z
-  .object({
-    autoJoinEnabled: z.boolean().optional().default(true),
-  })
-  .strict();
+const requestSchema = z.strictObject({
+  autoJoinEnabled: z.boolean().optional().default(true),
+});
 
 export async function POST(request: Request) {
   const user = await getCurrentUser();

@@ -54,6 +54,7 @@ describe("getOrCreateWorkspaceForSessionUser", () => {
     update.mockReturnValueOnce({ set });
     set.mockReturnValueOnce({ where });
     where.mockResolvedValueOnce(undefined);
+    mockLimitedSelect([{ teamId: "team_123" }]);
     mockLimitedSelect([
       {
         id: "invite_123",
@@ -67,7 +68,6 @@ describe("getOrCreateWorkspaceForSessionUser", () => {
     update.mockReturnValueOnce({ set });
     set.mockReturnValueOnce({ where });
     where.mockResolvedValueOnce(undefined);
-    mockLimitedSelect([{ teamId: "team_123" }]);
     insert.mockReturnValueOnce({ values });
     values.mockReturnValueOnce({ onConflictDoNothing });
     onConflictDoNothing.mockResolvedValueOnce(undefined);

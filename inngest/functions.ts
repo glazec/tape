@@ -25,26 +25,26 @@ import { syncRecallCalendarEventsForAllConnectedUsers } from "@/lib/recall-calen
 const appUrlSchema = z.string().trim().url();
 
 const scheduleMeetingBotDataSchema = z.object({
-  meetingUrl: z.string().url(),
-  startAt: z.string().datetime().optional(),
+  meetingUrl: z.url(),
+  startAt: z.iso.datetime().optional(),
 });
 
 const transcribeAudioDataSchema = z.union([
   z.object({
-    audioUrl: z.string().url(),
-    meetingId: z.string().uuid().optional(),
-    mediaAssetId: z.string().uuid().optional(),
-    transcriptJobId: z.string().uuid().optional(),
+    audioUrl: z.url(),
+    meetingId: z.uuid().optional(),
+    mediaAssetId: z.uuid().optional(),
+    transcriptJobId: z.uuid().optional(),
   }),
   z.object({
     objectKey: z.string().min(1),
-    meetingId: z.string().uuid().optional(),
-    mediaAssetId: z.string().uuid().optional(),
-    transcriptJobId: z.string().uuid().optional(),
+    meetingId: z.uuid().optional(),
+    mediaAssetId: z.uuid().optional(),
+    transcriptJobId: z.uuid().optional(),
   }),
 ]);
 const enrichTranscriptDataSchema = z.object({
-  meetingId: z.string().uuid(),
+  meetingId: z.uuid(),
   translateToChinese: z.boolean().optional(),
 });
 

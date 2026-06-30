@@ -31,12 +31,14 @@ export async function getOrCreateWorkspaceForSessionUser(
     throw new Error("Session user email must include a domain");
   }
 
-  const userId = await getOrCreateUserId(sessionUser, email);
-  const existingDomain = await db
-    .select({ teamId: allowedDomains.teamId })
-    .from(allowedDomains)
-    .where(eq(allowedDomains.domain, domain))
-    .limit(1);
+  const [userId, existingDomain] = await Promise.all([
+    getOrCreateUserId(sessionUser, email),
+    db
+      .select({ teamId: allowedDomains.teamId })
+      .from(allowedDomains)
+      .where(eq(allowedDomains.domain, domain))
+      .limit(1),
+  ]);
 
   if (existingDomain[0]) {
     await db
