@@ -19,7 +19,7 @@ struct MeetingNoteLocalRecorderApp: App {
 }
 
 @MainActor
-final class RecorderAppModel: ObservableObject {
+final class RecorderAppModel: NSObject, ObservableObject, UNUserNotificationCenterDelegate {
     @Published var permissionChecklist = PermissionChecklist(
         microphone: .unknown,
         screenCapture: .unknown,
@@ -32,8 +32,16 @@ final class RecorderAppModel: ObservableObject {
     @Published var isRecording = false
     @Published var pendingMeetings: [MissedMeeting] = []
 
+    private let appVersion = "0.1.0"
+    private let captureController = LocalRecordingCaptureController()
     private let deviceIdStore = DeviceIdStore()
     private let notificationCenter = UNUserNotificationCenter.current()
+    private var activeClient: LocalRecorderAPIClient?
+
+    override init() {
+        super.init()
+        notificationCenter.delegate = self
+    }
 
     var menuBarImage: String {
         isRecording ? "record.circle.fill" : "waveform"
@@ -84,13 +92,22 @@ final class RecorderAppModel: ObservableObject {
     }
 
     func startRecording() {
-        guard let meeting = pendingMeetings.first else {
+        startRecording(fallbackIntentId: nil)
+    }
+
+    func startRecording(fallbackIntentId: String?) {
+        let meeting = fallbackIntentId
+            .flatMap { intentId in
+                pendingMeetings.first { $0.fallbackIntentId == intentId }
+            } ?? pendingMeetings.first
+        guard let intentId = fallbackIntentId ?? meeting?.fallbackIntentId else {
             statusText = "No pending fallback meeting"
             return
         }
+        let title = meeting?.title ?? "meeting"
 
         Task {
-            await claimAndStart(meeting)
+            await claimAndStart(fallbackIntentId: intentId, title: title)
         }
     }
 
@@ -125,7 +142,7 @@ final class RecorderAppModel: ObservableObject {
         }
     }
 
-    private func claimAndStart(_ meeting: MissedMeeting) async {
+    private func claimAndStart(fallbackIntentId: String, title: String) async {
         guard let serverURL = URL(string: serverURLText) else {
             statusText = "Enter a valid server URL"
             return
@@ -137,15 +154,20 @@ final class RecorderAppModel: ObservableObject {
                 bearerToken: bearerToken,
                 deviceId: deviceIdStore.deviceId
             )
-            let claim = try await client.claimIntent(fallbackIntentId: meeting.fallbackIntentId)
+            let claim = try await client.claimIntent(fallbackIntentId: fallbackIntentId)
 
             guard claim.claimed else {
                 statusText = claimFailureStatus(reason: claim.reason)
                 return
             }
 
+            try await captureController.start(
+                fallbackIntentId: fallbackIntentId,
+                appVersion: appVersion
+            )
+            activeClient = client
             isRecording = true
-            statusText = "Recording \(meeting.title)"
+            statusText = "Recording \(claim.meetingTitle ?? title)"
         } catch {
             statusText = "Could not start recording"
         }
@@ -167,8 +189,56 @@ final class RecorderAppModel: ObservableObject {
     }
 
     func stopRecording() {
-        isRecording = false
-        statusText = "Recording stopped. Capture upload is not connected in this build."
+        guard isRecording else {
+            statusText = "No active recording"
+            return
+        }
+
+        statusText = "Stopping recording"
+        Task {
+            do {
+                let result = try await captureController.stop()
+                isRecording = false
+                statusText = "Uploading recording"
+                guard let client = activeClient else {
+                    throw LocalRecorderAPIError.invalidResponse
+                }
+
+                try await uploadWithRetry(
+                    client: client,
+                    payload: result.payload
+                )
+                try? FileManager.default.removeItem(at: result.cleanupDirectoryURL)
+                activeClient = nil
+                statusText = "Recording uploaded"
+            } catch {
+                isRecording = false
+                activeClient = nil
+                statusText = "Could not upload recording. Files kept locally."
+            }
+        }
+    }
+
+    nonisolated func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        didReceive response: UNNotificationResponse,
+        withCompletionHandler completionHandler: @escaping () -> Void
+    ) {
+        let fallbackIntentId = response.notification.request.content
+            .userInfo["fallbackIntentId"] as? String
+
+        Task { @MainActor in
+            self.startRecording(fallbackIntentId: fallbackIntentId)
+        }
+        completionHandler()
+    }
+
+    nonisolated func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        willPresent notification: UNNotification,
+        withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
+    ) {
+        completionHandler([.banner, .sound])
     }
 
     private func claimFailureStatus(reason: String?) -> String {
@@ -208,6 +278,27 @@ final class RecorderAppModel: ObservableObject {
         } catch {
             return .denied
         }
+    }
+
+    private func uploadWithRetry(
+        client: LocalRecorderAPIClient,
+        payload: LocalRecordingUploadPayload
+    ) async throws {
+        var lastError: Error?
+
+        for attempt in 1...3 {
+            do {
+                _ = try await client.uploadRecording(payload: payload)
+                return
+            } catch {
+                lastError = error
+                if attempt < 3 {
+                    try await Task.sleep(for: .seconds(5))
+                }
+            }
+        }
+
+        throw lastError ?? LocalRecorderAPIError.invalidResponse
     }
 }
 

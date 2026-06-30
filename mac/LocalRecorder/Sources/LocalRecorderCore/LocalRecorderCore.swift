@@ -96,6 +96,59 @@ public struct LocalRecorderAPIClient: Sendable {
         return try JSONDecoder.localRecorder.decode(ClaimIntentResponse.self, from: data)
     }
 
+    public func uploadRecordingRequest(
+        payload: LocalRecordingUploadPayload,
+        boundary: String? = nil
+    ) throws -> URLRequest {
+        let boundary = boundary ?? MultipartForm.boundary()
+        var request = URLRequest(
+            url: serverURL.appending(path: "/api/local-recorder/recordings")
+        )
+        request.httpMethod = "POST"
+        applyRecorderHeaders(to: &request)
+        request.setValue(
+            "multipart/form-data; boundary=\(boundary)",
+            forHTTPHeaderField: "Content-Type"
+        )
+        request.httpBody = try MultipartForm(boundary: boundary)
+            .addingField(name: "fallbackIntentId", value: payload.fallbackIntentId)
+            .addingField(name: "clientRecordingId", value: payload.clientRecordingId)
+            .addingField(name: "recordingStartedAt", value: payload.recordingStartedAt.localRecorderISOString)
+            .addingField(name: "recordingStoppedAt", value: payload.recordingStoppedAt.localRecorderISOString)
+            .addingField(
+                name: "manifest",
+                value: String(
+                    decoding: JSONEncoder.localRecorder.encode(payload.manifest),
+                    as: UTF8.self
+                )
+            )
+            .addingFile(
+                name: "computerAudio",
+                fileURL: payload.computerAudioURL,
+                contentType: "audio/wav"
+            )
+            .addingFile(
+                name: "microphoneAudio",
+                fileURL: payload.microphoneAudioURL,
+                contentType: "audio/wav"
+            )
+            .data()
+        return request
+    }
+
+    public func uploadRecording(
+        payload: LocalRecordingUploadPayload
+    ) async throws -> LocalRecordingUploadResponse {
+        let request = try uploadRecordingRequest(payload: payload)
+        let (data, response) = try await URLSession.shared.data(for: request)
+        try validateHTTPResponse(response)
+
+        return try JSONDecoder.localRecorder.decode(
+            LocalRecordingUploadResponse.self,
+            from: data
+        )
+    }
+
     private func applyRecorderHeaders(to request: inout URLRequest) {
         request.setValue("Bearer \(bearerToken)", forHTTPHeaderField: "Authorization")
         request.setValue(deviceId, forHTTPHeaderField: "x-local-recorder-device-id")
@@ -139,6 +192,40 @@ public struct ClaimIntentResponse: Codable, Equatable, Sendable {
     public var claimed: Bool
     public var meetingTitle: String?
     public var reason: String?
+}
+
+public struct LocalRecordingUploadPayload: Equatable, Sendable {
+    public var fallbackIntentId: String
+    public var clientRecordingId: String
+    public var recordingStartedAt: Date
+    public var recordingStoppedAt: Date
+    public var computerAudioURL: URL
+    public var microphoneAudioURL: URL
+    public var manifest: RecordingManifest
+
+    public init(
+        fallbackIntentId: String,
+        clientRecordingId: String,
+        recordingStartedAt: Date,
+        recordingStoppedAt: Date,
+        computerAudioURL: URL,
+        microphoneAudioURL: URL,
+        manifest: RecordingManifest
+    ) {
+        self.fallbackIntentId = fallbackIntentId
+        self.clientRecordingId = clientRecordingId
+        self.recordingStartedAt = recordingStartedAt
+        self.recordingStoppedAt = recordingStoppedAt
+        self.computerAudioURL = computerAudioURL
+        self.microphoneAudioURL = microphoneAudioURL
+        self.manifest = manifest
+    }
+}
+
+public struct LocalRecordingUploadResponse: Codable, Equatable, Sendable {
+    public var localRecordingId: String?
+    public var meetingId: String
+    public var queued: Bool
 }
 
 public struct RecordingManifest: Codable, Equatable, Sendable {
@@ -198,5 +285,69 @@ public extension JSONDecoder {
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
         return decoder
+    }
+}
+
+private struct MultipartForm {
+    private var body = Data()
+    private let boundary: String
+
+    init(boundary: String) {
+        self.boundary = boundary
+    }
+
+    static func boundary() -> String {
+        "meeting-note-\(UUID().uuidString)"
+    }
+
+    func addingField(name: String, value: String) -> MultipartForm {
+        var copy = self
+        copy.appendBoundary()
+        copy.append("Content-Disposition: form-data; name=\"\(name)\"\r\n\r\n")
+        copy.append(value)
+        copy.append("\r\n")
+        return copy
+    }
+
+    func addingFile(
+        name: String,
+        fileURL: URL,
+        contentType: String
+    ) throws -> MultipartForm {
+        var copy = self
+        let fileName = fileURL.lastPathComponent
+        copy.appendBoundary()
+        copy.append(
+            "Content-Disposition: form-data; name=\"\(name)\"; filename=\"\(fileName)\"\r\n"
+        )
+        copy.append("Content-Type: \(contentType)\r\n\r\n")
+        copy.body.append(try Data(contentsOf: fileURL))
+        copy.append("\r\n")
+        return copy
+    }
+
+    func data() -> Data {
+        var copy = self
+        copy.append("--\(boundary)--\r\n")
+        return copy.body
+    }
+
+    private mutating func appendBoundary() {
+        append("--\(boundary)\r\n")
+    }
+
+    private mutating func append(_ string: String) {
+        body.append(Data(string.utf8))
+    }
+}
+
+private extension Date {
+    var localRecorderISOString: String {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [
+            .withInternetDateTime,
+            .withFractionalSeconds,
+        ]
+        return formatter.string(from: self)
     }
 }
