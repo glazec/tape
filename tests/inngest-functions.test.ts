@@ -1,10 +1,17 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-const { createElevenLabsTranscriptJob, createReadUrl, scheduleRecallBot, update } =
+const {
+  createElevenLabsTranscriptJob,
+  createReadUrl,
+  scheduleRecallBot,
+  syncRecallCalendarEventsForAllConnectedUsers,
+  update,
+} =
   vi.hoisted(() => ({
     createElevenLabsTranscriptJob: vi.fn(),
     createReadUrl: vi.fn(),
     scheduleRecallBot: vi.fn(),
+    syncRecallCalendarEventsForAllConnectedUsers: vi.fn(),
     update: vi.fn(),
   }));
 
@@ -24,6 +31,10 @@ vi.mock("@/lib/vendors/elevenlabs", () => ({
 
 vi.mock("@/lib/vendors/recall", () => ({
   scheduleRecallBot,
+}));
+
+vi.mock("@/lib/recall-calendar-bulk-sync", () => ({
+  syncRecallCalendarEventsForAllConnectedUsers,
 }));
 
 describe("Inngest functions", () => {
@@ -55,6 +66,10 @@ describe("Inngest functions", () => {
       {
         id: "send-location-reminders",
         triggers: [{ event: "meeting/send.location-reminders" }],
+      },
+      {
+        id: "sync-recall-calendars-hourly",
+        triggers: [{ cron: "0 * * * *" }],
       },
     ]);
   });

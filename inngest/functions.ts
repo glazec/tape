@@ -18,6 +18,7 @@ import {
   translateTranscriptSegmentsToChinese,
 } from "@/lib/vendors/openrouter";
 import { scheduleRecallBot } from "@/lib/vendors/recall";
+import { syncRecallCalendarEventsForAllConnectedUsers } from "@/lib/recall-calendar-bulk-sync";
 
 const appUrlSchema = z.string().trim().url();
 
@@ -178,11 +179,20 @@ export const sendLocationReminders = inngest.createFunction(
   async () => sendDueLocationReminders(),
 );
 
+export const syncRecallCalendarsHourly = inngest.createFunction(
+  {
+    id: "sync-recall-calendars-hourly",
+    triggers: [{ cron: "0 * * * *" }],
+  },
+  async () => syncRecallCalendarEventsForAllConnectedUsers(),
+);
+
 export const functions = [
   scheduleMeetingBot,
   transcribeAudio,
   enrichTranscript,
   sendLocationReminders,
+  syncRecallCalendarsHourly,
 ];
 
 function buildTranscriptMetadata(data: z.infer<typeof transcribeAudioDataSchema>) {
