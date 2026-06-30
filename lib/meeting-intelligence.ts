@@ -551,7 +551,7 @@ function getMeetingGroupingKeys(
 }
 
 function getMeetingTitleGroupingKey(title: string) {
-  const normalized = title.trim().toLowerCase().replace(/\s+/g, " ");
+  const normalized = normalizeEntityValue(title);
 
   if (!normalized || genericMeetingGroupingTitles.has(normalized)) {
     return null;

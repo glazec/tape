@@ -312,6 +312,36 @@ describe("meeting intelligence helpers", () => {
     ]);
   });
 
+  it("groups related meetings when title punctuation differs", () => {
+    expect(
+      groupRelatedMeetings([
+        {
+          id: "meeting_1",
+          title: "Internal Meeting - Investment Strategy",
+          startedAt: "2026-06-20T10:00:00.000Z",
+          primaryEntity: null,
+        },
+        {
+          id: "meeting_2",
+          title: "Internal Meeting Investment Strategy",
+          startedAt: "2026-06-27T10:00:00.000Z",
+          primaryEntity: null,
+        },
+      ]),
+    ).toEqual([
+      {
+        id: "meeting_2",
+        relatedMeetings: [
+          {
+            id: "meeting_1",
+            title: "Internal Meeting - Investment Strategy",
+            startedAt: "2026-06-20T10:00:00.000Z",
+          },
+        ],
+      },
+    ]);
+  });
+
   it("does not group generic meeting titles", () => {
     expect(
       groupRelatedMeetings([
