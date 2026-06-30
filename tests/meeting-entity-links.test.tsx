@@ -68,7 +68,7 @@ describe("MeetingEntityLinks", () => {
     expect(html).toContain("20 million");
     expect(html).toContain("Darko");
     expect(html).toContain('alt=""');
-    expect(html).toContain("icons.duckduckgo.com");
+    expect(html).toContain("/api/favicons?domain=crm-babylon.example");
     expect(html).toContain("crm-babylon.example");
     expect(html).toContain("solana.com");
     expect(html).toContain("revolut.com");
@@ -120,6 +120,22 @@ describe("MeetingEntityLinks", () => {
       "surfai.xyz",
       "surfai.org",
       "surfai.ai",
+    ]);
+  });
+
+  it("uses ethereum.org before guessed suffixes for Ethereum", () => {
+    expect(
+      getLogoDomainsForEntity({
+        normalizedValue: "ethereum",
+        type: "organization",
+        value: "Ethereum",
+      }),
+    ).toEqual([
+      "ethereum.org",
+      "ethereum.com",
+      "ethereum.io",
+      "ethereum.xyz",
+      "ethereum.ai",
     ]);
   });
 

@@ -28,5 +28,5 @@ export function OrganizationLogoImage({ domains }: { domains: string[] }) {
 }
 
 function getFaviconUrl(domain: string) {
-  return `https://icons.duckduckgo.com/ip3/${encodeURIComponent(domain)}.ico`;
+  return `/api/favicons?domain=${encodeURIComponent(domain)}`;
 }

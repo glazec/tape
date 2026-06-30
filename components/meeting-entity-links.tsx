@@ -32,6 +32,7 @@ const organizationLogoDomains: Record<string, string> = {
   circle: "circle.com",
   coinbase: "coinbase.com",
   dune: "dune.com",
+  ethereum: "ethereum.org",
   github: "github.com",
   "google workspace": "workspace.google.com",
   "google workspaces": "workspace.google.com",
