@@ -1029,8 +1029,11 @@ function areTranscriptSegmentsEqual(
   left: TranscriptSegment,
   right: TranscriptSegment | undefined,
 ) {
+  if (!right) {
+    return false;
+  }
+
   return (
-    Boolean(right) &&
     left.id === right.id &&
     left.speaker === right.speaker &&
     left.startMs === right.startMs &&
