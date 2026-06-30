@@ -285,28 +285,6 @@ export function buildMeetingLibraryPage(
   const activeMeetingsForLibrary = meetingsForLibrary.filter(
     (meeting) => meeting.status !== "cancelled",
   );
-  const visibleMeetingsForLibrary = activeMeetingsForLibrary.filter((meeting) =>
-    isMeetingInsideHistoryWindow(meeting, historyCutoff),
-  );
-  const relatedMeetingsForLibrary = activeMeetingsForLibrary.filter((meeting) =>
-    isMeetingInsideHistoryWindow(meeting, relatedHistoryCutoff),
-  );
-  const relatedMeetingsByRoot = getRelatedMeetingsByRoot(
-    relatedMeetingsForLibrary,
-    { includeTitleKeys: sort === "smart" },
-  );
-  const allRelatedMeetingsByRoot = getRelatedMeetingsByRoot(
-    activeMeetingsForLibrary,
-    { includeTitleKeys: sort === "smart" },
-  );
-  const hasMoreRelatedMeetingByRoot = new Map(
-    Array.from(allRelatedMeetingsByRoot, ([meetingId, relatedMeetings]) => [
-      meetingId,
-      relatedMeetings.some(
-        (meeting) => !isMeetingInsideHistoryWindow(meeting, relatedHistoryCutoff),
-      ),
-    ]),
-  );
   const scheduledBotMeetingIds = new Set(
     activeMeetingsForLibrary
       .filter((meeting) => isFutureScheduledBotMeeting(meeting, nowTime))
@@ -318,6 +296,33 @@ export function buildMeetingLibraryPage(
       .slice(0, 3)
       .map((meeting) => meeting.id),
   );
+  const eligibleMeetingsForLibrary = activeMeetingsForLibrary.filter(
+    (meeting) =>
+      shouldShowMeetingInLibrary(meeting, scheduledBotMeetingIds) &&
+      matchesMeetingLibraryStatus(meeting, status),
+  );
+  const visibleMeetingsForLibrary = eligibleMeetingsForLibrary.filter((meeting) =>
+    isMeetingInsideHistoryWindow(meeting, historyCutoff),
+  );
+  const relatedMeetingsForLibrary = eligibleMeetingsForLibrary.filter((meeting) =>
+    isMeetingInsideHistoryWindow(meeting, relatedHistoryCutoff),
+  );
+  const relatedMeetingsByRoot = getRelatedMeetingsByRoot(
+    relatedMeetingsForLibrary,
+    { includeTitleKeys: sort === "smart" },
+  );
+  const allRelatedMeetingsByRoot = getRelatedMeetingsByRoot(
+    eligibleMeetingsForLibrary,
+    { includeTitleKeys: sort === "smart" },
+  );
+  const hasMoreRelatedMeetingByRoot = new Map(
+    Array.from(allRelatedMeetingsByRoot, ([meetingId, relatedMeetings]) => [
+      meetingId,
+      relatedMeetings.some(
+        (meeting) => !isMeetingInsideHistoryWindow(meeting, relatedHistoryCutoff),
+      ),
+    ]),
+  );
   const meetingsForVisibleWindow = visibleMeetingsForLibrary
     .filter((meeting) => relatedMeetingsByRoot.has(meeting.id))
     .map((meeting) =>
@@ -328,7 +333,7 @@ export function buildMeetingLibraryPage(
         relatedMeetings: relatedMeetingsByRoot.get(meeting.id) ?? [],
       }),
     );
-  const allRootMeetings = activeMeetingsForLibrary
+  const allRootMeetings = eligibleMeetingsForLibrary
     .filter((meeting) => allRelatedMeetingsByRoot.has(meeting.id))
     .map((meeting) =>
       toLibraryRootMeeting({
@@ -337,19 +342,11 @@ export function buildMeetingLibraryPage(
         relatedMeetings: allRelatedMeetingsByRoot.get(meeting.id) ?? [],
       }),
     );
-  const sortedMeetings = meetingsForVisibleWindow
-    .filter((meeting) =>
-      shouldShowMeetingInLibrary(meeting, scheduledBotMeetingIds),
-    )
-    .filter((meeting) => matchesMeetingLibraryStatus(meeting, status))
-    .toSorted((left, right) =>
-      compareMeetingLibraryItems(left, right, scheduledBotMeetingIds, sort),
-    );
+  const sortedMeetings = meetingsForVisibleWindow.toSorted((left, right) =>
+    compareMeetingLibraryItems(left, right, scheduledBotMeetingIds, sort),
+  );
   const hasOlderMeetings = allRootMeetings.some(
-    (meeting) =>
-      !isMeetingInsideHistoryWindow(meeting, historyCutoff) &&
-      shouldShowMeetingInLibrary(meeting, scheduledBotMeetingIds) &&
-      matchesMeetingLibraryStatus(meeting, status),
+    (meeting) => !isMeetingInsideHistoryWindow(meeting, historyCutoff),
   );
   const visibleMeetings =
     sort === "smart" ? foldSimilarMeetings(sortedMeetings) : sortedMeetings;

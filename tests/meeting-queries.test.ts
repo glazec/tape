@@ -1120,6 +1120,79 @@ describe("buildMeetingLibraryPage", () => {
     });
   });
 
+  it("keeps a ready transcript visible when a newer related scheduled meeting is capped", async () => {
+    const { buildMeetingLibraryPage } = await import("@/lib/meeting-queries");
+
+    const page = buildMeetingLibraryPage(
+      [
+        {
+          ...libraryMeeting({
+            id: "11111111-1111-4111-8111-111111111111",
+            title: "Yiping",
+            platform: "zoom",
+            startedAt: "2026-07-01T01:00:00.000Z",
+          }),
+          hasRecallBot: true,
+          status: "scheduled" as const,
+        },
+        {
+          ...libraryMeeting({
+            id: "22222222-2222-4222-8222-222222222222",
+            title: "Bingx - IOSG Biweekly catch-up",
+            platform: "zoom",
+            startedAt: "2026-07-01T01:30:00.000Z",
+          }),
+          hasRecallBot: true,
+          status: "scheduled" as const,
+        },
+        {
+          ...libraryMeeting({
+            id: "33333333-3333-4333-8333-333333333333",
+            title: "Yiping",
+            platform: "zoom",
+            startedAt: "2026-07-01T01:30:00.000Z",
+          }),
+          hasRecallBot: true,
+          status: "scheduled" as const,
+        },
+        {
+          ...libraryMeeting({
+            id: "44444444-4444-4444-8444-444444444444",
+            title: "Internal Meeting - Investment Strategy",
+            platform: "zoom",
+            startedAt: "2026-07-21T02:00:00.000Z",
+          }),
+          hasRecallBot: true,
+          status: "scheduled" as const,
+        },
+        {
+          ...libraryMeeting({
+            id: "55555555-5555-4555-8555-555555555555",
+            title: "Internal Meeting - Investment Strategy",
+            platform: "zoom",
+            startedAt: "2026-06-30T02:00:00.000Z",
+          }),
+          status: "ready" as const,
+          transcriptJobStatus: "completed" as const,
+        },
+      ],
+      {
+        now: new Date("2026-06-30T03:00:00.000Z"),
+        sort: "smart",
+      },
+    );
+
+    expect(page.meetings).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "55555555-5555-4555-8555-555555555555",
+          title: "Internal Meeting - Investment Strategy",
+          status: "ready",
+        }),
+      ]),
+    );
+  });
+
   it("keeps duplicate meeting titles flat for explicit time sorting", async () => {
     const { buildMeetingLibraryPage } = await import("@/lib/meeting-queries");
 
