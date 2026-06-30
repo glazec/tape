@@ -11,6 +11,10 @@ const {
   persistRecallBotScreenshots,
   retrieveRecallBot,
   send,
+  select,
+  selectFrom,
+  selectLimit,
+  selectWhere,
   update,
   where,
 } = vi.hoisted(() => ({
@@ -19,12 +23,17 @@ const {
   persistRecallBotScreenshots: vi.fn(),
   retrieveRecallBot: vi.fn(),
   send: vi.fn(),
+  select: vi.fn(),
+  selectFrom: vi.fn(),
+  selectLimit: vi.fn(),
+  selectWhere: vi.fn(),
   update: vi.fn(),
   where: vi.fn(),
 }));
 
 vi.mock("@/db/client", () => ({
   db: {
+    select,
     update,
   },
 }));
@@ -62,6 +71,10 @@ afterEach(() => {
   persistRecallBotScreenshots.mockReset();
   retrieveRecallBot.mockReset();
   send.mockReset();
+  select.mockReset();
+  selectFrom.mockReset();
+  selectLimit.mockReset();
+  selectWhere.mockReset();
   update.mockReset();
   where.mockReset();
 });
@@ -164,6 +177,10 @@ describe("applyRecallMeetingEvent", () => {
     update.mockReturnValue({
       set: vi.fn().mockReturnValue({ where }),
     });
+    select.mockReturnValue({ from: selectFrom });
+    selectFrom.mockReturnValue({ where: selectWhere });
+    selectWhere.mockReturnValue({ limit: selectLimit });
+    selectLimit.mockResolvedValue([]);
     retrieveRecallBot.mockResolvedValue({
       recordings: [
         {
@@ -222,5 +239,37 @@ describe("applyRecallMeetingEvent", () => {
         transcriptJobId: "22222222-2222-4222-8222-222222222222",
       },
     });
+  });
+
+  it("does not queue another transcription when a transcript job already exists", async () => {
+    update.mockReturnValue({
+      set: vi.fn().mockReturnValue({ where }),
+    });
+    select.mockReturnValue({ from: selectFrom });
+    selectFrom.mockReturnValue({ where: selectWhere });
+    selectWhere.mockReturnValue({ limit: selectLimit });
+    selectLimit.mockResolvedValue([
+      {
+        id: "22222222-2222-4222-8222-222222222222",
+      },
+    ]);
+
+    await applyRecallMeetingEvent({
+      eventType: "bot.status_change",
+      botId: "bot_123",
+      recordingId: null,
+      meetingUrl: null,
+      statusCode: "done",
+      code: "done",
+      subCode: "recording_done",
+      updatedAt: "2026-06-23T12:00:00Z",
+      metadata: {
+        meetingId: "11111111-1111-4111-8111-111111111111",
+      },
+    });
+
+    expect(retrieveRecallBot).not.toHaveBeenCalled();
+    expect(createRecallRecordingTranscription).not.toHaveBeenCalled();
+    expect(send).not.toHaveBeenCalled();
   });
 });

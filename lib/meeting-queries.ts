@@ -52,6 +52,11 @@ import {
   type MeetingTranslationSummary,
 } from "@/lib/meeting-translation-status";
 import {
+  formatNameFromEmail,
+  getUniqueFullNameByFirstName,
+  getUniqueFullNameForFirstNameAlias,
+} from "@/lib/speaker-labels";
+import {
   getOrCreateWorkspaceForSessionUser,
   type WorkspaceContext,
 } from "@/lib/workspace";
@@ -1171,16 +1176,27 @@ async function listMeetingSpeakerSuggestions(
   meetingId: string,
   calendarAttendeeEmails: unknown,
 ): Promise<SpeakerSuggestion[]> {
-  const rows = await db
-    .select({
-      email: meetingAttendees.email,
-      name: users.name,
-    })
-    .from(meetingAttendees)
-    .leftJoin(users, eq(users.email, meetingAttendees.email))
-    .where(eq(meetingAttendees.meetingId, meetingId))
-    .orderBy(asc(meetingAttendees.email))
-    .limit(100);
+  const [rows, participantRows] = await Promise.all([
+    db
+      .select({
+        email: meetingAttendees.email,
+        name: users.name,
+      })
+      .from(meetingAttendees)
+      .leftJoin(users, eq(users.email, meetingAttendees.email))
+      .where(eq(meetingAttendees.meetingId, meetingId))
+      .orderBy(asc(meetingAttendees.email))
+      .limit(100),
+    db
+      .select({
+        email: meetingParticipantTimeline.email,
+        name: meetingParticipantTimeline.name,
+      })
+      .from(meetingParticipantTimeline)
+      .where(eq(meetingParticipantTimeline.meetingId, meetingId))
+      .orderBy(asc(meetingParticipantTimeline.startMs))
+      .limit(200),
+  ]);
   const attendeeEmails = new Set(
     Array.isArray(calendarAttendeeEmails)
       ? calendarAttendeeEmails.filter(
@@ -1197,13 +1213,26 @@ async function listMeetingSpeakerSuggestions(
   const namesByEmail = new Map(
     rows.map((row) => [row.email, row.name?.trim() || null]),
   );
+  const uniqueFullNameByFirstName = getUniqueFullNameByFirstName(
+    participantRows.flatMap((row) => (row.name ? [row.name] : [])),
+  );
 
   return Array.from(attendeeEmails)
     .sort()
-    .map((email) => ({
-      email,
-      name: namesByEmail.get(email) || formatNameFromEmail(email),
-    }));
+    .map((email) => {
+      const fallbackName = formatNameFromEmail(email);
+
+      return {
+        email,
+        name:
+          namesByEmail.get(email) ||
+          getUniqueFullNameForFirstNameAlias(
+            fallbackName,
+            uniqueFullNameByFirstName,
+          ) ||
+          fallbackName,
+      };
+    });
 }
 
 async function listMeetingAccessPeople(
@@ -1219,19 +1248,6 @@ async function listMeetingAccessPeople(
     .where(eq(meetingAccess.meetingId, meetingId))
     .orderBy(asc(users.email))
     .limit(20);
-}
-
-function formatNameFromEmail(email: string) {
-  const localPart = email.split("@")[0] ?? email;
-  const words = localPart.split(/[._-]+/).filter(Boolean);
-
-  if (words.length === 0) {
-    return email;
-  }
-
-  return words
-    .map((word) => `${word.charAt(0).toUpperCase()}${word.slice(1)}`)
-    .join(" ");
 }
 
 function normalizeEmotionLabel(value: string | null) {

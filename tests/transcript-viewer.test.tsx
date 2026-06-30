@@ -195,6 +195,98 @@ describe("TranscriptViewer", () => {
     expect(html).not.toContain("Siddharth77work");
   });
 
+  it("merges email shaped speaker labels with their local name", () => {
+    const html = renderToStaticMarkup(
+      <TranscriptViewer
+        audioUrl="/audio.mp3"
+        meetingId="11111111-1111-4111-8111-111111111111"
+        segments={[
+          {
+            id: "segment_jocy_email",
+            speaker: "Jocy@IOSGVC",
+            startMs: 0,
+            endMs: 1000,
+            text: "Hello",
+          },
+          {
+            id: "segment_jocy_name",
+            speaker: "Jocy",
+            startMs: 1000,
+            endMs: 2000,
+            text: "Hi",
+          },
+        ]}
+      />,
+    );
+
+    expect(html).toContain("Jocy");
+    expect(html).not.toContain("Jocy@IOSGVC");
+  });
+
+  it("merges a unique first name speaker alias into the full name", () => {
+    const html = renderToStaticMarkup(
+      <TranscriptViewer
+        audioUrl="/audio.mp3"
+        meetingId="11111111-1111-4111-8111-111111111111"
+        segments={[
+          {
+            id: "segment_momir_full",
+            speaker: "Momir Amidzic",
+            startMs: 0,
+            endMs: 1000,
+            text: "Hello",
+          },
+          {
+            id: "segment_momir_first",
+            speaker: "Momir",
+            startMs: 1000,
+            endMs: 2000,
+            text: "Hi",
+          },
+        ]}
+      />,
+    );
+
+    expect(html).toContain("Momir Amidzic");
+    expect(html).not.toContain(">Momir<");
+  });
+
+  it("does not merge a first name when multiple full names share it", () => {
+    const html = renderToStaticMarkup(
+      <TranscriptViewer
+        audioUrl="/audio.mp3"
+        meetingId="11111111-1111-4111-8111-111111111111"
+        segments={[
+          {
+            id: "segment_alex_chen",
+            speaker: "Alex Chen",
+            startMs: 0,
+            endMs: 1000,
+            text: "Hello",
+          },
+          {
+            id: "segment_alex_wang",
+            speaker: "Alex Wang",
+            startMs: 1000,
+            endMs: 2000,
+            text: "Hi",
+          },
+          {
+            id: "segment_alex_first",
+            speaker: "Alex",
+            startMs: 2000,
+            endMs: 3000,
+            text: "Yes",
+          },
+        ]}
+      />,
+    );
+
+    expect(html).toContain("Alex Chen");
+    expect(html).toContain("Alex Wang");
+    expect(html).toContain(">Alex<");
+  });
+
   it("offers speaker voice previews when meeting audio is available", () => {
     const html = renderToStaticMarkup(
       <TranscriptViewer

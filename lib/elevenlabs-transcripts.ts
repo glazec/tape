@@ -21,6 +21,7 @@ import {
   type SegmentEmotion,
   type TranscriptDetectedEntity,
 } from "@/lib/meeting-intelligence";
+import { getPreferredParticipantSpeakerName } from "@/lib/speaker-labels";
 import type { normalizeElevenLabsWebhook } from "@/lib/vendors/elevenlabs";
 
 type ElevenLabsTranscriptEvent = ReturnType<typeof normalizeElevenLabsWebhook>;
@@ -479,10 +480,14 @@ function formatSpeaker(
     startMs,
   });
 
-  if (participant?.name) {
-    return isSharedMicrophoneName(participant.name)
-      ? `${participant.name} · ${fallback}`
-      : participant.name;
+  const participantName = participant
+    ? getPreferredParticipantSpeakerName(participant)
+    : null;
+
+  if (participantName) {
+    return isSharedMicrophoneName(participantName)
+      ? `${participantName} · ${fallback}`
+      : participantName;
   }
 
   return fallback;

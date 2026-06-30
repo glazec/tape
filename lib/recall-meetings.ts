@@ -1,7 +1,7 @@
-import { eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 
 import { db } from "@/db/client";
-import { meetings } from "@/db/schema";
+import { meetings, transcriptJobs } from "@/db/schema";
 import { inngest } from "@/inngest/client";
 import { fetchAndPersistRecallParticipantTimeline } from "@/lib/meeting-participant-timeline";
 import { persistRecallBotScreenshots } from "@/lib/meeting-screenshots";
@@ -88,6 +88,10 @@ async function queueRecallRecordingTranscription(
     recallBotId: string;
   },
 ) {
+  if (await hasActiveTranscriptJob(update.meetingId)) {
+    return;
+  }
+
   const bot = await retrieveRecallBot(update.recallBotId);
   const audioUrl = findRecallRecordingMediaUrl(bot, update.recallRecordingId);
   const speakerTimelineUrl = findRecallSpeakerTimelineUrl(
@@ -130,6 +134,21 @@ async function queueRecallRecordingTranscription(
       ...transcription,
     },
   });
+}
+
+async function hasActiveTranscriptJob(meetingId: string) {
+  const rows = await db
+    .select({ id: transcriptJobs.id })
+    .from(transcriptJobs)
+    .where(
+      and(
+        eq(transcriptJobs.meetingId, meetingId),
+        inArray(transcriptJobs.status, ["queued", "running", "completed"]),
+      ),
+    )
+    .limit(1);
+
+  return Boolean(rows[0]);
 }
 
 function getMetadataString(

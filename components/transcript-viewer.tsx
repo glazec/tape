@@ -29,6 +29,14 @@ import {
   getTranslationProgressLabel,
   type MeetingTranslationSummary,
 } from "@/lib/meeting-translation-status";
+import {
+  getSpeakerFirstName,
+  getSpeakerIdentityKey,
+  getUniqueFullNameByFirstName,
+  getUniqueFullNameForFirstNameAlias,
+  isCleanSpeakerFullName,
+  isEmailLikeSpeakerLabel,
+} from "@/lib/speaker-labels";
 import { cn } from "@/lib/utils";
 
 export type TranscriptSegment = {
@@ -2248,6 +2256,9 @@ function getSegmentTimelineDuration(segments: TranscriptSegment[]) {
 
 function buildSpeakerStats(segments: TranscriptSegment[]): SpeakerStat[] {
   const drafts: SpeakerStatDraft[] = [];
+  const uniqueFullNameByFirstName = getUniqueFullNameByFirstName(
+    segments.flatMap((segment) => (segment.speaker ? [segment.speaker] : [])),
+  );
   let allSpeakerMs = 0;
 
   segments.forEach((segment, index) => {
@@ -2256,7 +2267,11 @@ function buildSpeakerStats(segments: TranscriptSegment[]): SpeakerStat[] {
       (segment.endMs ?? segment.startMs) - segment.startMs,
     );
     const matchingDraft = drafts.find((draft) =>
-      shouldMergeSpeakerLabels(draft.speaker, segment.speaker),
+      shouldMergeSpeakerLabels(
+        draft.speaker,
+        segment.speaker,
+        uniqueFullNameByFirstName,
+      ),
     );
     const draft =
       matchingDraft ??
@@ -2358,11 +2373,11 @@ function chooseSpeakerDisplay(draft: SpeakerStatDraft) {
 }
 
 function getSpeakerLabelQuality(label: string) {
-  if (isCleanFullName(label)) {
+  if (isCleanSpeakerFullName(label)) {
     return 2;
   }
 
-  if (isNoisySpeakerHandle(label)) {
+  if (isEmailLikeSpeakerLabel(label) || isNoisySpeakerHandle(label)) {
     return 0;
   }
 
@@ -2418,6 +2433,7 @@ function shouldApplySpeakerUpdate(
 function shouldMergeSpeakerLabels(
   left: string | null,
   right: string | null,
+  uniqueFullNameByFirstName = new Map<string, string>(),
 ) {
   if (getNormalizedSpeakerKey(left) === getNormalizedSpeakerKey(right)) {
     return true;
@@ -2425,6 +2441,24 @@ function shouldMergeSpeakerLabels(
 
   if (!left || !right) {
     return false;
+  }
+
+  const leftFullName = getUniqueFullNameForFirstNameAlias(
+    left,
+    uniqueFullNameByFirstName,
+  );
+  const rightFullName = getUniqueFullNameForFirstNameAlias(
+    right,
+    uniqueFullNameByFirstName,
+  );
+
+  if (
+    (leftFullName &&
+      getNormalizedSpeakerKey(leftFullName) === getNormalizedSpeakerKey(right)) ||
+    (rightFullName &&
+      getNormalizedSpeakerKey(rightFullName) === getNormalizedSpeakerKey(left))
+  ) {
+    return true;
   }
 
   return (
@@ -2435,14 +2469,10 @@ function shouldMergeSpeakerLabels(
 
 function isLikelyNoisyAliasForFullName(fullName: string, alias: string) {
   return (
-    isCleanFullName(fullName) &&
+    isCleanSpeakerFullName(fullName) &&
     isNoisySpeakerHandle(alias) &&
     getSpeakerFirstName(fullName) === getSpeakerHandlePrefix(alias)
   );
-}
-
-function isCleanFullName(label: string) {
-  return getSpeakerNameWords(label).length >= 2 && !/\d/.test(label);
 }
 
 function isNoisySpeakerHandle(label: string) {
@@ -2455,20 +2485,8 @@ function isNoisySpeakerHandle(label: string) {
   );
 }
 
-function getSpeakerFirstName(label: string) {
-  return getSpeakerNameWords(label)[0]?.toLowerCase() ?? "";
-}
-
 function getSpeakerHandlePrefix(label: string) {
   return label.trim().match(/^[A-Za-z]+/)?.[0].toLowerCase() ?? "";
-}
-
-function getSpeakerNameWords(label: string) {
-  return label
-    .trim()
-    .split(/\s+/)
-    .map((word) => word.replace(/[^A-Za-z]/g, ""))
-    .filter(Boolean);
 }
 
 function formatLineCount(count: number) {
@@ -2527,13 +2545,7 @@ function getSpeakerKey(speaker: string | null) {
 }
 
 function getNormalizedSpeakerKey(speaker: string | null) {
-  return (
-    speaker
-      ?.trim()
-      .toLowerCase()
-      .replace(/[_-]+/g, " ")
-      .replace(/\s+/g, " ") || "__unknown__"
-  );
+  return getSpeakerIdentityKey(speaker);
 }
 
 function getSpeakerInitial(speaker: string) {

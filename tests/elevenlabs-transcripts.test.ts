@@ -176,6 +176,61 @@ describe("buildElevenLabsTranscriptPersistence", () => {
     });
   });
 
+  it("uses the participant email local name when Recall name is email shaped", () => {
+    expect(
+      buildElevenLabsTranscriptPersistence(
+        {
+          eventType: "speech_to_text_transcription",
+          type: "speech_to_text_transcription",
+          requestId: "req_123",
+          transcriptId: null,
+          status: "completed",
+          transcriptionText: "Hello there.",
+          transcriptionWords: [
+            {
+              text: "Hello",
+              type: "word",
+              start: 1,
+              end: 1.4,
+              speakerId: "speaker_0",
+            },
+            {
+              text: " there.",
+              type: "word",
+              start: 1.4,
+              end: 2,
+              speakerId: "speaker_0",
+            },
+          ],
+          metadata: {
+            meetingId: "11111111-1111-4111-8111-111111111111",
+            transcriptJobId: "22222222-2222-4222-8222-222222222222",
+          },
+        },
+        {
+          participantTimeline: [
+            {
+              participantId: "participant_jocy",
+              name: "Jocy@IOSGVC",
+              email: "jocy@iosg.vc",
+              startMs: 900,
+              endMs: 2500,
+            },
+          ],
+        },
+      ),
+    ).toMatchObject({
+      action: "complete",
+      segments: [
+        {
+          speaker: "Jocy",
+          startMs: 1000,
+          endMs: 2000,
+        },
+      ],
+    });
+  });
+
   it("extracts meeting entities and segment emotion during persistence planning", () => {
     expect(
       buildElevenLabsTranscriptPersistence({

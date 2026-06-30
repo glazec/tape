@@ -107,6 +107,7 @@ describe("getWorkspaceMeetingTranscript", () => {
                       audioObjectKey: null,
                       calendarAttendeeEmails: [
                         "alice@example.com",
+                        "momir@iosg.vc",
                         "updated.guest@nascent.xyz",
                       ],
                       recallRecordingId: "recording_123",
@@ -137,8 +138,26 @@ describe("getWorkspaceMeetingTranscript", () => {
                     email: "jane.doe@nascent.xyz",
                     name: null,
                   },
+                  {
+                    email: "momir@iosg.vc",
+                    name: null,
+                  },
                 ]),
               }),
+            }),
+          }),
+        }),
+      })
+      .mockReturnValueOnce({
+        from: () => ({
+          where: () => ({
+            orderBy: () => ({
+              limit: vi.fn().mockResolvedValue([
+                {
+                  email: null,
+                  name: "Momir Amidzic",
+                },
+              ]),
             }),
           }),
         }),
@@ -194,6 +213,10 @@ describe("getWorkspaceMeetingTranscript", () => {
         {
           email: "jane.doe@nascent.xyz",
           name: "Jane Doe",
+        },
+        {
+          email: "momir@iosg.vc",
+          name: "Momir Amidzic",
         },
         {
           email: "updated.guest@nascent.xyz",
