@@ -27,12 +27,9 @@ describe("MeetingActions", () => {
     expect(html).toContain("Delete");
   });
 
-  it("keeps transcript export raw when translations are available", () => {
+  it("does not show transcript language choices", () => {
     const html = renderToStaticMarkup(
-      <MeetingActions
-        hasTranslations
-        meetingId="11111111-1111-4111-8111-111111111111"
-      />,
+      <MeetingActions meetingId="11111111-1111-4111-8111-111111111111" />,
     );
 
     expect(html).not.toContain("Transcript language");

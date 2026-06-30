@@ -55,6 +55,36 @@ describe("page rendering configuration", () => {
     expect(page.dynamic).toBe("force-dynamic");
   });
 
+  it("remounts meeting transcript when translation progress changes", async () => {
+    const page = await import("@/app/meetings/[meetingId]/page");
+    const baseKey = page.getTranscriptViewerRenderKey({
+      displayStatus: "ready",
+      meetingId: "meeting_123",
+      segmentCount: 3,
+      translatedSegments: 0,
+      translationStatus: "running",
+    });
+
+    expect(
+      page.getTranscriptViewerRenderKey({
+        displayStatus: "ready",
+        meetingId: "meeting_123",
+        segmentCount: 3,
+        translatedSegments: 1,
+        translationStatus: "running",
+      }),
+    ).not.toBe(baseKey);
+    expect(
+      page.getTranscriptViewerRenderKey({
+        displayStatus: "ready",
+        meetingId: "meeting_123",
+        segmentCount: 3,
+        translatedSegments: 1,
+        translationStatus: "completed",
+      }),
+    ).not.toBe(baseKey);
+  });
+
   it("renders new meeting dynamically because it reads auth cookies", async () => {
     const page = await import("@/app/meetings/new/page");
 

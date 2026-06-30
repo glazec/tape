@@ -13,7 +13,6 @@ import {
 import { Button } from "@/components/ui/button";
 
 type MeetingActionsProps = {
-  hasTranslations?: boolean;
   meetingId: string;
   instanceId?: string;
 };

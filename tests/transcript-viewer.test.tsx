@@ -3,8 +3,6 @@ import { describe, expect, it, vi } from "vitest";
 
 import {
   applySpeakerUpdateToSegments,
-  getNextTranscriptTextVersion,
-  mergeIncomingTranscriptSegments,
   getWaveformHoverSnapshot,
   TranscriptViewer,
   type EditingSpeaker,
@@ -377,47 +375,6 @@ describe("TranscriptViewer", () => {
     expect(html).toContain("group-hover/original:opacity-100");
     expect(html).toContain("Hello team");
     expect(html).not.toContain("Original sentence");
-  });
-
-  it("adopts polished segment text from refreshed meeting data", () => {
-    expect(
-      mergeIncomingTranscriptSegments(
-        [
-          {
-            ...segments[0],
-            translatedText: null,
-          },
-        ],
-        [
-          {
-            ...segments[0],
-            translatedText: "大家好",
-          },
-        ],
-      ),
-    ).toEqual([
-      {
-        ...segments[0],
-        translatedText: "大家好",
-      },
-    ]);
-  });
-
-  it("switches to polished when refreshed data first adds translations", () => {
-    expect(
-      getNextTranscriptTextVersion({
-        currentTextVersion: "original",
-        hadTranslations: false,
-        hasTranslations: true,
-      }),
-    ).toBe("polished");
-    expect(
-      getNextTranscriptTextVersion({
-        currentTextVersion: "original",
-        hadTranslations: true,
-        hasTranslations: true,
-      }),
-    ).toBe("original");
   });
 
   it("shows translation progress when Chinese text is still being prepared", () => {

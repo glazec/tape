@@ -40,8 +40,6 @@ export default async function MeetingPage({
     meetingStatus: meeting.status,
     transcriptJobStatus: meeting.transcriptJobStatus,
   });
-  const hasTranslations = meeting.translationSummary.hasTranslations;
-
   return (
     <AppShell
       activeHref="/dashboard"
@@ -73,7 +71,6 @@ export default async function MeetingPage({
             {meeting.accessScope === "workspace" ? (
               <div className="lg:hidden">
                 <MeetingActions
-                  hasTranslations={hasTranslations}
                   instanceId="mobile"
                   meetingId={meetingId}
                 />
@@ -136,7 +133,6 @@ export default async function MeetingPage({
             <>
               <div className="hidden lg:flex">
                 <MeetingActions
-                  hasTranslations={hasTranslations}
                   instanceId="desktop"
                   meetingId={meetingId}
                 />

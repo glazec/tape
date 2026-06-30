@@ -993,6 +993,55 @@ export function TranscriptViewer({
   );
 }
 
+export function mergeIncomingTranscriptSegments(
+  currentSegments: TranscriptSegment[],
+  incomingSegments: TranscriptSegment[],
+) {
+  if (
+    currentSegments.length === incomingSegments.length &&
+    currentSegments.every((segment, index) =>
+      areTranscriptSegmentsEqual(segment, incomingSegments[index]),
+    )
+  ) {
+    return currentSegments;
+  }
+
+  return incomingSegments;
+}
+
+export function getNextTranscriptTextVersion({
+  currentTextVersion,
+  hadTranslations,
+  hasTranslations,
+}: {
+  currentTextVersion: TranscriptTextVersion;
+  hadTranslations: boolean;
+  hasTranslations: boolean;
+}) {
+  if (!hadTranslations && hasTranslations) {
+    return "polished";
+  }
+
+  return currentTextVersion;
+}
+
+function areTranscriptSegmentsEqual(
+  left: TranscriptSegment,
+  right: TranscriptSegment | undefined,
+) {
+  return (
+    Boolean(right) &&
+    left.id === right.id &&
+    left.speaker === right.speaker &&
+    left.startMs === right.startMs &&
+    left.endMs === right.endMs &&
+    left.text === right.text &&
+    left.translatedText === right.translatedText &&
+    left.emotionLabel === right.emotionLabel &&
+    left.emotionReason === right.emotionReason
+  );
+}
+
 function getTranscriptDisplaySegments(segments: TranscriptSegment[]) {
   const displaySegments: TranscriptSegment[] = [];
   const seenSegmentKeys = new Map<string, number>();
