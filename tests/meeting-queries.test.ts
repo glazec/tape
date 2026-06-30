@@ -38,6 +38,47 @@ describe("getWorkspaceMeetingTranscript", () => {
     vi.resetModules();
   });
 
+  it("does not load cancelled meetings by direct id", async () => {
+    const meetingWhere = vi.fn((condition: SQL) => {
+      void condition;
+
+      return {
+      orderBy: () => ({
+        limit: vi.fn().mockResolvedValue([]),
+      }),
+      };
+    });
+
+    getWorkspace.mockResolvedValue({ teamId: "team_123", userId: "user_123" });
+    select.mockReturnValueOnce({
+      from: () => ({
+        leftJoin: () => ({
+          leftJoin: () => ({
+            where: meetingWhere,
+          }),
+        }),
+      }),
+    });
+    const { getWorkspaceMeetingTranscript } = await import(
+      "@/lib/meeting-queries"
+    );
+
+    await expect(
+      getWorkspaceMeetingTranscript(
+        {
+          id: "user_123",
+          email: "user@example.com",
+          name: null,
+        },
+        "11111111-1111-4111-8111-111111111111",
+      ),
+    ).resolves.toBeNull();
+
+    const query = toQuery(meetingWhere.mock.calls[0][0]);
+    expect(query.sql).toContain('"meetings"."status" <>');
+    expect(query.params).toContain("cancelled");
+  });
+
   it("exposes the audio route for Recall recordings without an R2 asset", async () => {
     const segmentWhere = vi.fn((condition: SQL) => {
       void condition;
@@ -397,9 +438,13 @@ describe("listMeetingsForWorkspace", () => {
   });
 
   it("searches only the current transcript job text", async () => {
-    const meetingWhere = vi.fn(() => ({
-      orderBy: vi.fn().mockResolvedValue([]),
-    }));
+    const meetingWhere = vi.fn((condition: SQL) => {
+      void condition;
+
+      return {
+        orderBy: vi.fn().mockResolvedValue([]),
+      };
+    });
 
     select.mockReturnValueOnce({
       from: () => ({
@@ -847,6 +892,34 @@ describe("buildMeetingLibraryPage", () => {
     ]);
   });
 
+  it("hides cancelled meetings from the library", async () => {
+    const { buildMeetingLibraryPage } = await import("@/lib/meeting-queries");
+
+    const page = buildMeetingLibraryPage(
+      [
+        libraryMeeting({
+          id: "11111111-1111-4111-8111-111111111111",
+          title: "Cancelled partner sync",
+          platform: "google_meet",
+          startedAt: "2026-06-27T12:00:00.000Z",
+          status: "cancelled",
+        }),
+        libraryMeeting({
+          id: "22222222-2222-4222-8222-222222222222",
+          title: "Ready founder call",
+          platform: "zoom",
+          startedAt: "2026-06-27T11:00:00.000Z",
+        }),
+      ],
+      { now: new Date("2026-06-28T12:00:00.000Z") },
+    );
+
+    expect(page.meetings.map((meeting) => meeting.title)).toEqual([
+      "Ready founder call",
+    ]);
+    expect(page.hasOlderMeetings).toBe(false);
+  });
+
   it("shows the last six months by default and reports older history", async () => {
     const { buildMeetingLibraryPage } = await import("@/lib/meeting-queries");
 
@@ -1263,6 +1336,15 @@ describe("getMeetingDashboardSummaryForWorkspace", () => {
             startedAt: new Date("2026-06-27T09:00:00.000Z"),
             createdAt: new Date("2026-06-27T09:00:00.000Z"),
           },
+          {
+            id: "55555555-5555-4555-8555-555555555555",
+            title: "Cancelled partner sync",
+            status: "cancelled",
+            transcriptJobStatus: null,
+            recallBotId: null,
+            startedAt: new Date("2026-06-27T08:00:00.000Z"),
+            createdAt: new Date("2026-06-27T08:00:00.000Z"),
+          },
           ]),
         }),
       })
@@ -1424,12 +1506,20 @@ function libraryMeeting(overrides: {
   externalParticipantKeys?: string[];
   participantCount?: number;
   primaryEntity?: string;
+  status?:
+    | "scheduled"
+    | "recording"
+    | "processing"
+    | "ready"
+    | "failed"
+    | "missed"
+    | "cancelled";
 }) {
   return {
     id: overrides.id,
     title: overrides.title,
     platform: overrides.platform,
-    status: "ready" as const,
+    status: overrides.status ?? "ready",
     transcriptJobStatus: null,
     hasRecallBot: false,
     startedAt: overrides.startedAt,

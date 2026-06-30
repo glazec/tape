@@ -56,6 +56,7 @@ export class RecallCalendarConnectionError extends Error {
 }
 
 const LEGACY_PRIMARY_CALENDAR_ID = "primary";
+const RECALL_CALENDAR_REPAIR_LOOKBACK_MS = 24 * 60 * 60 * 1000;
 
 export function normalizeRecallCalendarWebhook(payload: unknown) {
   const parsed = recallCalendarWebhookSchema.parse(payload);
@@ -255,9 +256,10 @@ export async function syncRecallCalendarEventsForWorkspace(input: {
     autoJoinEnabled: input.autoJoinEnabled,
     workspaceDomain: input.workspace.domain,
   };
+  const now = input.now ?? new Date();
   const events = await listRecallCalendarEvents({
     calendarId: connection.recallCalendarId,
-    startTimeGte: (input.now ?? new Date()).toISOString(),
+    startTimeGte: getRecallCalendarRepairStart(now).toISOString(),
     isDeleted: false,
   });
   let count = 0;
@@ -266,6 +268,10 @@ export async function syncRecallCalendarEventsForWorkspace(input: {
     const syncedEvent = normalizeRecallCalendarEvent(recallEvent);
 
     if (!syncedEvent) {
+      continue;
+    }
+
+    if (!shouldSyncRepairCalendarEvent(syncedEvent, now)) {
       continue;
     }
 
@@ -279,7 +285,7 @@ export async function syncRecallCalendarEventsForWorkspace(input: {
   await db
     .update(calendarConnections)
     .set({
-      recallCalendarLastSyncedAt: input.now ?? new Date(),
+      recallCalendarLastSyncedAt: now,
       updatedAt: new Date(),
     })
     .where(eq(calendarConnections.id, connection.id));
@@ -288,6 +294,30 @@ export async function syncRecallCalendarEventsForWorkspace(input: {
     connectionId: connection.id,
     syncedEventCount: count,
   };
+}
+
+function getRecallCalendarRepairStart(now: Date) {
+  return new Date(now.getTime() - RECALL_CALENDAR_REPAIR_LOOKBACK_MS);
+}
+
+function shouldSyncRepairCalendarEvent(event: SyncedCalendarEvent, now: Date) {
+  const startTime = new Date(event.startsAt).getTime();
+
+  if (!Number.isFinite(startTime)) {
+    return false;
+  }
+
+  if (startTime >= now.getTime()) {
+    return true;
+  }
+
+  if (!event.endsAt) {
+    return false;
+  }
+
+  const endTime = new Date(event.endsAt).getTime();
+
+  return Number.isFinite(endTime) && endTime >= now.getTime();
 }
 
 async function findRecallManagedCalendarForWorkspace(

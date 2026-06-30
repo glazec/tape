@@ -173,9 +173,13 @@ export async function listMeetingLibraryPageForWorkspace(
     ? getMeetingLibrarySearchCondition(search, searchScope)
     : undefined;
   const readableMeetingsCondition = getReadableMeetingsCondition(workspace);
+  const visibleMeetingsCondition = and(
+    readableMeetingsCondition,
+    ne(meetings.status, "cancelled"),
+  );
   const where = searchCondition
-    ? and(readableMeetingsCondition, searchCondition)
-    : readableMeetingsCondition;
+    ? and(visibleMeetingsCondition, searchCondition)
+    : visibleMeetingsCondition;
   const activeWorkRank = sql<number>`case
     when ${meetings.status} in ('recording', 'processing') then 0
     else 1
@@ -278,19 +282,23 @@ export function buildMeetingLibraryPage(
   );
   const historyCutoff = subtractMonths(now, historyMonths);
   const relatedHistoryCutoff = subtractMonths(now, relatedHistoryMonths);
-  const visibleMeetingsForLibrary = meetingsForLibrary.filter((meeting) =>
+  const activeMeetingsForLibrary = meetingsForLibrary.filter(
+    (meeting) => meeting.status !== "cancelled",
+  );
+  const visibleMeetingsForLibrary = activeMeetingsForLibrary.filter((meeting) =>
     isMeetingInsideHistoryWindow(meeting, historyCutoff),
   );
-  const relatedMeetingsForLibrary = meetingsForLibrary.filter((meeting) =>
+  const relatedMeetingsForLibrary = activeMeetingsForLibrary.filter((meeting) =>
     isMeetingInsideHistoryWindow(meeting, relatedHistoryCutoff),
   );
   const relatedMeetingsByRoot = getRelatedMeetingsByRoot(
     relatedMeetingsForLibrary,
     { includeTitleKeys: sort === "smart" },
   );
-  const allRelatedMeetingsByRoot = getRelatedMeetingsByRoot(meetingsForLibrary, {
-    includeTitleKeys: sort === "smart",
-  });
+  const allRelatedMeetingsByRoot = getRelatedMeetingsByRoot(
+    activeMeetingsForLibrary,
+    { includeTitleKeys: sort === "smart" },
+  );
   const hasMoreRelatedMeetingByRoot = new Map(
     Array.from(allRelatedMeetingsByRoot, ([meetingId, relatedMeetings]) => [
       meetingId,
@@ -300,7 +308,7 @@ export function buildMeetingLibraryPage(
     ]),
   );
   const scheduledBotMeetingIds = new Set(
-    meetingsForLibrary
+    activeMeetingsForLibrary
       .filter((meeting) => isFutureScheduledBotMeeting(meeting, nowTime))
       .sort(
         (left, right) =>
@@ -320,7 +328,7 @@ export function buildMeetingLibraryPage(
         relatedMeetings: relatedMeetingsByRoot.get(meeting.id) ?? [],
       }),
     );
-  const allRootMeetings = meetingsForLibrary
+  const allRootMeetings = activeMeetingsForLibrary
     .filter((meeting) => allRelatedMeetingsByRoot.has(meeting.id))
     .map((meeting) =>
       toLibraryRootMeeting({
@@ -885,7 +893,9 @@ export async function getMeetingDashboardSummaryForWorkspace(
         createdAt: meetings.createdAt,
       })
       .from(meetings)
-      .where(eq(meetings.teamId, workspace.teamId)),
+      .where(
+        and(eq(meetings.teamId, workspace.teamId), ne(meetings.status, "cancelled")),
+      ),
     db
       .select({
         meetingId: transcriptSegments.meetingId,
@@ -900,6 +910,7 @@ export async function getMeetingDashboardSummaryForWorkspace(
       .where(
         and(
           eq(meetings.teamId, workspace.teamId),
+          ne(meetings.status, "cancelled"),
           eq(
             transcriptSegments.jobId,
             currentTranscriptJobIdSubquery(meetings.id),
@@ -989,6 +1000,7 @@ export async function getMeetingTranscriptForWorkspace(
     .where(
       and(
         eq(meetings.id, parsedMeetingId.data),
+        ne(meetings.status, "cancelled"),
         getReadableMeetingsCondition(workspace),
       ),
     )

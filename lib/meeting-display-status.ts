@@ -4,7 +4,8 @@ export type MeetingRecordStatus =
   | "processing"
   | "ready"
   | "failed"
-  | "missed";
+  | "missed"
+  | "cancelled";
 
 export type TranscriptJobStatus = "queued" | "running" | "completed" | "failed";
 

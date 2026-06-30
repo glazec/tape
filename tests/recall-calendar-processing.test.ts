@@ -197,7 +197,7 @@ describe("processRecallCalendarWebhook", () => {
 
     expect(listRecallCalendarEvents).toHaveBeenCalledWith({
       calendarId: "44444444-4444-4444-8444-444444444444",
-      startTimeGte: "2026-06-27T04:00:00.000Z",
+      startTimeGte: "2026-06-26T04:00:00.000Z",
       isDeleted: false,
     });
     expect(autoJoinCalendarEvent).toHaveBeenCalledWith({
@@ -214,6 +214,80 @@ describe("processRecallCalendarWebhook", () => {
         meetingUrl: "https://meet.google.com/abc-defg-hij",
       }),
     });
+  });
+
+  it("reconciles recently started Recall calendar events that have not ended", async () => {
+    select.mockReturnValue({
+      from: () => ({
+        where: () => ({
+          limit: vi.fn().mockResolvedValue([
+            {
+              id: "33333333-3333-4333-8333-333333333333",
+              teamId: "22222222-2222-4222-8222-222222222222",
+              userId: "11111111-1111-4111-8111-111111111111",
+              autoJoinEnabled: true,
+              recallCalendarId: "44444444-4444-4444-8444-444444444444",
+            },
+          ]),
+        }),
+      }),
+    });
+    update.mockReturnValue({
+      set: () => ({
+        where: vi.fn().mockResolvedValue(undefined),
+      }),
+    });
+    listRecallCalendarEvents.mockResolvedValue([
+      {
+        id: "55555555-5555-4555-8555-555555555555",
+        platform_id: "google_event_123",
+        start_time: "2026-06-27T03:30:00.000Z",
+        end_time: "2026-06-27T04:15:00.000Z",
+        meeting_url: "https://zoom.us/j/8166024230",
+        is_deleted: false,
+        raw: {
+          summary: "Investment strategy moved",
+        },
+      },
+    ]);
+    autoJoinCalendarEvent.mockResolvedValue({
+      action: "updated",
+      recallBotId: "bot_123",
+    });
+
+    const { syncRecallCalendarEventsForWorkspace } = await import(
+      "@/lib/recall-calendar"
+    );
+
+    await expect(
+      syncRecallCalendarEventsForWorkspace({
+        workspace: {
+          userId: "11111111-1111-4111-8111-111111111111",
+          teamId: "22222222-2222-4222-8222-222222222222",
+          domain: "example.com",
+        },
+        autoJoinEnabled: true,
+        now: new Date("2026-06-27T04:00:00.000Z"),
+      }),
+    ).resolves.toEqual({
+      connectionId: "33333333-3333-4333-8333-333333333333",
+      syncedEventCount: 1,
+    });
+
+    expect(listRecallCalendarEvents).toHaveBeenCalledWith({
+      calendarId: "44444444-4444-4444-8444-444444444444",
+      startTimeGte: "2026-06-26T04:00:00.000Z",
+      isDeleted: false,
+    });
+    expect(autoJoinCalendarEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        event: expect.objectContaining({
+          externalEventId: "google_event_123",
+          startsAt: "2026-06-27T03:30:00.000Z",
+          endsAt: "2026-06-27T04:15:00.000Z",
+        }),
+      }),
+    );
   });
 
   it("upgrades an existing local calendar row to a Recall managed calendar", async () => {
@@ -378,7 +452,7 @@ describe("processRecallCalendarWebhook", () => {
     );
     expect(listRecallCalendarEvents).toHaveBeenCalledWith({
       calendarId: "44444444-4444-4444-8444-444444444444",
-      startTimeGte: "2026-06-27T04:00:00.000Z",
+      startTimeGte: "2026-06-26T04:00:00.000Z",
       isDeleted: false,
     });
     expect(updateRecallCalendar).not.toHaveBeenCalled();

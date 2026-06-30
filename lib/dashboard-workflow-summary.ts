@@ -75,6 +75,9 @@ export function getDashboardWorkflowSummary(
   now = new Date(),
   options: DashboardWorkflowSummaryOptions = {},
 ): DashboardWorkflowSummaryModel {
+  const visibleMeetings = meetings.filter(
+    (meeting) => meeting.status !== "cancelled",
+  );
   const nowTime = now.getTime();
   const summary: DashboardWorkflowSummaryModel = {
     upcomingBotJoins: 0,
@@ -85,10 +88,10 @@ export function getDashboardWorkflowSummary(
     overdueScheduled: 0,
     needsAttention: 0,
     nextBotJoin: null,
-    userStats: getDashboardUserStats(meetings, now, options),
+    userStats: getDashboardUserStats(visibleMeetings, now, options),
   };
 
-  for (const meeting of meetings) {
+  for (const meeting of visibleMeetings) {
     const status = getMeetingDisplayStatus({
       meetingStatus: meeting.status,
       transcriptJobStatus: meeting.transcriptJobStatus,

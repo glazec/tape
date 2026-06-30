@@ -79,6 +79,7 @@ const statusLabels: Record<MeetingDisplayStatus, string> = {
   ready: "Ready",
   failed: "Failed",
   missed: "No recording",
+  cancelled: "Cancelled",
 };
 
 export function MeetingList({
@@ -521,7 +522,12 @@ function getStatusVariant(status: MeetingDisplayStatus) {
     return "destructive";
   }
 
-  if (status === "scheduled" || status === "queued" || status === "missed") {
+  if (
+    status === "scheduled" ||
+    status === "queued" ||
+    status === "missed" ||
+    status === "cancelled"
+  ) {
     return "outline";
   }
 

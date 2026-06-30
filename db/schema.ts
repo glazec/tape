@@ -34,6 +34,7 @@ export const meetingStatus = pgEnum("meeting_status", [
   "ready",
   "failed",
   "missed",
+  "cancelled",
 ]);
 export const accessRole = pgEnum("access_role", [
   "owner",

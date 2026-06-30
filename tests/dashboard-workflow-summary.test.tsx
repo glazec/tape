@@ -122,6 +122,36 @@ describe("DashboardWorkflowSummary", () => {
     });
   });
 
+  it("ignores cancelled meetings in workflow counts and user stats", () => {
+    const summary = getDashboardWorkflowSummary(
+      [
+        meeting({
+          title: "Cancelled partner sync",
+          startedAt: "2026-06-27T10:00:00.000Z",
+          endedAt: "2026-06-27T11:00:00.000Z",
+          status: "cancelled",
+        }),
+      ],
+      new Date("2026-06-28T12:00:00.000Z"),
+    );
+
+    expect(summary).toMatchObject({
+      upcomingBotJoins: 0,
+      readyTranscripts: 0,
+      activeWork: 0,
+      failedMeetings: 0,
+      scheduledWithoutBot: 0,
+      overdueScheduled: 0,
+      needsAttention: 0,
+      nextBotJoin: null,
+      userStats: {
+        last7DaysMeetings: 0,
+        previous7DaysMeetings: 0,
+        meetingHours: 0,
+      },
+    });
+  });
+
   it("renders only upcoming join status", () => {
     const html = renderToStaticMarkup(
       <DashboardWorkflowSummary

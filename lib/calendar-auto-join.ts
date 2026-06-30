@@ -567,7 +567,13 @@ async function syncExistingCalendarMeeting(input: {
           event: input.event,
           teamMeetingKey: input.teamMeetingKey,
         }),
-      ) ?? input.meeting.recallBotId;
+      );
+
+      if (!recallBotId && input.event.recallCalendarEventId) {
+        throw new Error("Recall bot response missing id");
+      }
+
+      recallBotId = recallBotId ?? input.meeting.recallBotId;
     }
 
     await updateMeetingFromCalendar({
@@ -754,7 +760,7 @@ async function cancelScheduledMeetingBotFromCalendar(input: {
       startedAt: input.startsAt,
       endedAt: input.endsAt,
       recallBotId: null,
-      status: "failed",
+      status: input.skipVendorDelete ? "cancelled" : "failed",
       updatedAt: new Date(),
     })
     .where(eq(meetings.id, input.meetingId));
@@ -778,6 +784,12 @@ async function scheduleBotForCalendarEvent(input: {
   };
 
   if (input.event.recallCalendarEventId) {
+    if (input.existingBotId) {
+      await deleteRecallCalendarEventBot({
+        calendarEventId: input.event.recallCalendarEventId,
+      });
+    }
+
     return (await scheduleRecallCalendarEventBot({
       calendarEventId: input.event.recallCalendarEventId,
       deduplicationKey:

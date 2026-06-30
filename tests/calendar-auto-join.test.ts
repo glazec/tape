@@ -992,6 +992,189 @@ describe("calendar auto join", () => {
     );
   });
 
+  it("replaces an existing Recall Calendar V2 bot when the event time changes", async () => {
+    const calendarEventReturning = vi.fn().mockResolvedValue([
+      {
+        id: "33333333-3333-4333-8333-333333333333",
+        teamMeetingKey:
+          "team:22222222-2222-4222-8222-222222222222:start:2026-06-30T13:00:00.000Z:url:https://zoom.us/j/8166024230",
+      },
+    ]);
+    const calendarEventOnConflictDoUpdate = vi
+      .fn()
+      .mockReturnValue({ returning: calendarEventReturning });
+    const calendarEventValues = vi
+      .fn()
+      .mockReturnValue({ onConflictDoUpdate: calendarEventOnConflictDoUpdate });
+
+    const existingLimit = vi.fn().mockResolvedValue([
+      {
+        id: "44444444-4444-4444-8444-444444444444",
+        calendarEventId: "33333333-3333-4333-8333-333333333333",
+        teamMeetingKey:
+          "team:22222222-2222-4222-8222-222222222222:start:2026-06-30T13:30:00.000Z:url:https://zoom.us/j/8166024230",
+        recallBotId: "old_bot",
+        meetingUrl: "https://zoom.us/j/8166024230",
+        startedAt: new Date("2026-06-30T13:30:00.000Z"),
+        status: "scheduled",
+      },
+    ]);
+    const updateWhere = vi.fn().mockResolvedValue(undefined);
+    const updateSet = vi.fn().mockReturnValue({ where: updateWhere });
+
+    insert.mockReturnValueOnce({ values: calendarEventValues });
+    select.mockReturnValue({
+      from: () => ({
+        where: () => ({
+          limit: existingLimit,
+        }),
+      }),
+    });
+    update.mockReturnValue({ set: updateSet });
+    deleteRecallCalendarEventBot.mockResolvedValue({});
+    scheduleRecallCalendarEventBot.mockResolvedValue({
+      bots: [
+        {
+          bot_id: "new_bot",
+          deduplication_key:
+            "team:22222222-2222-4222-8222-222222222222:start:2026-06-30T13:00:00.000Z:url:https://zoom.us/j/8166024230",
+        },
+      ],
+    });
+
+    const { autoJoinCalendarEvent } = await import("@/lib/calendar-auto-join");
+
+    await expect(
+      autoJoinCalendarEvent({
+        connection: {
+          id: "11111111-1111-4111-8111-111111111111",
+          teamId: "22222222-2222-4222-8222-222222222222",
+          userId: "55555555-5555-4555-8555-555555555555",
+          autoJoinEnabled: true,
+        },
+        event: {
+          externalEventId: "google_event_123",
+          recallCalendarEventId: "55555555-5555-4555-8555-555555555555",
+          title: "Investment strategy moved",
+          startsAt: "2026-06-30T13:00:00.000Z",
+          endsAt: null,
+          meetingUrl: "https://zoom.us/j/8166024230",
+        },
+      }),
+    ).resolves.toEqual({
+      action: "updated",
+      calendarEventId: "33333333-3333-4333-8333-333333333333",
+      meetingId: "44444444-4444-4444-8444-444444444444",
+      meetingUrl: "https://zoom.us/j/8166024230",
+      platform: "zoom",
+      recallBotId: "new_bot",
+    });
+
+    expect(deleteRecallCalendarEventBot).toHaveBeenCalledWith({
+      calendarEventId: "55555555-5555-4555-8555-555555555555",
+    });
+    expect(scheduleRecallCalendarEventBot).toHaveBeenCalledWith({
+      calendarEventId: "55555555-5555-4555-8555-555555555555",
+      deduplicationKey:
+        "team:22222222-2222-4222-8222-222222222222:start:2026-06-30T13:00:00.000Z:url:https://zoom.us/j/8166024230",
+      botName: "IOSG Old Friend",
+      metadata: {
+        calendarEventId: "33333333-3333-4333-8333-333333333333",
+        meetingId: "44444444-4444-4444-8444-444444444444",
+      },
+    });
+    expect(updateSet).toHaveBeenCalledWith(
+      expect.objectContaining({
+        recallBotId: "new_bot",
+        startedAt: new Date("2026-06-30T13:00:00.000Z"),
+        teamMeetingKey:
+          "team:22222222-2222-4222-8222-222222222222:start:2026-06-30T13:00:00.000Z:url:https://zoom.us/j/8166024230",
+      }),
+    );
+  });
+
+  it("rejects a Recall Calendar V2 replacement response without the new bot id", async () => {
+    const calendarEventReturning = vi.fn().mockResolvedValue([
+      {
+        id: "33333333-3333-4333-8333-333333333333",
+        teamMeetingKey:
+          "team:22222222-2222-4222-8222-222222222222:start:2026-06-30T13:00:00.000Z:url:https://zoom.us/j/8166024230",
+      },
+    ]);
+    const calendarEventOnConflictDoUpdate = vi
+      .fn()
+      .mockReturnValue({ returning: calendarEventReturning });
+    const calendarEventValues = vi
+      .fn()
+      .mockReturnValue({ onConflictDoUpdate: calendarEventOnConflictDoUpdate });
+
+    const existingLimit = vi.fn().mockResolvedValue([
+      {
+        id: "44444444-4444-4444-8444-444444444444",
+        calendarEventId: "33333333-3333-4333-8333-333333333333",
+        teamMeetingKey:
+          "team:22222222-2222-4222-8222-222222222222:start:2026-06-30T13:30:00.000Z:url:https://zoom.us/j/8166024230",
+        recallBotId: "old_bot",
+        meetingUrl: "https://zoom.us/j/8166024230",
+        startedAt: new Date("2026-06-30T13:30:00.000Z"),
+        status: "scheduled",
+      },
+    ]);
+    const updateWhere = vi.fn().mockResolvedValue(undefined);
+    const updateSet = vi.fn().mockReturnValue({ where: updateWhere });
+
+    insert.mockReturnValueOnce({ values: calendarEventValues });
+    select.mockReturnValue({
+      from: () => ({
+        where: () => ({
+          limit: existingLimit,
+        }),
+      }),
+    });
+    update.mockReturnValue({ set: updateSet });
+    deleteRecallCalendarEventBot.mockResolvedValue({});
+    scheduleRecallCalendarEventBot.mockResolvedValue({
+      bots: [
+        {
+          bot_id: "old_bot",
+          deduplication_key:
+            "team:22222222-2222-4222-8222-222222222222:start:2026-06-30T13:30:00.000Z:url:https://zoom.us/j/8166024230",
+        },
+      ],
+    });
+
+    const { autoJoinCalendarEvent } = await import("@/lib/calendar-auto-join");
+
+    await expect(
+      autoJoinCalendarEvent({
+        connection: {
+          id: "11111111-1111-4111-8111-111111111111",
+          teamId: "22222222-2222-4222-8222-222222222222",
+          userId: "55555555-5555-4555-8555-555555555555",
+          autoJoinEnabled: true,
+        },
+        event: {
+          externalEventId: "google_event_123",
+          recallCalendarEventId: "55555555-5555-4555-8555-555555555555",
+          title: "Investment strategy moved",
+          startsAt: "2026-06-30T13:00:00.000Z",
+          endsAt: null,
+          meetingUrl: "https://zoom.us/j/8166024230",
+        },
+      }),
+    ).rejects.toThrow("Recall bot response missing id");
+
+    expect(deleteRecallCalendarEventBot).toHaveBeenCalledWith({
+      calendarEventId: "55555555-5555-4555-8555-555555555555",
+    });
+    expect(updateSet).toHaveBeenCalledWith(
+      expect.objectContaining({
+        status: "failed",
+        updatedAt: expect.any(Date),
+      }),
+    );
+  });
+
   it("cancels an existing scheduled Recall bot when the calendar event loses its meeting link", async () => {
     const calendarEventReturning = vi
       .fn()
@@ -1060,6 +1243,78 @@ describe("calendar auto join", () => {
         meetingUrl: null,
         startedAt: new Date("2026-06-30T13:00:00.000Z"),
         status: "failed",
+        title: "Partner sync",
+        updatedAt: expect.any(Date),
+      }),
+    );
+  });
+
+  it("marks a deleted scheduled calendar meeting as cancelled", async () => {
+    const calendarEventReturning = vi
+      .fn()
+      .mockResolvedValue([{ id: "33333333-3333-4333-8333-333333333333" }]);
+    const calendarEventOnConflictDoUpdate = vi
+      .fn()
+      .mockReturnValue({ returning: calendarEventReturning });
+    const calendarEventValues = vi
+      .fn()
+      .mockReturnValue({ onConflictDoUpdate: calendarEventOnConflictDoUpdate });
+
+    const existingLimit = vi.fn().mockResolvedValue([
+      {
+        id: "44444444-4444-4444-8444-444444444444",
+        recallBotId: "bot_123",
+        meetingUrl: "https://meet.google.com/old-link",
+        startedAt: new Date("2026-06-30T12:00:00.000Z"),
+        status: "scheduled",
+      },
+    ]);
+    const updateWhere = vi.fn().mockResolvedValue(undefined);
+    const updateSet = vi.fn().mockReturnValue({ where: updateWhere });
+
+    insert.mockReturnValueOnce({ values: calendarEventValues });
+    select.mockReturnValue({
+      from: () => ({
+        where: () => ({
+          limit: existingLimit,
+        }),
+      }),
+    });
+    update.mockReturnValue({ set: updateSet });
+
+    const { autoJoinCalendarEvent } = await import("@/lib/calendar-auto-join");
+
+    await expect(
+      autoJoinCalendarEvent({
+        connection: {
+          id: "11111111-1111-4111-8111-111111111111",
+          teamId: "22222222-2222-4222-8222-222222222222",
+          userId: "55555555-5555-4555-8555-555555555555",
+          autoJoinEnabled: true,
+        },
+        event: {
+          externalEventId: "google_event_123",
+          recallCalendarEventId: "55555555-5555-4555-8555-555555555555",
+          title: "Partner sync",
+          startsAt: "2026-06-30T13:00:00.000Z",
+          endsAt: null,
+          isDeleted: true,
+        },
+      }),
+    ).resolves.toEqual({
+      action: "skipped",
+      calendarEventId: "33333333-3333-4333-8333-333333333333",
+      meetingId: "44444444-4444-4444-8444-444444444444",
+      reason: "missing_meeting_link",
+    });
+
+    expect(deleteRecallCalendarEventBot).not.toHaveBeenCalled();
+    expect(deleteScheduledRecallBot).not.toHaveBeenCalled();
+    expect(updateSet).toHaveBeenCalledWith(
+      expect.objectContaining({
+        recallBotId: null,
+        meetingUrl: null,
+        status: "cancelled",
         title: "Partner sync",
         updatedAt: expect.any(Date),
       }),

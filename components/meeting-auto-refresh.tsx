@@ -60,5 +60,5 @@ export function shouldAutoRefreshMeeting({
     transcriptJobStatus,
   });
 
-  return !["ready", "failed", "missed"].includes(displayStatus);
+  return !["ready", "failed", "missed", "cancelled"].includes(displayStatus);
 }
