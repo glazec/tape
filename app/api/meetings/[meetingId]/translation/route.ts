@@ -70,7 +70,7 @@ export async function POST(
   await markMeetingTranslationQueued(parsedMeetingId.data);
   await inngest.send({
     name: "meeting/enrich.transcript",
-    data: { meetingId: parsedMeetingId.data },
+    data: { meetingId: parsedMeetingId.data, translateToChinese: true },
   });
 
   return Response.json({

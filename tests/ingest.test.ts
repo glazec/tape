@@ -28,6 +28,7 @@ const {
   markMeetingTranslationFailed,
   markMeetingTranslationQueued,
   recordVendorWebhookEvent,
+  sendInngestEvent,
   MissingWebhookIdempotencyKeyError,
 } = vi.hoisted(() => ({
     applyElevenLabsTranscriptEvent: vi.fn(),
@@ -37,6 +38,7 @@ const {
     markMeetingTranslationFailed: vi.fn(),
     markMeetingTranslationQueued: vi.fn(),
     recordVendorWebhookEvent: vi.fn(),
+    sendInngestEvent: vi.fn(),
     MissingWebhookIdempotencyKeyError: class MissingWebhookIdempotencyKeyError extends Error {
       constructor() {
         super("Missing webhook idempotency key");
@@ -60,6 +62,12 @@ vi.mock("@/lib/meeting-translation-jobs", () => ({
   markMeetingTranslationCompleted,
   markMeetingTranslationFailed,
   markMeetingTranslationQueued,
+}));
+
+vi.mock("@/inngest/client", () => ({
+  inngest: {
+    send: sendInngestEvent,
+  },
 }));
 
 vi.mock("@/lib/recall-meetings", () => ({
@@ -197,6 +205,7 @@ describe("vendor webhook normalization", () => {
       inserted: true,
       shouldProcess: true,
     });
+    sendInngestEvent.mockResolvedValue(undefined);
     markVendorWebhookEventProcessed.mockResolvedValue(undefined);
     markMeetingTranslationCompleted.mockResolvedValue(undefined);
     markMeetingTranslationFailed.mockResolvedValue(undefined);
@@ -214,6 +223,7 @@ describe("vendor webhook normalization", () => {
     markMeetingTranslationFailed.mockReset();
     markMeetingTranslationQueued.mockReset();
     recordVendorWebhookEvent.mockReset();
+    sendInngestEvent.mockReset();
     applyElevenLabsTranscriptEvent.mockReset();
     applyRecallMeetingEvent.mockReset();
   });
@@ -481,7 +491,7 @@ describe("vendor webhook normalization", () => {
     );
   });
 
-  it("does not queue automatic translation for mostly Chinese transcripts", async () => {
+  it("queues original polish without automatic translation for mostly Chinese transcripts", async () => {
     applyElevenLabsTranscriptEvent.mockResolvedValueOnce({
       action: "complete",
       meetingId: "11111111-1111-4111-8111-111111111111",
@@ -507,6 +517,13 @@ describe("vendor webhook normalization", () => {
       "11111111-1111-4111-8111-111111111111",
     );
     expect(markMeetingTranslationQueued).not.toHaveBeenCalled();
+    expect(sendInngestEvent).toHaveBeenCalledWith({
+      name: "meeting/enrich.transcript",
+      data: {
+        meetingId: "11111111-1111-4111-8111-111111111111",
+        translateToChinese: false,
+      },
+    });
     expect(markMeetingTranslationFailed).not.toHaveBeenCalled();
   });
 

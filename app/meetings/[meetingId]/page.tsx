@@ -111,7 +111,17 @@ export default async function MeetingPage({
             <div className={meeting.entities.length > 0 ? "mt-8" : undefined}>
               <TranscriptViewer
                 audioUrl={meeting.audioUrl}
-                key={`${meetingId}:${displayStatus}:${meeting.segments.length}`}
+                key={getTranscriptViewerRenderKey({
+                  displayStatus,
+                  meetingId,
+                  polishedSegments: meeting.segments.filter((segment) =>
+                    Boolean(segment.polishedText?.trim()),
+                  ).length,
+                  segmentCount: meeting.segments.length,
+                  translatedSegments:
+                    meeting.translationSummary.translatedSegments,
+                  translationStatus: meeting.translationSummary.status,
+                })}
                 meetingId={
                   meeting.accessScope === "workspace" ? meetingId : null
                 }
@@ -158,6 +168,31 @@ export default async function MeetingPage({
       </div>
     </AppShell>
   );
+}
+
+export function getTranscriptViewerRenderKey({
+  displayStatus,
+  meetingId,
+  polishedSegments,
+  segmentCount,
+  translatedSegments,
+  translationStatus,
+}: {
+  displayStatus: string;
+  meetingId: string;
+  polishedSegments: number;
+  segmentCount: number;
+  translatedSegments: number;
+  translationStatus?: string | null;
+}) {
+  return [
+    meetingId,
+    displayStatus,
+    segmentCount,
+    polishedSegments,
+    translationStatus ?? "unknown",
+    translatedSegments,
+  ].join(":");
 }
 
 function formatPlatform(platform: string) {

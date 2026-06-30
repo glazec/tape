@@ -171,6 +171,43 @@ describe("meeting intelligence helpers", () => {
     ]);
   });
 
+  it("adds CRM company domains as organization aliases", () => {
+    expect(
+      extractMeetingEntities(
+        [
+          {
+            id: "segment_1",
+            text: "Babylon mentioned the raise.",
+          },
+        ],
+        {
+          organizationDomains: [
+            {
+              domain: "babylonlabs.io",
+              name: "Babylon Labs",
+            },
+          ],
+          transcriptEntities: [
+            {
+              source: "elevenlabs",
+              type: "organization",
+              value: "Babylon",
+            },
+          ],
+        },
+      ),
+    ).toEqual([
+      {
+        aliases: ["babylonlabs.io"],
+        segmentId: "segment_1",
+        source: "elevenlabs",
+        type: "organization",
+        value: "Babylon",
+        normalizedValue: "babylon",
+      },
+    ]);
+  });
+
   it("skips personal email providers when adding calendar organization entities", () => {
     expect(
       extractMeetingEntities([], {

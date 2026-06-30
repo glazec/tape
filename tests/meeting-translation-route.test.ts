@@ -100,7 +100,10 @@ describe("POST /api/meetings/[meetingId]/translation", () => {
     });
     expect(send).toHaveBeenCalledWith({
       name: "meeting/enrich.transcript",
-      data: { meetingId: "11111111-1111-4111-8111-111111111111" },
+      data: {
+        meetingId: "11111111-1111-4111-8111-111111111111",
+        translateToChinese: true,
+      },
     });
   });
 });

@@ -2,7 +2,9 @@ import { z } from "zod";
 
 import {
   buildChineseTranslationMessages,
+  buildOriginalTranscriptPolishMessages,
   parseChineseTranslationResponse,
+  parseOriginalTranscriptPolishResponse,
 } from "@/lib/meeting-translation";
 
 const optionalUrl = z.preprocess(
@@ -116,6 +118,41 @@ export async function translateTranscriptSegmentsToChinese(
   }
 
   return translations;
+}
+
+export async function polishTranscriptSegmentsInOriginalLanguage(
+  segments: Array<{ id: string; text: string }>,
+  options: { batchSize?: number } = {},
+) {
+  if (segments.length === 0) {
+    return [];
+  }
+
+  const batchSize = Math.max(
+    1,
+    Math.min(options.batchSize ?? TRANSLATION_BATCH_SIZE, 50),
+  );
+  const polishedSegments: Array<{ id: string; text: string }> = [];
+
+  for (const batch of buildTranslationBatches(segments, {
+    batchSize,
+    maxCharacters: TRANSLATION_BATCH_CHARACTER_LIMIT,
+  })) {
+    const content = await createOpenRouterChatCompletion({
+      messages: buildOriginalTranscriptPolishMessages(batch),
+      maxTokens: 3000,
+      temperature: 0.1,
+    });
+
+    polishedSegments.push(
+      ...parseOriginalTranscriptPolishResponse({
+        content,
+        segmentIds: batch.map((segment) => segment.id),
+      }),
+    );
+  }
+
+  return polishedSegments;
 }
 
 function buildTranslationBatches(

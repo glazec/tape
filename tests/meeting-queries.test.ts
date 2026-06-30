@@ -167,21 +167,25 @@ describe("getWorkspaceMeetingTranscript", () => {
           where: () => ({
             orderBy: vi.fn().mockResolvedValue([
               {
+                aliases: ["nascent.xyz"],
                 normalizedValue: "nascent",
                 type: "organization",
                 value: "Nascent",
               },
               {
+                aliases: [],
                 normalizedValue: "darko",
                 type: "name",
                 value: "Darko",
               },
               {
+                aliases: [],
                 normalizedValue: "20 million",
                 type: "money",
                 value: "20 million",
               },
               {
+                aliases: [],
                 normalizedValue: "solana",
                 type: "product",
                 value: "Solana",
@@ -240,6 +244,7 @@ describe("getWorkspaceMeetingTranscript", () => {
       ],
       entities: [
         {
+          aliases: ["nascent.xyz"],
           normalizedValue: "nascent",
           type: "organization",
           value: "Nascent",

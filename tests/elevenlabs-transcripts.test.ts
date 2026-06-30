@@ -384,6 +384,55 @@ describe("buildElevenLabsTranscriptPersistence", () => {
     });
   });
 
+  it("stores CRM company domains on matched organization entities", () => {
+    expect(
+      buildElevenLabsTranscriptPersistence(
+        {
+          eventType: "speech_to_text_transcription",
+          type: "speech_to_text_transcription",
+          requestId: "req_123",
+          transcriptId: null,
+          status: "completed",
+          transcriptionText: "Babylon mentioned the raise.",
+          transcriptionEntities: [
+            {
+              end: 7,
+              source: "elevenlabs",
+              start: 0,
+              type: "organization",
+              value: "Babylon",
+            },
+          ],
+          metadata: {
+            meetingId: "11111111-1111-4111-8111-111111111111",
+            transcriptJobId: "22222222-2222-4222-8222-222222222222",
+          },
+        },
+        {
+          entityContext: {
+            organizationDomains: [
+              {
+                domain: "babylonlabs.io",
+                name: "Babylon Labs",
+              },
+            ],
+          },
+        },
+      ),
+    ).toMatchObject({
+      action: "complete",
+      entities: [
+        {
+          aliases: ["babylonlabs.io"],
+          source: "elevenlabs",
+          type: "organization",
+          value: "Babylon",
+          normalizedValue: "babylon",
+        },
+      ],
+    });
+  });
+
   it("uses persisted meeting context when ElevenLabs metadata only has ids", () => {
     expect(
       buildElevenLabsTranscriptPersistence(

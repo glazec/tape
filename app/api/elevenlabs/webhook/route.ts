@@ -53,19 +53,29 @@ export async function POST(request: Request) {
       const persistence = await applyElevenLabsTranscriptEvent(event);
 
       if (persistence.action === "complete") {
-        if (shouldAutoTranslateTranscript(persistence.text)) {
+        const translateToChinese = shouldAutoTranslateTranscript(
+          persistence.text,
+        );
+
+        if (translateToChinese) {
           await markMeetingTranslationQueued(persistence.meetingId);
-          await inngest
-            .send({
-              name: "meeting/enrich.transcript",
-              data: { meetingId: persistence.meetingId },
-            })
-            .catch((error) =>
-              markMeetingTranslationFailed(persistence.meetingId, error),
-            );
         } else {
           await markMeetingTranslationCompleted(persistence.meetingId);
         }
+
+        await inngest
+          .send({
+            name: "meeting/enrich.transcript",
+            data: {
+              meetingId: persistence.meetingId,
+              translateToChinese,
+            },
+          })
+          .catch((error) =>
+            translateToChinese
+              ? markMeetingTranslationFailed(persistence.meetingId, error)
+              : Promise.reject(error),
+          );
       }
 
       await markVendorWebhookEventProcessed({

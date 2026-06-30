@@ -27,6 +27,7 @@ export async function getSharedTranscriptByToken(
       startMs: transcriptSegments.startMs,
       endMs: transcriptSegments.endMs,
       text: transcriptSegments.text,
+      polishedText: transcriptSegments.polishedText,
     })
     .from(shareLinks)
     .innerJoin(meetings, eq(shareLinks.meetingId, meetings.id))
@@ -60,6 +61,7 @@ export async function getSharedTranscriptByToken(
         startMs: row.startMs as number,
         endMs: row.endMs,
         text: row.text as string,
+        polishedText: row.polishedText,
       })),
   };
 }

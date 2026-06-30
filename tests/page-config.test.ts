@@ -60,6 +60,7 @@ describe("page rendering configuration", () => {
     const baseKey = page.getTranscriptViewerRenderKey({
       displayStatus: "ready",
       meetingId: "meeting_123",
+      polishedSegments: 0,
       segmentCount: 3,
       translatedSegments: 0,
       translationStatus: "running",
@@ -69,6 +70,7 @@ describe("page rendering configuration", () => {
       page.getTranscriptViewerRenderKey({
         displayStatus: "ready",
         meetingId: "meeting_123",
+        polishedSegments: 0,
         segmentCount: 3,
         translatedSegments: 1,
         translationStatus: "running",
@@ -78,11 +80,36 @@ describe("page rendering configuration", () => {
       page.getTranscriptViewerRenderKey({
         displayStatus: "ready",
         meetingId: "meeting_123",
+        polishedSegments: 0,
         segmentCount: 3,
         translatedSegments: 1,
         translationStatus: "completed",
       }),
     ).not.toBe(baseKey);
+  });
+
+  it("remounts meeting transcript when original polish progress changes", async () => {
+    const page = await import("@/app/meetings/[meetingId]/page");
+
+    expect(
+      page.getTranscriptViewerRenderKey({
+        displayStatus: "ready",
+        meetingId: "meeting_123",
+        polishedSegments: 1,
+        segmentCount: 3,
+        translatedSegments: 0,
+        translationStatus: "not_needed",
+      }),
+    ).not.toBe(
+      page.getTranscriptViewerRenderKey({
+        displayStatus: "ready",
+        meetingId: "meeting_123",
+        polishedSegments: 0,
+        segmentCount: 3,
+        translatedSegments: 0,
+        translationStatus: "not_needed",
+      }),
+    );
   });
 
   it("renders new meeting dynamically because it reads auth cookies", async () => {

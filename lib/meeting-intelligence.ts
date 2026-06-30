@@ -40,9 +40,15 @@ export type TranscriptDetectedEntity = {
   value: string;
 };
 
+type OrganizationDomain = {
+  domain: string;
+  name: string;
+};
+
 type EntityExtractionContext = {
   attendeeEmails?: string[];
   meetingUrl?: string | null;
+  organizationDomains?: OrganizationDomain[];
   transcriptEntities?: TranscriptDetectedEntity[];
   workspaceDomain?: string | null;
 };
@@ -162,6 +168,10 @@ export function extractMeetingEntities(
 
       if (new RegExp(`\\b${escapeRegExp(value)}\\b`, "i").test(segment.text)) {
         addOrMergeEntity({
+          aliases: getOrganizationDomainAliases(
+            value,
+            context.organizationDomains,
+          ),
           entities,
           segmentId: segment.id,
           source: "transcript",
@@ -197,9 +207,16 @@ export function extractMeetingEntities(
     }
 
     addOrMergeEntity({
-      aliases: entity.type.toLowerCase() === "organization"
-        ? buildOrganizationAliases(entity.value)
-        : [],
+      aliases:
+        entity.type.toLowerCase() === "organization"
+          ? mergeAliases(
+              buildOrganizationAliases(entity.value),
+              getOrganizationDomainAliases(
+                entity.value,
+                context.organizationDomains,
+              ),
+            )
+          : [],
       entities,
       segmentId: findSegmentIdForEntity(segments, entity.value),
       source: entity.source ?? "elevenlabs",
@@ -399,6 +416,32 @@ function buildOrganizationAliases(value: string) {
   }
 
   return aliases;
+}
+
+function getOrganizationDomainAliases(
+  value: string,
+  organizationDomains: OrganizationDomain[] = [],
+) {
+  return organizationDomains
+    .filter((company) => isOrganizationDomainMatch(value, company))
+    .map((company) => company.domain.trim().toLowerCase())
+    .filter(Boolean);
+}
+
+function isOrganizationDomainMatch(value: string, company: OrganizationDomain) {
+  const entityKey = normalizeEntityValue(canonicalizeOrganizationName(value));
+  const companyNameKey = normalizeEntityValue(
+    canonicalizeOrganizationName(company.name),
+  );
+  const domainNameKey = normalizeEntityValue(formatOrganizationName(company.domain));
+
+  return (
+    Boolean(entityKey) &&
+    (companyNameKey === entityKey ||
+      companyNameKey.startsWith(`${entityKey} `) ||
+      entityKey.startsWith(`${companyNameKey} `) ||
+      domainNameKey === entityKey)
+  );
 }
 
 function canonicalizeOrganizationName(value: string) {

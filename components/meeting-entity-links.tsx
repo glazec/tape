@@ -2,6 +2,7 @@ import Link from "next/link";
 import Image from "next/image";
 
 export type MeetingEntityLink = {
+  aliases?: string[];
   normalizedValue: string;
   type: string;
   value: string;
@@ -85,7 +86,9 @@ export function MeetingEntityLinks({
 }
 
 function OrganizationLogo({ entity }: { entity: MeetingEntityLink }) {
-  const domain = organizationLogoDomains[entity.normalizedValue];
+  const domain =
+    getLogoDomainFromAliases(entity.aliases) ??
+    organizationLogoDomains[entity.normalizedValue];
 
   if (!domain) {
     return null;
@@ -113,6 +116,40 @@ function getFaviconUrl(domain: string) {
   url.searchParams.set("domain_url", `https://${domain}`);
 
   return url.toString();
+}
+
+function getLogoDomainFromAliases(aliases: string[] | undefined) {
+  for (const alias of aliases ?? []) {
+    const domain = normalizeLogoDomain(alias);
+
+    if (domain) {
+      return domain;
+    }
+  }
+
+  return null;
+}
+
+function normalizeLogoDomain(value: string) {
+  const trimmed = value.trim();
+
+  if (!trimmed || trimmed.includes("@")) {
+    return null;
+  }
+
+  const candidate = trimmed.match(/^https?:\/\//i)
+    ? trimmed
+    : `https://${trimmed}`;
+
+  try {
+    const hostname = new URL(candidate).hostname
+      .toLowerCase()
+      .replace(/^www\./, "");
+
+    return /^[a-z0-9.-]+\.[a-z]{2,}$/i.test(hostname) ? hostname : null;
+  } catch {
+    return null;
+  }
 }
 
 function getEntityDashboardHref(normalizedValue: string) {

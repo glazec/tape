@@ -22,6 +22,10 @@ import {
   type TranscriptDetectedEntity,
 } from "@/lib/meeting-intelligence";
 import { getPreferredParticipantSpeakerName } from "@/lib/speaker-labels";
+import {
+  getTwentyCrmCompanyDomains,
+  type TwentyCrmCompanyDomain,
+} from "@/lib/vendors/twenty";
 import type { normalizeElevenLabsWebhook } from "@/lib/vendors/elevenlabs";
 
 type ElevenLabsTranscriptEvent = ReturnType<typeof normalizeElevenLabsWebhook>;
@@ -67,6 +71,7 @@ type TranscriptPersistence =
 type EntityExtractionContext = {
   attendeeEmails?: string[];
   meetingUrl?: string | null;
+  organizationDomains?: TwentyCrmCompanyDomain[];
   workspaceDomain?: string | null;
 };
 
@@ -263,22 +268,27 @@ function getMetadataList(
 async function loadMeetingEntityContext(
   meetingId: string,
 ): Promise<EntityExtractionContext> {
-  const [row] = await db
-    .select({
-      attendeeEmails: calendarEvents.attendeeEmails,
-      calendarMeetingUrl: calendarEvents.meetingUrl,
-      meetingUrl: meetings.meetingUrl,
-      ownerEmail: users.email,
-    })
-    .from(meetings)
-    .leftJoin(calendarEvents, eq(calendarEvents.id, meetings.calendarEventId))
-    .leftJoin(users, eq(users.id, meetings.ownerUserId))
-    .where(eq(meetings.id, meetingId))
-    .limit(1);
+  const [rows, organizationDomains] = await Promise.all([
+    db
+      .select({
+        attendeeEmails: calendarEvents.attendeeEmails,
+        calendarMeetingUrl: calendarEvents.meetingUrl,
+        meetingUrl: meetings.meetingUrl,
+        ownerEmail: users.email,
+      })
+      .from(meetings)
+      .leftJoin(calendarEvents, eq(calendarEvents.id, meetings.calendarEventId))
+      .leftJoin(users, eq(users.id, meetings.ownerUserId))
+      .where(eq(meetings.id, meetingId))
+      .limit(1),
+    getTwentyCrmCompanyDomains(),
+  ]);
+  const row = rows[0];
 
   return {
     attendeeEmails: normalizeAttendeeEmails(row?.attendeeEmails),
     meetingUrl: row?.meetingUrl ?? row?.calendarMeetingUrl ?? null,
+    organizationDomains,
     workspaceDomain: row?.ownerEmail
       ? normalizeEmailDomain(row.ownerEmail)
       : null,
@@ -435,6 +445,7 @@ function buildEntityExtractionContext(
       getMetadataString(event.metadata, "meetingUrl", "meeting_url") ??
       context.meetingUrl ??
       null,
+    organizationDomains: context.organizationDomains ?? [],
     transcriptEntities:
       "transcriptionEntities" in event
         ? (event.transcriptionEntities as TranscriptDetectedEntity[] | undefined)

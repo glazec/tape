@@ -1,9 +1,10 @@
 import { z } from "zod";
-import { asc, eq } from "drizzle-orm";
+import { and, asc, eq } from "drizzle-orm";
 
 import { db } from "@/db/client";
 import { transcriptJobs, transcriptSegments } from "@/db/schema";
 import { inngest } from "./client";
+import { currentTranscriptJobIdSubquery } from "@/lib/current-transcript-job";
 import { createReadUrl } from "@/lib/r2";
 import { sendDueLocationReminders } from "@/lib/location-reminders";
 import { getMeetingVocabularyKeyterms } from "@/lib/team-vocabulary";
@@ -14,6 +15,7 @@ import {
   markMeetingTranslationRunning,
 } from "@/lib/meeting-translation-jobs";
 import {
+  polishTranscriptSegmentsInOriginalLanguage,
   TRANSLATION_BATCH_SIZE,
   translateTranscriptSegmentsToChinese,
 } from "@/lib/vendors/openrouter";
@@ -43,6 +45,7 @@ const transcribeAudioDataSchema = z.union([
 ]);
 const enrichTranscriptDataSchema = z.object({
   meetingId: z.string().uuid(),
+  translateToChinese: z.boolean().optional(),
 });
 
 function getAppUrl() {
@@ -105,24 +108,87 @@ export const enrichTranscript = inngest.createFunction(
   },
   async ({ event }) => {
     const data = enrichTranscriptDataSchema.parse(event.data);
+    const shouldTranslateToChinese = data.translateToChinese ?? true;
 
     try {
-      await markMeetingTranslationRunning(data.meetingId);
-
       const segments = await db
         .select({
           id: transcriptSegments.id,
+          polishedText: transcriptSegments.polishedText,
           text: transcriptSegments.text,
           translatedText: transcriptSegments.translatedText,
         })
         .from(transcriptSegments)
-        .where(eq(transcriptSegments.meetingId, data.meetingId))
+        .where(
+          and(
+            eq(transcriptSegments.meetingId, data.meetingId),
+            eq(
+              transcriptSegments.jobId,
+              currentTranscriptJobIdSubquery(data.meetingId),
+            ),
+          ),
+        )
         .orderBy(asc(transcriptSegments.startMs));
+      const unpolishedSegments = segments
+        .filter((segment) => !segment.polishedText?.trim())
+        .map((segment) => ({
+          id: segment.id,
+          text: segment.text,
+        }));
+      let newPolishedCount = 0;
+      const polishedTextById = new Map<string, string>();
+
+      for (
+        let index = 0;
+        index < unpolishedSegments.length;
+        index += TRANSLATION_BATCH_SIZE
+      ) {
+        const batch = unpolishedSegments.slice(
+          index,
+          index + TRANSLATION_BATCH_SIZE,
+        );
+        const polishedSegments =
+          await polishTranscriptSegmentsInOriginalLanguage(batch, {
+            batchSize: TRANSLATION_BATCH_SIZE,
+          });
+
+        for (const polishedSegment of polishedSegments) {
+          await db
+            .update(transcriptSegments)
+            .set({
+              polishedText: polishedSegment.text,
+              updatedAt: new Date(),
+            })
+            .where(eq(transcriptSegments.id, polishedSegment.id));
+          polishedTextById.set(polishedSegment.id, polishedSegment.text);
+        }
+
+        newPolishedCount += polishedSegments.length;
+      }
+
+      const polishedCount =
+        segments.length - unpolishedSegments.length + newPolishedCount;
+
+      if (polishedCount < segments.length) {
+        throw new Error(
+          `Original polish incomplete: ${polishedCount} of ${segments.length} lines polished`,
+        );
+      }
+
+      if (!shouldTranslateToChinese) {
+        return { polishedCount: newPolishedCount, translatedCount: 0 };
+      }
+
+      await markMeetingTranslationRunning(data.meetingId);
+
       const untranslatedSegments = segments
         .filter((segment) => !segment.translatedText?.trim())
         .map((segment) => ({
           id: segment.id,
-          text: segment.text,
+          text:
+            polishedTextById.get(segment.id) ??
+            segment.polishedText?.trim() ??
+            segment.text,
         }));
       let newTranslatedCount = 0;
 
@@ -165,7 +231,9 @@ export const enrichTranscript = inngest.createFunction(
 
       return { translatedCount: newTranslatedCount };
     } catch (error) {
-      await markMeetingTranslationFailed(data.meetingId, error);
+      if (shouldTranslateToChinese) {
+        await markMeetingTranslationFailed(data.meetingId, error);
+      }
       throw error;
     }
   },

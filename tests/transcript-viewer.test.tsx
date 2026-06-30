@@ -355,12 +355,13 @@ describe("TranscriptViewer", () => {
     ]);
   });
 
-  it("shows polished text first with original text on hover", () => {
+  it("shows polished original text first with raw text on hover", () => {
     const html = renderToStaticMarkup(
       <TranscriptViewer
         segments={[
           {
             ...segments[0],
+            polishedText: "Hello, team.",
             translatedText: "大家好",
           },
         ]}
@@ -368,13 +369,40 @@ describe("TranscriptViewer", () => {
     );
 
     expect(html).toContain("Polished");
-    expect(html).toContain("Original");
-    expect(html).toContain("大家");
-    expect(html).toContain("好");
+    expect(html).toContain("Raw");
+    expect(html).toContain("Original language");
+    expect(html).toContain("Chinese");
+    expect(html).toContain("Hello,");
+    expect(html).toContain("team.");
     expect(html).toContain('role="tooltip"');
     expect(html).toContain("group-hover/original:opacity-100");
     expect(html).toContain("Hello team");
+    expect(html).not.toContain("大家好");
     expect(html).not.toContain("Original sentence");
+  });
+
+  it("shows polished Chinese source text without a translation language switch", () => {
+    const html = renderToStaticMarkup(
+      <TranscriptViewer
+        segments={[
+          {
+            id: "segment_zh",
+            speaker: "Speaker 1",
+            startMs: 0,
+            endMs: 1000,
+            text: "然后我们先看一下 pipeline。",
+            polishedText: "我们先看 pipeline。",
+          },
+        ]}
+      />,
+    );
+
+    expect(html).toContain("Polished");
+    expect(html).toContain("Raw");
+    expect(html).toContain("我们先看");
+    expect(html).toContain("pipeline。");
+    expect(html).toContain("然后我们先看一下 pipeline。");
+    expect(html).not.toContain("Chinese");
   });
 
   it("shows translation progress when Chinese text is still being prepared", () => {

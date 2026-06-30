@@ -37,8 +37,13 @@ vi.mock("@/lib/recall-calendar-bulk-sync", () => ({
   syncRecallCalendarEventsForAllConnectedUsers,
 }));
 
+type RunnableInngestFunction = {
+  fn: () => Promise<unknown>;
+};
+
 describe("Inngest functions", () => {
   afterEach(() => {
+    vi.clearAllMocks();
     vi.resetModules();
   });
 
@@ -72,5 +77,23 @@ describe("Inngest functions", () => {
         triggers: [{ cron: "0 * * * *" }],
       },
     ]);
+  });
+
+  it("runs the hourly Recall Calendar repair sync", async () => {
+    const syncResult = {
+      connectionCount: 2,
+      failedConnectionCount: 0,
+      failures: [],
+      syncedConnectionCount: 2,
+      syncedEventCount: 7,
+    };
+    syncRecallCalendarEventsForAllConnectedUsers.mockResolvedValue(syncResult);
+
+    const { syncRecallCalendarsHourly } = await import("@/inngest/functions");
+
+    await expect(
+      (syncRecallCalendarsHourly as unknown as RunnableInngestFunction).fn(),
+    ).resolves.toEqual(syncResult);
+    expect(syncRecallCalendarEventsForAllConnectedUsers).toHaveBeenCalledTimes(1);
   });
 });

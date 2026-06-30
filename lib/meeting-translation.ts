@@ -33,15 +33,50 @@ export function buildChineseTranslationMessages(
   ];
 }
 
+export function buildOriginalTranscriptPolishMessages(
+  segments: SegmentForTranslation[],
+) {
+  return [
+    {
+      role: "system" as const,
+      content:
+        "Polish meeting transcript segments in their original language. Do not translate. Keep Chinese segments in Chinese and English segments in English. Remove filler words such as 然后, then, um, and uh when they do not change meaning. Make each line concise and smoother while preserving speaker intent, team tone, product names, company names, numbers, and tickers. Return only JSON. Do not wrap the JSON in markdown fences.",
+    },
+    {
+      role: "user" as const,
+      content: JSON.stringify({
+        segments: segments.map((segment) => ({
+          id: segment.id,
+          text: segment.text,
+        })),
+      }),
+    },
+  ];
+}
+
 export function parseChineseTranslationResponse(input: {
+  content: string;
+  segmentIds: string[];
+}) {
+  return parseTranscriptTextRows(input);
+}
+
+export function parseOriginalTranscriptPolishResponse(input: {
+  content: string;
+  segmentIds: string[];
+}) {
+  return parseTranscriptTextRows(input);
+}
+
+function parseTranscriptTextRows(input: {
   content: string;
   segmentIds: string[];
 }) {
   const allowedIds = new Set(input.segmentIds);
   const parsedJson = JSON.parse(extractJsonObject(input.content));
-  const translatedRows = getTranslatedRows(parsedJson);
+  const transcriptRows = getTranscriptRows(parsedJson);
 
-  return translatedRows.filter((translation) => allowedIds.has(translation.id));
+  return transcriptRows.filter((row) => allowedIds.has(row.id));
 }
 
 function extractJsonObject(content: string) {
@@ -68,7 +103,7 @@ function extractJsonObject(content: string) {
   return trimmedContent;
 }
 
-function getTranslatedRows(input: unknown) {
+function getTranscriptRows(input: unknown) {
   const parsedObject = z
     .object({
       translations: translatedRowsSchema.optional(),

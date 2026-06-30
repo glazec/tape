@@ -444,6 +444,7 @@ export const transcriptSegments = pgTable(
     startMs: integer("start_ms").notNull(),
     endMs: integer("end_ms"),
     text: text("text").notNull(),
+    polishedText: text("polished_text"),
     translatedText: text("translated_text"),
     translationEditedAt: timestamp("translation_edited_at", {
       withTimezone: true,

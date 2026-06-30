@@ -19,9 +19,15 @@ describe("MeetingEntityLinks", () => {
             value: "20 million",
           },
           {
+            aliases: ["crm-babylon.example"],
             normalizedValue: "babylon",
             type: "organization",
             value: "Babylon",
+          },
+          {
+            normalizedValue: "solana",
+            type: "organization",
+            value: "Solana",
           },
           {
             normalizedValue: "etf",
@@ -36,11 +42,14 @@ describe("MeetingEntityLinks", () => {
     expect(html.indexOf("Organizations")).toBeLessThan(html.indexOf("Money"));
     expect(html.indexOf("Money")).toBeLessThan(html.indexOf("Names"));
     expect(html).toContain("Babylon");
+    expect(html).toContain("Solana");
     expect(html).toContain("ETF");
     expect(html).toContain("20 million");
     expect(html).toContain("Darko");
     expect(html).toContain('alt=""');
-    expect(html).toContain("babylonlabs.io");
+    expect(html).toContain("crm-babylon.example");
+    expect(html).toContain("solana.com");
+    expect(html).not.toContain("babylonlabs.io");
     expect(html).not.toContain("domain_url=https%3A%2F%2Fetf");
     expect(html).toContain(
       "/dashboard?q=babylon&amp;scope=all&amp;status=all&amp;sort=smart",

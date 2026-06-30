@@ -108,6 +108,7 @@ export type MeetingVisualAsset = {
 };
 
 export type MeetingTranscriptEntity = {
+  aliases: string[];
   normalizedValue: string;
   type: string;
   value: string;
@@ -1024,6 +1025,7 @@ export async function getMeetingTranscriptForWorkspace(
         startMs: transcriptSegments.startMs,
         endMs: transcriptSegments.endMs,
         text: transcriptSegments.text,
+        polishedText: transcriptSegments.polishedText,
         translatedText: transcriptSegments.translatedText,
         emotionLabel: transcriptSegments.emotionLabel,
         emotionReason: transcriptSegments.emotionReason,
@@ -1047,6 +1049,7 @@ export async function getMeetingTranscriptForWorkspace(
       : Promise.resolve([]),
     db
       .select({
+        aliases: meetingEntities.aliases,
         normalizedValue: meetingEntities.normalizedValue,
         type: meetingEntities.type,
         value: meetingEntities.value,
@@ -1128,10 +1131,26 @@ function normalizeMeetingTranscriptEntities(rows: MeetingTranscriptEntity[]) {
     }
 
     seen.add(key);
-    entities.push({ normalizedValue, type, value });
+    entities.push({
+      aliases: normalizeMeetingEntityAliases(row.aliases),
+      normalizedValue,
+      type,
+      value,
+    });
   }
 
   return entities;
+}
+
+function normalizeMeetingEntityAliases(aliases: string[]) {
+  if (!Array.isArray(aliases)) {
+    return [];
+  }
+
+  return aliases
+    .filter((alias): alias is string => typeof alias === "string")
+    .map((alias) => alias.trim())
+    .filter(Boolean);
 }
 
 function isDisplayableMeetingEntityType(type: string) {

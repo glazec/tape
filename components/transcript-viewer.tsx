@@ -46,12 +46,11 @@ export type TranscriptSegment = {
   startMs: number;
   endMs: number | null;
   text: string;
+  polishedText?: string | null;
   translatedText?: string | null;
   emotionLabel?: "hard" | "chill" | "neutral" | null;
   emotionReason?: string | null;
 };
-
-type TranscriptTextVersion = "polished" | "original";
 
 export type SpeakerSuggestion = {
   email: string;
@@ -252,7 +251,6 @@ export function TranscriptViewer({
   >(null);
   const audioRef = useRef<HTMLAudioElement>(null);
   const segmentRefs = useRef(new Map<string, HTMLLIElement>());
-  const previousHasTranslationsRef = useRef(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -260,6 +258,10 @@ export function TranscriptViewer({
   const canEditSpeakers = Boolean(meetingId);
   const hasTranslations = useMemo(
     () => segments.some((segment) => Boolean(segment.translatedText?.trim())),
+    [segments],
+  );
+  const hasOriginalPolish = useMemo(
+    () => segments.some((segment) => Boolean(segment.polishedText?.trim())),
     [segments],
   );
   const displayTranslationSummary =
@@ -270,8 +272,11 @@ export function TranscriptViewer({
           status: "queued" as const,
         }
       : translationSummary;
-  const [textVersion, setTextVersion] = useState<TranscriptTextVersion>(
-    hasTranslations ? "polished" : "original",
+  const [transcriptLanguage, setTranscriptLanguage] = useState<
+    "original" | "zh"
+  >(hasOriginalPolish ? "original" : hasTranslations ? "zh" : "original");
+  const [textVersion, setTextVersion] = useState<"polished" | "raw">(
+    hasOriginalPolish || hasTranslations ? "polished" : "raw",
   );
   const canSeekTranscript = Boolean(audioUrl);
   const rawDisplaySegments = useMemo(
@@ -295,26 +300,6 @@ export function TranscriptViewer({
 
     return statsByRawKey;
   }, [speakerStats]);
-
-  useEffect(() => {
-    setSegments((currentSegments) =>
-      mergeIncomingTranscriptSegments(currentSegments, initialSegments),
-    );
-  }, [initialSegments]);
-
-  useEffect(() => {
-    const hadTranslations = previousHasTranslationsRef.current;
-
-    setTextVersion((currentTextVersion) =>
-      getNextTranscriptTextVersion({
-        currentTextVersion,
-        hadTranslations,
-        hasTranslations,
-      }),
-    );
-    previousHasTranslationsRef.current = hasTranslations;
-  }, [hasTranslations]);
-
   const displaySegments = useMemo(
     () =>
       rawDisplaySegments.map((segment) => ({
@@ -632,36 +617,80 @@ export function TranscriptViewer({
         <header className="mb-5">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <h2 className="text-lg font-semibold">Transcript</h2>
-            {hasTranslations ? (
-              <div className="inline-flex w-fit rounded-md border bg-background p-0.5">
-                <button
-                  aria-label="Show polished transcript"
-                  aria-pressed={textVersion === "polished"}
-                  className={cn(
-                    "h-7 rounded px-2 text-xs font-medium outline-none focus-visible:ring-3 focus-visible:ring-ring/50",
-                    textVersion === "polished"
-                      ? "bg-muted text-foreground"
-                      : "text-muted-foreground hover:text-foreground",
-                  )}
-                  onClick={() => setTextVersion("polished")}
-                  type="button"
-                >
-                  Polished
-                </button>
-                <button
-                  aria-label="Show original transcript"
-                  aria-pressed={textVersion === "original"}
-                  className={cn(
-                    "h-7 rounded px-2 text-xs font-medium outline-none focus-visible:ring-3 focus-visible:ring-ring/50",
-                    textVersion === "original"
-                      ? "bg-muted text-foreground"
-                      : "text-muted-foreground hover:text-foreground",
-                  )}
-                  onClick={() => setTextVersion("original")}
-                  type="button"
-                >
-                  Original
-                </button>
+            {hasOriginalPolish || hasTranslations ? (
+              <div className="flex flex-wrap items-center gap-2">
+                {hasTranslations ? (
+                  <div className="inline-flex w-fit rounded-md border bg-background p-0.5">
+                    <button
+                      aria-label="Show original language transcript"
+                      aria-pressed={transcriptLanguage === "original"}
+                      className={cn(
+                        "h-7 rounded px-2 text-xs font-medium outline-none focus-visible:ring-3 focus-visible:ring-ring/50",
+                        transcriptLanguage === "original"
+                          ? "bg-muted text-foreground"
+                          : "text-muted-foreground hover:text-foreground",
+                      )}
+                      onClick={() => {
+                        setTranscriptLanguage("original");
+                        if (!hasOriginalPolish) {
+                          setTextVersion("raw");
+                        }
+                      }}
+                      type="button"
+                    >
+                      Original language
+                    </button>
+                    <button
+                      aria-label="Show Chinese transcript"
+                      aria-pressed={transcriptLanguage === "zh"}
+                      className={cn(
+                        "h-7 rounded px-2 text-xs font-medium outline-none focus-visible:ring-3 focus-visible:ring-ring/50",
+                        transcriptLanguage === "zh"
+                          ? "bg-muted text-foreground"
+                          : "text-muted-foreground hover:text-foreground",
+                      )}
+                      onClick={() => {
+                        setTranscriptLanguage("zh");
+                        setTextVersion("polished");
+                      }}
+                      type="button"
+                    >
+                      Chinese
+                    </button>
+                  </div>
+                ) : null}
+                {transcriptLanguage === "original" && hasOriginalPolish ? (
+                  <div className="inline-flex w-fit rounded-md border bg-background p-0.5">
+                    <button
+                      aria-label="Show polished transcript"
+                      aria-pressed={textVersion === "polished"}
+                      className={cn(
+                        "h-7 rounded px-2 text-xs font-medium outline-none focus-visible:ring-3 focus-visible:ring-ring/50",
+                        textVersion === "polished"
+                          ? "bg-muted text-foreground"
+                          : "text-muted-foreground hover:text-foreground",
+                      )}
+                      onClick={() => setTextVersion("polished")}
+                      type="button"
+                    >
+                      Polished
+                    </button>
+                    <button
+                      aria-label="Show raw transcript"
+                      aria-pressed={textVersion === "raw"}
+                      className={cn(
+                        "h-7 rounded px-2 text-xs font-medium outline-none focus-visible:ring-3 focus-visible:ring-ring/50",
+                        textVersion === "raw"
+                          ? "bg-muted text-foreground"
+                          : "text-muted-foreground hover:text-foreground",
+                      )}
+                      onClick={() => setTextVersion("raw")}
+                      type="button"
+                    >
+                      Raw
+                    </button>
+                  </div>
+                ) : null}
               </div>
             ) : null}
           </div>
@@ -813,12 +842,21 @@ export function TranscriptViewer({
                 const isSaving = savingSpeakerKey === speakerKey;
                 const hasError = errorSpeakerKey === speakerKey;
                 const isActive = activeSegmentId === segment.id;
+                const polishedText = segment.polishedText?.trim();
                 const translatedText = segment.translatedText?.trim();
                 const shouldShowTranslation =
-                  textVersion === "polished" && Boolean(translatedText);
+                  transcriptLanguage === "zh" && Boolean(translatedText);
+                const shouldShowOriginalPolish =
+                  transcriptLanguage === "original" &&
+                  textVersion === "polished" &&
+                  Boolean(polishedText);
                 const displayedText = shouldShowTranslation
                   ? translatedText ?? ""
+                  : shouldShowOriginalPolish
+                    ? polishedText ?? ""
                   : segment.text;
+                const shouldShowRawTooltip =
+                  displayedText.trim() !== segment.text.trim();
                 const textTokens = getTranscriptTextTokens(displayedText);
                 const segmentEndMs = getSegmentDisplayEndMs(
                   segment,
@@ -914,7 +952,7 @@ export function TranscriptViewer({
                         {canSeekTranscript ? (
                           <button
                             aria-describedby={
-                              shouldShowTranslation
+                              shouldShowRawTooltip
                                 ? `${segment.id}-original-text`
                                 : undefined
                             }
@@ -939,12 +977,12 @@ export function TranscriptViewer({
                         ) : (
                           <p
                             aria-describedby={
-                              shouldShowTranslation
+                              shouldShowRawTooltip
                                 ? `${segment.id}-original-text`
                                 : undefined
                             }
                             className="text-[0.95rem] leading-7 text-foreground outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
-                            tabIndex={shouldShowTranslation ? 0 : undefined}
+                            tabIndex={shouldShowRawTooltip ? 0 : undefined}
                           >
                             <TranscriptText
                               activeWordIndex={null}
@@ -953,7 +991,7 @@ export function TranscriptViewer({
                             />
                           </p>
                         )}
-                        {shouldShowTranslation ? (
+                        {shouldShowRawTooltip ? (
                           <div
                             className="pointer-events-none absolute left-0 top-full z-30 mt-2 w-[min(32rem,calc(100vw-3rem))] translate-y-1 rounded-md border bg-background p-3 text-sm text-foreground opacity-0 shadow-lg ring-1 ring-border transition group-hover/original:translate-y-0 group-hover/original:opacity-100 group-focus-within/original:translate-y-0 group-focus-within/original:opacity-100"
                             id={`${segment.id}-original-text`}
@@ -993,58 +1031,6 @@ export function TranscriptViewer({
   );
 }
 
-export function mergeIncomingTranscriptSegments(
-  currentSegments: TranscriptSegment[],
-  incomingSegments: TranscriptSegment[],
-) {
-  if (
-    currentSegments.length === incomingSegments.length &&
-    currentSegments.every((segment, index) =>
-      areTranscriptSegmentsEqual(segment, incomingSegments[index]),
-    )
-  ) {
-    return currentSegments;
-  }
-
-  return incomingSegments;
-}
-
-export function getNextTranscriptTextVersion({
-  currentTextVersion,
-  hadTranslations,
-  hasTranslations,
-}: {
-  currentTextVersion: TranscriptTextVersion;
-  hadTranslations: boolean;
-  hasTranslations: boolean;
-}) {
-  if (!hadTranslations && hasTranslations) {
-    return "polished";
-  }
-
-  return currentTextVersion;
-}
-
-function areTranscriptSegmentsEqual(
-  left: TranscriptSegment,
-  right: TranscriptSegment | undefined,
-) {
-  if (!right) {
-    return false;
-  }
-
-  return (
-    left.id === right.id &&
-    left.speaker === right.speaker &&
-    left.startMs === right.startMs &&
-    left.endMs === right.endMs &&
-    left.text === right.text &&
-    left.translatedText === right.translatedText &&
-    left.emotionLabel === right.emotionLabel &&
-    left.emotionReason === right.emotionReason
-  );
-}
-
 function getTranscriptDisplaySegments(segments: TranscriptSegment[]) {
   const displaySegments: TranscriptSegment[] = [];
   const seenSegmentKeys = new Map<string, number>();
@@ -1070,12 +1056,24 @@ function getTranscriptDisplaySegments(segments: TranscriptSegment[]) {
       seenSegmentKeys.set(key, existingIndex);
     }
 
-    if (!existing.translatedText?.trim() && segment.translatedText?.trim()) {
-      displaySegments[existingIndex] = {
-        ...existing,
-        translatedText: segment.translatedText,
-      };
+    if (
+      !existing.polishedText?.trim() &&
+      !existing.translatedText?.trim() &&
+      !segment.polishedText?.trim() &&
+      !segment.translatedText?.trim()
+    ) {
+      continue;
     }
+
+    displaySegments[existingIndex] = {
+      ...existing,
+      polishedText: existing.polishedText?.trim()
+        ? existing.polishedText
+        : segment.polishedText,
+      translatedText: existing.translatedText?.trim()
+        ? existing.translatedText
+        : segment.translatedText,
+    };
   }
 
   return displaySegments;
@@ -1090,6 +1088,16 @@ function getTranscriptDisplayKeys(segment: TranscriptSegment) {
   const keys = [
     [...baseParts, normalizeTranscriptDisplayText(segment.text)].join("\u0000"),
   ];
+  const polishedText = segment.polishedText?.trim();
+
+  if (polishedText) {
+    keys.push(
+      [...baseParts, normalizeTranscriptDisplayText(polishedText)].join(
+        "\u0000",
+      ),
+    );
+  }
+
   const translatedText = segment.translatedText?.trim();
 
   if (translatedText) {
