@@ -1,7 +1,10 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
-import { MeetingEntityLinks } from "@/components/meeting-entity-links";
+import {
+  getLogoDomainsForEntity,
+  MeetingEntityLinks,
+} from "@/components/meeting-entity-links";
 
 describe("MeetingEntityLinks", () => {
   it("groups detected entities as text links by category", () => {
@@ -65,6 +68,7 @@ describe("MeetingEntityLinks", () => {
     expect(html).toContain("20 million");
     expect(html).toContain("Darko");
     expect(html).toContain('alt=""');
+    expect(html).toContain("icons.duckduckgo.com");
     expect(html).toContain("crm-babylon.example");
     expect(html).toContain("solana.com");
     expect(html).toContain("revolut.com");
@@ -82,6 +86,41 @@ describe("MeetingEntityLinks", () => {
     expect(html).not.toContain(">Name<");
     expect(html).not.toContain(">BA<");
     expect(html).not.toContain(">$<");
+  });
+
+  it("uses CRM domains before curated domains and guessed suffixes", () => {
+    expect(
+      getLogoDomainsForEntity({
+        aliases: ["https://crm-babylon.example/company/babylon"],
+        normalizedValue: "babylon",
+        type: "organization",
+        value: "Babylon",
+      }),
+    ).toEqual([
+      "crm-babylon.example",
+      "babylonlabs.io",
+      "babylon.com",
+      "babylon.io",
+      "babylon.xyz",
+      "babylon.org",
+      "babylon.ai",
+    ]);
+  });
+
+  it("guesses common domain suffixes for organizations without CRM domains", () => {
+    expect(
+      getLogoDomainsForEntity({
+        normalizedValue: "surf ai",
+        type: "organization",
+        value: "Surf AI",
+      }),
+    ).toEqual([
+      "surfai.com",
+      "surfai.io",
+      "surfai.xyz",
+      "surfai.org",
+      "surfai.ai",
+    ]);
   });
 
   it("renders name and money entities on the detail page", () => {

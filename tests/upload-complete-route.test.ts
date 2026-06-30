@@ -199,6 +199,69 @@ describe("POST /api/uploads/complete", () => {
     });
   });
 
+  it("uses the supplied meeting start time for uploaded audio", async () => {
+    getCurrentUser.mockResolvedValue({
+      id: "user_123",
+      email: "user@example.com",
+      name: null,
+    });
+    getWorkspace.mockResolvedValue({
+      userId: "user_123",
+      teamId: "team_123",
+      domain: "example.com",
+    });
+    assertCanCreateMeetings.mockResolvedValue(undefined);
+    send.mockResolvedValue({ ids: ["evt_123"] });
+    getObjectMetadata.mockResolvedValue({
+      contentLength: 1024,
+      contentType: "audio/mpeg",
+    });
+    createUploadedAudioTranscription.mockResolvedValue({
+      meetingId: "22222222-2222-4222-8222-222222222222",
+      mediaAssetId: "33333333-3333-4333-8333-333333333333",
+      transcriptJobId: "44444444-4444-4444-8444-444444444444",
+    });
+
+    const response = await postUploadComplete({
+      uploadId: "11111111-1111-4111-8111-111111111111",
+      startedAt: "2026-06-27T15:30:00.000Z",
+    });
+
+    expect(response.status).toBe(202);
+    expect(createUploadedAudioTranscription).toHaveBeenCalledWith({
+      sessionUser: {
+        id: "user_123",
+        email: "user@example.com",
+        name: null,
+      },
+      objectKey:
+        "users/user_123/uploads/11111111-1111-4111-8111-111111111111.mp3",
+      startedAt: new Date("2026-06-27T15:30:00.000Z"),
+      fileSizeBytes: 1024,
+      mimeType: "audio/mpeg",
+    });
+  });
+
+  it("rejects invalid meeting start times", async () => {
+    getCurrentUser.mockResolvedValue({
+      id: "user_123",
+      email: "user@example.com",
+      name: null,
+    });
+
+    const response = await postUploadComplete({
+      uploadId: "11111111-1111-4111-8111-111111111111",
+      startedAt: "not a date",
+    });
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toEqual({
+      error: "Invalid upload completion request",
+    });
+    expect(createUploadedAudioTranscription).not.toHaveBeenCalled();
+    expect(send).not.toHaveBeenCalled();
+  });
+
   it("rejects shared only users before reading uploaded object metadata", async () => {
     const { SharedOnlyAccessError } = await import("@/lib/access-errors");
 

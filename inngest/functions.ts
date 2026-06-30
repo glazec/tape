@@ -43,6 +43,8 @@ const transcribeAudioDataSchema = z.union([
     transcriptJobId: z.uuid().optional(),
   }),
 ]);
+const TRANSCRIBE_AUDIO_RETRIES = 4;
+
 const enrichTranscriptDataSchema = z.object({
   meetingId: z.uuid(),
   translateToChinese: z.boolean().optional(),
@@ -67,37 +69,53 @@ export const scheduleMeetingBot = inngest.createFunction(
 );
 
 export const transcribeAudio = inngest.createFunction(
-  { id: "transcribe-audio", triggers: [{ event: "meeting/transcribe.audio" }] },
-  async ({ event }) => {
+  {
+    id: "transcribe-audio",
+    retries: TRANSCRIBE_AUDIO_RETRIES,
+    triggers: [{ event: "meeting/transcribe.audio" }],
+  },
+  async ({ event, attempt = 0 }) => {
     const data = transcribeAudioDataSchema.parse(event.data);
-    const appUrl = getAppUrl();
-    const audioUrl =
-      "audioUrl" in data ? data.audioUrl : await createReadUrl({ key: data.objectKey });
-    const keyterms = data.meetingId
-      ? await getMeetingVocabularyKeyterms(data.meetingId)
-      : [];
 
-    const response = await createElevenLabsTranscriptJob({
-      audioUrl,
-      webhookUrl: `${appUrl}/api/elevenlabs/webhook`,
-      keyterms,
-      metadata: buildTranscriptMetadata(data),
-    });
+    try {
+      const appUrl = getAppUrl();
+      const audioUrl =
+        "audioUrl" in data
+          ? data.audioUrl
+          : await createReadUrl({ key: data.objectKey });
+      const keyterms = data.meetingId
+        ? await getMeetingVocabularyKeyterms(data.meetingId)
+        : [];
 
-    const providerJobId = getProviderJobId(response);
+      const response = await createElevenLabsTranscriptJob({
+        audioUrl,
+        webhookUrl: `${appUrl}/api/elevenlabs/webhook`,
+        keyterms,
+        metadata: buildTranscriptMetadata(data),
+      });
 
-    if (data.transcriptJobId) {
-      await db
-        .update(transcriptJobs)
-        .set({
-          providerJobId,
-          status: providerJobId ? "running" : "queued",
-          updatedAt: new Date(),
-        })
-        .where(eq(transcriptJobs.id, data.transcriptJobId));
+      const providerJobId = getProviderJobId(response);
+
+      if (data.transcriptJobId) {
+        await db
+          .update(transcriptJobs)
+          .set({
+            providerJobId,
+            status: providerJobId ? "running" : "queued",
+            updatedAt: new Date(),
+          })
+          .where(eq(transcriptJobs.id, data.transcriptJobId));
+      }
+
+      return response;
+    } catch (error) {
+      await markTranscriptJobFailedAfterFinalAttempt({
+        attempt,
+        error,
+        transcriptJobId: data.transcriptJobId,
+      });
+      throw error;
     }
-
-    return response;
   },
 );
 
@@ -286,6 +304,36 @@ function buildTranscriptMetadata(data: z.infer<typeof transcribeAudioDataSchema>
   }
 
   return metadata;
+}
+
+async function markTranscriptJobFailedAfterFinalAttempt(input: {
+  attempt: number;
+  error: unknown;
+  transcriptJobId?: string;
+}) {
+  if (
+    !input.transcriptJobId ||
+    input.attempt < TRANSCRIBE_AUDIO_RETRIES
+  ) {
+    return;
+  }
+
+  await db
+    .update(transcriptJobs)
+    .set({
+      errorMessage: getErrorMessage(input.error),
+      status: "failed",
+      updatedAt: new Date(),
+    })
+    .where(eq(transcriptJobs.id, input.transcriptJobId));
+}
+
+function getErrorMessage(error: unknown) {
+  if (error instanceof Error && error.message.trim()) {
+    return error.message;
+  }
+
+  return "Transcription failed";
 }
 
 function getProviderJobId(response: unknown) {

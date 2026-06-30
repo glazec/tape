@@ -28,6 +28,7 @@ export function UploadDropzone() {
   const [message, setMessage] = useState<string | null>(null);
   const [signInRequired, setSignInRequired] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [startTime, setStartTime] = useState("");
 
   function handleFileChange(event: ChangeEvent<HTMLInputElement>) {
     setSelectedFile(event.currentTarget.files?.[0] ?? null);
@@ -51,6 +52,14 @@ export function UploadDropzone() {
     if (!selectedFile.name.toLowerCase().endsWith(".mp3")) {
       setState("error");
       setMessage("Only MP3 files are supported");
+      return;
+    }
+
+    const startedAt = parseStartTimeInput(startTime);
+
+    if (startedAt === null) {
+      setState("error");
+      setMessage("Enter a valid start time");
       return;
     }
 
@@ -89,12 +98,16 @@ export function UploadDropzone() {
       let queuedResult: UploadQueuedResponse;
 
       if (!uploadedDirectly) {
-        queuedResult = await uploadViaServer(selectedFile);
+        queuedResult = await uploadViaServer(selectedFile, startedAt);
       } else {
         const completeResponse = await fetch("/api/uploads/complete", {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ uploadId, fileName: selectedFile.name }),
+          body: JSON.stringify({
+            uploadId,
+            fileName: selectedFile.name,
+            ...(startedAt ? { startedAt } : {}),
+          }),
         });
 
         if (!completeResponse.ok) {
@@ -113,6 +126,9 @@ export function UploadDropzone() {
       setMessage("Upload failed");
     }
   }
+
+  const startTimeInvalid =
+    state === "error" && message === "Enter a valid start time";
 
   return (
     <Card>
@@ -143,7 +159,19 @@ export function UploadDropzone() {
               accept="audio/mpeg,.mp3"
               onChange={handleFileChange}
               className="bg-background"
-              aria-invalid={state === "error"}
+              aria-invalid={state === "error" && !startTimeInvalid}
+            />
+          </div>
+          <div className="flex flex-col gap-2">
+            <Label htmlFor="meeting-start-time">Start time</Label>
+            <Input
+              id="meeting-start-time"
+              name="startedAt"
+              type="datetime-local"
+              value={startTime}
+              onChange={(event) => setStartTime(event.currentTarget.value)}
+              className="bg-background"
+              aria-invalid={startTimeInvalid}
             />
           </div>
           {selectedFile ? (
@@ -196,9 +224,12 @@ async function uploadDirectly(uploadUrl: string, file: File) {
   }
 }
 
-async function uploadViaServer(file: File) {
+async function uploadViaServer(file: File, startedAt: string | undefined) {
   const formData = new FormData();
   formData.set("meeting-audio", file);
+  if (startedAt) {
+    formData.set("startedAt", startedAt);
+  }
 
   const response = await fetch("/api/uploads/audio", {
     method: "POST",
@@ -218,4 +249,20 @@ async function readUploadQueuedResponse(response: Response) {
 
 function getPostUploadPath(path: string | undefined) {
   return path === "/dashboard" ? path : "/dashboard";
+}
+
+function parseStartTimeInput(value: string) {
+  const trimmed = value.trim();
+
+  if (!trimmed) {
+    return undefined;
+  }
+
+  const date = new Date(trimmed);
+
+  if (Number.isNaN(date.getTime())) {
+    return null;
+  }
+
+  return date.toISOString();
 }

@@ -146,12 +146,21 @@ export async function createElevenLabsTranscriptJob(input: {
   });
 
   if (!response.ok) {
-    throw new Error(
-      `ElevenLabs transcript job failed with ${response.status} ${response.statusText}`,
-    );
+    throw new Error(await buildElevenLabsErrorMessage(response));
   }
 
   return response.json();
+}
+
+async function buildElevenLabsErrorMessage(response: Response) {
+  const baseMessage = `ElevenLabs transcript job failed with ${response.status} ${response.statusText}`;
+  const body = (await response.text().catch(() => "")).trim();
+
+  if (!body) {
+    return baseMessage;
+  }
+
+  return `${baseMessage}: ${body.slice(0, 1000)}`;
 }
 
 function normalizeTranscriptionWords(words: unknown) {

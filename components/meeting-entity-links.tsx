@@ -1,5 +1,6 @@
 import Link from "next/link";
-import Image from "next/image";
+
+import { OrganizationLogoImage } from "@/components/organization-logo-image";
 
 export type MeetingEntityLink = {
   aliases?: string[];
@@ -42,6 +43,7 @@ const organizationLogoDomains: Record<string, string> = {
   solana: "solana.com",
   zcash: "z.cash",
 };
+const guessedLogoDomainSuffixes = ["com", "io", "xyz", "org", "ai"];
 
 export function MeetingEntityLinks({
   entities,
@@ -99,39 +101,27 @@ export function MeetingEntityLinks({
 }
 
 function OrganizationLogo({ entity }: { entity: MeetingEntityLink }) {
-  const domain =
-    getLogoDomainFromAliases(entity.aliases) ??
-    getLogoDomainFromEntity(entity);
+  const domains = getLogoDomainsForEntity(entity);
 
-  if (!domain) {
+  if (domains.length === 0) {
     return null;
   }
 
-  return (
-    <Image
-      alt=""
-      aria-hidden="true"
-      className="size-4 shrink-0 rounded-sm"
-      height={16}
-      loading="lazy"
-      referrerPolicy="no-referrer"
-      src={getFaviconUrl(domain)}
-      unoptimized
-      width={16}
-    />
-  );
+  return <OrganizationLogoImage domains={domains} />;
 }
 
-function getLogoDomainFromEntity(entity: MeetingEntityLink) {
+export function getLogoDomainsForEntity(entity: MeetingEntityLink) {
   const normalizedKey = normalizeLogoDomainKey(entity.normalizedValue);
   const displayKey = normalizeLogoDomainKey(entity.value);
+  const domains = [
+    ...getLogoDomainsFromAliases(entity.aliases),
+    organizationLogoDomains[normalizedKey],
+    organizationLogoDomains[displayKey],
+    ...getGuessedLogoDomains(normalizedKey),
+    ...getGuessedLogoDomains(displayKey),
+  ].filter((domain): domain is string => Boolean(domain));
 
-  return (
-    organizationLogoDomains[normalizedKey] ??
-    organizationLogoDomains[displayKey] ??
-    getGuessedLogoDomain(normalizedKey) ??
-    getGuessedLogoDomain(displayKey)
-  );
+  return Array.from(new Set(domains));
 }
 
 function normalizeLogoDomainKey(value: string) {
@@ -143,35 +133,28 @@ function normalizeLogoDomainKey(value: string) {
     .trim();
 }
 
-function getGuessedLogoDomain(value: string) {
+function getGuessedLogoDomains(value: string) {
   const domainLabel = value.replace(/\s+/g, "");
 
   if (domainLabel.length < 4 || !/[a-z]/.test(domainLabel)) {
-    return null;
+    return [];
   }
 
-  return `${domainLabel}.com`;
+  return guessedLogoDomainSuffixes.map((suffix) => `${domainLabel}.${suffix}`);
 }
 
-function getFaviconUrl(domain: string) {
-  const url = new URL("https://www.google.com/s2/favicons");
+function getLogoDomainsFromAliases(aliases: string[] | undefined) {
+  const domains: string[] = [];
 
-  url.searchParams.set("sz", "64");
-  url.searchParams.set("domain_url", `https://${domain}`);
-
-  return url.toString();
-}
-
-function getLogoDomainFromAliases(aliases: string[] | undefined) {
   for (const alias of aliases ?? []) {
     const domain = normalizeLogoDomain(alias);
 
     if (domain) {
-      return domain;
+      domains.push(domain);
     }
   }
 
-  return null;
+  return domains;
 }
 
 function normalizeLogoDomain(value: string) {

@@ -22,6 +22,7 @@ export const runtime = "nodejs";
 const completeUploadSchema = z.strictObject({
   uploadId: z.string().min(1),
   fileName: z.string().optional(),
+  startedAt: z.iso.datetime().optional(),
 });
 
 export async function POST(request: Request) {
@@ -55,10 +56,14 @@ export async function POST(request: Request) {
     const title = result.data.fileName
       ? titleFromUploadFileName(result.data.fileName)
       : undefined;
+    const startedAt = result.data.startedAt
+      ? new Date(result.data.startedAt)
+      : undefined;
     const transcription = await createUploadedAudioTranscription({
       sessionUser: user,
       objectKey: key,
       ...(title ? { title } : {}),
+      ...(startedAt ? { startedAt } : {}),
       fileSizeBytes: objectMetadata.contentLength,
       mimeType: objectMetadata.contentType,
     });

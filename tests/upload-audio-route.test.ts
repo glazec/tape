@@ -40,10 +40,16 @@ vi.mock("@/lib/transcription-records", () => ({
   createUploadedAudioTranscription,
 }));
 
-async function postAudioUpload(file: File) {
+async function postAudioUpload(
+  file: File,
+  fields: { startedAt?: string } = {},
+) {
   const { POST } = await import("@/app/api/uploads/audio/route");
   const formData = new FormData();
   formData.set("meeting-audio", file);
+  if (fields.startedAt) {
+    formData.set("startedAt", fields.startedAt);
+  }
 
   return POST(
     new Request("https://app.example.com/api/uploads/audio", {
@@ -140,6 +146,70 @@ describe("POST /api/uploads/audio", () => {
       },
     });
     expect(revalidatePath).toHaveBeenCalledWith("/dashboard");
+  });
+
+  it("uses the supplied meeting start time for fallback MP3 uploads", async () => {
+    vi.spyOn(crypto, "randomUUID").mockReturnValue(
+      "11111111-1111-4111-8111-111111111111",
+    );
+    getCurrentUser.mockResolvedValue({
+      id: "user_123",
+      email: "user@example.com",
+      name: null,
+    });
+    getWorkspace.mockResolvedValue({
+      userId: "user_123",
+      teamId: "team_123",
+      domain: "example.com",
+    });
+    assertCanCreateMeetings.mockResolvedValue(undefined);
+    putObject.mockResolvedValue(undefined);
+    createUploadedAudioTranscription.mockResolvedValue({
+      meetingId: "22222222-2222-4222-8222-222222222222",
+      mediaAssetId: "33333333-3333-4333-8333-333333333333",
+      transcriptJobId: "44444444-4444-4444-8444-444444444444",
+    });
+    send.mockResolvedValue({ ids: ["evt_123"] });
+
+    const response = await postAudioUpload(
+      new File(["fake mp3"], "sample.mp3", { type: "audio/mpeg" }),
+      { startedAt: "2026-06-27T15:30:00.000Z" },
+    );
+
+    expect(response.status).toBe(202);
+    expect(createUploadedAudioTranscription).toHaveBeenCalledWith({
+      sessionUser: {
+        id: "user_123",
+        email: "user@example.com",
+        name: null,
+      },
+      objectKey:
+        "users/user_123/uploads/11111111-1111-4111-8111-111111111111.mp3",
+      title: "sample",
+      startedAt: new Date("2026-06-27T15:30:00.000Z"),
+      fileSizeBytes: 8,
+      mimeType: "audio/mpeg",
+    });
+  });
+
+  it("rejects invalid fallback upload start times", async () => {
+    getCurrentUser.mockResolvedValue({
+      id: "user_123",
+      email: "user@example.com",
+      name: null,
+    });
+
+    const response = await postAudioUpload(
+      new File(["fake mp3"], "sample.mp3", { type: "audio/mpeg" }),
+      { startedAt: "not a date" },
+    );
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toEqual({
+      error: "Invalid audio upload request",
+    });
+    expect(putObject).not.toHaveBeenCalled();
+    expect(createUploadedAudioTranscription).not.toHaveBeenCalled();
   });
 
   it("rejects non-MP3 files", async () => {

@@ -62,4 +62,38 @@ describe("ElevenLabs vendor", () => {
 
     expect(body.getAll("keyterms")).toEqual(["IOSG", "Ledger"]);
   });
+
+  it("includes the ElevenLabs response body when job creation fails", async () => {
+    vi.stubEnv("ELEVENLABS_API_KEY", "eleven-key");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            detail: {
+              message: "source_url could not be fetched",
+            },
+          }),
+          {
+            status: 400,
+            statusText: "Bad Request",
+            headers: { "content-type": "application/json" },
+          },
+        ),
+      ),
+    );
+
+    const { createElevenLabsTranscriptJob } = await import(
+      "@/lib/vendors/elevenlabs"
+    );
+
+    await expect(
+      createElevenLabsTranscriptJob({
+        audioUrl: "https://audio.example.com/recording.mp3",
+        webhookUrl: "https://app.example.com/api/elevenlabs/webhook",
+      }),
+    ).rejects.toThrow(
+      'ElevenLabs transcript job failed with 400 Bad Request: {"detail":{"message":"source_url could not be fetched"}}',
+    );
+  });
 });

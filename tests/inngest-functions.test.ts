@@ -38,13 +38,14 @@ vi.mock("@/lib/recall-calendar-bulk-sync", () => ({
 }));
 
 type RunnableInngestFunction = {
-  fn: () => Promise<unknown>;
+  fn: (input?: unknown) => Promise<unknown>;
 };
 
 describe("Inngest functions", () => {
   afterEach(() => {
     vi.clearAllMocks();
     vi.resetModules();
+    vi.unstubAllEnvs();
   });
 
   it("registers non-calendar background workers", async () => {
@@ -98,5 +99,36 @@ describe("Inngest functions", () => {
       (syncRecallCalendarsHourly as unknown as RunnableInngestFunction).fn(),
     ).resolves.toEqual(syncResult);
     expect(syncRecallCalendarEventsForAllConnectedUsers).toHaveBeenCalledTimes(1);
+  });
+
+  it("marks the transcript job failed when the final transcription attempt fails", async () => {
+    const error = new Error("ElevenLabs transcript job failed with 400 Bad Request");
+    const where = vi.fn().mockResolvedValue(undefined);
+    const set = vi.fn().mockReturnValue({ where });
+    update.mockReturnValue({ set });
+    createReadUrl.mockResolvedValue("https://cdn.example.com/audio.mp3");
+    createElevenLabsTranscriptJob.mockRejectedValue(error);
+    vi.stubEnv("NEXT_PUBLIC_APP_URL", "https://app.example.com");
+
+    const { transcribeAudio } = await import("@/inngest/functions");
+
+    await expect(
+      (transcribeAudio as unknown as RunnableInngestFunction).fn({
+        attempt: 4,
+        event: {
+          data: {
+            objectKey: "users/user_123/uploads/audio.mp3",
+            transcriptJobId: "22222222-2222-4222-8222-222222222222",
+          },
+        },
+      }),
+    ).rejects.toThrow("ElevenLabs transcript job failed with 400 Bad Request");
+
+    expect(set).toHaveBeenCalledWith({
+      errorMessage: "ElevenLabs transcript job failed with 400 Bad Request",
+      status: "failed",
+      updatedAt: expect.any(Date),
+    });
+    expect(where).toHaveBeenCalledTimes(1);
   });
 });

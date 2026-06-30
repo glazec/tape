@@ -1,4 +1,5 @@
 import { revalidatePath } from "next/cache";
+import { z } from "zod";
 
 import { inngest } from "@/inngest/client";
 import { getCurrentUser } from "@/lib/auth";
@@ -17,6 +18,8 @@ import { titleFromUploadFileName } from "@/lib/upload-titles";
 
 export const runtime = "nodejs";
 
+const uploadStartedAtSchema = z.iso.datetime();
+
 export async function POST(request: Request) {
   const user = await getCurrentUser();
 
@@ -26,8 +29,14 @@ export async function POST(request: Request) {
 
   const formData = await request.formData().catch(() => null);
   const file = formData?.get("meeting-audio");
+  const startedAt = parseUploadStartedAt(formData?.get("startedAt"));
 
-  if (!(file instanceof File) || file.size === 0 || !isMp3(file)) {
+  if (
+    !(file instanceof File) ||
+    file.size === 0 ||
+    !isMp3(file) ||
+    startedAt === null
+  ) {
     return Response.json(
       { error: "Invalid audio upload request" },
       { status: 400 },
@@ -56,6 +65,7 @@ export async function POST(request: Request) {
       sessionUser: user,
       objectKey: key,
       title: titleFromUploadFileName(file.name),
+      ...(startedAt ? { startedAt } : {}),
       fileSizeBytes: file.size,
       mimeType: "audio/mpeg",
     });
@@ -100,4 +110,22 @@ export async function POST(request: Request) {
 
 function isMp3(file: File) {
   return file.name.toLowerCase().endsWith(".mp3");
+}
+
+function parseUploadStartedAt(value: FormDataEntryValue | null | undefined) {
+  if (value === undefined || value === null || value === "") {
+    return undefined;
+  }
+
+  if (typeof value !== "string") {
+    return null;
+  }
+
+  const result = uploadStartedAtSchema.safeParse(value);
+
+  if (!result.success) {
+    return null;
+  }
+
+  return new Date(result.data);
 }

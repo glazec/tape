@@ -11,6 +11,7 @@ type CreateUploadedAudioTranscriptionInput = {
   sessionUser: SessionUser;
   objectKey: string;
   title?: string;
+  startedAt?: Date;
   fileSizeBytes?: number;
   mimeType?: string;
 };
@@ -30,7 +31,7 @@ export async function createUploadedAudioTranscription(
       title: input.title?.trim() || "Uploaded audio",
       platform: "upload",
       status: "processing",
-      startedAt: new Date(),
+      startedAt: input.startedAt ?? new Date(),
     })
     .returning({ id: meetings.id });
 
