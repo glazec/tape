@@ -97,6 +97,20 @@ export function isLocalRecorderUploadMatch(input: {
   );
 }
 
+export function canUploadLocalRecorderAttempt(input: {
+  attemptState: string;
+  intentExpiresAt: Date;
+  intentMeetingId: string;
+  meetingId: string;
+  recordingStartedAt: Date;
+}) {
+  if (input.attemptState !== "started" && input.attemptState !== "uploading") {
+    return false;
+  }
+
+  return isLocalRecorderUploadMatch(input);
+}
+
 export function choosePrimaryRecordingSource(input: {
   localClaimStartedAt: Date | null;
   recallAudioAvailableAt: Date | null;

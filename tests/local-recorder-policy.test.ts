@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  canUploadLocalRecorderAttempt,
   choosePrimaryRecordingSource,
   getLocalRecorderEligibility,
   isLocalRecorderUploadMatch,
@@ -116,6 +117,40 @@ describe("local recorder policy", () => {
         intentMeetingId: "meeting_123",
         recordingStartedAt: new Date("2026-06-30T15:00:00.000Z"),
         meetingId: "meeting_123",
+      }),
+    ).toBe(false);
+  });
+
+  it("accepts new uploads only after the fallback intent is claimed", () => {
+    const uploadWindow = {
+      intentExpiresAt: new Date("2026-06-30T14:00:00.000Z"),
+      intentMeetingId: "meeting_123",
+      meetingId: "meeting_123",
+      recordingStartedAt: new Date("2026-06-30T12:10:00.000Z"),
+    };
+
+    expect(
+      canUploadLocalRecorderAttempt({
+        ...uploadWindow,
+        attemptState: "started",
+      }),
+    ).toBe(true);
+    expect(
+      canUploadLocalRecorderAttempt({
+        ...uploadWindow,
+        attemptState: "uploading",
+      }),
+    ).toBe(true);
+    expect(
+      canUploadLocalRecorderAttempt({
+        ...uploadWindow,
+        attemptState: "notified",
+      }),
+    ).toBe(false);
+    expect(
+      canUploadLocalRecorderAttempt({
+        ...uploadWindow,
+        attemptState: "uploaded",
       }),
     ).toBe(false);
   });

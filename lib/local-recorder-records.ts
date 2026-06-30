@@ -11,8 +11,8 @@ import {
 } from "@/db/schema";
 import { inngest } from "@/inngest/client";
 import {
+  canUploadLocalRecorderAttempt,
   getLocalRecorderEligibility,
-  isLocalRecorderUploadMatch,
   type LocalRecorderCandidate,
 } from "@/lib/local-recorder-policy";
 import { mixLocalRecorderWavTracks } from "@/lib/local-recorder-wav";
@@ -169,9 +169,25 @@ export async function claimLocalRecorderIntent(input: {
   );
   const [attempt] = await db
     .select({
+      activeTranscriptJob: sql<boolean>`exists (
+        select 1 from ${transcriptJobs}
+        where ${transcriptJobs.meetingId} = ${meetings.id}
+          and ${transcriptJobs.status} in ('queued', 'running', 'completed')
+      )`,
+      endedAt: meetings.endedAt,
       expiresAt: localRecordingAttempts.expiresAt,
       id: localRecordingAttempts.id,
+      meetingUrl: meetings.meetingUrl,
       meetingId: localRecordingAttempts.meetingId,
+      recallAudioAsset: sql<boolean>`exists (
+        select 1 from ${mediaAssets}
+        where ${mediaAssets.meetingId} = ${meetings.id}
+          and ${mediaAssets.source} = 'recall'
+          and ${mediaAssets.type} = 'audio'
+      )`,
+      recallRecordingId: meetings.recallRecordingId,
+      startedAt: meetings.startedAt,
+      status: meetings.status,
       title: meetings.title,
     })
     .from(localRecordingAttempts)
@@ -187,6 +203,26 @@ export async function claimLocalRecorderIntent(input: {
 
   if (!attempt || attempt.expiresAt < input.now) {
     return { claimed: false, reason: "expired_or_missing" as const };
+  }
+
+  const eligibility = getLocalRecorderEligibility(
+    {
+      activeTranscriptJob: attempt.activeTranscriptJob,
+      endedAt: attempt.endedAt,
+      latestRecallCode: null,
+      latestRecallStatus: null,
+      meetingId: attempt.meetingId,
+      meetingUrl: attempt.meetingUrl,
+      recallAudioAsset: attempt.recallAudioAsset,
+      recallRecordingId: attempt.recallRecordingId,
+      startedAt: attempt.startedAt,
+      status: attempt.status,
+    },
+    { now: input.now },
+  );
+
+  if (!eligibility.eligible) {
+    return { claimed: false, reason: "no_longer_eligible" as const };
   }
 
   const activePrimary = await db
@@ -234,6 +270,7 @@ export async function createLocalRecorderRecording(input: {
   );
   const [attempt] = await db
     .select({
+      attemptState: localRecordingAttempts.attemptState,
       expiresAt: localRecordingAttempts.expiresAt,
       id: localRecordingAttempts.id,
       meetingId: localRecordingAttempts.meetingId,
@@ -248,9 +285,32 @@ export async function createLocalRecorderRecording(input: {
     )
     .limit(1);
 
+  if (!attempt) {
+    throw new LocalRecorderUploadError("No matching local recording intent");
+  }
+
+  const existingRecording = await findExistingLocalRecording({
+    clientRecordingId: input.clientRecordingId,
+    ownerUserId: input.workspace.userId,
+  });
+
+  if (existingRecording) {
+    if (existingRecording.meetingId !== attempt.meetingId) {
+      throw new LocalRecorderUploadError(
+        "Local recording already belongs to another meeting",
+      );
+    }
+
+    return {
+      localRecordingId: existingRecording.id,
+      meetingId: existingRecording.meetingId,
+      queued: true,
+    };
+  }
+
   if (
-    !attempt ||
-    !isLocalRecorderUploadMatch({
+    !canUploadLocalRecorderAttempt({
+      attemptState: attempt.attemptState,
       intentExpiresAt: attempt.expiresAt,
       intentMeetingId: attempt.meetingId,
       meetingId: attempt.meetingId,
@@ -427,6 +487,27 @@ async function findLocalRecorderAttempt(input: {
           "uploading",
           "uploaded",
         ]),
+      ),
+    )
+    .limit(1);
+
+  return rows[0] ?? null;
+}
+
+async function findExistingLocalRecording(input: {
+  clientRecordingId: string;
+  ownerUserId: string;
+}) {
+  const rows = await db
+    .select({
+      id: localRecordings.id,
+      meetingId: localRecordings.meetingId,
+    })
+    .from(localRecordings)
+    .where(
+      and(
+        eq(localRecordings.ownerUserId, input.ownerUserId),
+        eq(localRecordings.clientRecordingId, input.clientRecordingId),
       ),
     )
     .limit(1);

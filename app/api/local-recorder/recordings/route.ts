@@ -34,6 +34,8 @@ export async function POST(request: Request) {
     !clientRecordingId ||
     !recordingStartedAt ||
     !recordingStoppedAt ||
+    recordingStoppedAt <= recordingStartedAt ||
+    !manifest.ok ||
     !(computerAudio instanceof File) ||
     !(microphoneAudio instanceof File)
   ) {
@@ -49,7 +51,7 @@ export async function POST(request: Request) {
       computerAudio,
       deviceId,
       fallbackIntentId,
-      manifest,
+      manifest: manifest.value,
       microphoneAudio,
       recordingStartedAt,
       recordingStoppedAt,
@@ -89,8 +91,12 @@ function getFormDate(formData: FormData | null, key: string) {
 
 function parseManifest(value: string | null) {
   if (!value) {
-    return {};
+    return { ok: true as const, value: {} };
   }
 
-  return JSON.parse(value);
+  try {
+    return { ok: true as const, value: JSON.parse(value) };
+  } catch {
+    return { ok: false as const };
+  }
 }

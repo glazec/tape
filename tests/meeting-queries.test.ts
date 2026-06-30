@@ -334,6 +334,48 @@ describe("getWorkspaceMeetingTranscript", () => {
     expectUsesCurrentTranscriptJob(segmentWhere.mock.calls[0][0]);
   });
 
+  it("checks synthesized local recorder audio when deciding if the player is available", async () => {
+    const mediaLeftJoin = vi.fn((_table: unknown, condition: SQL) => {
+      void condition;
+
+      return {
+        leftJoin: () => ({
+          where: () => ({
+            orderBy: () => ({
+              limit: vi.fn().mockResolvedValue([]),
+            }),
+          }),
+        }),
+      };
+    });
+
+    getWorkspace.mockResolvedValue({ teamId: "team_123", userId: "user_123" });
+    select.mockReturnValueOnce({
+      from: () => ({
+        leftJoin: mediaLeftJoin,
+      }),
+    });
+    const { getWorkspaceMeetingTranscript } = await import(
+      "@/lib/meeting-queries"
+    );
+
+    await expect(
+      getWorkspaceMeetingTranscript(
+        {
+          id: "user_123",
+          email: "user@example.com",
+          name: null,
+        },
+        "11111111-1111-4111-8111-111111111111",
+      ),
+    ).resolves.toBeNull();
+
+    const query = toQuery(mediaLeftJoin.mock.calls[0][1]);
+    expect(query.params).toEqual(
+      expect.arrayContaining(["synthesized_audio", "audio"]),
+    );
+  });
+
   it("exposes audio for transcripts shared from another workspace", async () => {
     getWorkspace.mockResolvedValue({ teamId: "team_123", userId: "user_123" });
     select

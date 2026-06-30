@@ -140,7 +140,7 @@ final class RecorderAppModel: ObservableObject {
             let claim = try await client.claimIntent(fallbackIntentId: meeting.fallbackIntentId)
 
             guard claim.claimed else {
-                statusText = "Another user is already recording"
+                statusText = claimFailureStatus(reason: claim.reason)
                 return
             }
 
@@ -166,14 +166,22 @@ final class RecorderAppModel: ObservableObject {
         try await notificationCenter.add(request)
     }
 
-    private func markManualRecordingStarted() {
-        isRecording = true
-        statusText = "Recording locally"
-    }
-
     func stopRecording() {
         isRecording = false
-        statusText = "Recording stopped. Upload will retry until complete."
+        statusText = "Recording stopped. Capture upload is not connected in this build."
+    }
+
+    private func claimFailureStatus(reason: String?) -> String {
+        switch reason {
+        case "already_recording":
+            return "Another user is already recording"
+        case "no_longer_eligible":
+            return "Bot recording is available"
+        case "expired_or_missing":
+            return "Recording window expired"
+        default:
+            return "Could not start recording"
+        }
     }
 
     private func requestMicrophonePermission() async -> PermissionGrant {

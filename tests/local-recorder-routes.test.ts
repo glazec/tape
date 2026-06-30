@@ -163,6 +163,43 @@ describe("local recorder API routes", () => {
     });
   });
 
+  it("returns 400 when the local recording manifest is invalid JSON", async () => {
+    getLocalRecorderWorkspace.mockResolvedValue({
+      teamId: "team_123",
+      userId: "user_123",
+    });
+
+    const formData = new FormData();
+    formData.set("fallbackIntentId", "intent_123");
+    formData.set("clientRecordingId", "recording_123");
+    formData.set("recordingStartedAt", "2026-06-30T12:02:00.000Z");
+    formData.set("recordingStoppedAt", "2026-06-30T13:00:00.000Z");
+    formData.set("manifest", "{");
+    formData.set(
+      "computerAudio",
+      new File(["computer"], "computer.wav", { type: "audio/wav" }),
+    );
+    formData.set(
+      "microphoneAudio",
+      new File(["microphone"], "microphone.wav", { type: "audio/wav" }),
+    );
+
+    const { POST } = await import("@/app/api/local-recorder/recordings/route");
+    const response = await POST(
+      new Request("https://app.example.com/api/local-recorder/recordings", {
+        method: "POST",
+        body: formData,
+        headers: { "x-local-recorder-device-id": "mac_123" },
+      }),
+    );
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toEqual({
+      error: "Invalid local recording upload",
+    });
+    expect(createLocalRecorderRecording).not.toHaveBeenCalled();
+  });
+
   it("redirects signed in web users back to the Mac app with a device token", async () => {
     createLocalRecorderDeviceSession.mockResolvedValue({
       redirectUrl:

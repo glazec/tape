@@ -997,7 +997,10 @@ export async function getMeetingTranscriptForWorkspace(
     .from(meetings)
     .leftJoin(
       mediaAssets,
-      and(eq(mediaAssets.meetingId, meetings.id), eq(mediaAssets.type, "audio")),
+      and(
+        eq(mediaAssets.meetingId, meetings.id),
+        or(eq(mediaAssets.type, "synthesized_audio"), eq(mediaAssets.type, "audio")),
+      ),
     )
     .leftJoin(calendarEvents, eq(calendarEvents.id, meetings.calendarEventId))
     .where(
@@ -1006,7 +1009,10 @@ export async function getMeetingTranscriptForWorkspace(
         getReadableMeetingsCondition(workspace),
       ),
     )
-    .orderBy(desc(mediaAssets.createdAt))
+    .orderBy(
+      desc(sql`case when ${mediaAssets.type} = 'synthesized_audio' then 1 else 0 end`),
+      desc(mediaAssets.createdAt),
+    )
     .limit(1);
   const meeting = meetingRows[0];
 
