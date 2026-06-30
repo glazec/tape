@@ -127,6 +127,7 @@ function formatTranscriptExport(
 ) {
   const lines = [
     title,
+    getTranscriptExportLabel(language),
     "",
     ...segments.map(
       (segment, index) =>
@@ -135,6 +136,12 @@ function formatTranscriptExport(
   ];
 
   return `${lines.join("\n")}\n`;
+}
+
+function getTranscriptExportLabel(
+  language: z.infer<typeof transcriptLanguageSchema>,
+) {
+  return language === "zh" ? "Chinese Transcript" : "Raw Transcript";
 }
 
 function getTranscriptText(

@@ -120,6 +120,7 @@ describe("GET /api/meetings/[meetingId]/export", () => {
     );
     const body = await response.text();
 
+    expect(body).toContain("Raw Transcript");
     expect(body).toContain(
       "[0:20] Speaker 1 | emotion: Hard | wpm: 120: We should ship this update now.",
     );
