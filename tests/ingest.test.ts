@@ -379,6 +379,54 @@ describe("vendor webhook normalization", () => {
     });
   });
 
+  it("normalizes ElevenLabs all entity detection fields", () => {
+    expect(
+      normalizeElevenLabsWebhook({
+        type: "speech_to_text_transcription",
+        data: {
+          request_id: "req_123",
+          webhook_metadata: {
+            meeting_id: "meeting_456",
+          },
+          transcription: {
+            text: "Darko mentioned 20 million.",
+            entities: [
+              {
+                text: "Darko",
+                entity_type: "name",
+                start_char: 0,
+                end_char: 5,
+              },
+              {
+                text: "20 million",
+                entity_type: "money",
+                start_char: 16,
+                end_char: 26,
+              },
+            ],
+          },
+        },
+      }),
+    ).toMatchObject({
+      transcriptionEntities: [
+        {
+          source: "elevenlabs",
+          type: "name",
+          value: "Darko",
+          start: 0,
+          end: 5,
+        },
+        {
+          source: "elevenlabs",
+          type: "money",
+          value: "20 million",
+          start: 16,
+          end: 26,
+        },
+      ],
+    });
+  });
+
   it("keeps compatibility with old ElevenLabs transcript completion fixtures", () => {
     expect(
       normalizeElevenLabsWebhook({

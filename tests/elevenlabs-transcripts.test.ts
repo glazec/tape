@@ -315,6 +315,75 @@ describe("buildElevenLabsTranscriptPersistence", () => {
     });
   });
 
+  it("keeps organization name and money entities from ElevenLabs all detection", () => {
+    expect(
+      buildElevenLabsTranscriptPersistence({
+        eventType: "speech_to_text_transcription",
+        type: "speech_to_text_transcription",
+        requestId: "req_123",
+        transcriptId: null,
+        status: "completed",
+        transcriptionText: "Darko mentioned Babylon and 20 million by Wednesday.",
+        transcriptionEntities: [
+          {
+            end: 5,
+            source: "elevenlabs",
+            start: 0,
+            type: "name",
+            value: "Darko",
+          },
+          {
+            end: 24,
+            source: "elevenlabs",
+            start: 16,
+            type: "organization",
+            value: "Babylon",
+          },
+          {
+            end: 39,
+            source: "elevenlabs",
+            start: 29,
+            type: "money",
+            value: "20 million",
+          },
+          {
+            end: 52,
+            source: "elevenlabs",
+            start: 43,
+            type: "date",
+            value: "Wednesday",
+          },
+        ],
+        metadata: {
+          meetingId: "11111111-1111-4111-8111-111111111111",
+          transcriptJobId: "22222222-2222-4222-8222-222222222222",
+        },
+      }),
+    ).toMatchObject({
+      action: "complete",
+      entities: [
+        {
+          source: "elevenlabs",
+          type: "name",
+          value: "Darko",
+          normalizedValue: "darko",
+        },
+        {
+          source: "elevenlabs",
+          type: "organization",
+          value: "Babylon",
+          normalizedValue: "babylon",
+        },
+        {
+          source: "elevenlabs",
+          type: "money",
+          value: "20 million",
+          normalizedValue: "20 million",
+        },
+      ],
+    });
+  });
+
   it("uses persisted meeting context when ElevenLabs metadata only has ids", () => {
     expect(
       buildElevenLabsTranscriptPersistence(

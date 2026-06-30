@@ -7,7 +7,7 @@ describe("ElevenLabs vendor", () => {
     vi.resetModules();
   });
 
-  it("passes team vocabulary and entity detection into Scribe", async () => {
+  it("passes team vocabulary and all entity detection into Scribe", async () => {
     vi.stubEnv("ELEVENLABS_API_KEY", "eleven-key\n");
     const fetchMock = vi.fn().mockResolvedValue(
       new Response(JSON.stringify({ request_id: "req_123" }), {
@@ -32,7 +32,8 @@ describe("ElevenLabs vendor", () => {
     const body = init.body as FormData;
 
     expect(body.get("model_id")).toBe("scribe_v2");
-    expect(body.get("detect_entities")).toBe("true");
+    expect(body.get("entity_detection")).toBe("all");
+    expect(body.get("detect_entities")).toBeNull();
     expect(body.getAll("keyterms")).toEqual(["IOSG", "TCG platform"]);
   });
 

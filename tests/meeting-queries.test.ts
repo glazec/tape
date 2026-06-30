@@ -171,6 +171,21 @@ describe("getWorkspaceMeetingTranscript", () => {
                 type: "organization",
                 value: "Nascent",
               },
+              {
+                normalizedValue: "darko",
+                type: "name",
+                value: "Darko",
+              },
+              {
+                normalizedValue: "20 million",
+                type: "money",
+                value: "20 million",
+              },
+              {
+                normalizedValue: "solana",
+                type: "product",
+                value: "Solana",
+              },
             ]),
           }),
         }),
@@ -228,6 +243,16 @@ describe("getWorkspaceMeetingTranscript", () => {
           normalizedValue: "nascent",
           type: "organization",
           value: "Nascent",
+        },
+        {
+          normalizedValue: "darko",
+          type: "name",
+          value: "Darko",
+        },
+        {
+          normalizedValue: "20 million",
+          type: "money",
+          value: "20 million",
         },
       ],
       visualAssets: [
@@ -825,6 +850,16 @@ describe("listMeetingsForWorkspace", () => {
             orderBy: vi.fn().mockResolvedValue([
               {
                 meetingId: "11111111-1111-4111-8111-111111111111",
+                type: "name",
+                normalizedValue: "darko",
+              },
+              {
+                meetingId: "11111111-1111-4111-8111-111111111111",
+                type: "money",
+                normalizedValue: "20 million",
+              },
+              {
+                meetingId: "11111111-1111-4111-8111-111111111111",
                 type: "organization",
                 normalizedValue: "iosg",
               },
@@ -832,6 +867,11 @@ describe("listMeetingsForWorkspace", () => {
                 meetingId: "11111111-1111-4111-8111-111111111111",
                 type: "organization",
                 normalizedValue: "nascent",
+              },
+              {
+                meetingId: "22222222-2222-4222-8222-222222222222",
+                type: "name",
+                normalizedValue: "frank",
               },
               {
                 meetingId: "22222222-2222-4222-8222-222222222222",

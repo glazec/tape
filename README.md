@@ -9,14 +9,15 @@ Team meeting transcript product.
 3. Neon Postgres for product data
 4. Cloudflare R2 for media
 5. Recall.ai for Google Meet and Zoom capture
-6. ElevenLabs for transcription
+6. [ElevenLabs](https://elevenlabs.io) for transcription
 7. Inngest style workers for long running jobs
 8. OneSignal for browser push subscriptions and meeting reminders
+9. [Twenty CRM](https://twenty.com) for optional CRM vocabulary enrichment
 
 ## Local Setup
 
 1. Copy `.env.example` to `.env.local`.
-2. Fill in Neon, Google Calendar, R2, Recall, ElevenLabs, Inngest, and OneSignal credentials. `NEON_AUTH_BASE_URL` is optional when `NEON_AUTH_JWKS_URL` ends with `/.well-known/jwks.json`; generate `NEON_AUTH_COOKIE_SECRET` with `openssl rand -base64 32`.
+2. Fill in Neon, Google Calendar, R2, Recall, ElevenLabs, Inngest, OneSignal, and optional Twenty CRM credentials. `NEON_AUTH_BASE_URL` is optional when `NEON_AUTH_JWKS_URL` ends with `/.well-known/jwks.json`; generate `NEON_AUTH_COOKIE_SECRET` with `openssl rand -base64 32`.
    Set `RECALL_API_BASE_URL` to the region for the Recall API key, for example `https://ap-northeast-1.recall.ai`.
 3. Run `npm install`.
 4. Run `npm run dev`.
@@ -90,6 +91,14 @@ The same completion flow also imports available Recall screenshots into R2 as me
 ## MP3 Uploads
 
 The upload form requests a signed R2 PUT URL from `/api/upload`, uploads the MP3 directly to R2, then posts the returned `uploadId` to `/api/uploads/complete`. The completion route checks that the R2 object exists, creates local meeting, media asset, and transcript job rows, then queues `meeting/transcribe.audio`. If the browser PUT fails, the form falls back to `/api/uploads/audio`, which stores the MP3 server side and creates the same durable records. The worker creates a short lived R2 read URL, starts an ElevenLabs transcription job, and passes the local record ids as webhook metadata.
+
+## Transcription Vocabulary
+
+Team settings can store names, company names, project names, and fund terms that should be sent to [ElevenLabs](https://elevenlabs.io) as transcription keyterms. These manual team vocabulary entries are always sent first.
+
+If `TWENTY_API_BASE_URL` and `TWENTY_API_KEY` are configured, the app also reads recent people and company names from [Twenty CRM](https://twenty.com) GraphQL and appends them after the manual team vocabulary. Duplicate terms are removed case insensitively, while the manual team setting spelling is preserved. Missing or failing Twenty CRM credentials do not block transcription.
+
+Keyterms are cleaned before each [ElevenLabs](https://elevenlabs.io) request: whitespace is normalized, empty values are removed, terms longer than 50 characters are skipped, and the request is capped at 1000 keyterms. Full names and distinctive organization or project names work better than generic first names.
 
 The R2 bucket must allow browser PUT requests from the app origin:
 

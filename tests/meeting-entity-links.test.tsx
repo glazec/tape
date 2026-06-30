@@ -23,6 +23,32 @@ describe("MeetingEntityLinks", () => {
     expect(html).toContain(
       "/dashboard?q=nascent&amp;scope=all&amp;status=all&amp;sort=smart",
     );
+    expect(html).toContain(">N<");
+  });
+
+  it("renders name and money entities on the detail page", () => {
+    const html = renderToStaticMarkup(
+      <MeetingEntityLinks
+        entities={[
+          {
+            normalizedValue: "darko",
+            type: "name",
+            value: "Darko",
+          },
+          {
+            normalizedValue: "20 million",
+            type: "money",
+            value: "20 million",
+          },
+        ]}
+      />,
+    );
+
+    expect(html).toContain("Darko");
+    expect(html).toContain("Name");
+    expect(html).toContain("20 million");
+    expect(html).toContain("Money");
+    expect(html).toContain(">$<");
   });
 
   it("stays hidden when no displayable entities exist", () => {
