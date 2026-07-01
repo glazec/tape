@@ -7,6 +7,7 @@ const {
   getWorkspaceAccessSummary,
   getMeetingBotProfile,
   listTeamVocabularyTerms,
+  listWorkspaceMembers,
   redirect,
   requireCurrentUser,
 } = vi.hoisted(() => ({
@@ -14,6 +15,7 @@ const {
   getWorkspaceAccessSummary: vi.fn(),
   getMeetingBotProfile: vi.fn(),
   listTeamVocabularyTerms: vi.fn(),
+  listWorkspaceMembers: vi.fn(),
   redirect: vi.fn((url: string) => {
     throw new Error(`NEXT_REDIRECT:${url}`);
   }),
@@ -35,6 +37,7 @@ vi.mock("@/lib/auth-guards", () => ({
 vi.mock("@/lib/workspace", () => ({
   getOrCreateWorkspaceForSessionUser: getWorkspace,
   getWorkspaceAccessSummary,
+  listWorkspaceMembers,
 }));
 
 vi.mock("@/lib/team-vocabulary", () => ({
@@ -51,6 +54,7 @@ describe("TeamSettingsPage", () => {
     getWorkspaceAccessSummary.mockReset();
     getMeetingBotProfile.mockReset();
     listTeamVocabularyTerms.mockReset();
+    listWorkspaceMembers.mockReset();
     redirect.mockClear();
     requireCurrentUser.mockReset();
     vi.resetModules();
@@ -109,6 +113,24 @@ describe("TeamSettingsPage", () => {
         enabled: true,
       },
     ]);
+    listWorkspaceMembers.mockResolvedValue([
+      {
+        email: "member@iosg.vc",
+        id: "user_123",
+        isCurrentUser: true,
+        joinedAt: new Date("2026-06-29T12:00:00.000Z"),
+        name: "Member",
+        role: "member",
+      },
+      {
+        email: "alice@iosg.vc",
+        id: "user_456",
+        isCurrentUser: false,
+        joinedAt: new Date("2026-06-30T12:00:00.000Z"),
+        name: "Alice",
+        role: "member",
+      },
+    ]);
     getMeetingBotProfile.mockResolvedValue({
       botName: "Deal Scribe",
       avatarJpegBase64: "custom-avatar",
@@ -126,5 +148,17 @@ describe("TeamSettingsPage", () => {
     expect(html).toContain("Team meeting bot avatar");
     expect(html).toContain("Deal Scribe");
     expect(html).toContain("Custom avatar saved");
+    expect(html).toContain("Onboarded colleagues");
+    expect(html).toContain("Member");
+    expect(html).toContain("member@iosg.vc");
+    expect(html).toContain("Alice");
+    expect(html).toContain("alice@iosg.vc");
+    expect(html).toContain("You");
+    expect(listWorkspaceMembers).toHaveBeenCalledWith({
+      canCreateMeetings: true,
+      domain: "iosg.vc",
+      teamId: "team_123",
+      userId: "user_123",
+    });
   });
 });

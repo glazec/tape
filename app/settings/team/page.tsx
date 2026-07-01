@@ -16,6 +16,7 @@ import { listTeamVocabularyTerms } from "@/lib/team-vocabulary";
 import {
   getOrCreateWorkspaceForSessionUser,
   getWorkspaceAccessSummary,
+  listWorkspaceMembers,
 } from "@/lib/workspace";
 
 export const dynamic = "force-dynamic";
@@ -30,6 +31,9 @@ export default async function TeamSettingsPage() {
   const botProfile = accessSummary.canCreateMeetings
     ? await getMeetingBotProfile(workspace.teamId)
     : null;
+  const teamMembers = accessSummary.canCreateMeetings
+    ? await listWorkspaceMembers(workspace)
+    : [];
 
   if (!accessSummary.canCreateMeetings) {
     redirect("/dashboard");
@@ -65,6 +69,44 @@ export default async function TeamSettingsPage() {
               attendees with an allowed domain and matching workspace membership
               can be granted access without a manual share step.
             </p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader>
+            <CardTitle>Onboarded colleagues</CardTitle>
+            <CardDescription>
+              People who have signed in and joined this workspace.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            {teamMembers.length > 0 ? (
+              <ul className="divide-y rounded-lg border">
+                {teamMembers.map((member) => (
+                  <li
+                    className="flex flex-wrap items-center justify-between gap-3 px-3 py-3"
+                    key={member.id}
+                  >
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-medium">
+                        {member.name || member.email}
+                      </p>
+                      <p className="mt-1 truncate text-xs text-muted-foreground">
+                        {member.email}
+                      </p>
+                    </div>
+                    {member.isCurrentUser ? (
+                      <span className="rounded-md border px-2 py-1 text-xs font-medium">
+                        You
+                      </span>
+                    ) : null}
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="rounded-lg border px-3 py-4 text-sm text-muted-foreground">
+                No onboarded colleagues yet.
+              </p>
+            )}
           </CardContent>
         </Card>
         {botProfile ? (

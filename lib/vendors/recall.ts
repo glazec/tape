@@ -554,6 +554,10 @@ export async function deleteScheduledRecallBot(input: { botId: string }) {
     },
   );
 
+  if (response.status === 404) {
+    return {};
+  }
+
   if (!response.ok) {
     throw new Error(
       `Recall bot deletion failed with ${response.status} ${response.statusText}`,

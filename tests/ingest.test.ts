@@ -1274,6 +1274,22 @@ describe("vendor job creation", () => {
     );
   });
 
+  it("treats a missing scheduled Recall bot as already deleted", async () => {
+    vi.stubEnv("RECALL_API_KEY", "recall-key");
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ detail: "Not found." }), {
+        status: 404,
+        statusText: "Not Found",
+        headers: { "content-type": "application/json" },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(deleteScheduledRecallBot({ botId: "missing_bot" })).resolves.toEqual(
+      {},
+    );
+  });
+
   it("retrieves Recall bot details", async () => {
     vi.stubEnv("RECALL_API_KEY", "recall-key\n");
     const fetchMock = vi.fn().mockResolvedValue(

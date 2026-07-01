@@ -1,4 +1,4 @@
-import { and, eq, isNull, sql } from "drizzle-orm";
+import { and, asc, eq, isNull, sql } from "drizzle-orm";
 
 import { db } from "@/db/client";
 import {
@@ -19,6 +19,15 @@ export type WorkspaceContext = {
   teamId: string;
   domain: string;
   canCreateMeetings?: boolean;
+};
+
+export type WorkspaceMember = {
+  email: string;
+  id: string;
+  isCurrentUser: boolean;
+  joinedAt: Date;
+  name: string | null;
+  role: string;
 };
 
 export async function getOrCreateWorkspaceForSessionUser(
@@ -147,6 +156,28 @@ export async function getWorkspaceAccessSummary(workspace: WorkspaceContext) {
     hasWorkspaceMeetings,
     isSharedOnly: !canCreateMeetings,
   };
+}
+
+export async function listWorkspaceMembers(
+  workspace: WorkspaceContext,
+): Promise<WorkspaceMember[]> {
+  const members = await db
+    .select({
+      email: users.email,
+      id: users.id,
+      joinedAt: teamMemberships.createdAt,
+      name: users.name,
+      role: teamMemberships.role,
+    })
+    .from(teamMemberships)
+    .innerJoin(users, eq(teamMemberships.userId, users.id))
+    .where(eq(teamMemberships.teamId, workspace.teamId))
+    .orderBy(asc(users.email));
+
+  return members.map((member) => ({
+    ...member,
+    isCurrentUser: member.id === workspace.userId,
+  }));
 }
 
 export async function assertCanCreateMeetings(workspace: WorkspaceContext) {

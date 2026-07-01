@@ -152,4 +152,59 @@ describe("getOrCreateWorkspaceForSessionUser", () => {
       userId: "user_456",
     });
   });
+
+  it("lists onboarded workspace members with the current user marked", async () => {
+    const orderBy = vi.fn().mockResolvedValue([
+      {
+        email: "member@iosg.vc",
+        id: "user_123",
+        joinedAt: new Date("2026-06-29T12:00:00.000Z"),
+        name: "Member",
+        role: "member",
+      },
+      {
+        email: "alice@iosg.vc",
+        id: "user_456",
+        joinedAt: new Date("2026-06-30T12:00:00.000Z"),
+        name: "Alice",
+        role: "member",
+      },
+    ]);
+    select.mockReturnValueOnce({
+      from: () => ({
+        innerJoin: () => ({
+          where: () => ({
+            orderBy,
+          }),
+        }),
+      }),
+    });
+
+    const { listWorkspaceMembers } = await import("@/lib/workspace");
+
+    await expect(
+      listWorkspaceMembers({
+        domain: "iosg.vc",
+        teamId: "team_123",
+        userId: "user_123",
+      }),
+    ).resolves.toEqual([
+      {
+        email: "member@iosg.vc",
+        id: "user_123",
+        isCurrentUser: true,
+        joinedAt: new Date("2026-06-29T12:00:00.000Z"),
+        name: "Member",
+        role: "member",
+      },
+      {
+        email: "alice@iosg.vc",
+        id: "user_456",
+        isCurrentUser: false,
+        joinedAt: new Date("2026-06-30T12:00:00.000Z"),
+        name: "Alice",
+        role: "member",
+      },
+    ]);
+  });
 });

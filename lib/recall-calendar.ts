@@ -338,15 +338,7 @@ async function findRecallManagedCalendarForWorkspace(
     return exactMatch;
   }
 
-  const teamMatch = calendars.find(
-    (calendar) => calendar.metadata.teamId === workspace.teamId,
-  );
-
-  if (teamMatch) {
-    return teamMatch;
-  }
-
-  return calendars.length === 1 ? calendars[0] : null;
+  return null;
 }
 
 async function tagRecallCalendarForWorkspace(

@@ -527,4 +527,142 @@ describe("processRecallCalendarWebhook", () => {
     });
     expect(updateRecallCalendar).not.toHaveBeenCalled();
   });
+
+  it("does not adopt a Recall managed calendar tagged to another workspace", async () => {
+    const updateSet = vi.fn().mockReturnValue({
+      where: vi.fn().mockResolvedValue(undefined),
+    });
+
+    select.mockReturnValue({
+      from: () => ({
+        innerJoin: () => ({
+          where: () => ({
+            limit: vi.fn().mockResolvedValue([
+              {
+                id: "33333333-3333-4333-8333-333333333333",
+                teamId: "22222222-2222-4222-8222-222222222222",
+                userId: "11111111-1111-4111-8111-111111111111",
+                userEmail: "yiping@iosg.vc",
+                autoJoinEnabled: true,
+                recallCalendarId: "44444444-4444-4444-8444-444444444444",
+                recallCalendarStatus: "connected",
+              },
+            ]),
+          }),
+        }),
+        where: () => ({
+          limit: vi.fn().mockResolvedValue([]),
+        }),
+      }),
+    });
+    update.mockReturnValue({
+      set: updateSet,
+    });
+    listRecallCalendars.mockResolvedValue([
+      {
+        id: "44444444-4444-4444-8444-444444444444",
+        platform: "google_calendar",
+        platform_email: "yiping@iosg.vc",
+        status: "connected",
+        metadata: {
+          teamId: "22222222-2222-4222-8222-222222222222",
+          userId: "11111111-1111-4111-8111-111111111111",
+        },
+      },
+    ]);
+    listRecallCalendarEvents.mockResolvedValue([]);
+    updateRecallCalendar.mockResolvedValue({});
+
+    const {
+      RecallCalendarConnectionError,
+      syncRecallCalendarEventsForWorkspace,
+    } = await import("@/lib/recall-calendar");
+
+    await expect(
+      syncRecallCalendarEventsForWorkspace({
+        workspace: {
+          userId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+          teamId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+          domain: "cybertinolab.com",
+        },
+        autoJoinEnabled: true,
+        now: new Date("2026-06-27T04:00:00.000Z"),
+      }),
+    ).rejects.toBeInstanceOf(RecallCalendarConnectionError);
+
+    expect(updateSet).not.toHaveBeenCalled();
+    expect(insert).not.toHaveBeenCalled();
+    expect(updateRecallCalendar).not.toHaveBeenCalled();
+    expect(listRecallCalendarEvents).not.toHaveBeenCalled();
+    expect(autoJoinCalendarEvent).not.toHaveBeenCalled();
+  });
+
+  it("does not adopt a Recall managed calendar tagged to another user on the same team", async () => {
+    const updateSet = vi.fn().mockReturnValue({
+      where: vi.fn().mockResolvedValue(undefined),
+    });
+
+    select.mockReturnValue({
+      from: () => ({
+        innerJoin: () => ({
+          where: () => ({
+            limit: vi.fn().mockResolvedValue([
+              {
+                id: "33333333-3333-4333-8333-333333333333",
+                teamId: "22222222-2222-4222-8222-222222222222",
+                userId: "11111111-1111-4111-8111-111111111111",
+                userEmail: "yiping@iosg.vc",
+                autoJoinEnabled: true,
+                recallCalendarId: "44444444-4444-4444-8444-444444444444",
+                recallCalendarStatus: "connected",
+              },
+            ]),
+          }),
+        }),
+        where: () => ({
+          limit: vi.fn().mockResolvedValue([]),
+        }),
+      }),
+    });
+    update.mockReturnValue({
+      set: updateSet,
+    });
+    listRecallCalendars.mockResolvedValue([
+      {
+        id: "44444444-4444-4444-8444-444444444444",
+        platform: "google_calendar",
+        platform_email: "yiping@iosg.vc",
+        status: "connected",
+        metadata: {
+          teamId: "22222222-2222-4222-8222-222222222222",
+          userId: "11111111-1111-4111-8111-111111111111",
+        },
+      },
+    ]);
+    listRecallCalendarEvents.mockResolvedValue([]);
+    updateRecallCalendar.mockResolvedValue({});
+
+    const {
+      RecallCalendarConnectionError,
+      syncRecallCalendarEventsForWorkspace,
+    } = await import("@/lib/recall-calendar");
+
+    await expect(
+      syncRecallCalendarEventsForWorkspace({
+        workspace: {
+          userId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+          teamId: "22222222-2222-4222-8222-222222222222",
+          domain: "iosg.vc",
+        },
+        autoJoinEnabled: true,
+        now: new Date("2026-06-27T04:00:00.000Z"),
+      }),
+    ).rejects.toBeInstanceOf(RecallCalendarConnectionError);
+
+    expect(updateSet).not.toHaveBeenCalled();
+    expect(insert).not.toHaveBeenCalled();
+    expect(updateRecallCalendar).not.toHaveBeenCalled();
+    expect(listRecallCalendarEvents).not.toHaveBeenCalled();
+    expect(autoJoinCalendarEvent).not.toHaveBeenCalled();
+  });
 });
