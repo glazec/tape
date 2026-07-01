@@ -70,9 +70,10 @@ export default async function TeamSettingsPage() {
         {botProfile ? (
           <Card>
             <CardHeader>
-              <CardTitle>Meeting bot</CardTitle>
+              <CardTitle>Team meeting bot</CardTitle>
               <CardDescription>
-                Set the name and JPG avatar people see when the bot joins calls.
+                Set the team bot name and JPG avatar people see when it joins
+                calls.
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -87,7 +88,7 @@ export default async function TeamSettingsPage() {
                     className="text-sm leading-none font-medium"
                     htmlFor="botName"
                   >
-                    Bot name
+                    Team bot name
                   </label>
                   <Input
                     defaultValue={botProfile.botName}
@@ -102,7 +103,7 @@ export default async function TeamSettingsPage() {
                     className="text-sm leading-none font-medium"
                     htmlFor="avatar"
                   >
-                    Avatar
+                    Team meeting bot avatar
                   </label>
                   <Input
                     accept="image/jpeg"
@@ -116,7 +117,7 @@ export default async function TeamSettingsPage() {
                 </div>
                 <div className="flex flex-wrap items-center gap-3">
                   <div
-                    aria-label="Current bot avatar"
+                    aria-label="Current team meeting bot avatar"
                     className="size-16 rounded-lg border bg-muted bg-cover bg-center"
                     role="img"
                     style={
@@ -144,7 +145,7 @@ export default async function TeamSettingsPage() {
                   </div>
                 </div>
                 <Button className="self-start" type="submit">
-                  Save bot profile
+                  Save team bot profile
                 </Button>
               </form>
             </CardContent>

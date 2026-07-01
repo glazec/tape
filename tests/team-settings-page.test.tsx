@@ -122,7 +122,8 @@ describe("TeamSettingsPage", () => {
     expect(html).toContain("Team vocabulary");
     expect(html).toContain("TCG platform");
     expect(html).toContain("Before transcription");
-    expect(html).toContain("Meeting bot");
+    expect(html).toContain("Team meeting bot");
+    expect(html).toContain("Team meeting bot avatar");
     expect(html).toContain("Deal Scribe");
     expect(html).toContain("Custom avatar saved");
   });
