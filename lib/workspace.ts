@@ -48,8 +48,12 @@ export async function getOrCreateWorkspaceForSessionUser(
         userId,
         role: "member",
       })
-      .onConflictDoNothing({
+      .onConflictDoUpdate({
         target: [teamMemberships.teamId, teamMemberships.userId],
+        set: {
+          role: "member",
+          updatedAt: new Date(),
+        },
       });
 
     return {

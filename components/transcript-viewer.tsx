@@ -16,7 +16,6 @@ import {
   ChevronDown,
   Check,
   Languages,
-  LoaderCircle,
   Pause,
   Pencil,
   Play,
@@ -1296,10 +1295,11 @@ function TranscriptAudioPlayer({
   setIsPlaying: (value: boolean) => void;
   setPlaybackRate: (value: number) => void;
 }) {
-  const [waveformPeaks, setWaveformPeaks] = useState<number[]>([]);
-  const [waveformStatus, setWaveformStatus] = useState<
-    "loading" | "ready" | "fallback"
-  >("loading");
+  const [audioWaveform, setAudioWaveform] = useState<{
+    audioUrl: string;
+    barCount: number;
+    peaks: number[];
+  } | null>(null);
   const [hoveredWpmSnapshot, setHoveredWpmSnapshot] = useState<{
     leftPercent: number;
     timeSecond: number;
@@ -1312,13 +1312,19 @@ function TranscriptAudioPlayer({
   ]);
   const timelineDuration = safeDuration || segmentDuration;
   const progressValue = safeDuration ? currentTime : 0;
+  const audioWaveformPeaks =
+    audioWaveform?.audioUrl === audioUrl &&
+    audioWaveform.barCount === waveformBarCount
+      ? audioWaveform.peaks
+      : null;
+  const hasAudioWaveform = Boolean(audioWaveformPeaks?.length);
   const waveformValues = useMemo(() => {
-    if (waveformPeaks.length > 0) {
-      return waveformPeaks;
+    if (audioWaveformPeaks?.length) {
+      return audioWaveformPeaks;
     }
 
     return buildFallbackWaveform(segments, waveformBarCount);
-  }, [segments, waveformBarCount, waveformPeaks]);
+  }, [audioWaveformPeaks, segments, waveformBarCount]);
   const sectionMarkers = useMemo(
     () => buildWaveformSections(segments, timelineDuration),
     [segments, timelineDuration],
@@ -1362,16 +1368,21 @@ function TranscriptAudioPlayer({
   const progressPercent = timelineDuration
     ? clamp((currentTime / timelineDuration) * 100, 0, 100)
     : 0;
-  const isWaveformLoading = waveformStatus === "loading";
 
   useEffect(() => {
     let isCancelled = false;
     const controller = new AbortController();
+    const idleWindow = window as typeof window & {
+      cancelIdleCallback?: (handle: number) => void;
+      requestIdleCallback?: (
+        callback: () => void,
+        options?: { timeout: number },
+      ) => number;
+    };
+    let idleHandle: number | null = null;
+    let timeoutHandle: number | null = null;
 
     async function loadWaveform() {
-      setWaveformStatus("loading");
-      setWaveformPeaks([]);
-
       try {
         const response = await fetch(getWaveformAudioUrl(audioUrl), {
           credentials: "include",
@@ -1400,25 +1411,40 @@ function TranscriptAudioPlayer({
           const peaks = buildAudioPeaks(audioBuffer, waveformBarCount);
 
           if (!isCancelled) {
-            setWaveformPeaks(peaks);
-            setWaveformStatus("ready");
+            setAudioWaveform({ audioUrl, barCount: waveformBarCount, peaks });
           }
         } finally {
           void audioContext.close();
         }
       } catch {
-        if (!isCancelled && !controller.signal.aborted) {
-          setWaveformStatus("fallback");
-          setWaveformPeaks([]);
-        }
+        return;
       }
     }
 
-    void loadWaveform();
+    if (idleWindow.requestIdleCallback) {
+      idleHandle = idleWindow.requestIdleCallback(
+        () => {
+          void loadWaveform();
+        },
+        { timeout: 2000 },
+      );
+    } else {
+      timeoutHandle = window.setTimeout(() => {
+        void loadWaveform();
+      }, 1000);
+    }
 
     return () => {
       isCancelled = true;
       controller.abort();
+
+      if (idleHandle !== null && idleWindow.cancelIdleCallback) {
+        idleWindow.cancelIdleCallback(idleHandle);
+      }
+
+      if (timeoutHandle !== null) {
+        window.clearTimeout(timeoutHandle);
+      }
     };
   }, [audioUrl, waveformBarCount]);
 
@@ -1526,12 +1552,13 @@ function TranscriptAudioPlayer({
           setIsPlaying(true);
         }}
         onTimeUpdate={(event) => setCurrentTime(event.currentTarget.currentTime)}
+        preload="metadata"
         ref={audioRef}
         src={audioUrl}
       />
       <div className="mx-auto flex max-w-6xl flex-col gap-2 px-4 py-3">
         <button
-          aria-busy={isWaveformLoading}
+          aria-busy={false}
           aria-label={
             activeWaveformLabel
               ? `Audio waveform, ${activeWaveformLabel}`
@@ -1594,13 +1621,9 @@ function TranscriptAudioPlayer({
                 <span
                   className={cn(
                     "min-w-0 flex-1 rounded-[2px] transition-colors",
-                    isWaveformLoading
-                      ? "animate-pulse bg-muted-foreground/25 motion-reduce:animate-none"
-                      : isPast
-                        ? "bg-primary"
-                        : "bg-muted-foreground/40",
+                    isPast ? "bg-primary" : "bg-muted-foreground/40",
                   )}
-                  key={`${index}-${waveformStatus}`}
+                  key={index}
                   style={{
                     height: `${Math.round(6 + peak * 34)}px`,
                   }}
@@ -1608,15 +1631,6 @@ function TranscriptAudioPlayer({
               );
             })}
           </span>
-          {isWaveformLoading ? (
-            <span
-              aria-hidden="true"
-              className="pointer-events-none absolute left-1/2 top-1/2 z-40 inline-flex -translate-x-1/2 -translate-y-1/2 items-center gap-1.5 rounded-full border bg-background/95 px-2.5 py-1 text-xs font-medium text-foreground shadow-sm ring-1 ring-border"
-            >
-              <LoaderCircle className="size-3.5 animate-spin text-primary motion-reduce:animate-none" />
-              Loading waveform
-            </span>
-          ) : null}
           {wpmLinePoints ? (
             <span
               aria-hidden="true"
@@ -1749,11 +1763,9 @@ function TranscriptAudioPlayer({
             </span>
           ) : null}
           <span aria-live="polite" className="sr-only">
-            {waveformStatus === "loading"
-              ? "Audio waveform loading"
-              : activeWaveformLabel
-                ? `Current section: ${activeWaveformLabel}`
-                : waveformStatus === "ready"
+            {activeWaveformLabel
+              ? `Current section: ${activeWaveformLabel}`
+              : hasAudioWaveform
                 ? "Audio waveform ready"
                 : "Transcript section waveform"}
           </span>

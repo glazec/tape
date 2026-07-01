@@ -1,15 +1,24 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-const { insert, onConflictDoNothing, select, set, update, values, where } =
-  vi.hoisted(() => ({
-    insert: vi.fn(),
-    onConflictDoNothing: vi.fn(),
-    select: vi.fn(),
-    set: vi.fn(),
-    update: vi.fn(),
-    values: vi.fn(),
-    where: vi.fn(),
-  }));
+const {
+  insert,
+  onConflictDoNothing,
+  onConflictDoUpdate,
+  select,
+  set,
+  update,
+  values,
+  where,
+} = vi.hoisted(() => ({
+  insert: vi.fn(),
+  onConflictDoNothing: vi.fn(),
+  onConflictDoUpdate: vi.fn(),
+  select: vi.fn(),
+  set: vi.fn(),
+  update: vi.fn(),
+  values: vi.fn(),
+  where: vi.fn(),
+}));
 
 vi.mock("@/db/client", () => ({
   db: {
@@ -41,6 +50,7 @@ describe("getOrCreateWorkspaceForSessionUser", () => {
   afterEach(() => {
     insert.mockReset();
     onConflictDoNothing.mockReset();
+    onConflictDoUpdate.mockReset();
     select.mockReset();
     set.mockReset();
     update.mockReset();
@@ -69,8 +79,8 @@ describe("getOrCreateWorkspaceForSessionUser", () => {
     set.mockReturnValueOnce({ where });
     where.mockResolvedValueOnce(undefined);
     insert.mockReturnValueOnce({ values });
-    values.mockReturnValueOnce({ onConflictDoNothing });
-    onConflictDoNothing.mockResolvedValueOnce(undefined);
+    values.mockReturnValueOnce({ onConflictDoUpdate });
+    onConflictDoUpdate.mockResolvedValueOnce(undefined);
 
     const { getOrCreateWorkspaceForSessionUser } = await import(
       "@/lib/workspace"
@@ -92,6 +102,13 @@ describe("getOrCreateWorkspaceForSessionUser", () => {
       meetingId: "meeting_123",
       role: "shared",
       userId: "user_123",
+    });
+    expect(onConflictDoUpdate).toHaveBeenCalledWith({
+      target: expect.any(Array),
+      set: {
+        role: "member",
+        updatedAt: expect.any(Date),
+      },
     });
   });
 

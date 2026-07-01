@@ -511,7 +511,7 @@ describe("TranscriptViewer", () => {
     expect(html).toContain('id="segment_123"');
   });
 
-  it("overlays speaker, emotion, and wpm labels on the waveform", () => {
+  it("renders the transcript waveform immediately with speaker, emotion, and wpm labels", () => {
     const html = renderToStaticMarkup(
       <TranscriptViewer
         audioUrl="/api/meetings/11111111-1111-4111-8111-111111111111/audio"
@@ -528,10 +528,12 @@ describe("TranscriptViewer", () => {
 
     expect(html).toContain("Speaker 1 · Hard");
     expect(html).toContain("120 wpm");
-    expect(html).toContain('aria-busy="true"');
-    expect(html).toContain("Loading waveform");
-    expect(html).toContain("Audio waveform loading");
-    expect(html).toContain("animate-spin");
+    expect(html).toContain('preload="metadata"');
+    expect(html).toContain('aria-busy="false"');
+    expect(html).not.toContain("Loading waveform");
+    expect(html).not.toContain("Audio waveform loading");
+    expect(html).toContain("Current section: Speaker 1 · Hard, 120 wpm");
+    expect(html).not.toContain("animate-spin");
     expect(html).toContain(
       'aria-label="Audio waveform, Speaker 1 · Hard, 120 wpm"',
     );
