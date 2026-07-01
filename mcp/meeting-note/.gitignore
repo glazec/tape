@@ -1,0 +1,5 @@
+.env
+.venv/
+oauth_data/
+__pycache__/
+*.pyc

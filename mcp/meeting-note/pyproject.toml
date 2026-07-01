@@ -1,0 +1,17 @@
+[project]
+name = "meeting-note-mcp"
+version = "0.1.0"
+description = "FastMCP server for Meeting Note search, transcripts, audio, entities, and related meeting retrieval"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "fastmcp==3.4.2",
+    "python-dotenv==1.2.2",
+    "posthog==7.19.2",
+    "psycopg[binary]==3.3.4",
+    "pyjwt[crypto]==2.13.0",
+    "sqlglot==30.11.0",
+]
+
+[tool.uv]
+package = false
