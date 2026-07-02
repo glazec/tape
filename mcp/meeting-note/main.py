@@ -1480,4 +1480,13 @@ async def execute_meeting_sql(
 
 
 if __name__ == "__main__":
-    mcp.run(transport="http", port=MCP_PORT, host=MCP_HOST, stateless_http=True)
+    mcp.run(
+        transport="http",
+        port=MCP_PORT,
+        host=MCP_HOST,
+        stateless_http=True,
+        uvicorn_config={
+            "proxy_headers": True,
+            "forwarded_allow_ips": "*",
+        },
+    )
