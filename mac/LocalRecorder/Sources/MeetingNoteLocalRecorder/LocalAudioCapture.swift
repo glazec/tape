@@ -1,8 +1,132 @@
 @preconcurrency import AVFoundation
+import CoreAudio
 import CoreMedia
 import Foundation
 import LocalRecorderCore
 import ScreenCaptureKit
+
+struct AudioInputDevice: Equatable, Identifiable, Sendable {
+    var name: String
+    var uid: String
+
+    var id: String { uid }
+}
+
+enum AudioInputDeviceList {
+    static func inputDevices() -> [AudioInputDevice] {
+        allDeviceIDs().compactMap { deviceID in
+            guard
+                inputChannelCount(deviceID) > 0,
+                let uid = stringProperty(deviceID, selector: kAudioDevicePropertyDeviceUID),
+                let name = stringProperty(deviceID, selector: kAudioObjectPropertyName)
+            else {
+                return nil
+            }
+
+            return AudioInputDevice(name: name, uid: uid)
+        }
+    }
+
+    static func deviceID(forUID uid: String) -> AudioDeviceID? {
+        allDeviceIDs().first { deviceID in
+            stringProperty(deviceID, selector: kAudioDevicePropertyDeviceUID) == uid
+        }
+    }
+
+    private static func allDeviceIDs() -> [AudioDeviceID] {
+        var address = AudioObjectPropertyAddress(
+            mSelector: kAudioHardwarePropertyDevices,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain
+        )
+        var size: UInt32 = 0
+        guard AudioObjectGetPropertyDataSize(
+            AudioObjectID(kAudioObjectSystemObject),
+            &address,
+            0,
+            nil,
+            &size
+        ) == noErr, size > 0 else {
+            return []
+        }
+
+        var deviceIDs = [AudioDeviceID](
+            repeating: 0,
+            count: Int(size) / MemoryLayout<AudioDeviceID>.size
+        )
+        guard AudioObjectGetPropertyData(
+            AudioObjectID(kAudioObjectSystemObject),
+            &address,
+            0,
+            nil,
+            &size,
+            &deviceIDs
+        ) == noErr else {
+            return []
+        }
+
+        return deviceIDs
+    }
+
+    private static func inputChannelCount(_ deviceID: AudioDeviceID) -> Int {
+        var address = AudioObjectPropertyAddress(
+            mSelector: kAudioDevicePropertyStreamConfiguration,
+            mScope: kAudioDevicePropertyScopeInput,
+            mElement: kAudioObjectPropertyElementMain
+        )
+        var size: UInt32 = 0
+        guard AudioObjectGetPropertyDataSize(deviceID, &address, 0, nil, &size) == noErr,
+              size > 0 else {
+            return 0
+        }
+
+        let bufferListPointer = UnsafeMutableRawPointer.allocate(
+            byteCount: Int(size),
+            alignment: MemoryLayout<AudioBufferList>.alignment
+        )
+        defer {
+            bufferListPointer.deallocate()
+        }
+
+        guard AudioObjectGetPropertyData(
+            deviceID,
+            &address,
+            0,
+            nil,
+            &size,
+            bufferListPointer
+        ) == noErr else {
+            return 0
+        }
+
+        let bufferList = UnsafeMutableAudioBufferListPointer(
+            bufferListPointer.assumingMemoryBound(to: AudioBufferList.self)
+        )
+        return bufferList.reduce(0) { $0 + Int($1.mNumberChannels) }
+    }
+
+    private static func stringProperty(
+        _ deviceID: AudioDeviceID,
+        selector: AudioObjectPropertySelector
+    ) -> String? {
+        var address = AudioObjectPropertyAddress(
+            mSelector: selector,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain
+        )
+        var size = UInt32(MemoryLayout<CFString?>.size)
+        var value: CFString?
+        let status = withUnsafeMutablePointer(to: &value) { pointer in
+            AudioObjectGetPropertyData(deviceID, &address, 0, nil, &size, pointer)
+        }
+
+        guard status == noErr, let value else {
+            return nil
+        }
+
+        return value as String
+    }
+}
 
 struct LocalRecordingCaptureResult {
     var cleanupDirectoryURL: URL
@@ -42,6 +166,7 @@ final class LocalRecordingCaptureController {
     func start(
         fallbackIntentId: String,
         appVersion: String,
+        microphoneDeviceUID: String? = nil,
         onAudioLevel: @escaping @Sendable (LocalRecorderAudioSource, Float) -> Void = { _, _ in }
     ) async throws {
         if activeSession != nil {
@@ -51,6 +176,7 @@ final class LocalRecordingCaptureController {
         let session = try LocalRecordingCaptureSession(
             fallbackIntentId: fallbackIntentId,
             appVersion: appVersion,
+            microphoneDeviceUID: microphoneDeviceUID,
             onAudioLevel: onAudioLevel
         )
         try await session.start()
@@ -84,6 +210,7 @@ final class LocalRecordingCaptureSession {
     init(
         fallbackIntentId: String,
         appVersion: String,
+        microphoneDeviceUID: String?,
         onAudioLevel: @escaping @Sendable (LocalRecorderAudioSource, Float) -> Void
     ) throws {
         let directoryURL = LocalRecorderFileLocations.recordingsDirectoryURL()
@@ -105,6 +232,7 @@ final class LocalRecordingCaptureSession {
         self.synthesizedAudioURL = directoryURL.appending(path: "synthesized.wav")
         self.microphoneRecorder = try MicrophoneTrackRecorder(
             outputURL: microphoneAudioURL,
+            deviceUID: microphoneDeviceUID,
             onAudioLevel: { level in
                 activitySampler.observe(source: .microphone, level: level)
                 onAudioLevel(.microphone, level)
@@ -195,7 +323,10 @@ final class AudioLevelTestSession {
     private let microphoneRecorder: MicrophoneTrackRecorder
     private let systemRecorder: SystemAudioTrackRecorder
 
-    init(onAudioLevel: @escaping @Sendable (LocalRecorderAudioSource, Float) -> Void) throws {
+    init(
+        microphoneDeviceUID: String?,
+        onAudioLevel: @escaping @Sendable (LocalRecorderAudioSource, Float) -> Void
+    ) throws {
         let directoryURL = FileManager.default.temporaryDirectory
             .appending(path: "level-test-\(UUID().uuidString)", directoryHint: .isDirectory)
         try FileManager.default.createDirectory(
@@ -206,6 +337,8 @@ final class AudioLevelTestSession {
         self.directoryURL = directoryURL
         self.microphoneRecorder = try MicrophoneTrackRecorder(
             outputURL: directoryURL.appending(path: "microphone.wav"),
+            deviceUID: microphoneDeviceUID,
+            fallsBackToDefaultDevice: false,
             onAudioLevel: { level in
                 onAudioLevel(.microphone, level)
             }
@@ -428,21 +561,42 @@ enum LocalTrackSynthesizer {
 }
 
 final class MicrophoneTrackRecorder {
+    private let deviceUID: String?
     private let engine = AVAudioEngine()
+    private let fallsBackToDefaultDevice: Bool
     private let onAudioLevel: @Sendable (Float) -> Void
     private let writer: PCM16WavWriter
 
     init(
         outputURL: URL,
+        deviceUID: String?,
+        fallsBackToDefaultDevice: Bool = true,
         onAudioLevel: @escaping @Sendable (Float) -> Void
     ) throws {
+        self.deviceUID = deviceUID
+        self.fallsBackToDefaultDevice = fallsBackToDefaultDevice
         self.onAudioLevel = onAudioLevel
         self.writer = try PCM16WavWriter(outputURL: outputURL)
     }
 
     func start() throws {
         let input = engine.inputNode
+
+        if let deviceUID {
+            let applied = applyInputDevice(uid: deviceUID, to: input)
+            if !applied, !fallsBackToDefaultDevice {
+                throw LocalRecordingCaptureError.writerFailed(
+                    "Selected microphone is unavailable"
+                )
+            }
+        }
+
         let inputFormat = input.outputFormat(forBus: 0)
+        guard inputFormat.sampleRate > 0, inputFormat.channelCount > 0 else {
+            throw LocalRecordingCaptureError.writerFailed(
+                "Microphone is unavailable. Check microphone permission in System Settings."
+            )
+        }
 
         input.installTap(
             onBus: 0,
@@ -460,6 +614,24 @@ final class MicrophoneTrackRecorder {
         engine.inputNode.removeTap(onBus: 0)
         engine.stop()
         writer.close()
+    }
+
+    private func applyInputDevice(uid: String, to input: AVAudioInputNode) -> Bool {
+        guard let deviceID = AudioInputDeviceList.deviceID(forUID: uid),
+              let audioUnit = input.audioUnit else {
+            return false
+        }
+
+        var mutableDeviceID = deviceID
+        let status = AudioUnitSetProperty(
+            audioUnit,
+            kAudioOutputUnitProperty_CurrentDevice,
+            kAudioUnitScope_Global,
+            0,
+            &mutableDeviceID,
+            UInt32(MemoryLayout<AudioDeviceID>.size)
+        )
+        return status == noErr
     }
 }
 

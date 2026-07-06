@@ -98,6 +98,8 @@ final class RecorderAppModel: NSObject, ObservableObject, UNUserNotificationCent
     @Published var bearerToken: String
     @Published var isRecording = false
     @Published var isTestingLevels = false
+    @Published var availableMicrophones: [AudioInputDevice] = []
+    @Published var selectedMicrophoneUID: String?
     @Published var microphoneLevel: Float = 0
     @Published var systemAudioLevel: Float = 0
     @Published var isFinishingRecording = false
@@ -105,6 +107,9 @@ final class RecorderAppModel: NSObject, ObservableObject, UNUserNotificationCent
     @Published var isAdvancedExpanded = false
     @Published var nextScheduleMeeting: LocalRecorderMonitoringMeeting?
     @Published var pendingMeetings: [MissedMeeting] = []
+
+    private static let microphoneDefaultsKey = "meeting-note-local-recorder-microphone-uid"
+    private static let builtInMicrophoneUID = "BuiltInMicrophoneDevice"
 
     private let appVersion = "0.1.0"
     private let captureController = LocalRecordingCaptureController()
@@ -132,6 +137,7 @@ final class RecorderAppModel: NSObject, ObservableObject, UNUserNotificationCent
         self.serverURLText = credentials?.serverURLText ?? Self.defaultServerURLText
         self.bearerToken = credentials?.bearerToken ?? ""
         super.init()
+        loadMicrophoneSelection()
         externalURLDispatcher.setHandler { [weak self] url in
             self?.handleLoginCallback(url)
         }
@@ -514,6 +520,7 @@ final class RecorderAppModel: NSObject, ObservableObject, UNUserNotificationCent
             try await captureController.start(
                 fallbackIntentId: fallbackIntentId,
                 appVersion: appVersion,
+                microphoneDeviceUID: selectedMicrophoneUID,
                 onAudioLevel: { [weak self] source, level in
                     Task { @MainActor in
                         self?.observeAudioLevel(source: source, level: level)
@@ -573,6 +580,41 @@ final class RecorderAppModel: NSObject, ObservableObject, UNUserNotificationCent
         }
     }
 
+    func refreshMicrophones() {
+        availableMicrophones = AudioInputDeviceList.inputDevices()
+    }
+
+    func selectMicrophone(uid: String?) {
+        guard uid != selectedMicrophoneUID else {
+            return
+        }
+
+        selectedMicrophoneUID = uid
+        UserDefaults.standard.set(uid ?? "", forKey: Self.microphoneDefaultsKey)
+
+        if isTestingLevels {
+            stopLevelTest()
+            startLevelTest()
+        }
+    }
+
+    private func loadMicrophoneSelection() {
+        refreshMicrophones()
+
+        guard let stored = UserDefaults.standard.string(forKey: Self.microphoneDefaultsKey) else {
+            // First run: prefer the built-in microphone. The system default can
+            // be a virtual device (remote desktop, loopback) that captures
+            // nothing in a real meeting.
+            if availableMicrophones.contains(where: { $0.uid == Self.builtInMicrophoneUID }) {
+                selectedMicrophoneUID = Self.builtInMicrophoneUID
+                UserDefaults.standard.set(Self.builtInMicrophoneUID, forKey: Self.microphoneDefaultsKey)
+            }
+            return
+        }
+
+        selectedMicrophoneUID = stored.isEmpty ? nil : stored
+    }
+
     private func startLevelTest() {
         guard !isRecording, !isFinishingRecording, levelTestSession == nil else {
             return
@@ -586,6 +628,7 @@ final class RecorderAppModel: NSObject, ObservableObject, UNUserNotificationCent
         Task {
             do {
                 let session = try AudioLevelTestSession(
+                    microphoneDeviceUID: selectedMicrophoneUID,
                     onAudioLevel: { [weak self] source, level in
                         Task { @MainActor in
                             self?.observeAudioLevel(source: source, level: level)
@@ -1186,6 +1229,22 @@ struct RecorderMenuView: View {
                     .disabled(!model.hasRequiredPermissions || model.isFinishingRecording)
                 }
             }
+
+            Picker(
+                "Mic input",
+                selection: Binding(
+                    get: { model.selectedMicrophoneUID },
+                    set: { model.selectMicrophone(uid: $0) }
+                )
+            ) {
+                Text("System default").tag(String?.none)
+                ForEach(model.availableMicrophones) { device in
+                    Text(device.name).tag(String?.some(device.uid))
+                }
+            }
+            .controlSize(.small)
+            .disabled(model.isRecording)
+            .onAppear(perform: model.refreshMicrophones)
 
             AudioLevelMeterRow(title: "Microphone", level: model.microphoneLevel)
             AudioLevelMeterRow(title: "Mac sound", level: model.systemAudioLevel)
