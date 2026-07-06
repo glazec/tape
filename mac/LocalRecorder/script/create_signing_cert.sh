@@ -9,6 +9,16 @@ set -euo pipefail
 CERT_NAME="Meeting Note Local Dev"
 KEYCHAIN="$HOME/Library/Keychains/login.keychain-db"
 
+# Apple's LibreSSL produces a PKCS12 the keychain can import. Homebrew
+# OpenSSL 3 defaults to AES/PBKDF2 encryption, which makes `security
+# import` fail with "MAC verification failed".
+OPENSSL_BIN="/usr/bin/openssl"
+
+if [[ "$(id -u)" -eq 0 ]]; then
+  echo "Do not run with sudo: the certificate must go into your login keychain, not root's." >&2
+  exit 1
+fi
+
 if security find-identity -v -p codesigning 2>/dev/null | grep -qF "$CERT_NAME"; then
   echo "Signing identity \"$CERT_NAME\" already exists."
   exit 0
@@ -30,13 +40,13 @@ extendedKeyUsage = critical,codeSigning
 basicConstraints = critical,CA:false
 EOF
 
-openssl req -x509 -newkey rsa:2048 -sha256 -days 3650 -nodes \
+"$OPENSSL_BIN" req -x509 -newkey rsa:2048 -sha256 -days 3650 -nodes \
   -keyout "$TMP_DIR/key.pem" -out "$TMP_DIR/cert.pem" \
-  -config "$TMP_DIR/openssl.cnf" >/dev/null 2>&1
+  -config "$TMP_DIR/openssl.cnf" 2>/dev/null
 
-openssl pkcs12 -export -out "$TMP_DIR/cert.p12" \
+"$OPENSSL_BIN" pkcs12 -export -out "$TMP_DIR/cert.p12" \
   -inkey "$TMP_DIR/key.pem" -in "$TMP_DIR/cert.pem" \
-  -passout pass:meetingnote -name "$CERT_NAME" >/dev/null 2>&1
+  -passout pass:meetingnote -name "$CERT_NAME"
 
 security import "$TMP_DIR/cert.p12" -k "$KEYCHAIN" -P meetingnote \
   -T /usr/bin/codesign >/dev/null
