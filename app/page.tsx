@@ -29,7 +29,7 @@ const transcriptRows = [
   },
   {
     title: "Customer call upload",
-    meta: "MP3 upload, 28 min",
+    meta: "Audio upload, 28 min",
     status: "Ready",
     badge: "default" as const,
   },
@@ -79,7 +79,7 @@ export default function Home() {
             Meeting Transcript
           </h1>
           <p className="mt-5 max-w-2xl text-lg leading-8 text-muted-foreground">
-            Record Google Meet and Zoom calls, upload MP3 files, and keep every
+            Record Google Meet and Zoom calls, upload recordings, and keep every
             transcript available only to your organization or the people you
             explicitly share with.
           </p>

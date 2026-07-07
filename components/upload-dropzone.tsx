@@ -54,7 +54,7 @@ export function UploadDropzone() {
 
     if (!uploadMedia) {
       setState("error");
-      setMessage("Only MP3, MP4, MOV, WEBM, and MKV files are supported");
+      setMessage("Only MP3, M4A, MP4, MOV, WEBM, and MKV files are supported");
       return;
     }
 

@@ -16,6 +16,8 @@ describe("UploadDropzone", () => {
 
     expect(html).toContain("Upload recording");
     expect(html).toContain("audio/mpeg");
+    expect(html).toContain("audio/mp4");
+    expect(html).toContain(".m4a");
     expect(html).toContain("video/mp4");
     expect(html).toContain("video/quicktime");
   });

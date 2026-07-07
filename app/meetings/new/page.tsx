@@ -31,7 +31,7 @@ export default async function NewMeetingPage() {
             Add a transcript source
           </h1>
           <p className="mt-3 text-base leading-7 text-muted-foreground">
-            Paste a meeting link for a future recording or upload an MP3 to
+            Paste a meeting link for a future recording or upload a recording to
             queue transcription.
           </p>
         </div>

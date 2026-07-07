@@ -8,6 +8,8 @@ export type UploadMedia = {
 
 export const supportedUploadMedia = [
   { extension: "mp3", contentType: "audio/mpeg", kind: "audio" },
+  { extension: "m4a", contentType: "audio/mp4", kind: "audio" },
+  { extension: "m4a", contentType: "audio/x-m4a", kind: "audio" },
   { extension: "mp4", contentType: "video/mp4", kind: "video" },
   { extension: "mov", contentType: "video/quicktime", kind: "video" },
   { extension: "webm", contentType: "video/webm", kind: "video" },
@@ -15,6 +17,11 @@ export const supportedUploadMedia = [
 ] as const satisfies readonly UploadMedia[];
 
 export const uploadMediaAccept = supportedUploadMedia
+  .flatMap((media) => [media.contentType, `.${media.extension}`])
+  .join(",");
+
+export const audioUploadMediaAccept = supportedUploadMedia
+  .filter((media) => media.kind === "audio")
   .flatMap((media) => [media.contentType, `.${media.extension}`])
   .join(",");
 

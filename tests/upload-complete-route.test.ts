@@ -245,6 +245,67 @@ describe("POST /api/uploads/complete", () => {
     });
   });
 
+  it("queues transcription for the authenticated user's uploaded M4A", async () => {
+    getCurrentUser.mockResolvedValue({
+      id: "user_123",
+      email: "user@example.com",
+      name: null,
+    });
+    getWorkspace.mockResolvedValue({
+      userId: "user_123",
+      teamId: "team_123",
+      domain: "example.com",
+    });
+    assertCanCreateMeetings.mockResolvedValue(undefined);
+    send.mockResolvedValue({ ids: ["evt_123"] });
+    getObjectMetadata.mockResolvedValue({
+      contentLength: 2048,
+      contentType: "audio/mp4",
+    });
+    createUploadedAudioTranscription.mockResolvedValue({
+      meetingId: "22222222-2222-4222-8222-222222222222",
+      mediaAssetId: "33333333-3333-4333-8333-333333333333",
+      transcriptJobId: "44444444-4444-4444-8444-444444444444",
+    });
+
+    const response = await postUploadComplete({
+      uploadId: "11111111-1111-4111-8111-111111111111",
+      extension: "m4a",
+      contentType: "audio/mp4",
+      fileName: "partner sync.m4a",
+    });
+
+    expect(response.status).toBe(202);
+    await expect(response.json()).resolves.toEqual({
+      queued: true,
+      key: "users/user_123/uploads/11111111-1111-4111-8111-111111111111.m4a",
+      meetingId: "22222222-2222-4222-8222-222222222222",
+      redirectTo: "/dashboard",
+    });
+    expect(createUploadedAudioTranscription).toHaveBeenCalledWith({
+      sessionUser: {
+        id: "user_123",
+        email: "user@example.com",
+        name: null,
+      },
+      objectKey:
+        "users/user_123/uploads/11111111-1111-4111-8111-111111111111.m4a",
+      title: "partner sync",
+      fileSizeBytes: 2048,
+      mimeType: "audio/mp4",
+    });
+    expect(send).toHaveBeenCalledWith({
+      name: "meeting/transcribe.audio",
+      data: {
+        meetingId: "22222222-2222-4222-8222-222222222222",
+        mediaAssetId: "33333333-3333-4333-8333-333333333333",
+        objectKey:
+          "users/user_123/uploads/11111111-1111-4111-8111-111111111111.m4a",
+        transcriptJobId: "44444444-4444-4444-8444-444444444444",
+      },
+    });
+  });
+
   it("queues video conversion before transcription for uploaded MP4 files", async () => {
     getCurrentUser.mockResolvedValue({
       id: "user_123",

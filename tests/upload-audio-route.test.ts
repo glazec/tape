@@ -195,6 +195,59 @@ describe("POST /api/uploads/audio", () => {
     });
   });
 
+  it("queues transcription after storing a fallback M4A upload", async () => {
+    vi.spyOn(crypto, "randomUUID").mockReturnValue(
+      "66666666-6666-4666-8666-666666666666",
+    );
+    getCurrentUser.mockResolvedValue({
+      id: "user_123",
+      email: "user@example.com",
+      name: null,
+    });
+    getWorkspace.mockResolvedValue({
+      userId: "user_123",
+      teamId: "team_123",
+      domain: "example.com",
+    });
+    assertCanCreateMeetings.mockResolvedValue(undefined);
+    putObject.mockResolvedValue(undefined);
+    createUploadedAudioTranscription.mockResolvedValue({
+      meetingId: "22222222-2222-4222-8222-222222222222",
+      mediaAssetId: "33333333-3333-4333-8333-333333333333",
+      transcriptJobId: "44444444-4444-4444-8444-444444444444",
+    });
+    send.mockResolvedValue({ ids: ["evt_123"] });
+
+    const response = await postAudioUpload(
+      new File(["fake m4a"], "partner sync.m4a", { type: "audio/mp4" }),
+    );
+
+    expect(response.status).toBe(202);
+    await expect(response.json()).resolves.toEqual({
+      queued: true,
+      key: "users/user_123/uploads/66666666-6666-4666-8666-666666666666.m4a",
+      meetingId: "22222222-2222-4222-8222-222222222222",
+      redirectTo: "/dashboard",
+    });
+    expect(putObject).toHaveBeenCalledWith({
+      key: "users/user_123/uploads/66666666-6666-4666-8666-666666666666.m4a",
+      body: expect.any(Uint8Array),
+      contentType: "audio/mp4",
+    });
+    expect(createUploadedAudioTranscription).toHaveBeenCalledWith({
+      sessionUser: {
+        id: "user_123",
+        email: "user@example.com",
+        name: null,
+      },
+      objectKey:
+        "users/user_123/uploads/66666666-6666-4666-8666-666666666666.m4a",
+      title: "partner sync",
+      fileSizeBytes: 8,
+      mimeType: "audio/mp4",
+    });
+  });
+
   it("rejects invalid fallback upload start times", async () => {
     getCurrentUser.mockResolvedValue({
       id: "user_123",
@@ -285,7 +338,7 @@ describe("POST /api/uploads/audio", () => {
     });
   });
 
-  it("rejects non-MP3 files", async () => {
+  it("rejects unsupported audio files", async () => {
     getCurrentUser.mockResolvedValue({
       id: "user_123",
       email: "user@example.com",

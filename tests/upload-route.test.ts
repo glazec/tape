@@ -136,6 +136,40 @@ describe("POST /api/upload", () => {
     });
   });
 
+  it("signs supported M4A uploads in the authenticated user namespace", async () => {
+    vi.spyOn(crypto, "randomUUID").mockReturnValue(
+      "44444444-4444-4444-8444-444444444444",
+    );
+    getCurrentUser.mockResolvedValue({
+      id: "user_123",
+      email: "user@example.com",
+      name: null,
+    });
+    getWorkspace.mockResolvedValue({
+      userId: "user_123",
+      teamId: "team_123",
+      domain: "example.com",
+    });
+    assertCanCreateMeetings.mockResolvedValue(undefined);
+    createUploadUrl.mockResolvedValue("https://upload.example.com/signed-m4a");
+
+    const response = await postUpload({
+      extension: "m4a",
+      contentType: "audio/mp4",
+    });
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({
+      key: "users/user_123/uploads/44444444-4444-4444-8444-444444444444.m4a",
+      uploadUrl: "https://upload.example.com/signed-m4a",
+      uploadId: "44444444-4444-4444-8444-444444444444",
+    });
+    expect(createUploadUrl).toHaveBeenCalledWith({
+      key: "users/user_123/uploads/44444444-4444-4444-8444-444444444444.m4a",
+      contentType: "audio/mp4",
+    });
+  });
+
   it("signs supported video uploads in the authenticated user namespace", async () => {
     vi.spyOn(crypto, "randomUUID").mockReturnValue(
       "33333333-3333-4333-8333-333333333333",
