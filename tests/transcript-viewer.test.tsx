@@ -171,15 +171,15 @@ describe("TranscriptViewer", () => {
         meetingId="11111111-1111-4111-8111-111111111111"
         segments={[
           {
-            id: "segment_yiping",
-            speaker: "Yiping Lu",
+            id: "segment_test",
+            speaker: "Test User",
             startMs: 0,
             endMs: 1000,
             text: "Hello",
           },
           {
-            id: "segment_yiping_alias",
-            speaker: "YiPing Lu",
+            id: "segment_test_alias",
+            speaker: "TeSt User",
             startMs: 1000,
             endMs: 2000,
             text: "Hi",
@@ -202,8 +202,8 @@ describe("TranscriptViewer", () => {
       />,
     );
 
-    expect(html).toContain("Yiping Lu");
-    expect(html).not.toContain("YiPing Lu");
+    expect(html).toContain("Test User");
+    expect(html).not.toContain("TeSt User");
     expect(html).toContain("Siddharth Singh");
     expect(html).not.toContain("Siddharth77work");
   });
@@ -215,15 +215,15 @@ describe("TranscriptViewer", () => {
         meetingId="11111111-1111-4111-8111-111111111111"
         segments={[
           {
-            id: "segment_jocy_email",
-            speaker: "Jocy@IOSGVC",
+            id: "segment_member_email",
+            speaker: "Member@IOSGVC",
             startMs: 0,
             endMs: 1000,
             text: "Hello",
           },
           {
-            id: "segment_jocy_name",
-            speaker: "Jocy",
+            id: "segment_member_name",
+            speaker: "Member",
             startMs: 1000,
             endMs: 2000,
             text: "Hi",
@@ -232,8 +232,8 @@ describe("TranscriptViewer", () => {
       />,
     );
 
-    expect(html).toContain("Jocy");
-    expect(html).not.toContain("Jocy@IOSGVC");
+    expect(html).toContain("Member");
+    expect(html).not.toContain("Member@IOSGVC");
   });
 
   it("merges a unique first name speaker alias into the full name", () => {
@@ -243,15 +243,15 @@ describe("TranscriptViewer", () => {
         meetingId="11111111-1111-4111-8111-111111111111"
         segments={[
           {
-            id: "segment_momir_full",
-            speaker: "Momir Amidzic",
+            id: "segment_guest_full",
+            speaker: "Guest User",
             startMs: 0,
             endMs: 1000,
             text: "Hello",
           },
           {
-            id: "segment_momir_first",
-            speaker: "Momir",
+            id: "segment_guest_first",
+            speaker: "Guest",
             startMs: 1000,
             endMs: 2000,
             text: "Hi",
@@ -260,8 +260,8 @@ describe("TranscriptViewer", () => {
       />,
     );
 
-    expect(html).toContain("Momir Amidzic");
-    expect(html).not.toContain(">Momir<");
+    expect(html).toContain("Guest User");
+    expect(html).not.toContain(">Guest<");
   });
 
   it("merges saved team speaker aliases into their canonical speaker", () => {
@@ -270,20 +270,20 @@ describe("TranscriptViewer", () => {
         audioUrl="/audio.mp3"
         meetingId="11111111-1111-4111-8111-111111111111"
         speakerAliases={[
-          { alias: "Yi Xiao", canonicalName: "Yiping Lu" },
+          { alias: "Saved Alias", canonicalName: "Test User" },
           { alias: "Ether C", canonicalName: "Ethan Chen" },
         ]}
         segments={[
           {
-            id: "segment_yiping",
-            speaker: "Yiping Lu",
+            id: "segment_test",
+            speaker: "Test User",
             startMs: 0,
             endMs: 1000,
             text: "Hello",
           },
           {
             id: "segment_yi_alias",
-            speaker: "Yi Xiao",
+            speaker: "Saved Alias",
             startMs: 1000,
             endMs: 2000,
             text: "Hi",
@@ -299,9 +299,9 @@ describe("TranscriptViewer", () => {
       />,
     );
 
-    expect(html).toContain("Yiping Lu");
+    expect(html).toContain("Test User");
     expect(html).toContain("Ethan Chen");
-    expect(html).not.toContain("Yi Xiao");
+    expect(html).not.toContain("Saved Alias");
     expect(html).not.toContain("Ether C");
   });
 
@@ -433,7 +433,7 @@ describe("TranscriptViewer", () => {
       allowSegmentScope: false,
       currentSpeaker: "Speaker 2",
       segmentId: "segment_alias",
-      speakerAliases: ["YiPing Lu"],
+      speakerAliases: ["TeSt User"],
       speakerKey: "Speaker 2",
     };
 
@@ -441,18 +441,18 @@ describe("TranscriptViewer", () => {
       applySpeakerUpdateToSegments(
         [
           makeSegment("segment_alias", "Speaker 2"),
-          makeSegment("segment_case", "YiPing Lu"),
-          makeSegment("segment_existing", "Yiping Lu"),
+          makeSegment("segment_case", "TeSt User"),
+          makeSegment("segment_existing", "Test User"),
           makeSegment("segment_other", "Siddharth Singh"),
         ],
         editingSpeaker,
         "matching_speaker",
-        "Yiping Lu",
+        "Test User",
       ).map((segment) => [segment.id, segment.speaker]),
     ).toEqual([
-      ["segment_alias", "Yiping Lu"],
-      ["segment_case", "Yiping Lu"],
-      ["segment_existing", "Yiping Lu"],
+      ["segment_alias", "Test User"],
+      ["segment_case", "Test User"],
+      ["segment_existing", "Test User"],
       ["segment_other", "Siddharth Singh"],
     ]);
   });
@@ -462,7 +462,7 @@ describe("TranscriptViewer", () => {
       allowSegmentScope: true,
       currentSpeaker: "Speaker 2",
       segmentId: "segment_alias",
-      speakerAliases: ["YiPing Lu"],
+      speakerAliases: ["TeSt User"],
       speakerKey: "Speaker 2",
     };
 
@@ -470,17 +470,17 @@ describe("TranscriptViewer", () => {
       applySpeakerUpdateToSegments(
         [
           makeSegment("segment_alias", "Speaker 2"),
-          makeSegment("segment_case", "YiPing Lu"),
-          makeSegment("segment_existing", "Yiping Lu"),
+          makeSegment("segment_case", "TeSt User"),
+          makeSegment("segment_existing", "Test User"),
         ],
         editingSpeaker,
         "segment",
-        "Yiping Lu",
+        "Test User",
       ).map((segment) => [segment.id, segment.speaker]),
     ).toEqual([
-      ["segment_alias", "Yiping Lu"],
-      ["segment_case", "YiPing Lu"],
-      ["segment_existing", "Yiping Lu"],
+      ["segment_alias", "Test User"],
+      ["segment_case", "TeSt User"],
+      ["segment_existing", "Test User"],
     ]);
   });
 

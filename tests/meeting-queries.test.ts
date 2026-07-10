@@ -277,7 +277,7 @@ describe("getWorkspaceMeetingTranscript", () => {
                       audioObjectKey: null,
                       calendarAttendeeEmails: [
                         "alice@example.com",
-                        "momir@iosg.vc",
+                        "participant@iosg.vc",
                         "updated.guest@nascent.xyz",
                       ],
                       recallRecordingId: "recording_123",
@@ -309,7 +309,7 @@ describe("getWorkspaceMeetingTranscript", () => {
                     name: null,
                   },
                   {
-                    email: "momir@iosg.vc",
+                    email: "participant@iosg.vc",
                     name: null,
                   },
                 ]),
@@ -325,7 +325,7 @@ describe("getWorkspaceMeetingTranscript", () => {
               limit: vi.fn().mockResolvedValue([
                 {
                   email: null,
-                  name: "Momir Amidzic",
+                  name: "Participant",
                 },
               ]),
             }),
@@ -411,8 +411,8 @@ describe("getWorkspaceMeetingTranscript", () => {
           name: "Jane Doe",
         },
         {
-          email: "momir@iosg.vc",
-          name: "Momir Amidzic",
+          email: "participant@iosg.vc",
+          name: "Participant",
         },
         {
           email: "updated.guest@nascent.xyz",
@@ -903,11 +903,11 @@ describe("listMeetingsForWorkspace", () => {
                   endedAt: new Date("2026-06-30T02:31:00.000Z"),
                   createdAt: new Date("2026-06-27T05:28:53.945Z"),
                   calendarAttendeeEmails: [
-                    "jocy@iosg.vc",
-                    "jiawei@iosg.vc",
-                    "momir@iosg.vc",
-                    "yiping@iosg.vc",
-                    "frank@iosg.vc",
+                    "member@iosg.vc",
+                    "teammate@iosg.vc",
+                    "participant@iosg.vc",
+                    "test@iosg.vc",
+                    "reviewer@iosg.vc",
                   ],
                   recognizedSpeakerCount: 4,
                   transcriptSegmentCount: 259,
@@ -1378,7 +1378,7 @@ describe("listMeetingsForWorkspace", () => {
               {
                 meetingId: "22222222-2222-4222-8222-222222222222",
                 type: "name",
-                normalizedValue: "frank",
+                normalizedValue: "reviewer",
               },
               {
                 meetingId: "22222222-2222-4222-8222-222222222222",
@@ -1388,7 +1388,7 @@ describe("listMeetingsForWorkspace", () => {
               {
                 meetingId: "22222222-2222-4222-8222-222222222222",
                 type: "meeting_link",
-                normalizedValue: "zoom.us/j/8436420171",
+                normalizedValue: "zoom.us/j/1234567890",
               },
               {
                 meetingId: "22222222-2222-4222-8222-222222222222",
@@ -1753,7 +1753,7 @@ describe("buildMeetingLibraryPage", () => {
         {
           ...libraryMeeting({
             id: "11111111-1111-4111-8111-111111111111",
-            title: "Yiping",
+            title: "Test",
             platform: "zoom",
             startedAt: "2026-07-01T01:00:00.000Z",
           }),
@@ -1773,7 +1773,7 @@ describe("buildMeetingLibraryPage", () => {
         {
           ...libraryMeeting({
             id: "33333333-3333-4333-8333-333333333333",
-            title: "Yiping",
+            title: "Test",
             platform: "zoom",
             startedAt: "2026-07-01T01:30:00.000Z",
           }),
@@ -2110,7 +2110,7 @@ describe("getMeetingDashboardSummaryForWorkspace", () => {
             where: vi.fn().mockResolvedValue([
               {
                 meetingId: "11111111-1111-4111-8111-111111111111",
-                speaker: "Yiping",
+                speaker: "Test",
                 startMs: 0,
                 endMs: 10000,
                 text: "one two three four",
@@ -2126,7 +2126,7 @@ describe("getMeetingDashboardSummaryForWorkspace", () => {
               },
               {
                 meetingId: "22222222-2222-4222-8222-222222222222",
-                speaker: "Yiping",
+                speaker: "Test",
                 startMs: 0,
                 endMs: 8000,
                 text: "one two",
@@ -2149,8 +2149,8 @@ describe("getMeetingDashboardSummaryForWorkspace", () => {
         },
         {
           now: new Date("2026-06-28T12:00:00.000Z"),
-          userEmail: "yiping@iosg.vc",
-          userName: "Yiping",
+          userEmail: "test@iosg.vc",
+          userName: "Test",
         },
       ),
     ).resolves.toMatchObject({

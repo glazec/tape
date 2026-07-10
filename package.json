@@ -1,7 +1,13 @@
 {
   "name": "meeting-transcript-implementation",
   "version": "0.1.0",
+  "description": "Team meeting capture, transcription, review, and follow-up workspace.",
   "private": true,
+  "license": "PolyForm-Noncommercial-1.0.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/glazec/meeting-note.git"
+  },
   "scripts": {
     "dev": "next dev",
     "db:migrate": "drizzle-kit migrate --config=drizzle.config.ts",

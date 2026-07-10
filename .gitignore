@@ -8,3 +8,6 @@ test-results/
 playwright-report/
 .vercel
 .swiftpm/
+.playwright-mcp/
+/tmp/
+*.tsbuildinfo

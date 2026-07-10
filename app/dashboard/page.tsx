@@ -372,7 +372,7 @@ function MeetingLibraryControls({
           value={relatedHistoryMonths}
         />
       ) : null}
-      <div className="space-y-2">
+      <div className="min-w-0 space-y-2">
         <Label htmlFor="meeting-search" className="sr-only">
           Search meetings
         </Label>
@@ -446,10 +446,10 @@ function SelectField({
   value: string;
 }) {
   return (
-    <div className="space-y-2">
+    <div className="min-w-0 space-y-2">
       <Label htmlFor={id}>{label}</Label>
       <select
-        className="h-8 w-full rounded-lg border border-input bg-background px-2.5 py-1 text-sm outline-none transition-colors focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+        className="h-8 w-full min-w-0 rounded-lg border border-input bg-background px-2.5 py-1 text-sm outline-none transition-colors focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
         defaultValue={value}
         id={id}
         name={name}
@@ -504,7 +504,7 @@ function MeetingLibraryPagination({
       <span className="text-sm text-muted-foreground">
         Showing last {historyMonths} months{page > 1 ? `, page ${page}` : ""}
       </span>
-      <div className="flex items-center gap-2">
+      <div className="flex min-w-0 flex-wrap items-center gap-2">
         {hasPreviousPage ? (
           <Link
             className={cn(buttonVariants({ variant: "outline" }))}

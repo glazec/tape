@@ -104,7 +104,7 @@ describe("meeting bot records", () => {
       createScheduledMeetingBot({
         sessionUser: {
           id: "user_123",
-          email: "yiping@iosg.vc",
+          email: "test@iosg.vc",
           name: null,
         },
         meetingUrl: "https://zoom.us/j/8851797582",
@@ -183,7 +183,7 @@ describe("meeting bot records", () => {
       createScheduledMeetingBot({
         sessionUser: {
           id: "user_123",
-          email: "yiping@iosg.vc",
+          email: "test@iosg.vc",
           name: null,
         },
         meetingUrl: "https://zoom.us/j/8851797582",
@@ -257,10 +257,10 @@ describe("meeting bot records", () => {
       createScheduledMeetingBot({
         sessionUser: {
           id: "user_123",
-          email: "yiping@iosg.vc",
+          email: "test@iosg.vc",
           name: null,
         },
-        meetingUrl: "https://zoom.us/j/8436420171",
+        meetingUrl: "https://zoom.us/j/1234567890",
         platform: "zoom",
       }),
     ).resolves.toEqual({
@@ -272,11 +272,11 @@ describe("meeting bot records", () => {
     expect(meetingValues).toHaveBeenCalledWith(
       expect.objectContaining({
         calendarEventId: "33333333-3333-4333-8333-333333333333",
-        meetingUrl: "https://zoom.us/j/8436420171",
+        meetingUrl: "https://zoom.us/j/1234567890",
       }),
     );
     expect(collectStrings(calendarWhere.mock.calls[0][0])).toContain(
-      "%/j/8436420171%",
+      "%/j/1234567890%",
     );
   });
 });

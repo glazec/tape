@@ -2,6 +2,15 @@
 
 Team meeting transcript product.
 
+This repository is source available for noncommercial use. See [License](#license) before using or redistributing it.
+
+## Documentation
+
+1. [Setup guide](docs/setup.md)
+2. [Contributing](CONTRIBUTING.md)
+3. [Security policy](SECURITY.md)
+4. [Meeting Note MCP API](docs/meeting-note-mcp-api.md)
+
 ## Stack
 
 1. [Next.js](https://nextjs.org) on [Vercel](https://vercel.com)
@@ -17,12 +26,18 @@ Team meeting transcript product.
 
 ## Local Setup
 
-1. Copy `.env.example` to `.env.local`.
-2. If an agent is helping with setup, complete the Agent Setup Interview below before editing `.env.local` or changing providers.
-3. Fill in Neon, Google Calendar OAuth, R2, Recall, ElevenLabs, OpenRouter, Inngest, OneSignal, and optional Twenty CRM credentials. Google sign in is configured in Neon Auth. Calendar connection uses the app Google Calendar OAuth client so the callback can create a Recall Calendar V2 connection. `NEON_AUTH_BASE_URL` is optional when `NEON_AUTH_JWKS_URL` ends with `/.well-known/jwks.json`; generate `NEON_AUTH_COOKIE_SECRET` with `openssl rand -base64 32`. Set `APP_ADMIN_EMAILS` to the comma separated owner email list allowed to use `/admin`.
-   Set `RECALL_API_BASE_URL` to the region for the Recall API key, for example `https://ap-northeast-1.recall.ai`.
-4. Run `npm install`.
-5. Run `npm run dev`.
+Use the [setup guide](docs/setup.md) for prerequisites, environment variables, database migration, webhooks, local development, and macOS recorder setup.
+
+```bash
+git clone https://github.com/glazec/meeting-note.git
+cd meeting-note
+npm install
+cp .env.example .env.local
+npm run db:migrate
+npm run dev
+```
+
+The application validates required provider configuration at runtime. Complete `.env.local` before opening routes that use those providers.
 
 ## Agent Setup Interview
 
@@ -246,3 +261,9 @@ npm run test
 npm run build
 npx playwright test
 ```
+
+## License
+
+This project is source available under the [PolyForm Noncommercial License 1.0.0](LICENSE). Noncommercial use, modification, and distribution are permitted. Commercial use is not permitted without a separate license from the project owner.
+
+Because commercial use is restricted, this is not an OSI approved open source license.

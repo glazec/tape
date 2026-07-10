@@ -125,6 +125,7 @@ final class RecorderAppModel: NSObject, ObservableObject, UNUserNotificationCent
     private var levelTestTimeoutTask: Task<Void, Never>?
     private var monitoringTimer: Timer?
     private var permissionRefreshTask: Task<Void, Never>?
+    private var fallbackNotificationCountsByIntentId: [String: Int] = [:]
     private var silencePromptTracker = SilencePromptTracker()
 
     override init() {
@@ -416,22 +417,56 @@ final class RecorderAppModel: NSObject, ObservableObject, UNUserNotificationCent
                 )
                 await uploadQueuedRecordings(client: client)
                 let monitoringStatus = try await client.fetchMonitoringStatus()
+                let now = Date()
                 nextScheduleMeeting = monitoringStatus.nextMeeting
                 pendingMeetings = monitoringStatus.missedMeetings.isEmpty
-                    ? pendingMeetings.filter { $0.expiresAt > Date() }
-                    : monitoringStatus.missedMeetings
+                    ? pendingMeetings.filter {
+                        $0.expiresAt > now &&
+                            LocalRecorderNotificationBackoffSchedule.canNotify(
+                                meeting: $0,
+                                at: now
+                            )
+                    }
+                    : monitoringStatus.missedMeetings.filter {
+                        LocalRecorderNotificationBackoffSchedule.canNotify(
+                            meeting: $0,
+                            at: now
+                        )
+                    }
+                pruneFallbackNotificationCounts()
                 statusText = nextScheduleMeeting == nil
                     ? "No upcoming meetings"
                     : "Watching your calendar"
-                scheduleNextMonitoringCheck(
-                    after: LocalRecorderMonitoringPollSchedule.nextDelay(
-                        now: Date(),
-                        nextMeeting: monitoringStatus.nextMeeting,
-                        pendingMeetings: pendingMeetings
-                    )
-                )
                 if let first = pendingMeetings.first {
                     try await notify(meeting: first)
+                    let notificationCount = recordFallbackNotification(for: first)
+                    if let delay = LocalRecorderNotificationBackoffSchedule.nextDelay(
+                        afterNotificationCount: notificationCount,
+                        now: Date(),
+                        meeting: first
+                    ) {
+                        scheduleNextMonitoringCheck(after: delay)
+                    } else {
+                        pendingMeetings.removeAll {
+                            $0.fallbackIntentId == first.fallbackIntentId
+                        }
+                        pruneFallbackNotificationCounts()
+                        scheduleNextMonitoringCheck(
+                            after: LocalRecorderMonitoringPollSchedule.nextDelay(
+                                now: Date(),
+                                nextMeeting: monitoringStatus.nextMeeting,
+                                pendingMeetings: pendingMeetings
+                            )
+                        )
+                    }
+                } else {
+                    scheduleNextMonitoringCheck(
+                        after: LocalRecorderMonitoringPollSchedule.nextDelay(
+                            now: now,
+                            nextMeeting: monitoringStatus.nextMeeting,
+                            pendingMeetings: pendingMeetings
+                        )
+                    )
                 }
             } catch {
                 statusText = "Could not refresh schedule"
@@ -453,6 +488,20 @@ final class RecorderAppModel: NSObject, ObservableObject, UNUserNotificationCent
                 self?.checkNow()
             }
         }
+    }
+
+    private func pruneFallbackNotificationCounts() {
+        let activeIntentIds = Set(pendingMeetings.map(\.fallbackIntentId))
+        fallbackNotificationCountsByIntentId =
+            fallbackNotificationCountsByIntentId.filter {
+                activeIntentIds.contains($0.key)
+            }
+    }
+
+    private func recordFallbackNotification(for meeting: MissedMeeting) -> Int {
+        let count = (fallbackNotificationCountsByIntentId[meeting.fallbackIntentId] ?? 0) + 1
+        fallbackNotificationCountsByIntentId[meeting.fallbackIntentId] = count
+        return count
     }
 
     private func claimAndStart(fallbackIntentId: String, title: String) async {
@@ -539,6 +588,8 @@ final class RecorderAppModel: NSObject, ObservableObject, UNUserNotificationCent
 
         activeClient = client
         activeRecordingTitle = title
+        pendingMeetings.removeAll { $0.fallbackIntentId == fallbackIntentId }
+        fallbackNotificationCountsByIntentId.removeValue(forKey: fallbackIntentId)
         isRecording = true
         statusText = "Recording \(title)"
     }
@@ -827,6 +878,7 @@ final class RecorderAppModel: NSObject, ObservableObject, UNUserNotificationCent
         isRefreshingSchedule = false
         nextScheduleMeeting = nil
         pendingMeetings = []
+        fallbackNotificationCountsByIntentId = [:]
         bearerToken = ""
         try? credentialStore.delete()
         statusText = "Signed out"

@@ -111,6 +111,70 @@ import Testing
     #expect(delay == 130)
 }
 
+@Test func notificationBackoffDoublesUntilOneHour() {
+    let now = Date(timeIntervalSince1970: 100)
+    let meeting = MissedMeeting(
+        fallbackIntentId: "intent_123",
+        title: "Weekly sync",
+        expiresAt: Date(timeIntervalSince1970: 20_000),
+        displayTimeWindow: DisplayTimeWindow(
+            startsAt: Date(timeIntervalSince1970: 0),
+            endsAt: Date(timeIntervalSince1970: 20_000)
+        )
+    )
+
+    let delays = (1...7).compactMap { notificationCount in
+        LocalRecorderNotificationBackoffSchedule.nextDelay(
+            afterNotificationCount: notificationCount,
+            now: now,
+            meeting: meeting
+        )
+    }
+
+    #expect(delays == [120, 240, 480, 960, 1_920, 3_840, 3_840])
+}
+
+@Test func notificationBackoffStopsAfterMeetingEnd() {
+    let meeting = MissedMeeting(
+        fallbackIntentId: "intent_123",
+        title: "Weekly sync",
+        expiresAt: Date(timeIntervalSince1970: 20_000),
+        displayTimeWindow: DisplayTimeWindow(
+            startsAt: Date(timeIntervalSince1970: 0),
+            endsAt: Date(timeIntervalSince1970: 500)
+        )
+    )
+
+    #expect(
+        LocalRecorderNotificationBackoffSchedule.nextDelay(
+            afterNotificationCount: 1,
+            now: Date(timeIntervalSince1970: 500),
+            meeting: meeting
+        ) == nil
+    )
+}
+
+@Test func notificationBackoffDoesNotSchedulePastIntentExpiry() {
+    let now = Date(timeIntervalSince1970: 100)
+    let meeting = MissedMeeting(
+        fallbackIntentId: "intent_123",
+        title: "Weekly sync",
+        expiresAt: Date(timeIntervalSince1970: 400),
+        displayTimeWindow: DisplayTimeWindow(
+            startsAt: Date(timeIntervalSince1970: 0),
+            endsAt: Date(timeIntervalSince1970: 20_000)
+        )
+    )
+
+    #expect(
+        LocalRecorderNotificationBackoffSchedule.nextDelay(
+            afterNotificationCount: 7,
+            now: now,
+            meeting: meeting
+        ) == 300
+    )
+}
+
 @Test func monitoringMeetingIsOngoingOnlyInsideItsWindow() {
     let meeting = LocalRecorderMonitoringMeeting(
         botStatus: "joined",

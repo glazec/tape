@@ -14,7 +14,7 @@ describe("Recall Calendar V2 adapter", () => {
         JSON.stringify({
           id: "44444444-4444-4444-8444-444444444444",
           platform: "google_calendar",
-          platform_email: "yiping@iosg.vc",
+          platform_email: "test@iosg.vc",
           status: "connecting",
         }),
         {
@@ -78,7 +78,7 @@ describe("Recall Calendar V2 adapter", () => {
             {
               id: "44444444-4444-4444-8444-444444444444",
               platform: "google_calendar",
-              platform_email: "yiping@iosg.vc",
+              platform_email: "test@iosg.vc",
               status: "connected",
             },
           ],
@@ -97,7 +97,7 @@ describe("Recall Calendar V2 adapter", () => {
       {
         id: "44444444-4444-4444-8444-444444444444",
         platform: "google_calendar",
-        platform_email: "yiping@iosg.vc",
+        platform_email: "test@iosg.vc",
         status: "connected",
       },
     ]);

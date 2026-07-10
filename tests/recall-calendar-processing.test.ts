@@ -62,7 +62,7 @@ describe("processRecallCalendarWebhook", () => {
                 id: "33333333-3333-4333-8333-333333333333",
                 teamId: "22222222-2222-4222-8222-222222222222",
                 userId: "11111111-1111-4111-8111-111111111111",
-                userEmail: "yiping@iosg.vc",
+                userEmail: "test@iosg.vc",
                 autoJoinEnabled: true,
               },
             ]),
@@ -325,7 +325,7 @@ describe("processRecallCalendarWebhook", () => {
         platform_id: "google_event_123",
         start_time: "2026-06-27T03:30:00.000Z",
         end_time: "2026-06-27T04:15:00.000Z",
-        meeting_url: "https://zoom.us/j/8166024230",
+        meeting_url: "https://zoom.us/j/2345678901",
         is_deleted: false,
         raw: {
           summary: "Investment strategy moved",
@@ -400,7 +400,7 @@ describe("processRecallCalendarWebhook", () => {
         platform_id: "google_event_123",
         start_time: "2026-06-30T12:00:00.000Z",
         end_time: "2026-06-30T12:30:00.000Z",
-        meeting_url: "https://zoom.us/j/8166024230",
+        meeting_url: "https://zoom.us/j/2345678901",
         is_deleted: true,
         raw: {
           summary: "Cancelled partner sync",
@@ -494,7 +494,7 @@ describe("processRecallCalendarWebhook", () => {
       {
         id: "44444444-4444-4444-8444-444444444444",
         platform: "google_calendar",
-        platform_email: "yiping@iosg.vc",
+        platform_email: "test@iosg.vc",
         status: "connected",
         metadata: {
           teamId: "22222222-2222-4222-8222-222222222222",
@@ -572,7 +572,7 @@ describe("processRecallCalendarWebhook", () => {
       {
         id: "44444444-4444-4444-8444-444444444444",
         platform: "google_calendar",
-        platform_email: "yiping@iosg.vc",
+        platform_email: "test@iosg.vc",
         status: "connected",
         metadata: {
           teamId: "22222222-2222-4222-8222-222222222222",
@@ -631,7 +631,7 @@ describe("processRecallCalendarWebhook", () => {
                 id: "33333333-3333-4333-8333-333333333333",
                 teamId: "22222222-2222-4222-8222-222222222222",
                 userId: "11111111-1111-4111-8111-111111111111",
-                userEmail: "yiping@iosg.vc",
+                userEmail: "test@iosg.vc",
                 autoJoinEnabled: true,
                 recallCalendarId: "44444444-4444-4444-8444-444444444444",
                 recallCalendarStatus: "connected",
@@ -651,7 +651,7 @@ describe("processRecallCalendarWebhook", () => {
       {
         id: "44444444-4444-4444-8444-444444444444",
         platform: "google_calendar",
-        platform_email: "yiping@iosg.vc",
+        platform_email: "test@iosg.vc",
         status: "connected",
         metadata: {
           teamId: "22222222-2222-4222-8222-222222222222",
@@ -700,7 +700,7 @@ describe("processRecallCalendarWebhook", () => {
                 id: "33333333-3333-4333-8333-333333333333",
                 teamId: "22222222-2222-4222-8222-222222222222",
                 userId: "11111111-1111-4111-8111-111111111111",
-                userEmail: "yiping@iosg.vc",
+                userEmail: "test@iosg.vc",
                 autoJoinEnabled: true,
                 recallCalendarId: "44444444-4444-4444-8444-444444444444",
                 recallCalendarStatus: "connected",
@@ -720,7 +720,7 @@ describe("processRecallCalendarWebhook", () => {
       {
         id: "44444444-4444-4444-8444-444444444444",
         platform: "google_calendar",
-        platform_email: "yiping@iosg.vc",
+        platform_email: "test@iosg.vc",
         status: "connected",
         metadata: {
           teamId: "22222222-2222-4222-8222-222222222222",

@@ -69,7 +69,7 @@ describe("DashboardWorkflowSummary", () => {
           endedAt: "2026-06-27T11:30:00.000Z",
           segments: [
             segment({
-              speaker: "Yiping",
+              speaker: "Test",
               text: "one two three four",
               startMs: 0,
               endMs: 10000,
@@ -95,7 +95,7 @@ describe("DashboardWorkflowSummary", () => {
           endedAt: "2026-06-18T11:00:00.000Z",
           segments: [
             segment({
-              speaker: "Yiping",
+              speaker: "Test",
               text: "one two",
               startMs: 0,
               endMs: 8000,
@@ -105,8 +105,8 @@ describe("DashboardWorkflowSummary", () => {
       ],
       new Date("2026-06-28T12:00:00.000Z"),
       {
-        userEmail: "yiping@iosg.vc",
-        userName: "Yiping",
+        userEmail: "test@iosg.vc",
+        userName: "Test",
       },
     );
 
@@ -183,7 +183,7 @@ describe("DashboardWorkflowSummary", () => {
           endedAt: "2026-06-27T11:30:00.000Z",
           segments: [
             segment({
-              speaker: "Yiping",
+              speaker: "Test",
               text: "one two three four",
               startMs: 0,
               endMs: 10000,
@@ -207,7 +207,7 @@ describe("DashboardWorkflowSummary", () => {
           endedAt: "2026-06-18T11:00:00.000Z",
           segments: [
             segment({
-              speaker: "Yiping",
+              speaker: "Test",
               text: "one two",
               startMs: 0,
               endMs: 8000,
@@ -217,8 +217,8 @@ describe("DashboardWorkflowSummary", () => {
       ],
       new Date("2026-06-28T12:00:00.000Z"),
       {
-        userEmail: "yiping@iosg.vc",
-        userName: "Yiping",
+        userEmail: "test@iosg.vc",
+        userName: "Test",
       },
     );
     const html = renderToStaticMarkup(
@@ -254,7 +254,7 @@ function segment(
   overrides: Partial<DashboardWorkflowSegment>,
 ): DashboardWorkflowSegment {
   return {
-    speaker: "Yiping",
+    speaker: "Test",
     startMs: 0,
     endMs: 10000,
     text: "hello world",

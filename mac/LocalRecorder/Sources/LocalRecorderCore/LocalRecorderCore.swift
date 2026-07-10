@@ -785,6 +785,48 @@ public enum LocalRecorderMonitoringPollSchedule {
     }
 }
 
+public enum LocalRecorderNotificationBackoffSchedule {
+    public static let repeatedNotificationDelays: [TimeInterval] = [
+        2 * 60,
+        4 * 60,
+        8 * 60,
+        16 * 60,
+        32 * 60,
+        64 * 60,
+    ]
+
+    public static func nextDelay(
+        afterNotificationCount notificationCount: Int,
+        now: Date,
+        meeting: MissedMeeting
+    ) -> TimeInterval? {
+        let windowEnd = notificationWindowEndsAt(for: meeting)
+        guard now < windowEnd else {
+            return nil
+        }
+
+        let delayIndex = min(
+            max(notificationCount - 1, 0),
+            repeatedNotificationDelays.count - 1
+        )
+        let delay = repeatedNotificationDelays[delayIndex]
+
+        return min(delay, max(1, windowEnd.timeIntervalSince(now)))
+    }
+
+    public static func canNotify(meeting: MissedMeeting, at date: Date) -> Bool {
+        date < notificationWindowEndsAt(for: meeting)
+    }
+
+    private static func notificationWindowEndsAt(for meeting: MissedMeeting) -> Date {
+        guard let meetingEndsAt = meeting.displayTimeWindow.endsAt else {
+            return meeting.expiresAt
+        }
+
+        return min(meetingEndsAt, meeting.expiresAt)
+    }
+}
+
 public struct ManualRecordingIntentResponse: Codable, Equatable, Sendable {
     public var fallbackIntentId: String
     public var meetingTitle: String?

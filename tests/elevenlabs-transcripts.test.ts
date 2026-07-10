@@ -432,9 +432,9 @@ describe("buildElevenLabsTranscriptPersistence", () => {
         {
           participantTimeline: [
             {
-              participantId: "participant_jocy",
-              name: "Jocy@IOSGVC",
-              email: "jocy@iosg.vc",
+              participantId: "participant_member",
+              name: "Member@IOSGVC",
+              email: "member@iosg.vc",
               startMs: 900,
               endMs: 2500,
             },
@@ -445,7 +445,7 @@ describe("buildElevenLabsTranscriptPersistence", () => {
       action: "complete",
       segments: [
         {
-          speaker: "Jocy",
+          speaker: "Member",
           startMs: 1000,
           endMs: 2000,
         },

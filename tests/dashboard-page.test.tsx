@@ -163,6 +163,9 @@ describe("DashboardPage", () => {
     expect(html).toContain('value="duration_desc" selected="">Longest first</option>');
     expect(html).not.toContain("Save as my view");
     expect(html).toContain("Showing last 12 months, page 2");
+    expect(html).toContain("min-w-0 space-y-2");
+    expect(html).toContain("h-8 w-full min-w-0");
+    expect(html).toContain("flex min-w-0 flex-wrap items-center gap-2");
     expect(html).toContain(
       "/dashboard?q=founder&amp;scope=participants&amp;status=ready&amp;sort=duration_desc&amp;syncCalendar=1&amp;historyMonths=12&amp;relatedMonths=18",
     );

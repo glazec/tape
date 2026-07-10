@@ -157,8 +157,8 @@ describe("PATCH /api/meetings/[meetingId]/speakers", () => {
     const response = await patchSpeakerLabel({
       applyTo: "matching_speaker",
       currentSpeaker: "Speaker 2",
-      currentSpeakerAliases: ["YiPing Lu"],
-      speaker: "Yiping Lu",
+      currentSpeakerAliases: ["TeSt User"],
+      speaker: "Test User",
     });
 
     expect(response.status).toBe(200);
@@ -166,10 +166,10 @@ describe("PATCH /api/meetings/[meetingId]/speakers", () => {
       applyTo: "matching_speaker",
       segmentId: null,
       updated: true,
-      speaker: "Yiping Lu",
+      speaker: "Test User",
     });
     expect(set).toHaveBeenCalledWith({
-      speaker: "Yiping Lu",
+      speaker: "Test User",
       updatedAt: expect.any(Date),
     });
     expect(where).toHaveBeenCalledTimes(1);
@@ -192,9 +192,9 @@ describe("PATCH /api/meetings/[meetingId]/speakers", () => {
 
     const response = await patchSpeakerLabel({
       applyTo: "matching_speaker",
-      currentSpeaker: "Yi Xiao",
-      currentSpeakerAliases: ["Yiping Lu"],
-      speaker: "Yiping Lu",
+      currentSpeaker: "Saved Alias",
+      currentSpeakerAliases: ["Test User"],
+      speaker: "Test User",
     });
 
     expect(response.status).toBe(200);
@@ -202,15 +202,15 @@ describe("PATCH /api/meetings/[meetingId]/speakers", () => {
     expect(values).toHaveBeenCalledWith(
       expect.arrayContaining([
         expect.objectContaining({
-          alias: "Yi Xiao",
-          aliasKey: "yi xiao",
-          canonicalName: "Yiping Lu",
+          alias: "Saved Alias",
+          aliasKey: "saved alias",
+          canonicalName: "Test User",
           teamId: "team_123",
         }),
         expect.objectContaining({
-          alias: "Yiping Lu",
-          aliasKey: "yiping lu",
-          canonicalName: "Yiping Lu",
+          alias: "Test User",
+          aliasKey: "test user",
+          canonicalName: "Test User",
           teamId: "team_123",
         }),
       ]),

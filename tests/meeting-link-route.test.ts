@@ -176,7 +176,7 @@ describe("POST /api/meetings/link", () => {
           status: 302,
           headers: {
             location:
-              "https://iosg-vc.zoom.us/j/8436420171?pwd=RU5mZ2VSMUpqbGRPclNFajBTV0RBdz09&_x_zm_rtaid=tracking",
+              "https://iosg-vc.zoom.us/j/1234567890?pwd=ZmFrZS1wYXNzd29yZA&_x_zm_rtaid=tracking",
           },
         }),
       ),
@@ -194,9 +194,9 @@ describe("POST /api/meetings/link", () => {
     markMeetingBotScheduled.mockResolvedValue(undefined);
 
     const meetingUrl =
-      "https://iosg-vc.zoom.us/my/yiping?pwd=RU5mZ2VSMUpqbGRPclNFajBTV0RBdz09";
+      "https://iosg-vc.zoom.us/my/test?pwd=ZmFrZS1wYXNzd29yZA";
     const canonicalMeetingUrl =
-      "https://zoom.us/j/8436420171?pwd=RU5mZ2VSMUpqbGRPclNFajBTV0RBdz09";
+      "https://zoom.us/j/1234567890?pwd=ZmFrZS1wYXNzd29yZA";
     const response = await postMeetingLink({ meetingUrl });
 
     expect(response.status).toBe(200);

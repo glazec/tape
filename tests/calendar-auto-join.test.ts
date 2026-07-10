@@ -120,9 +120,9 @@ describe("calendar auto join", () => {
         externalEventId: "google_event_123",
         title: "Partner sync",
         startsAt: "2026-06-30T12:00:00.000Z",
-        description: "Join Zoom.us/j/8436420171",
+        description: "Join Zoom.us/j/1234567890",
       }),
-    ).toBe("https://zoom.us/j/8436420171");
+    ).toBe("https://zoom.us/j/1234567890");
   });
 
   it("ignores physical map URLs in the calendar location", async () => {
@@ -481,7 +481,7 @@ describe("calendar auto join", () => {
         {
           bot_id: "iosg_bot",
           deduplication_key:
-            "team:22222222-2222-4222-8222-222222222222:start:2026-07-06T01:30:00.000Z:url:https://zoom.us/j/6898482622",
+            "team:22222222-2222-4222-8222-222222222222:start:2026-07-06T01:30:00.000Z:url:https://zoom.us/j/3456789012",
         },
       ],
     });
@@ -503,12 +503,12 @@ describe("calendar auto join", () => {
             {
               botId: "surf_bot",
               deduplicationKey:
-                "team:99999999-9999-4999-8999-999999999999:start:2026-07-06T01:30:00.000Z:url:https://zoom.us/j/6898482622",
+                "team:99999999-9999-4999-8999-999999999999:start:2026-07-06T01:30:00.000Z:url:https://zoom.us/j/3456789012",
             },
           ],
           title: "IOSG Weekly Team Meeting",
           startsAt: "2026-07-06T01:30:00.000Z",
-          meetingUrl: "https://zoom.us/j/6898482622",
+          meetingUrl: "https://zoom.us/j/3456789012",
         },
       }),
     ).resolves.toEqual(
@@ -524,7 +524,7 @@ describe("calendar auto join", () => {
     expect(scheduleRecallCalendarEventBot).toHaveBeenCalledWith({
       calendarEventId: "66666666-6666-4666-8666-666666666666",
       deduplicationKey:
-        "team:22222222-2222-4222-8222-222222222222:start:2026-07-06T01:30:00.000Z:url:https://zoom.us/j/6898482622",
+        "team:22222222-2222-4222-8222-222222222222:start:2026-07-06T01:30:00.000Z:url:https://zoom.us/j/3456789012",
       botName: "IOSG Old Friend",
       metadata: {
         calendarEventId: "33333333-3333-4333-8333-333333333333",
@@ -1172,7 +1172,7 @@ describe("calendar auto join", () => {
       {
         id: "44444444-4444-4444-8444-444444444444",
         recallBotId: "deleted_bot",
-        meetingUrl: "https://zoom.us/j/8436420171",
+        meetingUrl: "https://zoom.us/j/1234567890",
         startedAt: new Date("2099-07-08T17:00:00.000Z"),
         status: "failed",
       },
@@ -1209,21 +1209,21 @@ describe("calendar auto join", () => {
           title: "Anchorage <> IOSG",
           startsAt: "2099-07-08T17:00:00.000Z",
           endsAt: "2099-07-08T17:30:00.000Z",
-          meetingUrl: "https://zoom.us/j/8436420171",
+          meetingUrl: "https://zoom.us/j/1234567890",
         },
       }),
     ).resolves.toEqual({
       action: "scheduled",
       calendarEventId: "33333333-3333-4333-8333-333333333333",
       meetingId: "44444444-4444-4444-8444-444444444444",
-      meetingUrl: "https://zoom.us/j/8436420171",
+      meetingUrl: "https://zoom.us/j/1234567890",
       platform: "zoom",
       recallBotId: "replacement_bot",
     });
 
     expect(scheduleRecallBot).toHaveBeenCalledWith({
       botName: "IOSG Old Friend",
-      meetingUrl: "https://zoom.us/j/8436420171",
+      meetingUrl: "https://zoom.us/j/1234567890",
       metadata: {
         calendarEventId: "33333333-3333-4333-8333-333333333333",
         meetingId: "44444444-4444-4444-8444-444444444444",
@@ -1259,7 +1259,7 @@ describe("calendar auto join", () => {
         title: "Anchorage <> IOSG",
         titleSource: "calendar",
         recallBotId: "deleted_bot",
-        meetingUrl: "https://zoom.us/j/8436420171",
+        meetingUrl: "https://zoom.us/j/1234567890",
         startedAt: new Date("2099-07-08T17:00:00.000Z"),
         status: "failed",
       },
@@ -1298,7 +1298,7 @@ describe("calendar auto join", () => {
           title: "Anchorage <> IOSG",
           startsAt: "2099-07-08T17:00:00.000Z",
           endsAt: "2099-07-08T17:30:00.000Z",
-          meetingUrl: "https://zoom.us/j/8436420171",
+          meetingUrl: "https://zoom.us/j/1234567890",
         },
       }),
     ).rejects.toThrow("Recall bot scheduling failed with 402 Payment Required");
@@ -1391,7 +1391,7 @@ describe("calendar auto join", () => {
       {
         id: "33333333-3333-4333-8333-333333333333",
         teamMeetingKey:
-          "team:22222222-2222-4222-8222-222222222222:start:2026-06-30T13:00:00.000Z:url:https://zoom.us/j/8166024230",
+          "team:22222222-2222-4222-8222-222222222222:start:2026-06-30T13:00:00.000Z:url:https://zoom.us/j/2345678901",
       },
     ]);
     const calendarEventOnConflictDoUpdate = vi
@@ -1406,9 +1406,9 @@ describe("calendar auto join", () => {
         id: "44444444-4444-4444-8444-444444444444",
         calendarEventId: "33333333-3333-4333-8333-333333333333",
         teamMeetingKey:
-          "team:22222222-2222-4222-8222-222222222222:start:2026-06-30T13:30:00.000Z:url:https://zoom.us/j/8166024230",
+          "team:22222222-2222-4222-8222-222222222222:start:2026-06-30T13:30:00.000Z:url:https://zoom.us/j/2345678901",
         recallBotId: "old_bot",
-        meetingUrl: "https://zoom.us/j/8166024230",
+        meetingUrl: "https://zoom.us/j/2345678901",
         startedAt: new Date("2026-06-30T13:30:00.000Z"),
         status: "scheduled",
       },
@@ -1431,7 +1431,7 @@ describe("calendar auto join", () => {
         {
           bot_id: "new_bot",
           deduplication_key:
-            "team:22222222-2222-4222-8222-222222222222:start:2026-06-30T13:00:00.000Z:url:https://zoom.us/j/8166024230",
+            "team:22222222-2222-4222-8222-222222222222:start:2026-06-30T13:00:00.000Z:url:https://zoom.us/j/2345678901",
         },
       ],
     });
@@ -1452,14 +1452,14 @@ describe("calendar auto join", () => {
           title: "Investment strategy moved",
           startsAt: "2026-06-30T13:00:00.000Z",
           endsAt: null,
-          meetingUrl: "https://zoom.us/j/8166024230",
+          meetingUrl: "https://zoom.us/j/2345678901",
         },
       }),
     ).resolves.toEqual({
       action: "updated",
       calendarEventId: "33333333-3333-4333-8333-333333333333",
       meetingId: "44444444-4444-4444-8444-444444444444",
-      meetingUrl: "https://zoom.us/j/8166024230",
+      meetingUrl: "https://zoom.us/j/2345678901",
       platform: "zoom",
       recallBotId: "new_bot",
     });
@@ -1470,7 +1470,7 @@ describe("calendar auto join", () => {
     expect(scheduleRecallCalendarEventBot).toHaveBeenCalledWith({
       calendarEventId: "55555555-5555-4555-8555-555555555555",
       deduplicationKey:
-        "team:22222222-2222-4222-8222-222222222222:start:2026-06-30T13:00:00.000Z:url:https://zoom.us/j/8166024230",
+        "team:22222222-2222-4222-8222-222222222222:start:2026-06-30T13:00:00.000Z:url:https://zoom.us/j/2345678901",
       botName: "IOSG Old Friend",
       metadata: {
         calendarEventId: "33333333-3333-4333-8333-333333333333",
@@ -1482,7 +1482,7 @@ describe("calendar auto join", () => {
         recallBotId: "new_bot",
         startedAt: new Date("2026-06-30T13:00:00.000Z"),
         teamMeetingKey:
-          "team:22222222-2222-4222-8222-222222222222:start:2026-06-30T13:00:00.000Z:url:https://zoom.us/j/8166024230",
+          "team:22222222-2222-4222-8222-222222222222:start:2026-06-30T13:00:00.000Z:url:https://zoom.us/j/2345678901",
       }),
     );
   });
@@ -1492,7 +1492,7 @@ describe("calendar auto join", () => {
       {
         id: "33333333-3333-4333-8333-333333333333",
         teamMeetingKey:
-          "team:22222222-2222-4222-8222-222222222222:start:2026-06-30T13:00:00.000Z:url:https://zoom.us/j/8166024230",
+          "team:22222222-2222-4222-8222-222222222222:start:2026-06-30T13:00:00.000Z:url:https://zoom.us/j/2345678901",
       },
     ]);
     const calendarEventOnConflictDoUpdate = vi
@@ -1507,9 +1507,9 @@ describe("calendar auto join", () => {
         id: "44444444-4444-4444-8444-444444444444",
         calendarEventId: "33333333-3333-4333-8333-333333333333",
         teamMeetingKey:
-          "team:22222222-2222-4222-8222-222222222222:start:2026-06-30T13:00:00.000Z:url:https://zoom.us/j/8166024230",
+          "team:22222222-2222-4222-8222-222222222222:start:2026-06-30T13:00:00.000Z:url:https://zoom.us/j/2345678901",
         recallBotId: "direct_bot",
-        meetingUrl: "https://zoom.us/j/8166024230",
+        meetingUrl: "https://zoom.us/j/2345678901",
         startedAt: new Date("2026-06-30T13:00:00.000Z"),
         status: "scheduled",
       },
@@ -1532,7 +1532,7 @@ describe("calendar auto join", () => {
         {
           bot_id: "calendar_bot",
           deduplication_key:
-            "team:22222222-2222-4222-8222-222222222222:start:2026-06-30T13:00:00.000Z:url:https://zoom.us/j/8166024230",
+            "team:22222222-2222-4222-8222-222222222222:start:2026-06-30T13:00:00.000Z:url:https://zoom.us/j/2345678901",
         },
       ],
     });
@@ -1553,7 +1553,7 @@ describe("calendar auto join", () => {
         title: "Investment strategy",
         startsAt: "2026-06-30T13:00:00.000Z",
         endsAt: null,
-        meetingUrl: "https://zoom.us/j/8166024230",
+        meetingUrl: "https://zoom.us/j/2345678901",
       },
     });
 
@@ -1785,7 +1785,7 @@ describe("calendar auto join", () => {
         calendarEventId: "33333333-3333-4333-8333-333333333333",
         teamMeetingKey: null,
         recallBotId: "stale_bot",
-        meetingUrl: "https://zoom.us/j/8166024230",
+        meetingUrl: "https://zoom.us/j/2345678901",
         startedAt: new Date("2026-07-01T20:00:00.000Z"),
         status: "failed",
       },
@@ -1821,14 +1821,14 @@ describe("calendar auto join", () => {
           title: "Salt <> IOSG",
           startsAt: "2026-07-01T20:00:00.000Z",
           endsAt: "2026-07-01T20:30:00.000Z",
-          meetingUrl: "https://zoom.us/j/8166024230",
+          meetingUrl: "https://zoom.us/j/2345678901",
           attendees: [
             {
-              email: "owais@thesaltfund.com",
+              email: "partner.test@thesaltfund.com",
               responseStatus: "declined",
             },
             {
-              email: "yiping@iosg.vc",
+              email: "test@iosg.vc",
               responseStatus: "accepted",
             },
           ],
@@ -1915,17 +1915,17 @@ describe("calendar auto join", () => {
         event: {
           externalEventId: "google_event_123",
           recallCalendarEventId: "55555555-5555-4555-8555-555555555555",
-          title: "Yiping lu and BinBin He",
+          title: "Test User and External Guest",
           startsAt: "2026-07-01T20:30:00.000Z",
           endsAt: "2026-07-01T21:00:00.000Z",
           meetingUrl: "https://meet.google.com/abc-defg-hij",
           attendees: [
             {
-              email: "hebinsquared@gmail.com",
+              email: "guest.test@gmail.com",
               responseStatus: "accepted",
             },
             {
-              email: "yiping@iosg.vc",
+              email: "test@iosg.vc",
               responseStatus: "accepted",
             },
           ],
@@ -1943,7 +1943,7 @@ describe("calendar auto join", () => {
       expect.objectContaining({
         recallBotId: "stale_bot",
         status: "missed",
-        title: "Yiping lu and BinBin He",
+        title: "Test User and External Guest",
       }),
     );
     expect(scheduleRecallCalendarEventBot).not.toHaveBeenCalled();
@@ -2097,7 +2097,7 @@ describe("calendar auto join", () => {
       {
         id: "33333333-3333-4333-8333-333333333333",
         teamMeetingKey:
-          "team:22222222-2222-4222-8222-222222222222:start:2026-06-30T13:00:00.000Z:url:https://zoom.us/j/8166024230",
+          "team:22222222-2222-4222-8222-222222222222:start:2026-06-30T13:00:00.000Z:url:https://zoom.us/j/2345678901",
       },
     ]);
     const calendarEventOnConflictDoUpdate = vi
@@ -2112,9 +2112,9 @@ describe("calendar auto join", () => {
         id: "44444444-4444-4444-8444-444444444444",
         calendarEventId: "33333333-3333-4333-8333-333333333333",
         teamMeetingKey:
-          "team:22222222-2222-4222-8222-222222222222:start:2026-06-30T13:30:00.000Z:url:https://zoom.us/j/8166024230",
+          "team:22222222-2222-4222-8222-222222222222:start:2026-06-30T13:30:00.000Z:url:https://zoom.us/j/2345678901",
         recallBotId: "old_bot",
-        meetingUrl: "https://zoom.us/j/8166024230",
+        meetingUrl: "https://zoom.us/j/2345678901",
         startedAt: new Date("2026-06-30T13:30:00.000Z"),
         status: "scheduled",
       },
@@ -2137,7 +2137,7 @@ describe("calendar auto join", () => {
         {
           bot_id: "old_bot",
           deduplication_key:
-            "team:22222222-2222-4222-8222-222222222222:start:2026-06-30T13:30:00.000Z:url:https://zoom.us/j/8166024230",
+            "team:22222222-2222-4222-8222-222222222222:start:2026-06-30T13:30:00.000Z:url:https://zoom.us/j/2345678901",
         },
       ],
     });
@@ -2158,7 +2158,7 @@ describe("calendar auto join", () => {
           title: "Investment strategy moved",
           startsAt: "2026-06-30T13:00:00.000Z",
           endsAt: null,
-          meetingUrl: "https://zoom.us/j/8166024230",
+          meetingUrl: "https://zoom.us/j/2345678901",
         },
       }),
     ).rejects.toThrow("Recall bot response missing id");
@@ -2344,7 +2344,7 @@ describe("calendar auto join", () => {
         {
           id: "44444444-4444-4444-8444-444444444444",
           recallBotId: "bot_123",
-          meetingUrl: "https://zoom.us/j/8166024230",
+          meetingUrl: "https://zoom.us/j/2345678901",
           startedAt: new Date("2026-06-30T12:00:00.000Z"),
           status: "scheduled",
         },
@@ -2376,11 +2376,11 @@ describe("calendar auto join", () => {
         event: {
           externalEventId: "google_event_123",
           recallCalendarEventId: "55555555-5555-4555-8555-555555555555",
-          title: "Yiping",
+          title: "Test",
           startsAt: "2026-06-30T13:00:00.000Z",
           endsAt: null,
           isDeleted: true,
-          location: "https://zoom.us/j/8166024230",
+          location: "https://zoom.us/j/2345678901",
         },
       }),
     ).resolves.toEqual({
@@ -2404,7 +2404,7 @@ describe("calendar auto join", () => {
         meetingUrl: null,
         teamMeetingKey: null,
         status: "cancelled",
-        title: "Yiping",
+        title: "Test",
         updatedAt: expect.any(Date),
       }),
     );
