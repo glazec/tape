@@ -2,6 +2,50 @@ import Foundation
 import Testing
 @testable import LocalRecorderCore
 
+@Test func recallDesktopSDKStopAcknowledgementRejectsSidecarFailure() throws {
+    #expect(throws: RecallDesktopSDKStopAcknowledgementError.self) {
+        try RecallDesktopSDKStopAcknowledgement.validate(
+            output: "{\"type\":\"error\",\"message\":\"upload failed\"}\n",
+            terminationStatus: 1
+        )
+    }
+}
+
+@Test func recallDesktopSDKStopAcknowledgementRequiresStoppedMessage() throws {
+    #expect(throws: RecallDesktopSDKStopAcknowledgementError.self) {
+        try RecallDesktopSDKStopAcknowledgement.validate(
+            output: "{\"type\":\"sdk_event\"}\n",
+            terminationStatus: 0
+        )
+    }
+}
+
+@Test func recallDesktopSDKStopAcknowledgementAcceptsSuccessfulStop() throws {
+    try RecallDesktopSDKStopAcknowledgement.validate(
+        output: "{\"type\":\"stopped\",\"windowId\":\"desktop-audio\"}\n",
+        terminationStatus: 0
+    )
+}
+
+@Test func recallSDKFallbackRequestIncludesClaimedIntent() throws {
+    let client = LocalRecorderAPIClient(
+        serverURL: URL(string: "https://app.example.com")!,
+        bearerToken: "token_123",
+        deviceId: "device_123"
+    )
+
+    let request = try client.recallSDKFallbackRequest(
+        fallbackIntentId: "intent_123"
+    )
+    let body = try #require(request.httpBody)
+    let json = try #require(
+        JSONSerialization.jsonObject(with: body) as? [String: String]
+    )
+
+    #expect(request.url?.path == "/api/local-recorder/recordings/sdk-upload/fallback")
+    #expect(json == ["fallbackIntentId": "intent_123"])
+}
+
 @Test func permissionChecklistRequiresMicrophonePermission() {
     let ready = PermissionChecklist(
         microphone: .granted,
@@ -519,6 +563,28 @@ import Testing
     let activityWindows = manifest?["activityWindows"] as? [[String: Any]]
     #expect(manifest?["appVersion"] as? String == "0.1.0")
     #expect(activityWindows?.first?["microphoneActive"] as? Bool == true)
+}
+
+@Test func recallSDKUploadRequestBuildsJSONBodyForClaimedIntent() throws {
+    let client = LocalRecorderAPIClient(
+        serverURL: URL(string: "https://app.example.com")!,
+        bearerToken: "token_123",
+        deviceId: "device_123"
+    )
+    let request = try client.recallSDKUploadRequest(
+        fallbackIntentId: "intent_123",
+        clientRecordingId: "recording_123"
+    )
+    let body = try #require(request.httpBody)
+    let json = try JSONSerialization.jsonObject(with: body) as? [String: Any]
+
+    #expect(request.url?.absoluteString == "https://app.example.com/api/local-recorder/recordings/sdk-upload")
+    #expect(request.httpMethod == "POST")
+    #expect(request.value(forHTTPHeaderField: "Authorization") == "Bearer token_123")
+    #expect(request.value(forHTTPHeaderField: "x-local-recorder-device-id") == "device_123")
+    #expect(request.value(forHTTPHeaderField: "Content-Type") == "application/json")
+    #expect(json?["fallbackIntentId"] as? String == "intent_123")
+    #expect(json?["clientRecordingId"] as? String == "recording_123")
 }
 
 @Test func completeUploadRequestIncludesPreparedAssetIds() throws {

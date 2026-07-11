@@ -33,7 +33,11 @@ import {
   getObjectMetadata,
   parseR2Env,
 } from "@/lib/r2";
-import { retrieveRecallBot } from "@/lib/vendors/recall";
+import {
+  createRecallDesktopSdkUpload,
+  getRecallApiBaseUrl,
+  retrieveRecallBot,
+} from "@/lib/vendors/recall";
 import type { WorkspaceContext } from "@/lib/workspace";
 
 export type LocalRecorderMeetingItem = {
@@ -87,6 +91,7 @@ type LocalRecorderTranscriptionEventInput = {
 const intentTokenBytes = 18;
 const activeAttemptStates = ["started", "uploading", "uploaded"];
 const localRecorderAudioContentType = "audio/wav";
+const recallSdkFallbackNotificationState = "recall_sdk_fallback";
 const manualRecordingIntentTtlMs = 6 * 60 * 60 * 1000;
 const scheduleLookbackMs = 30 * 60 * 1000;
 
@@ -103,6 +108,91 @@ export function buildLocalRecorderTranscriptionEvent(
       transcriptJobId: input.transcriptJobId,
     },
   };
+}
+
+export async function createRecallDesktopSdkUploadForLocalRecorder(input: {
+  clientRecordingId: string;
+  deviceId: string;
+  fallbackIntentId: string;
+  requestUrl: string;
+  workspace: WorkspaceContext;
+}) {
+  const attempt = await getStartedLocalRecorderAttempt({
+    deviceId: input.deviceId,
+    fallbackIntentId: input.fallbackIntentId,
+    workspace: input.workspace,
+  });
+  const sdkUpload = await createRecallDesktopSdkUpload({
+    webhookUrl: input.requestUrl,
+    metadata: {
+      clientRecordingId: input.clientRecordingId,
+      fallbackIntentId: input.fallbackIntentId,
+      meetingId: attempt.meetingId,
+      source: "local_recorder_sdk",
+      teamId: input.workspace.teamId,
+      userId: input.workspace.userId,
+    },
+  });
+
+  return {
+    fallbackIntentId: input.fallbackIntentId,
+    meetingId: attempt.meetingId,
+    recallApiUrl: getRecallApiBaseUrl(),
+    sdkUploadId: getSdkUploadId(sdkUpload),
+    uploadToken: getSdkUploadToken(sdkUpload),
+  };
+}
+
+export async function markRecallDesktopSdkFallback(input: {
+  deviceId: string;
+  fallbackIntentId: string;
+  workspace: WorkspaceContext;
+}) {
+  const deviceIdHash = await hashLocalRecorderValue(input.deviceId);
+  const fallbackIntentIdHash = await hashLocalRecorderValue(
+    input.fallbackIntentId,
+  );
+  const [attempt] = await db
+    .select({ id: localRecordingAttempts.id })
+    .from(localRecordingAttempts)
+    .where(
+      and(
+        eq(localRecordingAttempts.userId, input.workspace.userId),
+        eq(localRecordingAttempts.deviceIdHash, deviceIdHash),
+        eq(localRecordingAttempts.fallbackIntentIdHash, fallbackIntentIdHash),
+        eq(localRecordingAttempts.attemptState, "started"),
+      ),
+    )
+    .limit(1);
+
+  if (!attempt) {
+    return { marked: false };
+  }
+
+  await db
+    .update(localRecordingAttempts)
+    .set({
+      notificationState: recallSdkFallbackNotificationState,
+      updatedAt: new Date(),
+    })
+    .where(eq(localRecordingAttempts.id, attempt.id));
+
+  return { marked: true };
+}
+
+export async function isRecallDesktopSdkFallbackIntent(
+  fallbackIntentId: string,
+) {
+  const fallbackIntentIdHash = await hashLocalRecorderValue(fallbackIntentId);
+  const [attempt] = await db
+    .select({ notificationState: localRecordingAttempts.notificationState })
+    .from(localRecordingAttempts)
+    .where(
+      eq(localRecordingAttempts.fallbackIntentIdHash, fallbackIntentIdHash),
+    )
+    .limit(1);
+
+  return attempt?.notificationState === recallSdkFallbackNotificationState;
 }
 
 export function isLocalRecorderCandidateVisibleInLookup(input: {
@@ -1039,6 +1129,43 @@ async function getUploadableLocalRecorderAttempt(input: {
   return attempt;
 }
 
+async function getStartedLocalRecorderAttempt(input: {
+  deviceId: string;
+  fallbackIntentId: string;
+  workspace: WorkspaceContext;
+}) {
+  const deviceIdHash = await hashLocalRecorderValue(input.deviceId);
+  const fallbackIntentIdHash = await hashLocalRecorderValue(
+    input.fallbackIntentId,
+  );
+  const [attempt] = await db
+    .select({
+      attemptState: localRecordingAttempts.attemptState,
+      expiresAt: localRecordingAttempts.expiresAt,
+      id: localRecordingAttempts.id,
+      meetingId: localRecordingAttempts.meetingId,
+    })
+    .from(localRecordingAttempts)
+    .where(
+      and(
+        eq(localRecordingAttempts.userId, input.workspace.userId),
+        eq(localRecordingAttempts.deviceIdHash, deviceIdHash),
+        eq(localRecordingAttempts.fallbackIntentIdHash, fallbackIntentIdHash),
+      ),
+    )
+    .limit(1);
+
+  if (
+    !attempt ||
+    attempt.expiresAt < new Date() ||
+    attempt.attemptState !== "started"
+  ) {
+    throw new LocalRecorderUploadError("No active local recording intent");
+  }
+
+  return attempt;
+}
+
 export class LocalRecorderUploadError extends Error {
   constructor(message: string) {
     super(message);
@@ -1141,4 +1268,33 @@ async function hashLocalRecorderValue(value: string) {
   );
 
   return Buffer.from(digest).toString("base64url");
+}
+
+function getSdkUploadId(value: unknown) {
+  if (!value || typeof value !== "object") {
+    throw new LocalRecorderUploadError("Recall Desktop SDK upload is invalid");
+  }
+
+  const id = (value as { id?: unknown }).id;
+
+  if (typeof id !== "string" || !id.trim()) {
+    throw new LocalRecorderUploadError("Recall Desktop SDK upload is invalid");
+  }
+
+  return id.trim();
+}
+
+function getSdkUploadToken(value: unknown) {
+  if (!value || typeof value !== "object") {
+    throw new LocalRecorderUploadError("Recall Desktop SDK upload is invalid");
+  }
+
+  const uploadToken = (value as { upload_token?: unknown; uploadToken?: unknown })
+    .upload_token ?? (value as { uploadToken?: unknown }).uploadToken;
+
+  if (typeof uploadToken !== "string" || !uploadToken.trim()) {
+    throw new LocalRecorderUploadError("Recall Desktop SDK upload is invalid");
+  }
+
+  return uploadToken.trim();
 }

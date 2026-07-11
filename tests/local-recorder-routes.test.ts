@@ -9,6 +9,8 @@ const claimLocalRecorderIntent = vi.fn();
 const failLocalRecorderIntent = vi.fn();
 const completeLocalRecorderRecordingUpload = vi.fn();
 const prepareLocalRecorderRecordingUpload = vi.fn();
+const createRecallDesktopSdkUploadForLocalRecorder = vi.fn();
+const markRecallDesktopSdkFallback = vi.fn();
 
 vi.mock("@/lib/local-recorder-auth", () => ({
   createLocalRecorderDeviceSession,
@@ -18,10 +20,12 @@ vi.mock("@/lib/local-recorder-auth", () => ({
 vi.mock("@/lib/local-recorder-records", () => ({
   claimLocalRecorderIntent,
   completeLocalRecorderRecordingUpload,
+  createRecallDesktopSdkUploadForLocalRecorder,
   createManualLocalRecorderIntent,
   failLocalRecorderIntent,
   getLocalRecorderMonitoringStatus,
   listMissedLocalRecorderMeetings,
+  markRecallDesktopSdkFallback,
   prepareLocalRecorderRecordingUpload,
 }));
 
@@ -47,6 +51,8 @@ describe("local recorder API routes", () => {
     failLocalRecorderIntent.mockReset();
     completeLocalRecorderRecordingUpload.mockReset();
     prepareLocalRecorderRecordingUpload.mockReset();
+    createRecallDesktopSdkUploadForLocalRecorder.mockReset();
+    markRecallDesktopSdkFallback.mockReset();
     vi.resetModules();
   });
 
@@ -302,6 +308,108 @@ describe("local recorder API routes", () => {
       manifest: { appVersion: "0.1.0" },
       recordingStartedAt: new Date("2026-06-30T12:02:00.000Z"),
       recordingStoppedAt: new Date("2026-06-30T13:00:00.000Z"),
+      workspace: {
+        teamId: "team_123",
+        userId: "user_123",
+      },
+    });
+  });
+
+  it("creates a Recall Desktop SDK upload for speaker attributed local recording", async () => {
+    mockSignedInDevice();
+    createRecallDesktopSdkUploadForLocalRecorder.mockResolvedValue({
+      fallbackIntentId: "intent_123",
+      meetingId: "11111111-1111-4111-8111-111111111111",
+      recallApiUrl: "https://us-east-1.recall.ai",
+      sdkUploadId: "33333333-3333-4333-8333-333333333333",
+      uploadToken: "recall_upload_token_123",
+    });
+
+    const { POST } = await import(
+      "@/app/api/local-recorder/recordings/sdk-upload/route"
+    );
+    const response = await POST(
+      new Request(
+        "https://app.example.com/api/local-recorder/recordings/sdk-upload",
+        {
+          method: "POST",
+          body: JSON.stringify({
+            fallbackIntentId: "intent_123",
+            clientRecordingId: "recording_123",
+          }),
+          headers: { "x-local-recorder-device-id": "mac_123" },
+        },
+      ),
+    );
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({
+      fallbackIntentId: "intent_123",
+      meetingId: "11111111-1111-4111-8111-111111111111",
+      recallApiUrl: "https://us-east-1.recall.ai",
+      sdkUploadId: "33333333-3333-4333-8333-333333333333",
+      uploadToken: "recall_upload_token_123",
+    });
+    expect(createRecallDesktopSdkUploadForLocalRecorder).toHaveBeenCalledWith({
+      clientRecordingId: "recording_123",
+      deviceId: "mac_123",
+      fallbackIntentId: "intent_123",
+      requestUrl: "https://app.example.com/api/local-recorder/recordings/sdk-upload",
+      workspace: {
+        teamId: "team_123",
+        userId: "user_123",
+      },
+    });
+  });
+
+  it("rejects invalid Recall Desktop SDK upload requests", async () => {
+    mockSignedInDevice();
+
+    const { POST } = await import(
+      "@/app/api/local-recorder/recordings/sdk-upload/route"
+    );
+    const response = await POST(
+      new Request(
+        "https://app.example.com/api/local-recorder/recordings/sdk-upload",
+        {
+          method: "POST",
+          body: JSON.stringify({
+            clientRecordingId: "recording_123",
+          }),
+          headers: { "x-local-recorder-device-id": "mac_123" },
+        },
+      ),
+    );
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toEqual({
+      error: "Invalid Recall Desktop SDK upload request",
+    });
+    expect(createRecallDesktopSdkUploadForLocalRecorder).not.toHaveBeenCalled();
+  });
+
+  it("marks a Recall SDK upload as replaced by local capture", async () => {
+    mockSignedInDevice();
+    markRecallDesktopSdkFallback.mockResolvedValue({ marked: true });
+    const { POST } = await import(
+      "@/app/api/local-recorder/recordings/sdk-upload/fallback/route"
+    );
+
+    const response = await POST(
+      new Request(
+        "https://app.example.com/api/local-recorder/recordings/sdk-upload/fallback",
+        {
+          method: "POST",
+          body: JSON.stringify({ fallbackIntentId: "intent_123" }),
+          headers: { "x-local-recorder-device-id": "mac_123" },
+        },
+      ),
+    );
+
+    expect(response.status).toBe(200);
+    expect(markRecallDesktopSdkFallback).toHaveBeenCalledWith({
+      deviceId: "mac_123",
+      fallbackIntentId: "intent_123",
       workspace: {
         teamId: "team_123",
         userId: "user_123",

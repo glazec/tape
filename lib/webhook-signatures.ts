@@ -1,4 +1,4 @@
-import { createHmac, timingSafeEqual } from "node:crypto";
+import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 
 import { ElevenLabsClient } from "@elevenlabs/elevenlabs-js";
 
@@ -13,6 +13,8 @@ export class WebhookVerificationError extends Error {
 
 const elevenLabsClient = new ElevenLabsClient();
 const RECALL_WEBHOOK_TIMESTAMP_TOLERANCE_SECONDS = 5 * 60;
+const RECALL_DESKTOP_REALTIME_TOKEN_CONTEXT =
+  "meeting-note:recall-desktop-realtime:v1";
 
 export async function verifyElevenLabsWebhook(
   rawBody: string,
@@ -41,11 +43,7 @@ export async function verifyElevenLabsWebhook(
 }
 
 export function verifyRecallWebhook(rawBody: string, headers: Headers) {
-  const secret = process.env.RECALL_WEBHOOK_SECRET?.trim();
-
-  if (!secret || !secret.startsWith("whsec_")) {
-    throw new WebhookVerificationError("Webhook secret is not configured", 500);
-  }
+  const key = getRecallWebhookKey();
 
   const messageId = headers.get("webhook-id") ?? headers.get("svix-id");
   const timestamp =
@@ -65,11 +63,6 @@ export function verifyRecallWebhook(rawBody: string, headers: Headers) {
       RECALL_WEBHOOK_TIMESTAMP_TOLERANCE_SECONDS
   ) {
     throw new WebhookVerificationError("Invalid webhook signature", 401);
-  }
-
-  const key = Buffer.from(secret.slice("whsec_".length), "base64");
-  if (key.length === 0) {
-    throw new WebhookVerificationError("Webhook secret is not configured", 500);
   }
 
   const expectedSignature = createHmac("sha256", key)
@@ -93,6 +86,55 @@ export function verifyRecallWebhook(rawBody: string, headers: Headers) {
   }
 
   throw new WebhookVerificationError("Invalid webhook signature", 401);
+}
+
+export function createRecallDesktopRealtimeWebhookToken() {
+  return createHmac("sha256", getRecallWebhookKey())
+    .update(RECALL_DESKTOP_REALTIME_TOKEN_CONTEXT)
+    .digest("base64url");
+}
+
+export function verifyRecallRealtimeWebhook(
+  rawBody: string,
+  request: Request,
+) {
+  try {
+    verifyRecallWebhook(rawBody, request.headers);
+
+    return (
+      request.headers.get("webhook-id") ?? request.headers.get("svix-id") ?? ""
+    );
+  } catch (signatureError) {
+    const providedToken = new URL(request.url).searchParams.get("token") ?? "";
+    const expectedToken = createRecallDesktopRealtimeWebhookToken();
+    const providedBytes = Buffer.from(providedToken);
+    const expectedBytes = Buffer.from(expectedToken);
+
+    if (
+      providedBytes.length !== expectedBytes.length ||
+      !timingSafeEqual(providedBytes, expectedBytes)
+    ) {
+      throw signatureError;
+    }
+
+    return `dsdk:${createHash("sha256").update(rawBody).digest("base64url")}`;
+  }
+}
+
+function getRecallWebhookKey() {
+  const secret = process.env.RECALL_WEBHOOK_SECRET?.trim();
+
+  if (!secret || !secret.startsWith("whsec_")) {
+    throw new WebhookVerificationError("Webhook secret is not configured", 500);
+  }
+
+  const key = Buffer.from(secret.slice("whsec_".length), "base64");
+
+  if (key.length === 0) {
+    throw new WebhookVerificationError("Webhook secret is not configured", 500);
+  }
+
+  return key;
 }
 
 export function webhookVerificationResponse(error: unknown) {

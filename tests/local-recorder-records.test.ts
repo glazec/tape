@@ -1,7 +1,13 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-const { db, getObjectMetadata, inngestSend, retrieveRecallBot } = vi.hoisted(
-  () => ({
+const {
+  createRecallDesktopSdkUpload,
+  db,
+  getObjectMetadata,
+  inngestSend,
+  retrieveRecallBot,
+} = vi.hoisted(() => ({
+    createRecallDesktopSdkUpload: vi.fn(),
     db: {
       insert: vi.fn(),
       select: vi.fn(),
@@ -11,8 +17,7 @@ const { db, getObjectMetadata, inngestSend, retrieveRecallBot } = vi.hoisted(
     getObjectMetadata: vi.fn(),
     inngestSend: vi.fn(),
     retrieveRecallBot: vi.fn(),
-  }),
-);
+  }));
 
 vi.mock("@/db/client", () => ({
   db,
@@ -35,17 +40,22 @@ vi.mock("@/lib/r2", async (importOriginal) => {
 });
 
 vi.mock("@/lib/vendors/recall", () => ({
+  createRecallDesktopSdkUpload,
+  getRecallApiBaseUrl: () => "https://us-east-1.recall.ai",
   retrieveRecallBot,
 }));
 
 import {
   buildLocalRecorderTranscriptionEvent,
   completeLocalRecorderRecordingUpload,
+  createRecallDesktopSdkUploadForLocalRecorder,
   getLocalRecorderMonitoringStatus,
+  isRecallDesktopSdkFallbackIntent,
   isLocalRecorderCandidateVisibleInLookup,
   isLocalRecorderMonitoringMeetingCurrent,
   isLocalRecorderPrimaryClaimConflict,
   listMissedLocalRecorderMeetings,
+  markRecallDesktopSdkFallback,
 } from "@/lib/local-recorder-records";
 
 function selectRows(rows: unknown[]) {
@@ -67,9 +77,90 @@ describe("local recorder records", () => {
     db.select.mockReset();
     db.transaction.mockReset();
     db.update.mockReset();
+    createRecallDesktopSdkUpload.mockReset();
     getObjectMetadata.mockReset();
     inngestSend.mockReset();
     retrieveRecallBot.mockReset();
+  });
+
+  it("creates a Recall Desktop SDK upload for a valid local recorder intent", async () => {
+    db.select.mockReturnValueOnce(
+      selectRows([
+        {
+          attemptState: "started",
+          expiresAt: new Date(Date.now() + 60_000),
+          id: "44444444-4444-4444-8444-444444444444",
+          meetingId: "22222222-2222-4222-8222-222222222222",
+        },
+      ]),
+    );
+    createRecallDesktopSdkUpload.mockResolvedValue({
+      id: "33333333-3333-4333-8333-333333333333",
+      upload_token: "recall_upload_token_123",
+    });
+
+    await expect(
+      createRecallDesktopSdkUploadForLocalRecorder({
+        clientRecordingId: "client_recording_123",
+        deviceId: "device_123",
+        fallbackIntentId: "intent_123",
+        requestUrl: "https://app.example.com/api/local-recorder/recordings/sdk-upload",
+        workspace: {
+          canCreateMeetings: true,
+          domain: "",
+          teamId: "team_123",
+          userId: "user_123",
+        },
+      }),
+    ).resolves.toEqual({
+      fallbackIntentId: "intent_123",
+      meetingId: "22222222-2222-4222-8222-222222222222",
+      recallApiUrl: "https://us-east-1.recall.ai",
+      sdkUploadId: "33333333-3333-4333-8333-333333333333",
+      uploadToken: "recall_upload_token_123",
+    });
+    expect(createRecallDesktopSdkUpload).toHaveBeenCalledWith({
+      metadata: {
+        clientRecordingId: "client_recording_123",
+        fallbackIntentId: "intent_123",
+        meetingId: "22222222-2222-4222-8222-222222222222",
+        source: "local_recorder_sdk",
+        teamId: "team_123",
+        userId: "user_123",
+      },
+      webhookUrl:
+        "https://app.example.com/api/local-recorder/recordings/sdk-upload",
+    });
+  });
+
+  it("marks and recognizes an SDK intent that switched to local capture", async () => {
+    const updateWhere = vi.fn().mockResolvedValue(undefined);
+    const updateSet = vi.fn(() => ({ where: updateWhere }));
+    db.select
+      .mockReturnValueOnce(selectRows([{ id: "attempt_123" }]))
+      .mockReturnValueOnce(
+        selectRows([{ notificationState: "recall_sdk_fallback" }]),
+      );
+    db.update.mockReturnValue({ set: updateSet });
+
+    await expect(
+      markRecallDesktopSdkFallback({
+        deviceId: "device_123",
+        fallbackIntentId: "intent_123",
+        workspace: {
+          canCreateMeetings: true,
+          domain: "",
+          teamId: "team_123",
+          userId: "user_123",
+        },
+      }),
+    ).resolves.toEqual({ marked: true });
+    await expect(
+      isRecallDesktopSdkFallbackIntent("intent_123"),
+    ).resolves.toBe(true);
+    expect(updateSet).toHaveBeenCalledWith(
+      expect.objectContaining({ notificationState: "recall_sdk_fallback" }),
+    );
   });
 
   it("builds a deterministic transcription event for completion retries", () => {

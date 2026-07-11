@@ -441,6 +441,67 @@ public struct LocalRecorderAPIClient: Sendable {
         )
     }
 
+    public func recallSDKUploadRequest(
+        fallbackIntentId: String,
+        clientRecordingId: String
+    ) throws -> URLRequest {
+        var request = URLRequest(
+            url: serverURL.appending(path: "/api/local-recorder/recordings/sdk-upload")
+        )
+        request.httpMethod = "POST"
+        applyRecorderHeaders(to: &request)
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONEncoder.localRecorder.encode(
+            RecallSDKUploadRequest(
+                fallbackIntentId: fallbackIntentId,
+                clientRecordingId: clientRecordingId
+            )
+        )
+        return request
+    }
+
+    public func createRecallSDKUpload(
+        fallbackIntentId: String,
+        clientRecordingId: String
+    ) async throws -> RecallSDKUploadResponse {
+        let request = try recallSDKUploadRequest(
+            fallbackIntentId: fallbackIntentId,
+            clientRecordingId: clientRecordingId
+        )
+        let (data, response) = try await URLSession.shared.data(for: request)
+        try validateHTTPResponse(response)
+
+        return try JSONDecoder.localRecorder.decode(
+            RecallSDKUploadResponse.self,
+            from: data
+        )
+    }
+
+    public func recallSDKFallbackRequest(
+        fallbackIntentId: String
+    ) throws -> URLRequest {
+        var request = URLRequest(
+            url: serverURL.appending(
+                path: "/api/local-recorder/recordings/sdk-upload/fallback"
+            )
+        )
+        request.httpMethod = "POST"
+        applyRecorderHeaders(to: &request)
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONEncoder.localRecorder.encode(
+            RecallSDKFallbackRequest(fallbackIntentId: fallbackIntentId)
+        )
+        return request
+    }
+
+    public func markRecallSDKFallback(fallbackIntentId: String) async throws {
+        let request = try recallSDKFallbackRequest(
+            fallbackIntentId: fallbackIntentId
+        )
+        let (_, response) = try await URLSession.shared.data(for: request)
+        try validateHTTPResponse(response)
+    }
+
     public func directUploadRequest(
         uploadURL: URL,
         contentType: String
@@ -1005,6 +1066,71 @@ private struct UploadMetadataRequest: Codable {
         self.recordingStartedAt = payload.recordingStartedAt
         self.recordingStoppedAt = payload.recordingStoppedAt
         self.manifest = payload.manifest
+    }
+}
+
+private struct RecallSDKUploadRequest: Codable {
+    var fallbackIntentId: String
+    var clientRecordingId: String
+}
+
+private struct RecallSDKFallbackRequest: Codable {
+    var fallbackIntentId: String
+}
+
+public struct RecallSDKUploadResponse: Codable, Equatable, Sendable {
+    public var fallbackIntentId: String
+    public var meetingId: String
+    public var recallApiUrl: String
+    public var sdkUploadId: String
+    public var uploadToken: String
+}
+
+public enum RecallDesktopSDKStopAcknowledgementError: LocalizedError, Equatable {
+    case failed(String)
+
+    public var errorDescription: String? {
+        switch self {
+        case .failed(let message):
+            return message
+        }
+    }
+}
+
+public enum RecallDesktopSDKStopAcknowledgement {
+    public static func validate(output: String, terminationStatus: Int32) throws {
+        var stopped = false
+        var reportedError: String?
+
+        for line in output.split(whereSeparator: \.isNewline) {
+            guard
+                let data = String(line).data(using: .utf8),
+                let message = try? JSONDecoder().decode(SidecarMessage.self, from: data)
+            else {
+                continue
+            }
+
+            if message.type == "stopped" {
+                stopped = true
+            } else if message.type == "error", let detail = message.message, !detail.isEmpty {
+                reportedError = detail
+            }
+        }
+
+        if let reportedError {
+            throw RecallDesktopSDKStopAcknowledgementError.failed(reportedError)
+        }
+
+        guard terminationStatus == 0, stopped else {
+            throw RecallDesktopSDKStopAcknowledgementError.failed(
+                "Recall Desktop SDK did not confirm that recording stopped"
+            )
+        }
+    }
+
+    private struct SidecarMessage: Decodable {
+        var type: String
+        var message: String?
     }
 }
 

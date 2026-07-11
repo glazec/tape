@@ -2,6 +2,8 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { z } from "zod";
 
+import { createRecallDesktopRealtimeWebhookToken } from "@/lib/webhook-signatures";
+
 const oldRecallWebhookSchema = z.object({
   event: z.string().min(1),
   data: z
@@ -31,6 +33,28 @@ const recallWebhookSchema = z.object({
       .optional()
       .nullable(),
     bot: z.object({
+      id: z.string().min(1),
+      metadata: recallMetadataSchema.optional().nullable(),
+    }),
+  }),
+});
+
+const recallSdkUploadWebhookSchema = z.object({
+  event: z.string().min(1),
+  data: z.object({
+    data: z.object({
+      code: z.string().min(1),
+      sub_code: z.string().min(1).optional().nullable(),
+      updated_at: z.string().min(1).optional().nullable(),
+    }),
+    recording: z
+      .object({
+        id: z.string().min(1),
+        metadata: recallMetadataSchema.optional().nullable(),
+      })
+      .optional()
+      .nullable(),
+    sdk_upload: z.object({
       id: z.string().min(1),
       metadata: recallMetadataSchema.optional().nullable(),
     }),
@@ -111,6 +135,11 @@ const recallChatMessageInputSchema = z.object({
   message: z.string().trim().min(1).max(4096),
 });
 
+const recallDesktopSdkUploadInputSchema = z.object({
+  webhookUrl: z.url(),
+  metadata: z.record(z.string(), z.string()).optional(),
+});
+
 const recallBotDeleteInputSchema = z.object({
   botId: z.string().trim().min(1),
 });
@@ -159,9 +188,15 @@ const recallApiEnvSchema = z.object({
   RECALL_API_BASE_URL: optionalRecallApiBaseUrl,
 });
 
+const recallApiBaseUrlEnvSchema = z.object({
+  RECALL_API_BASE_URL: optionalRecallApiBaseUrl,
+});
+
 const DEFAULT_RECALL_API_BASE_URL = "https://us-east-1.recall.ai";
 const RECALL_REALTIME_WEBHOOK_PATH = "/api/recall/realtime/webhook";
 const RECALL_CHAT_MESSAGE_EVENT = "participant_events.chat_message";
+const RECALL_PARTICIPANT_JOIN_EVENT = "participant_events.join";
+const RECALL_PARTICIPANT_UPDATE_EVENT = "participant_events.update";
 const RECALL_SPEECH_ON_EVENT = "participant_events.speech_on";
 const RECALL_SPEECH_OFF_EVENT = "participant_events.speech_off";
 
@@ -181,14 +216,49 @@ function buildRecallRealtimeRecordingConfig(webhookUrl: string) {
   };
 }
 
-function buildRecallRealtimeWebhookUrl(sourceUrl?: string) {
+function buildRecallDesktopSdkRealtimeRecordingConfig(
+  webhookUrl: string,
+  metadata?: Record<string, string>,
+) {
+  return {
+    metadata,
+    realtime_endpoints: [
+      {
+        type: "webhook",
+        url: webhookUrl,
+        events: [
+          RECALL_PARTICIPANT_JOIN_EVENT,
+          RECALL_PARTICIPANT_UPDATE_EVENT,
+          RECALL_SPEECH_ON_EVENT,
+          RECALL_SPEECH_OFF_EVENT,
+        ],
+      },
+    ],
+  };
+}
+
+function buildRecallRealtimeWebhookUrl(
+  sourceUrl?: string,
+  options?: { desktopSdk?: boolean },
+) {
   const baseUrl = sourceUrl ?? process.env.NEXT_PUBLIC_APP_URL?.trim();
 
   if (!baseUrl) {
     throw new Error("NEXT_PUBLIC_APP_URL is required");
   }
 
-  return new URL(RECALL_REALTIME_WEBHOOK_PATH, baseUrl).toString();
+  const url = new URL(
+    options?.desktopSdk
+      ? `${RECALL_REALTIME_WEBHOOK_PATH}/`
+      : RECALL_REALTIME_WEBHOOK_PATH,
+    baseUrl,
+  );
+
+  if (options?.desktopSdk) {
+    url.searchParams.set("token", createRecallDesktopRealtimeWebhookToken());
+  }
+
+  return url.toString();
 }
 
 export function normalizeRecallWebhook(payload: unknown) {
@@ -205,6 +275,25 @@ export function normalizeRecallWebhook(payload: unknown) {
       subCode: realPayload.data.data.data.sub_code ?? null,
       updatedAt: realPayload.data.data.data.updated_at ?? null,
       metadata: realPayload.data.data.bot.metadata ?? {},
+    };
+  }
+
+  const sdkUploadPayload = recallSdkUploadWebhookSchema.safeParse(payload);
+
+  if (sdkUploadPayload.success) {
+    return {
+      eventType: sdkUploadPayload.data.event,
+      botId: null,
+      recordingId: sdkUploadPayload.data.data.recording?.id ?? null,
+      meetingUrl: null,
+      statusCode: sdkUploadPayload.data.data.data.code,
+      code: sdkUploadPayload.data.data.data.code,
+      subCode: sdkUploadPayload.data.data.data.sub_code ?? null,
+      updatedAt: sdkUploadPayload.data.data.data.updated_at ?? null,
+      metadata:
+        sdkUploadPayload.data.data.sdk_upload.metadata ??
+        sdkUploadPayload.data.data.recording?.metadata ??
+        {},
     };
   }
 
@@ -234,6 +323,18 @@ export function getRecallWebhookIdempotencyKey(
     event.recordingId ??
     null
   );
+}
+
+export function getRecallApiBaseUrl(env?: {
+  RECALL_API_BASE_URL?: string | undefined;
+}) {
+  const parsedEnv = recallApiBaseUrlEnvSchema.parse(
+    env ?? (process.env as { RECALL_API_BASE_URL?: string | undefined }),
+  );
+
+  return new URL(
+    parsedEnv.RECALL_API_BASE_URL ?? DEFAULT_RECALL_API_BASE_URL,
+  ).origin;
 }
 
 export async function scheduleRecallBot(input: {
@@ -275,6 +376,61 @@ export async function scheduleRecallBot(input: {
   if (!response.ok) {
     throw new Error(
       `Recall bot scheduling failed with ${response.status} ${response.statusText}`,
+    );
+  }
+
+  return response.json();
+}
+
+export async function createRecallDesktopSdkUpload(input: {
+  webhookUrl: string;
+  metadata?: Record<string, string>;
+}) {
+  const parsedInput = recallDesktopSdkUploadInputSchema.parse(input);
+  const env = recallApiEnvSchema.parse(process.env);
+
+  const response = await fetch(buildRecallApiUrl(env, "/api/v1/sdk_upload/"), {
+    method: "POST",
+    headers: buildRecallJsonHeaders(env),
+    body: JSON.stringify({
+      recording_config: buildRecallDesktopSdkRealtimeRecordingConfig(
+        buildRecallRealtimeWebhookUrl(parsedInput.webhookUrl, {
+          desktopSdk: true,
+        }),
+        parsedInput.metadata,
+      ),
+      metadata: {
+        requested_webhook_url: parsedInput.webhookUrl,
+        ...parsedInput.metadata,
+      },
+    }),
+  });
+
+  if (!response.ok) {
+    throw new Error(
+      `Recall Desktop SDK upload creation failed with ${response.status} ${response.statusText}`,
+    );
+  }
+
+  return response.json();
+}
+
+export async function retrieveRecallRecording(recordingId: string) {
+  const env = recallApiEnvSchema.parse(process.env);
+  const response = await fetch(
+    buildRecallApiUrl(
+      env,
+      `/api/v1/recording/${encodeURIComponent(recordingId)}/`,
+    ),
+    {
+      method: "GET",
+      headers: buildRecallReadHeaders(env),
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error(
+      `Recall recording retrieval failed with ${response.status} ${response.statusText}`,
     );
   }
 
@@ -739,10 +895,7 @@ function buildRecallApiUrl(
   env: z.infer<typeof recallApiEnvSchema>,
   pathname: string,
 ) {
-  return new URL(
-    pathname,
-    env.RECALL_API_BASE_URL ?? DEFAULT_RECALL_API_BASE_URL,
-  ).toString();
+  return new URL(pathname, getRecallApiBaseUrl(env)).toString();
 }
 
 function buildRecallJsonHeaders(env: z.infer<typeof recallApiEnvSchema>) {
@@ -767,6 +920,12 @@ export function findRecallRecordingMediaUrl(
     return null;
   }
 
+  const directUrl = findRecallRecordingMediaUrlInRecord(bot, recordingId);
+
+  if (directUrl) {
+    return directUrl;
+  }
+
   const recordings = (bot as { recordings?: unknown }).recordings;
 
   if (!Array.isArray(recordings)) {
@@ -778,21 +937,10 @@ export function findRecallRecordingMediaUrl(
       continue;
     }
 
-    const candidate = recording as {
-      id?: unknown;
-      media_shortcuts?: Record<string, unknown>;
-    };
+    const url = findRecallRecordingMediaUrlInRecord(recording, recordingId);
 
-    if (recordingId && candidate.id !== recordingId) {
-      continue;
-    }
-
-    for (const shortcut of ["audio_mixed", "video_mixed"]) {
-      const url = getDownloadUrl(candidate.media_shortcuts?.[shortcut]);
-
-      if (url) {
-        return url;
-      }
+    if (url) {
+      return url;
     }
   }
 
@@ -807,6 +955,12 @@ export function findRecallSpeakerTimelineUrl(
     return null;
   }
 
+  const directUrl = findRecallSpeakerTimelineUrlInRecord(bot, recordingId);
+
+  if (directUrl) {
+    return directUrl;
+  }
+
   const recordings = (bot as { recordings?: unknown }).recordings;
 
   if (!Array.isArray(recordings)) {
@@ -818,26 +972,7 @@ export function findRecallSpeakerTimelineUrl(
       continue;
     }
 
-    const candidate = recording as {
-      id?: unknown;
-      media_shortcuts?: Record<string, unknown>;
-      speaker_timeline_download_url?: unknown;
-    };
-
-    if (recordingId && candidate.id !== recordingId) {
-      continue;
-    }
-
-    if (
-      typeof candidate.speaker_timeline_download_url === "string" &&
-      candidate.speaker_timeline_download_url.trim()
-    ) {
-      return candidate.speaker_timeline_download_url.trim();
-    }
-
-    const url =
-      getSpeakerTimelineDownloadUrl(candidate.media_shortcuts?.participant_events) ??
-      getDownloadUrl(candidate.media_shortcuts?.speaker_timeline);
+    const url = findRecallSpeakerTimelineUrlInRecord(recording, recordingId);
 
     if (url) {
       return url;
@@ -845,6 +980,65 @@ export function findRecallSpeakerTimelineUrl(
   }
 
   return null;
+}
+
+function findRecallRecordingMediaUrlInRecord(
+  recording: unknown,
+  recordingId?: string | null,
+) {
+  if (!recording || typeof recording !== "object") {
+    return null;
+  }
+
+  const candidate = recording as {
+    id?: unknown;
+    media_shortcuts?: Record<string, unknown>;
+  };
+
+  if (recordingId && candidate.id !== recordingId) {
+    return null;
+  }
+
+  for (const shortcut of ["audio_mixed", "video_mixed"]) {
+    const url = getDownloadUrl(candidate.media_shortcuts?.[shortcut]);
+
+    if (url) {
+      return url;
+    }
+  }
+
+  return null;
+}
+
+function findRecallSpeakerTimelineUrlInRecord(
+  recording: unknown,
+  recordingId?: string | null,
+) {
+  if (!recording || typeof recording !== "object") {
+    return null;
+  }
+
+  const candidate = recording as {
+    id?: unknown;
+    media_shortcuts?: Record<string, unknown>;
+    speaker_timeline_download_url?: unknown;
+  };
+
+  if (recordingId && candidate.id !== recordingId) {
+    return null;
+  }
+
+  if (
+    typeof candidate.speaker_timeline_download_url === "string" &&
+    candidate.speaker_timeline_download_url.trim()
+  ) {
+    return candidate.speaker_timeline_download_url.trim();
+  }
+
+  return (
+    getSpeakerTimelineDownloadUrl(candidate.media_shortcuts?.participant_events) ??
+    getDownloadUrl(candidate.media_shortcuts?.speaker_timeline)
+  );
 }
 
 function getSpeakerTimelineDownloadUrl(mediaShortcut: unknown) {

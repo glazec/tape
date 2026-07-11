@@ -17,6 +17,11 @@ private final class LocalRecorderAppDelegate: NSObject, NSApplicationDelegate {
     }
 }
 
+private enum ActiveRecordingBackend: Equatable {
+    case recallDesktopSDK
+    case localUpload
+}
+
 enum RecorderPermissionStep {
     case microphone
     case systemAudio
@@ -113,11 +118,14 @@ final class RecorderAppModel: NSObject, ObservableObject, UNUserNotificationCent
 
     private let appVersion = "0.1.0"
     private let captureController = LocalRecordingCaptureController()
+    private let recallSDKController = RecallDesktopSDKRecordingController()
     private let credentialStore: LocalRecorderKeychainCredentialStore
     private let deviceIdStore = DeviceIdStore()
     private let notificationCenter = UNUserNotificationCenter.current()
     private let uploadQueue: LocalRecordingUploadQueue
     private var activeClient: LocalRecorderAPIClient?
+    private var activeFallbackIntentId: String?
+    private var activeRecordingBackend: ActiveRecordingBackend?
     private var isUploadingQueuedRecordings = false
     private var isSilencePromptVisible = false
     private var appActivationObserver: NSObjectProtocol?
@@ -138,6 +146,11 @@ final class RecorderAppModel: NSObject, ObservableObject, UNUserNotificationCent
         self.serverURLText = credentials?.serverURLText ?? Self.defaultServerURLText
         self.bearerToken = credentials?.bearerToken ?? ""
         super.init()
+        recallSDKController.onUnexpectedTermination = { [weak self] in
+            Task { @MainActor in
+                await self?.recoverFromUnexpectedRecallSDKStop()
+            }
+        }
         loadMicrophoneSelection()
         externalURLDispatcher.setHandler { [weak self] url in
             self?.handleLoginCallback(url)
@@ -563,35 +576,111 @@ final class RecorderAppModel: NSObject, ObservableObject, UNUserNotificationCent
     ) async {
         stopLevelTest()
 
-        do {
-            silencePromptTracker = SilencePromptTracker()
-            audioLevels = Array(repeating: 0, count: Self.audioLevelSampleCount)
-            try await captureController.start(
-                fallbackIntentId: fallbackIntentId,
-                appVersion: appVersion,
-                microphoneDeviceUID: selectedMicrophoneUID,
-                onAudioLevel: { [weak self] source, level in
-                    Task { @MainActor in
-                        self?.observeAudioLevel(source: source, level: level)
-                    }
-                }
-            )
-        } catch {
-            try? await client.failIntent(
-                fallbackIntentId: fallbackIntentId,
-                errorMessage: error.localizedDescription
-            )
-            statusText = "Could not start recording: \(error.localizedDescription)"
-            await refreshPermissions()
-            return
+        let clientRecordingId = UUID().uuidString
+        let startedWithRecallSDK = await startRecallSDKCapture(
+            client: client,
+            clientRecordingId: clientRecordingId,
+            fallbackIntentId: fallbackIntentId
+        )
+
+        if startedWithRecallSDK {
+            activeRecordingBackend = .recallDesktopSDK
+        } else {
+            do {
+                try await startLocalCapture(fallbackIntentId: fallbackIntentId)
+                activeRecordingBackend = .localUpload
+            } catch {
+                try? await client.failIntent(
+                    fallbackIntentId: fallbackIntentId,
+                    errorMessage: error.localizedDescription
+                )
+                statusText = "Could not start recording: \(error.localizedDescription)"
+                await refreshPermissions()
+                return
+            }
         }
 
         activeClient = client
+        activeFallbackIntentId = fallbackIntentId
         activeRecordingTitle = title
         pendingMeetings.removeAll { $0.fallbackIntentId == fallbackIntentId }
         fallbackNotificationCountsByIntentId.removeValue(forKey: fallbackIntentId)
         isRecording = true
         statusText = "Recording \(title)"
+    }
+
+    private func startRecallSDKCapture(
+        client: LocalRecorderAPIClient,
+        clientRecordingId: String,
+        fallbackIntentId: String
+    ) async -> Bool {
+        do {
+            let upload = try await client.createRecallSDKUpload(
+                fallbackIntentId: fallbackIntentId,
+                clientRecordingId: clientRecordingId
+            )
+            try await recallSDKController.start(
+                upload: upload,
+                clientRecordingId: clientRecordingId
+            )
+            return true
+        } catch {
+            try? await client.markRecallSDKFallback(
+                fallbackIntentId: fallbackIntentId
+            )
+            return false
+        }
+    }
+
+    private func startLocalCapture(fallbackIntentId: String) async throws {
+        silencePromptTracker = SilencePromptTracker()
+        audioLevels = Array(repeating: 0, count: Self.audioLevelSampleCount)
+        try await captureController.start(
+            fallbackIntentId: fallbackIntentId,
+            appVersion: appVersion,
+            microphoneDeviceUID: selectedMicrophoneUID,
+            onAudioLevel: { [weak self] source, level in
+                Task { @MainActor in
+                    self?.observeAudioLevel(source: source, level: level)
+                }
+            }
+        )
+    }
+
+    private func recoverFromUnexpectedRecallSDKStop() async {
+        guard
+            isRecording,
+            !isFinishingRecording,
+            activeRecordingBackend == .recallDesktopSDK,
+            let client = activeClient,
+            let fallbackIntentId = activeFallbackIntentId
+        else {
+            return
+        }
+
+        isFinishingRecording = true
+        activeRecordingBackend = nil
+        statusText = "Switching to local recording"
+        try? await client.markRecallSDKFallback(fallbackIntentId: fallbackIntentId)
+
+        do {
+            try await startLocalCapture(fallbackIntentId: fallbackIntentId)
+            activeRecordingBackend = .localUpload
+            statusText = "Recording locally"
+        } catch {
+            try? await client.failIntent(
+                fallbackIntentId: fallbackIntentId,
+                errorMessage: error.localizedDescription
+            )
+            isRecording = false
+            activeClient = nil
+            activeFallbackIntentId = nil
+            activeRecordingTitle = nil
+            resetAudioLevels()
+            statusText = "Recording stopped unexpectedly"
+        }
+
+        isFinishingRecording = false
     }
 
     private func observeAudioLevel(source: LocalRecorderAudioSource, level: Float) {
@@ -789,30 +878,49 @@ final class RecorderAppModel: NSObject, ObservableObject, UNUserNotificationCent
             }
 
             do {
-                let result = try await captureController.stop()
-                isRecording = false
-                try uploadQueue.save(result.payload)
-                guard let client = activeClient else {
-                    throw LocalRecorderAPIError.invalidResponse
-                }
+                switch activeRecordingBackend {
+                case .recallDesktopSDK:
+                    _ = try await recallSDKController.stop()
+                    isRecording = false
+                    activeClient = nil
+                    activeFallbackIntentId = nil
+                    activeRecordingTitle = nil
+                    activeRecordingBackend = nil
+                    resetAudioLevels()
+                    statusText = "Recording processing"
+                case .localUpload, nil:
+                    let result = try await captureController.stop()
+                    isRecording = false
+                    try uploadQueue.save(result.payload)
+                    guard let client = activeClient else {
+                        throw LocalRecorderAPIError.invalidResponse
+                    }
 
-                statusText = "Uploading recording"
-                try await uploadWithRetry(
-                    client: client,
-                    payload: result.payload
-                )
-                try uploadQueue.remove(clientRecordingId: result.payload.clientRecordingId)
-                try? FileManager.default.removeItem(at: result.cleanupDirectoryURL)
-                activeClient = nil
-                activeRecordingTitle = nil
-                resetAudioLevels()
-                statusText = "Recording uploaded"
+                    statusText = "Uploading recording"
+                    try await uploadWithRetry(
+                        client: client,
+                        payload: result.payload
+                    )
+                    try uploadQueue.remove(clientRecordingId: result.payload.clientRecordingId)
+                    try? FileManager.default.removeItem(at: result.cleanupDirectoryURL)
+                    activeClient = nil
+                    activeFallbackIntentId = nil
+                    activeRecordingTitle = nil
+                    activeRecordingBackend = nil
+                    resetAudioLevels()
+                    statusText = "Recording uploaded"
+                }
             } catch {
+                let failedBackend = activeRecordingBackend
                 isRecording = false
                 activeClient = nil
+                activeFallbackIntentId = nil
                 activeRecordingTitle = nil
+                activeRecordingBackend = nil
                 resetAudioLevels()
-                statusText = "Could not upload recording. Files kept locally."
+                statusText = failedBackend == .recallDesktopSDK
+                    ? "Could not stop recording"
+                    : "Could not upload recording. Files kept locally."
             }
         }
     }

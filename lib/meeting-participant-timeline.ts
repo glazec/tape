@@ -1,4 +1,4 @@
-import { asc, eq } from "drizzle-orm";
+import { and, asc, desc, eq, isNull } from "drizzle-orm";
 
 import { db } from "@/db/client";
 import { meetingParticipantTimeline } from "@/db/schema";
@@ -10,6 +10,28 @@ export type ParticipantTimelineEntry = {
   startMs: number;
   endMs: number | null;
 };
+
+type RecallRealtimeParticipantTimelineEntry = ParticipantTimelineEntry & {
+  meetingId: string;
+};
+
+type RecallRealtimeParticipantTimelineUpdate =
+  | {
+      action: "speech_on";
+      entry: RecallRealtimeParticipantTimelineEntry;
+    }
+  | {
+      action: "speech_off";
+      entry: RecallRealtimeParticipantTimelineEntry;
+    }
+  | {
+      action: "skip";
+      reason:
+        | "missing_meeting_id"
+        | "missing_participant"
+        | "missing_timestamp"
+        | "unsupported_event";
+    };
 
 export async function fetchAndPersistRecallParticipantTimeline(input: {
   meetingId: string;
@@ -117,6 +139,107 @@ export async function persistMeetingParticipantTimeline(input: {
   );
 }
 
+export async function persistRecallRealtimeParticipantTimelineEvent(
+  payload: unknown,
+) {
+  const update = buildRecallRealtimeParticipantTimelineUpdate(payload);
+
+  if (update.action === "skip") {
+    return update;
+  }
+
+  if (update.action === "speech_on") {
+    await db
+      .insert(meetingParticipantTimeline)
+      .values({
+        meetingId: update.entry.meetingId,
+        recallParticipantId: update.entry.participantId,
+        name: update.entry.name,
+        email: update.entry.email,
+        startMs: update.entry.startMs,
+        endMs: null,
+        source: "recall_realtime",
+      })
+      .onConflictDoNothing({
+        target: [
+          meetingParticipantTimeline.meetingId,
+          meetingParticipantTimeline.recallParticipantId,
+          meetingParticipantTimeline.startMs,
+        ],
+      });
+
+    return update;
+  }
+
+  const openEntry = await findOpenParticipantTimelineEntry(update.entry);
+
+  if (openEntry) {
+    await db
+      .update(meetingParticipantTimeline)
+      .set({
+        email: update.entry.email ?? undefined,
+        endMs: update.entry.endMs,
+        name: update.entry.name ?? undefined,
+        updatedAt: new Date(),
+      })
+      .where(eq(meetingParticipantTimeline.id, openEntry.id));
+  }
+
+  return update;
+}
+
+export function buildRecallRealtimeParticipantTimelineUpdate(
+  payload: unknown,
+): RecallRealtimeParticipantTimelineUpdate {
+  const record = getRecord(payload);
+  const event = getString(record?.event);
+
+  if (
+    event !== "participant_events.speech_on" &&
+    event !== "participant_events.speech_off"
+  ) {
+    return { action: "skip", reason: "unsupported_event" };
+  }
+
+  const data = getRecord(record?.data);
+  const eventData = getRecord(data?.data);
+  const participant = getRecord(eventData?.participant);
+  const participantId = getIdString(participant?.id);
+  const name = getString(participant?.name);
+  const email = getString(participant?.email);
+
+  if (!participantId && !name && !email) {
+    return { action: "skip", reason: "missing_participant" };
+  }
+
+  const meetingId = getRecallRealtimeMeetingId(data);
+
+  if (!meetingId) {
+    return { action: "skip", reason: "missing_meeting_id" };
+  }
+
+  const timestamp = getRelativeTimestampAsMilliseconds(eventData ?? {}, [
+    "timestamp",
+  ]);
+
+  if (timestamp === null) {
+    return { action: "skip", reason: "missing_timestamp" };
+  }
+
+  return {
+    action:
+      event === "participant_events.speech_on" ? "speech_on" : "speech_off",
+    entry: {
+      email,
+      endMs: event === "participant_events.speech_off" ? timestamp : null,
+      meetingId,
+      name,
+      participantId,
+      startMs: timestamp,
+    },
+  };
+}
+
 export async function listMeetingParticipantTimeline(meetingId: string) {
   const rows = await db
     .select({
@@ -131,6 +254,82 @@ export async function listMeetingParticipantTimeline(meetingId: string) {
     .orderBy(asc(meetingParticipantTimeline.startMs));
 
   return rows;
+}
+
+async function findOpenParticipantTimelineEntry(
+  entry: RecallRealtimeParticipantTimelineEntry,
+) {
+  if (entry.participantId) {
+    const rows = await db
+      .select({ id: meetingParticipantTimeline.id })
+      .from(meetingParticipantTimeline)
+      .where(
+        and(
+          eq(meetingParticipantTimeline.meetingId, entry.meetingId),
+          eq(meetingParticipantTimeline.recallParticipantId, entry.participantId),
+          isNull(meetingParticipantTimeline.endMs),
+        ),
+      )
+      .orderBy(desc(meetingParticipantTimeline.startMs))
+      .limit(1);
+
+    return rows[0] ?? null;
+  }
+
+  if (entry.email) {
+    const rows = await db
+      .select({ id: meetingParticipantTimeline.id })
+      .from(meetingParticipantTimeline)
+      .where(
+        and(
+          eq(meetingParticipantTimeline.meetingId, entry.meetingId),
+          eq(meetingParticipantTimeline.email, entry.email),
+          isNull(meetingParticipantTimeline.endMs),
+        ),
+      )
+      .orderBy(desc(meetingParticipantTimeline.startMs))
+      .limit(1);
+
+    return rows[0] ?? null;
+  }
+
+  if (entry.name) {
+    const rows = await db
+      .select({ id: meetingParticipantTimeline.id })
+      .from(meetingParticipantTimeline)
+      .where(
+        and(
+          eq(meetingParticipantTimeline.meetingId, entry.meetingId),
+          eq(meetingParticipantTimeline.name, entry.name),
+          isNull(meetingParticipantTimeline.endMs),
+        ),
+      )
+      .orderBy(desc(meetingParticipantTimeline.startMs))
+      .limit(1);
+
+    return rows[0] ?? null;
+  }
+
+  return null;
+}
+
+function getRecallRealtimeMeetingId(data: Record<string, unknown> | null) {
+  for (const artifactKey of [
+    "recording",
+    "bot",
+    "participant_events",
+    "realtime_endpoint",
+  ]) {
+    const artifact = getRecord(data?.[artifactKey]);
+    const metadata = getRecord(artifact?.metadata);
+    const meetingId = getString(metadata?.meetingId) ?? getString(metadata?.meeting_id);
+
+    if (meetingId) {
+      return meetingId;
+    }
+  }
+
+  return null;
 }
 
 function getTimelineRecords(payload: unknown) {

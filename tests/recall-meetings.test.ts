@@ -8,8 +8,10 @@ import {
 const {
   createRecallRecordingTranscription,
   fetchAndPersistRecallParticipantTimeline,
+  isRecallDesktopSdkFallbackIntent,
   persistRecallBotScreenshots,
   retrieveRecallBot,
+  retrieveRecallRecording,
   send,
   select,
   selectFrom,
@@ -20,8 +22,10 @@ const {
 } = vi.hoisted(() => ({
   createRecallRecordingTranscription: vi.fn(),
   fetchAndPersistRecallParticipantTimeline: vi.fn(),
+  isRecallDesktopSdkFallbackIntent: vi.fn(),
   persistRecallBotScreenshots: vi.fn(),
   retrieveRecallBot: vi.fn(),
+  retrieveRecallRecording: vi.fn(),
   send: vi.fn(),
   select: vi.fn(),
   selectFrom: vi.fn(),
@@ -56,20 +60,27 @@ vi.mock("@/lib/meeting-screenshots", () => ({
   persistRecallBotScreenshots,
 }));
 
+vi.mock("@/lib/local-recorder-records", () => ({
+  isRecallDesktopSdkFallbackIntent,
+}));
+
 vi.mock("@/lib/vendors/recall", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/vendors/recall")>();
 
   return {
     ...actual,
     retrieveRecallBot,
+    retrieveRecallRecording,
   };
 });
 
 afterEach(() => {
   createRecallRecordingTranscription.mockReset();
   fetchAndPersistRecallParticipantTimeline.mockReset();
+  isRecallDesktopSdkFallbackIntent.mockReset();
   persistRecallBotScreenshots.mockReset();
   retrieveRecallBot.mockReset();
+  retrieveRecallRecording.mockReset();
   send.mockReset();
   select.mockReset();
   selectFrom.mockReset();
@@ -197,6 +208,62 @@ describe("buildRecallMeetingUpdate", () => {
 });
 
 describe("applyRecallMeetingEvent", () => {
+  it("ignores failed SDK uploads after the app switched to local capture", async () => {
+    update.mockReturnValue({
+      set: vi.fn().mockReturnValue({ where }),
+    });
+    isRecallDesktopSdkFallbackIntent.mockResolvedValue(true);
+
+    await expect(
+      applyRecallMeetingEvent({
+        eventType: "sdk_upload.failed",
+        botId: null,
+        recordingId: "failed_recording_123",
+        meetingUrl: null,
+        statusCode: "failed",
+        code: "failed",
+        subCode: null,
+        updatedAt: "2026-07-10T12:00:00Z",
+        metadata: {
+          fallbackIntentId: "intent_123",
+          meetingId: "11111111-1111-4111-8111-111111111111",
+          source: "local_recorder_sdk",
+        },
+      }),
+    ).resolves.toEqual({
+      action: "skip",
+      reason: "local_fallback_active",
+    });
+    expect(update).not.toHaveBeenCalled();
+  });
+
+  it("ignores completed SDK artifacts after the app switched to local capture", async () => {
+    isRecallDesktopSdkFallbackIntent.mockResolvedValue(true);
+
+    await expect(
+      applyRecallMeetingEvent({
+        eventType: "sdk_upload.complete",
+        botId: null,
+        recordingId: "partial_recording_123",
+        meetingUrl: null,
+        statusCode: "complete",
+        code: "complete",
+        subCode: null,
+        updatedAt: "2026-07-10T12:00:00Z",
+        metadata: {
+          fallbackIntentId: "intent_123",
+          meetingId: "11111111-1111-4111-8111-111111111111",
+          source: "local_recorder_sdk",
+        },
+      }),
+    ).resolves.toEqual({
+      action: "skip",
+      reason: "local_fallback_active",
+    });
+    expect(update).not.toHaveBeenCalled();
+    expect(retrieveRecallRecording).not.toHaveBeenCalled();
+  });
+
   it("queues transcription when Recall reports a completed recording", async () => {
     update.mockReturnValue({
       set: vi.fn().mockReturnValue({ where }),
@@ -293,6 +360,117 @@ describe("applyRecallMeetingEvent", () => {
     });
 
     expect(retrieveRecallBot).not.toHaveBeenCalled();
+    expect(createRecallRecordingTranscription).not.toHaveBeenCalled();
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it("queues transcription when a Recall Desktop SDK upload completes", async () => {
+    update.mockReturnValue({
+      set: vi.fn().mockReturnValue({ where }),
+    });
+    select.mockReturnValue({ from: selectFrom });
+    selectFrom.mockReturnValue({ where: selectWhere });
+    selectWhere.mockReturnValue({ limit: selectLimit });
+    selectLimit.mockResolvedValue([]);
+    retrieveRecallRecording.mockResolvedValue({
+      id: "recording_123",
+      media_shortcuts: {
+        audio_mixed: {
+          data: {
+            download_url: "https://recall.example.com/sdk-audio.mp3",
+          },
+        },
+        participant_events: {
+          data: {
+            speaker_timeline_download_url:
+              "https://recall.example.com/sdk-speaker-timeline.json",
+          },
+        },
+      },
+    });
+    createRecallRecordingTranscription.mockResolvedValue({
+      meetingId: "11111111-1111-4111-8111-111111111111",
+      transcriptJobId: "22222222-2222-4222-8222-222222222222",
+    });
+
+    await applyRecallMeetingEvent({
+      eventType: "sdk_upload.complete",
+      botId: null,
+      recordingId: "recording_123",
+      meetingUrl: null,
+      statusCode: "complete",
+      code: "complete",
+      subCode: null,
+      updatedAt: "2026-07-08T12:00:00Z",
+      metadata: {
+        meetingId: "11111111-1111-4111-8111-111111111111",
+        source: "local_recorder_sdk",
+      },
+    });
+
+    expect(retrieveRecallBot).not.toHaveBeenCalled();
+    expect(retrieveRecallRecording).toHaveBeenCalledWith("recording_123");
+    expect(createRecallRecordingTranscription).toHaveBeenCalledWith({
+      meetingId: "11111111-1111-4111-8111-111111111111",
+    });
+    expect(fetchAndPersistRecallParticipantTimeline).toHaveBeenCalledWith({
+      meetingId: "11111111-1111-4111-8111-111111111111",
+      timelineUrl: "https://recall.example.com/sdk-speaker-timeline.json",
+    });
+    expect(persistRecallBotScreenshots).not.toHaveBeenCalled();
+    expect(send).toHaveBeenCalledWith({
+      name: "meeting/transcribe.audio",
+      data: {
+        audioUrl: "https://recall.example.com/sdk-audio.mp3",
+        meetingId: "11111111-1111-4111-8111-111111111111",
+        transcriptJobId: "22222222-2222-4222-8222-222222222222",
+      },
+    });
+  });
+
+  it("retries SDK completion when the final speaker timeline cannot be persisted", async () => {
+    update.mockReturnValue({
+      set: vi.fn().mockReturnValue({ where }),
+    });
+    select.mockReturnValue({ from: selectFrom });
+    selectFrom.mockReturnValue({ where: selectWhere });
+    selectWhere.mockReturnValue({ limit: selectLimit });
+    selectLimit.mockResolvedValue([]);
+    retrieveRecallRecording.mockResolvedValue({
+      id: "recording_123",
+      media_shortcuts: {
+        audio_mixed: {
+          data: { download_url: "https://recall.example.com/sdk-audio.mp3" },
+        },
+        participant_events: {
+          data: {
+            speaker_timeline_download_url:
+              "https://recall.example.com/sdk-speaker-timeline.json",
+          },
+        },
+      },
+    });
+    fetchAndPersistRecallParticipantTimeline.mockRejectedValue(
+      new Error("temporary Recall download failure"),
+    );
+
+    await expect(
+      applyRecallMeetingEvent({
+        eventType: "sdk_upload.complete",
+        botId: null,
+        recordingId: "recording_123",
+        meetingUrl: null,
+        statusCode: "complete",
+        code: "complete",
+        subCode: null,
+        updatedAt: "2026-07-10T12:00:00Z",
+        metadata: {
+          fallbackIntentId: "intent_123",
+          meetingId: "11111111-1111-4111-8111-111111111111",
+          source: "local_recorder_sdk",
+        },
+      }),
+    ).rejects.toThrow("temporary Recall download failure");
     expect(createRecallRecordingTranscription).not.toHaveBeenCalled();
     expect(send).not.toHaveBeenCalled();
   });

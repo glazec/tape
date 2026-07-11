@@ -1,14 +1,16 @@
-import { createHmac } from "node:crypto";
+import { createHash, createHmac } from "node:crypto";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const {
   answerRecallChatMessage,
+  persistRecallRealtimeParticipantTimelineEvent,
   markVendorWebhookEventProcessed,
   recordVendorWebhookEvent,
   MissingWebhookIdempotencyKeyError,
 } = vi.hoisted(() => ({
   answerRecallChatMessage: vi.fn(),
+  persistRecallRealtimeParticipantTimelineEvent: vi.fn(),
   markVendorWebhookEventProcessed: vi.fn(),
   recordVendorWebhookEvent: vi.fn(),
   MissingWebhookIdempotencyKeyError: class MissingWebhookIdempotencyKeyError extends Error {
@@ -31,6 +33,10 @@ vi.mock("@/lib/vendor-webhook-events", () => ({
   MissingWebhookIdempotencyKeyError,
   markVendorWebhookEventProcessed,
   recordVendorWebhookEvent,
+}));
+
+vi.mock("@/lib/meeting-participant-timeline", () => ({
+  persistRecallRealtimeParticipantTimelineEvent,
 }));
 
 const recallWebhookSecret = "whsec_cmVjYWxsLXdlYmhvb2stc2VjcmV0";
@@ -92,6 +98,34 @@ async function postRecallRealtimeWebhook(body: unknown, signed = true) {
   );
 }
 
+function getDesktopRealtimeWebhookToken() {
+  const key = Buffer.from(recallWebhookSecret.slice("whsec_".length), "base64");
+
+  return createHmac("sha256", key)
+    .update("meeting-note:recall-desktop-realtime:v1")
+    .digest("base64url");
+}
+
+async function postRecallDesktopRealtimeWebhook(
+  body: unknown,
+  token = getDesktopRealtimeWebhookToken(),
+) {
+  vi.stubEnv("RECALL_WEBHOOK_SECRET", recallWebhookSecret);
+  const { POST } = await import("@/app/api/recall/realtime/webhook/route");
+  const rawBody = JSON.stringify(body);
+
+  return POST(
+    new Request(
+      `https://app.example.com/api/recall/realtime/webhook/?token=${token}`,
+      {
+        method: "POST",
+        body: rawBody,
+        headers: { "content-type": "application/json" },
+      },
+    ),
+  );
+}
+
 const chatPayload = {
   event: "participant_events.chat_message",
   data: {
@@ -133,12 +167,24 @@ describe("POST /api/recall/chat/webhook", () => {
       action: "replied",
       reply: "We decided to follow up next week.",
     });
+    persistRecallRealtimeParticipantTimelineEvent.mockResolvedValue({
+      action: "speech_on",
+      entry: {
+        email: null,
+        endMs: null,
+        meetingId: "11111111-1111-4111-8111-111111111111",
+        name: "Alice",
+        participantId: "7",
+        startMs: 12500,
+      },
+    });
   });
 
   afterEach(() => {
     recordVendorWebhookEvent.mockReset();
     markVendorWebhookEventProcessed.mockReset();
     answerRecallChatMessage.mockReset();
+    persistRecallRealtimeParticipantTimelineEvent.mockReset();
     vi.unstubAllEnvs();
     vi.resetModules();
   });
@@ -244,9 +290,19 @@ describe("POST /api/recall/chat/webhook", () => {
     const payload = {
       event: "participant_events.speech_on",
       data: {
-        participant: {
-          id: 7,
-          name: "Alice",
+        data: {
+          participant: {
+            id: 7,
+            name: "Alice",
+          },
+          timestamp: {
+            relative: 12.5,
+          },
+        },
+        recording: {
+          metadata: {
+            meetingId: "11111111-1111-4111-8111-111111111111",
+          },
         },
       },
     };
@@ -257,8 +313,15 @@ describe("POST /api/recall/chat/webhook", () => {
     await expect(response.json()).resolves.toEqual({
       received: true,
       result: {
-        action: "captured",
-        eventType: "participant_events.speech_on",
+        action: "speech_on",
+        entry: {
+          email: null,
+          endMs: null,
+          meetingId: "11111111-1111-4111-8111-111111111111",
+          name: "Alice",
+          participantId: "7",
+          startMs: 12500,
+        },
       },
     });
     expect(recordVendorWebhookEvent).toHaveBeenCalledWith({
@@ -269,9 +332,58 @@ describe("POST /api/recall/chat/webhook", () => {
       processingClaimTimeoutMs: 30_000,
     });
     expect(answerRecallChatMessage).not.toHaveBeenCalled();
+    expect(persistRecallRealtimeParticipantTimelineEvent).toHaveBeenCalledWith(
+      payload,
+    );
     expect(markVendorWebhookEventProcessed).toHaveBeenCalledWith({
       provider: "recall",
       idempotencyKey: "msg_chat",
     });
+  });
+
+  it("captures unsigned Desktop SDK participant events with the endpoint token", async () => {
+    const payload = {
+      event: "participant_events.speech_on",
+      data: {
+        data: {
+          participant: { id: 7, name: "Alice" },
+          timestamp: { relative: 12.5 },
+        },
+        recording: {
+          metadata: {
+            meetingId: "11111111-1111-4111-8111-111111111111",
+            source: "local_recorder_sdk",
+          },
+        },
+      },
+    };
+    const rawBody = JSON.stringify(payload);
+    const idempotencyKey = `dsdk:${createHash("sha256")
+      .update(rawBody)
+      .digest("base64url")}`;
+
+    const response = await postRecallDesktopRealtimeWebhook(payload);
+
+    expect(response.status).toBe(200);
+    expect(recordVendorWebhookEvent).toHaveBeenCalledWith({
+      provider: "recall",
+      eventType: "participant_events.speech_on",
+      idempotencyKey,
+      payload,
+      processingClaimTimeoutMs: 30_000,
+    });
+    expect(persistRecallRealtimeParticipantTimelineEvent).toHaveBeenCalledWith(
+      payload,
+    );
+  });
+
+  it("rejects unsigned realtime events without the Desktop SDK endpoint token", async () => {
+    const response = await postRecallDesktopRealtimeWebhook(
+      { event: "participant_events.speech_on" },
+      "invalid",
+    );
+
+    expect(response.status).toBe(401);
+    expect(recordVendorWebhookEvent).not.toHaveBeenCalled();
   });
 });

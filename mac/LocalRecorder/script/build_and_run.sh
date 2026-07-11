@@ -15,6 +15,8 @@ APP_RESOURCES="$APP_CONTENTS/Resources"
 APP_BINARY="$APP_MACOS/$APP_NAME"
 INFO_PLIST="$APP_CONTENTS/Info.plist"
 APP_ICON_SOURCE="$ROOT_DIR/Resources/AppIcon.icns"
+SIDECAR_SOURCE="$ROOT_DIR/Sidecar"
+SIDECAR_DEST="$APP_RESOURCES/RecallDesktopSDKSidecar"
 
 cd "$ROOT_DIR"
 pkill -x "$APP_NAME" >/dev/null 2>&1 || true
@@ -29,6 +31,16 @@ chmod +x "$APP_BINARY"
 if [[ -f "$APP_ICON_SOURCE" ]]; then
   cp "$APP_ICON_SOURCE" "$APP_RESOURCES/AppIcon.icns"
 fi
+if [[ -f "$SIDECAR_SOURCE/package.json" ]]; then
+  npm install --prefix "$SIDECAR_SOURCE" --omit=dev
+  rm -rf "$SIDECAR_DEST"
+  mkdir -p "$SIDECAR_DEST"
+  cp "$SIDECAR_SOURCE/package.json" "$SIDECAR_DEST/package.json"
+  cp "$SIDECAR_SOURCE/package-lock.json" "$SIDECAR_DEST/package-lock.json"
+  cp -R "$SIDECAR_SOURCE/src" "$SIDECAR_DEST/src"
+  cp -R "$SIDECAR_SOURCE/node_modules" "$SIDECAR_DEST/node_modules"
+fi
+"$ROOT_DIR/script/bundle_node_runtime.sh" "$APP_RESOURCES/node"
 
 cat >"$INFO_PLIST" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
@@ -50,9 +62,9 @@ cat >"$INFO_PLIST" <<PLIST
   <key>NSPrincipalClass</key>
   <string>NSApplication</string>
   <key>NSMicrophoneUsageDescription</key>
-  <string>Meeting Note records your microphone as a separate local track.</string>
+  <string>Meeting Note records your microphone for local meeting recordings.</string>
   <key>NSScreenCaptureUsageDescription</key>
-  <string>Meeting Note records system audio from meetings so fallback recordings include other speakers.</string>
+  <string>Meeting Note records meeting audio so local recordings include other speakers.</string>
   <key>CFBundleURLTypes</key>
   <array>
     <dict>

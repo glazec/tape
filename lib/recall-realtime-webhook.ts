@@ -8,19 +8,21 @@ import {
   recordVendorWebhookEvent,
 } from "@/lib/vendor-webhook-events";
 import {
-  verifyRecallWebhook,
+  verifyRecallRealtimeWebhook,
   webhookVerificationResponse,
 } from "@/lib/webhook-signatures";
 import { logWebhookProcessingError } from "@/lib/webhook-error-logging";
+import { persistRecallRealtimeParticipantTimelineEvent } from "@/lib/meeting-participant-timeline";
 
 const RECALL_REALTIME_PROCESSING_CLAIM_TIMEOUT_MS = 30 * 1000;
 
 export async function handleRecallRealtimeWebhook(request: Request) {
   const rawBody = await request.text();
   let body: unknown;
+  let idempotencyKey: string;
 
   try {
-    verifyRecallWebhook(rawBody, request.headers);
+    idempotencyKey = verifyRecallRealtimeWebhook(rawBody, request);
     body = JSON.parse(rawBody);
   } catch (error) {
     if (error instanceof SyntaxError) {
@@ -38,9 +40,6 @@ export async function handleRecallRealtimeWebhook(request: Request) {
   if (!eventType) {
     return Response.json({ error: "Invalid webhook payload" }, { status: 400 });
   }
-
-  const idempotencyKey =
-    request.headers.get("webhook-id") ?? request.headers.get("svix-id") ?? "";
 
   try {
     const recorded = await recordVendorWebhookEvent({
@@ -71,7 +70,7 @@ export async function handleRecallRealtimeWebhook(request: Request) {
     const result =
       eventType === "participant_events.chat_message"
         ? await answerRecallChatMessage(normalizeRecallChatWebhook(body))
-        : { action: "captured" as const, eventType };
+        : await persistRecallRealtimeParticipantTimelineEvent(body);
 
     await markVendorWebhookEventProcessed({
       provider: "recall",

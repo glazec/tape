@@ -7,6 +7,7 @@ import {
   normalizeElevenLabsWebhook,
 } from "@/lib/vendors/elevenlabs";
 import {
+  createRecallDesktopSdkUpload,
   deleteScheduledRecallBot,
   extractRecallBotScreenshots,
   findRecallRecordingMediaUrl,
@@ -823,6 +824,72 @@ describe("vendor webhook normalization", () => {
     expect(markVendorWebhookEventProcessed).not.toHaveBeenCalled();
   });
 
+  it("processes signed Recall Desktop SDK upload completion webhooks", async () => {
+    recordVendorWebhookEvent.mockResolvedValueOnce({
+      inserted: true,
+      shouldProcess: true,
+    });
+    applyRecallMeetingEvent.mockResolvedValueOnce({
+      action: "update",
+      meetingId: "11111111-1111-4111-8111-111111111111",
+      recallBotId: null,
+      recallRecordingId: "recording_123",
+      status: "processing",
+    });
+
+    const payload = {
+      event: "sdk_upload.complete",
+      data: {
+        data: {
+          code: "complete",
+          sub_code: null,
+          updated_at: "2026-07-08T12:00:00Z",
+        },
+        recording: {
+          id: "recording_123",
+          metadata: {},
+        },
+        sdk_upload: {
+          id: "sdk_upload_123",
+          metadata: {
+            meetingId: "11111111-1111-4111-8111-111111111111",
+            source: "local_recorder_sdk",
+          },
+        },
+      },
+    };
+    const response = await postRecallWebhook(payload);
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      received: true,
+      event: {
+        eventType: "sdk_upload.complete",
+        botId: null,
+        recordingId: "recording_123",
+        statusCode: "complete",
+      },
+    });
+    expect(applyRecallMeetingEvent).toHaveBeenCalledWith({
+      eventType: "sdk_upload.complete",
+      botId: null,
+      recordingId: "recording_123",
+      meetingUrl: null,
+      statusCode: "complete",
+      code: "complete",
+      subCode: null,
+      updatedAt: "2026-07-08T12:00:00Z",
+      metadata: {
+        meetingId: "11111111-1111-4111-8111-111111111111",
+        source: "local_recorder_sdk",
+      },
+    });
+    expect(markVendorWebhookEventProcessed).toHaveBeenCalledWith({
+      provider: "recall",
+      idempotencyKey: "msg_test",
+    });
+  });
+
   it("returns 400 for invalid Recall webhook payloads", async () => {
     const response = await postRecallWebhook({
       event: "bot.status_change",
@@ -1045,6 +1112,85 @@ describe("vendor job creation", () => {
           ],
         },
       ],
+    });
+  });
+
+  it("creates Recall Desktop SDK uploads with participant realtime events", async () => {
+    vi.stubEnv("RECALL_API_KEY", "recall-key\n");
+    vi.stubEnv("RECALL_WEBHOOK_SECRET", recallWebhookSecret);
+    vi.stubEnv("NEXT_PUBLIC_APP_URL", "https://app.example.com");
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          id: "33333333-3333-4333-8333-333333333333",
+          upload_token: "upload_token_123",
+        }),
+        {
+          status: 201,
+          headers: { "content-type": "application/json" },
+        },
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(
+      createRecallDesktopSdkUpload({
+        metadata: {
+          clientRecordingId: "local_recording_123",
+          fallbackIntentId: "intent_123",
+          meetingId: "11111111-1111-4111-8111-111111111111",
+          source: "local_recorder_sdk",
+        },
+        webhookUrl: "https://app.example.com/api/local-recorder/recordings/sdk-upload",
+      }),
+    ).resolves.toEqual({
+      id: "33333333-3333-4333-8333-333333333333",
+      upload_token: "upload_token_123",
+    });
+
+    const [url, init] = fetchMock.mock.calls[0];
+    const body = JSON.parse(String(init.body));
+
+    expect(url).toBe("https://us-east-1.recall.ai/api/v1/sdk_upload/");
+    expect(init).toMatchObject({
+      method: "POST",
+      headers: {
+        Authorization: "Token recall-key",
+        "Content-Type": "application/json",
+        Accept: "application/json",
+      },
+    });
+    expect(body).toEqual({
+      metadata: {
+        clientRecordingId: "local_recording_123",
+        fallbackIntentId: "intent_123",
+        meetingId: "11111111-1111-4111-8111-111111111111",
+        requested_webhook_url:
+          "https://app.example.com/api/local-recorder/recordings/sdk-upload",
+        source: "local_recorder_sdk",
+      },
+      recording_config: {
+        metadata: {
+          clientRecordingId: "local_recording_123",
+          fallbackIntentId: "intent_123",
+          meetingId: "11111111-1111-4111-8111-111111111111",
+          source: "local_recorder_sdk",
+        },
+        realtime_endpoints: [
+          {
+            type: "webhook",
+            url: expect.stringMatching(
+              /^https:\/\/app\.example\.com\/api\/recall\/realtime\/webhook\/\?token=[A-Za-z0-9_-]+$/,
+            ),
+            events: [
+              "participant_events.join",
+              "participant_events.update",
+              "participant_events.speech_on",
+              "participant_events.speech_off",
+            ],
+          },
+        ],
+      },
     });
   });
 

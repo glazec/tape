@@ -1,0 +1,16 @@
+{
+  "name": "meeting-note-local-recorder-sidecar",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "check": "node src/recall-desktop-sdk-sidecar.mjs --help",
+    "test": "node --test test/*.node-test.mjs"
+  },
+  "dependencies": {
+    "@recallai/desktop-sdk": "2.0.24"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

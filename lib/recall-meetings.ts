@@ -5,12 +5,14 @@ import { meetings, transcriptJobs } from "@/db/schema";
 import { inngest } from "@/inngest/client";
 import { fetchAndPersistRecallParticipantTimeline } from "@/lib/meeting-participant-timeline";
 import { persistRecallBotScreenshots } from "@/lib/meeting-screenshots";
+import { isRecallDesktopSdkFallbackIntent } from "@/lib/local-recorder-records";
 import { createRecallRecordingTranscription } from "@/lib/transcription-records";
 import type { normalizeRecallWebhook } from "@/lib/vendors/recall";
 import {
   findRecallRecordingMediaUrl,
   findRecallSpeakerTimelineUrl,
   retrieveRecallBot,
+  retrieveRecallRecording,
 } from "@/lib/vendors/recall";
 
 type RecallWebhookEvent = ReturnType<typeof normalizeRecallWebhook>;
@@ -68,6 +70,24 @@ export async function applyRecallMeetingEvent(event: RecallWebhookEvent) {
       ? null
       : update.status;
 
+  if (
+    event.eventType.toLowerCase().startsWith("sdk_upload.") &&
+    getMetadataString(event.metadata, "source") === "local_recorder_sdk"
+  ) {
+    const fallbackIntentId = getMetadataString(
+      event.metadata,
+      "fallbackIntentId",
+      "fallback_intent_id",
+    );
+
+    if (
+      fallbackIntentId &&
+      (await isRecallDesktopSdkFallbackIntent(fallbackIntentId))
+    ) {
+      return { action: "skip" as const, reason: "local_fallback_active" as const };
+    }
+  }
+
   await db
     .update(meetings)
     .set({
@@ -80,13 +100,10 @@ export async function applyRecallMeetingEvent(event: RecallWebhookEvent) {
 
   if (
     status === "processing" &&
-    update.recallBotId &&
+    (update.recallBotId || update.recallRecordingId) &&
     shouldQueueRecallRecordingTranscription(event)
   ) {
-    await queueRecallRecordingTranscription({
-      ...update,
-      recallBotId: update.recallBotId,
-    });
+    await queueRecallRecordingTranscription(update);
   }
 
   return update;
@@ -96,22 +113,36 @@ function shouldQueueRecallRecordingTranscription(event: RecallWebhookEvent) {
   const eventType = event.eventType.toLowerCase();
   const subCode = event.subCode?.toLowerCase() ?? "";
 
-  return eventType === "recording.done" || subCode === "recording_done";
+  return (
+    eventType === "recording.done" ||
+    eventType === "sdk_upload.complete" ||
+    subCode === "recording_done"
+  );
 }
 
 async function queueRecallRecordingTranscription(
-  update: Extract<RecallMeetingUpdate, { action: "update" }> & {
-    recallBotId: string;
-  },
+  update: Extract<RecallMeetingUpdate, { action: "update" }>,
 ) {
   if (await hasActiveTranscriptJob(update.meetingId)) {
     return;
   }
 
-  const bot = await retrieveRecallBot(update.recallBotId);
-  const audioUrl = findRecallRecordingMediaUrl(bot, update.recallRecordingId);
+  const recallArtifact = update.recallBotId
+    ? await retrieveRecallBot(update.recallBotId)
+    : update.recallRecordingId
+      ? await retrieveRecallRecording(update.recallRecordingId)
+      : null;
+
+  if (!recallArtifact) {
+    return;
+  }
+
+  const audioUrl = findRecallRecordingMediaUrl(
+    recallArtifact,
+    update.recallRecordingId,
+  );
   const speakerTimelineUrl = findRecallSpeakerTimelineUrl(
-    bot,
+    recallArtifact,
     update.recallRecordingId,
   );
 
@@ -120,23 +151,32 @@ async function queueRecallRecordingTranscription(
   }
 
   if (speakerTimelineUrl) {
-    try {
+    if (update.recallBotId) {
+      try {
+        await fetchAndPersistRecallParticipantTimeline({
+          meetingId: update.meetingId,
+          timelineUrl: speakerTimelineUrl,
+        });
+      } catch {
+        // Preserve legacy bot behavior when speaker media is not ready yet.
+      }
+    } else {
       await fetchAndPersistRecallParticipantTimeline({
         meetingId: update.meetingId,
         timelineUrl: speakerTimelineUrl,
       });
-    } catch {
-      // Keep transcription moving when Recall has not finished speaker timeline media.
     }
   }
 
-  try {
-    await persistRecallBotScreenshots({
-      botId: update.recallBotId,
-      meetingId: update.meetingId,
-    });
-  } catch {
-    // Keep transcription moving when visual capture is unavailable.
+  if (update.recallBotId) {
+    try {
+      await persistRecallBotScreenshots({
+        botId: update.recallBotId,
+        meetingId: update.meetingId,
+      });
+    } catch {
+      // Keep transcription moving when visual capture is unavailable.
+    }
   }
 
   const transcription = await createRecallRecordingTranscription({
