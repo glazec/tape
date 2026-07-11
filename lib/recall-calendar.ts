@@ -228,6 +228,7 @@ export async function processRecallCalendarWebhook(
 export async function syncRecallCalendarEventsForWorkspace(input: {
   workspace: WorkspaceContext;
   autoJoinEnabled: boolean;
+  forceBotConfigRefresh?: boolean;
   now?: Date;
 }) {
   const existingConnection = await findConnectionByWorkspace(input.workspace);
@@ -279,6 +280,7 @@ export async function syncRecallCalendarEventsForWorkspace(input: {
       await autoJoinCalendarEvent({
         connection: activeConnection,
         event: syncedEvent,
+        forceBotConfigRefresh: input.forceBotConfigRefresh,
         repairMode: true,
       });
       count += 1;

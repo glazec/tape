@@ -200,6 +200,7 @@ describe("processRecallCalendarWebhook", () => {
         },
         autoJoinEnabled: true,
         now: new Date("2026-06-27T04:00:00.000Z"),
+        ...({ forceBotConfigRefresh: true } as Record<string, unknown>),
       }),
     ).resolves.toEqual({
       connectionId: "33333333-3333-4333-8333-333333333333",
@@ -224,6 +225,7 @@ describe("processRecallCalendarWebhook", () => {
         recallCalendarEventId: "55555555-5555-4555-8555-555555555555",
         meetingUrl: "https://meet.google.com/abc-defg-hij",
       }),
+      forceBotConfigRefresh: true,
       repairMode: true,
     });
   });

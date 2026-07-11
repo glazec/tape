@@ -73,6 +73,7 @@ export type SyncedCalendarEvent = {
 type AutoJoinInput = {
   connection: CalendarConnection;
   event: SyncedCalendarEvent;
+  forceBotConfigRefresh?: boolean;
   repairMode?: boolean;
 };
 
@@ -400,6 +401,7 @@ export async function autoJoinCalendarEvent(input: AutoJoinInput) {
       endsAt,
       teamId: input.connection.teamId,
       teamMeetingKey: activeTeamMeetingKey,
+      forceScheduleBot: input.forceBotConfigRefresh,
     });
   }
 
