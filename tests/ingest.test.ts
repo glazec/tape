@@ -1472,6 +1472,42 @@ describe("vendor job creation", () => {
       "2026-07-10T10:00:00.000Z",
     ],
     [
+      "a file video URL",
+      "file:///etc/passwd",
+      "https://recall.example.com/events.json",
+      "2026-07-10T10:00:00.000Z",
+    ],
+    [
+      "a file participant events URL",
+      "https://recall.example.com/video.mp4",
+      "file:///etc/passwd",
+      "2026-07-10T10:00:00.000Z",
+    ],
+    [
+      "an FTP video URL",
+      "ftp://example.com/video.mp4",
+      "https://recall.example.com/events.json",
+      "2026-07-10T10:00:00.000Z",
+    ],
+    [
+      "an FTP participant events URL",
+      "https://recall.example.com/video.mp4",
+      "ftp://example.com/video.mp4",
+      "2026-07-10T10:00:00.000Z",
+    ],
+    [
+      "a localhost HTTP video URL",
+      "http://localhost/video.mp4",
+      "https://recall.example.com/events.json",
+      "2026-07-10T10:00:00.000Z",
+    ],
+    [
+      "a localhost HTTP participant events URL",
+      "https://recall.example.com/video.mp4",
+      "http://localhost/video.mp4",
+      "2026-07-10T10:00:00.000Z",
+    ],
+    [
       "a malformed nonempty recording timestamp",
       "https://recall.example.com/video.mp4",
       "https://recall.example.com/events.json",

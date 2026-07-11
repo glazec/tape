@@ -148,10 +148,12 @@ const recallCalendarEventBotDeleteInputSchema = z.object({
   calendarEventId: z.string().trim().min(1),
 });
 
+const recallArtifactHttpsUrlSchema = z.url({ protocol: /^https$/ });
+
 const recallVideoFrameArtifactsSchema = z.object({
-  participantEventsUrl: z.url(),
+  participantEventsUrl: recallArtifactHttpsUrlSchema,
   recordingStartedAt: z.iso.datetime(),
-  videoUrl: z.url(),
+  videoUrl: recallArtifactHttpsUrlSchema,
 });
 
 const optionalRecallApiBaseUrl = z.preprocess(
