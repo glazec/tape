@@ -135,6 +135,12 @@ describe("selectStableVisualFrames", () => {
     expect(selectStableVisualFrames(frames)).toEqual([]);
   });
 
+  it("does not treat a timestamp gap as continuous stability", () => {
+    expect(
+      selectStableVisualFrames([frame(0, 0), frame(0, 10_000)]),
+    ).toEqual([]);
+  });
+
   it("rejects a repeated nonadjacent slide", () => {
     const frames = [
       frame(0, 0),
@@ -152,6 +158,25 @@ describe("selectStableVisualFrames", () => {
     ];
 
     expect(selectStableVisualFrames(frames)).toEqual([2_000, 5_000, 8_000]);
+  });
+
+  it("detects changes from a repeated current stable state", () => {
+    const frames = [
+      frame(0, 0),
+      frame(0, 1_000),
+      frame(0, 2_000),
+      frame(100, 3_000),
+      frame(100, 4_000),
+      frame(100, 5_000),
+      frame(0, 6_000),
+      frame(0, 7_000),
+      frame(0, 8_000),
+      frame(102, 9_000),
+      frame(102, 10_000),
+      frame(102, 11_000),
+    ];
+
+    expect(selectStableVisualFrames(frames)).toEqual([2_000, 5_000, 11_000]);
   });
 
   it("treats the exact mean change threshold as a visual change", () => {
@@ -200,6 +225,7 @@ describe("selectStableVisualFrames", () => {
       frame(0, 1_000),
       frame(0, 2_000),
       frame(100, 3_000),
+      { pixels: exactMeanProof, timestampMs: 4_000 },
       { pixels: exactMeanProof, timestampMs: 5_000 },
     ];
     const ratioFrames = [
@@ -207,6 +233,7 @@ describe("selectStableVisualFrames", () => {
       frame(0, 1_000),
       frame(0, 2_000),
       frame(200, 3_000),
+      { pixels: exactRatioProof, timestampMs: 4_000 },
       { pixels: exactRatioProof, timestampMs: 5_000 },
     ];
 

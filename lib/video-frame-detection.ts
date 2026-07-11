@@ -9,6 +9,7 @@ const PIXEL_DELTA_THRESHOLD = 20;
 const STABLE_MEAN_THRESHOLD = 1.5;
 const STABLE_PIXEL_RATIO_THRESHOLD = 0.005;
 const STABLE_DURATION_MS = 2_000;
+const MAX_SAMPLE_GAP_MS = 1_500;
 
 type FrameComparison = {
   changedPixelRatio: number;
@@ -80,17 +81,25 @@ export function selectStableVisualFrames(frames: GrayscaleFrame[]): number[] {
 
   const acceptedTimestamps: number[] = [];
   const acceptedStates: Uint8Array[] = [];
+  let currentStableState: Uint8Array | undefined;
   let candidate: GrayscaleFrame | undefined = frames[0];
+  let previousSampleTimestampMs = frames[0].timestampMs;
 
   for (let index = 1; index < frames.length; index += 1) {
     const frame = frames[index];
-    const lastAcceptedState = acceptedStates[acceptedStates.length - 1];
+    if (
+      frame.timestampMs - previousSampleTimestampMs >
+      MAX_SAMPLE_GAP_MS
+    ) {
+      candidate = undefined;
+    }
+    previousSampleTimestampMs = frame.timestampMs;
 
     if (!candidate) {
       if (
-        !lastAcceptedState ||
+        !currentStableState ||
         isVisualChange(
-          compareGrayscaleFrames(lastAcceptedState, frame.pixels),
+          compareGrayscaleFrames(currentStableState, frame.pixels),
         )
       ) {
         candidate = frame;
@@ -102,9 +111,9 @@ export function selectStableVisualFrames(frames: GrayscaleFrame[]): number[] {
 
     if (!isStable(comparison)) {
       if (
-        !lastAcceptedState ||
+        !currentStableState ||
         isVisualChange(
-          compareGrayscaleFrames(lastAcceptedState, frame.pixels),
+          compareGrayscaleFrames(currentStableState, frame.pixels),
         )
       ) {
         candidate = frame;
@@ -121,6 +130,7 @@ export function selectStableVisualFrames(frames: GrayscaleFrame[]): number[] {
     }
 
     const acceptedCandidate = candidate;
+    currentStableState = acceptedCandidate.pixels;
     const repeatsAcceptedState = acceptedStates.some((acceptedState) =>
       isStable(
         compareGrayscaleFrames(acceptedCandidate.pixels, acceptedState),
