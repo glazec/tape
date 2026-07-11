@@ -84,7 +84,11 @@ export async function persistRecallMeetingVideoFrames(input: {
     videoUrl: artifacts.videoUrl,
   });
   const analysis = analyzeStableVisualFrames(frames);
-  const timestamps = [...new Set(analysis.timestamps)];
+  const timestamps = [
+    ...new Set(
+      analysis.timestamps.map((timestampMs) => Math.round(timestampMs)),
+    ),
+  ];
 
   if (timestamps.length === 0) {
     return {

@@ -201,7 +201,7 @@ describe("persistRecallMeetingVideoFrames", () => {
     sampleScreenShareFrames.mockResolvedValue(sampledFrames);
     analyzeStableVisualFrames.mockReturnValue({
       duplicateCount: 1,
-      timestamps: [3_000, 7_000],
+      timestamps: [3_000.4, 7_000],
     });
     extractJpegFrame
       .mockResolvedValueOnce(new Uint8Array([1, 2, 3]))
@@ -234,6 +234,10 @@ describe("persistRecallMeetingVideoFrames", () => {
       videoUrl: VIDEO_URL,
     });
     expect(analyzeStableVisualFrames).toHaveBeenCalledWith(sampledFrames);
+    expect(extractJpegFrame.mock.calls).toEqual([
+      [{ timestampMs: 3_000, videoUrl: VIDEO_URL }],
+      [{ timestampMs: 7_000, videoUrl: VIDEO_URL }],
+    ]);
 
     const firstKey =
       "teams/team_123/meetings/meeting_123/assets/recall-recording_123-screen-share-v1-3000.jpg";
