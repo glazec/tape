@@ -102,7 +102,7 @@ describe("buildElevenLabsTranscriptPersistence", () => {
     });
   });
 
-  it("labels local recorder mic dominated segments as the recorder owner", () => {
+  it("numbers multiple non-local diarization clusters as PC sound N", () => {
     expect(
       buildElevenLabsTranscriptPersistence(
         {
@@ -175,12 +175,12 @@ describe("buildElevenLabsTranscriptPersistence", () => {
           endMs: 2000,
         },
         {
-          speaker: "Speaker 2",
+          speaker: "PC sound 1",
           startMs: 3000,
           endMs: 4000,
         },
         {
-          speaker: "Speaker 3",
+          speaker: "PC sound 2",
           startMs: 5000,
           endMs: 6000,
         },

@@ -770,10 +770,6 @@ function buildLocalRecorderSpeakerLabelContext(
     return context;
   }
 
-  if (speakerIds.size !== 2) {
-    return context;
-  }
-
   const localSpeakerId = Array.from(localSpeakerIds)[0];
 
   if (!localSpeakerId) {
@@ -784,12 +780,21 @@ function buildLocalRecorderSpeakerLabelContext(
     localSpeakerId,
     localRecorderAttribution.localUserSpeaker,
   );
-  const remoteSpeakerId = Array.from(speakerIds).find(
-    (speakerId) => speakerId !== localSpeakerId,
-  );
 
-  if (remoteSpeakerId) {
-    context.labelsBySpeakerId.set(remoteSpeakerId, "PC sound");
+  // Everyone other than the local mic comes off the shared computer-audio
+  // track. With a single remote cluster, "PC sound" reads cleanly; with
+  // several, number them so distinct remote participants stay attributable
+  // instead of collapsing into one identity.
+  const remoteSpeakerIds = Array.from(speakerIds)
+    .filter((speakerId) => speakerId !== localSpeakerId)
+    .sort();
+
+  if (remoteSpeakerIds.length === 1) {
+    context.labelsBySpeakerId.set(remoteSpeakerIds[0], "PC sound");
+  } else {
+    remoteSpeakerIds.forEach((speakerId, index) => {
+      context.labelsBySpeakerId.set(speakerId, `PC sound ${index + 1}`);
+    });
   }
 
   return context;
