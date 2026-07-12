@@ -108,7 +108,7 @@ describe("buildRecallMeetingUpdate", () => {
     });
   });
 
-  it("leaves terminal bot done without a recording status unchanged", () => {
+  it("marks terminal bot done without a recording as missed", () => {
     expect(
       buildRecallMeetingUpdate({
         eventType: "bot.done",
@@ -128,7 +128,7 @@ describe("buildRecallMeetingUpdate", () => {
       meetingId: "11111111-1111-4111-8111-111111111111",
       recallBotId: "bot_123",
       recallRecordingId: null,
-      status: null,
+      status: "missed",
     });
   });
 
@@ -201,6 +201,37 @@ describe("buildRecallMeetingUpdate", () => {
 });
 
 describe("applyRecallMeetingEvent", () => {
+  it("does not revert a locally-recovered meeting to missed on a late bot.done", async () => {
+    const setSpy = vi.fn().mockReturnValue({ where });
+    update.mockReturnValue({ set: setSpy });
+    select.mockReturnValue({ from: selectFrom });
+    selectFrom.mockReturnValue({ where: selectWhere });
+    selectWhere.mockReturnValue({ limit: selectLimit });
+    // Meeting was already carried to "processing" by a local-recorder upload,
+    // and never had a Recall recording id.
+    selectLimit.mockResolvedValue([
+      { recallRecordingId: null, status: "processing" },
+    ]);
+
+    await applyRecallMeetingEvent({
+      eventType: "bot.done",
+      botId: "bot_123",
+      recordingId: null,
+      meetingUrl: null,
+      statusCode: "done",
+      code: "done",
+      subCode: null,
+      updatedAt: "2026-07-10T12:00:00Z",
+      metadata: {
+        meetingId: "11111111-1111-4111-8111-111111111111",
+      },
+    });
+
+    expect(setSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ status: undefined }),
+    );
+  });
+
   it("ignores failed SDK uploads after the app switched to local capture", async () => {
     update.mockReturnValue({
       set: vi.fn().mockReturnValue({ where }),

@@ -231,12 +231,29 @@ async function hasActiveTranscriptJob(meetingId: string) {
 
 async function hasRecordingEvidence(meetingId: string) {
   const rows = await db
-    .select({ recallRecordingId: meetings.recallRecordingId })
+    .select({
+      recallRecordingId: meetings.recallRecordingId,
+      status: meetings.status,
+    })
     .from(meetings)
     .where(eq(meetings.id, meetingId))
     .limit(1);
 
-  return Boolean(rows[0]?.recallRecordingId);
+  const row = rows[0];
+
+  if (!row) {
+    return false;
+  }
+
+  if (row.recallRecordingId) {
+    return true;
+  }
+
+  // A recording already carried this meeting past capture — most commonly a
+  // local-recorder fallback upload, which sets status without ever setting
+  // recallRecordingId. A late or out-of-order bot.done (no recording id) must
+  // not revert such a meeting to "missed".
+  return row.status === "processing" || row.status === "ready";
 }
 
 function getMetadataString(
@@ -275,7 +292,7 @@ function mapRecallStatus(event: RecallWebhookEvent) {
 
   if (/recording_done|\bdone\b|complete/.test(statusText)) {
     if (!event.recordingId && event.eventType === "bot.done") {
-      return null;
+      return "missed";
     }
 
     return "processing";
