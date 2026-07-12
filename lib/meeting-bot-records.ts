@@ -13,17 +13,39 @@ type CreateScheduledMeetingBotInput = {
   sessionUser: SessionUser;
   meetingUrl: string;
   platform: SupportedMeetingPlatform;
+  now?: Date;
 };
+
+/**
+ * A meeting URL that matches more than one upcoming calendar event is
+ * ambiguous — typically a personal meeting room or a recurring link reused
+ * across many events. For those we can only trust a match that starts soon;
+ * otherwise we would schedule the bot days out (or into an empty room) when
+ * the user expects it to join the current call. A URL that matches exactly
+ * one upcoming event is unambiguous, so we honor it at any lead time and
+ * preserve the "paste a link to pre-schedule the bot" workflow.
+ */
+const AMBIGUOUS_MATCH_WINDOW_MS = 30 * 60 * 1_000;
 
 export async function createScheduledMeetingBot(
   input: CreateScheduledMeetingBotInput,
 ) {
   const workspace = await getOrCreateWorkspaceForSessionUser(input.sessionUser);
   await assertCanCreateMeetings(workspace);
-  const calendarEvent = await findUpcomingCalendarEventByMeetingUrl({
+  const now = input.now ?? new Date();
+  const upcomingCalendarEvents = await findUpcomingCalendarEventsByMeetingUrl({
     meetingUrl: input.meetingUrl,
     teamId: workspace.teamId,
   });
+  const earliestEvent = upcomingCalendarEvents[0] ?? null;
+  const isAmbiguousMatch = upcomingCalendarEvents.length > 1;
+  const calendarEvent =
+    earliestEvent &&
+    (!isAmbiguousMatch ||
+      earliestEvent.startsAt.getTime() - now.getTime() <=
+        AMBIGUOUS_MATCH_WINDOW_MS)
+      ? earliestEvent
+      : null;
 
   if (calendarEvent) {
     const existingMeeting = await findMeetingForCalendarEvent({
@@ -120,11 +142,12 @@ function defaultMeetingTitle(platform: SupportedMeetingPlatform) {
   return platform === "google_meet" ? "Google Meet recording" : "Zoom recording";
 }
 
-async function findUpcomingCalendarEventByMeetingUrl(input: {
+async function findUpcomingCalendarEventsByMeetingUrl(input: {
   teamId: string;
   meetingUrl: string;
 }) {
-  const [calendarEvent] = await db
+  // Two rows is enough to tell "exactly one match" from "ambiguous".
+  return db
     .select({
       id: calendarEvents.id,
       title: calendarEvents.title,
@@ -141,9 +164,7 @@ async function findUpcomingCalendarEventByMeetingUrl(input: {
       ),
     )
     .orderBy(asc(calendarEvents.startsAt))
-    .limit(1);
-
-  return calendarEvent ?? null;
+    .limit(2);
 }
 
 function buildMeetingUrlMatchConditions(meetingUrl: string) {

@@ -279,4 +279,218 @@ describe("meeting bot records", () => {
       "%/j/1234567890%",
     );
   });
+
+  it("pre-schedules a bot when a unique link matches one far-future event", async () => {
+    const workspace = {
+      teamId: "22222222-2222-4222-8222-222222222222",
+      userId: "55555555-5555-4555-8555-555555555555",
+      domain: "iosg.vc",
+      canCreateMeetings: true,
+    };
+    getOrCreateWorkspaceForSessionUser.mockResolvedValue(workspace);
+    assertCanCreateMeetings.mockResolvedValue(undefined);
+
+    // A one-off link that matches exactly one event, 11 days out.
+    const calendarLimit = vi.fn().mockResolvedValue([
+      {
+        id: "33333333-3333-4333-8333-333333333333",
+        title: "IOSG <> Dinari",
+        meetingUrl: "https://zoom.us/j/1112223334",
+        startsAt: new Date("2026-07-22T01:00:00.000Z"),
+        endsAt: new Date("2026-07-22T01:30:00.000Z"),
+      },
+    ]);
+    const meetingLimit = vi.fn().mockResolvedValue([]);
+    select
+      .mockReturnValueOnce({
+        from: () => ({
+          where: () => ({
+            orderBy: () => ({
+              limit: calendarLimit,
+            }),
+          }),
+        }),
+      })
+      .mockReturnValueOnce({
+        from: () => ({
+          where: () => ({
+            limit: meetingLimit,
+          }),
+        }),
+      });
+
+    const meetingReturning = vi
+      .fn()
+      .mockResolvedValue([{ id: "44444444-4444-4444-8444-444444444444" }]);
+    const meetingValues = vi.fn().mockReturnValue({ returning: meetingReturning });
+    insert.mockReturnValue({ values: meetingValues });
+
+    const { createScheduledMeetingBot } = await import("@/lib/meeting-bot-records");
+
+    await expect(
+      createScheduledMeetingBot({
+        sessionUser: {
+          id: "user_123",
+          email: "test@iosg.vc",
+          name: null,
+        },
+        meetingUrl: "https://zoom.us/j/1112223334",
+        platform: "zoom",
+        now: new Date("2026-07-11T02:00:00.000Z"),
+      }),
+    ).resolves.toEqual({
+      meetingId: "44444444-4444-4444-8444-444444444444",
+      teamId: "22222222-2222-4222-8222-222222222222",
+      startAt: "2026-07-22T01:00:00.000Z",
+    });
+
+    expect(meetingValues).toHaveBeenCalledWith(
+      expect.objectContaining({
+        calendarEventId: "33333333-3333-4333-8333-333333333333",
+        title: "IOSG <> Dinari",
+      }),
+    );
+  });
+
+  it("joins immediately when an ambiguous link matches several far-future events", async () => {
+    const workspace = {
+      teamId: "22222222-2222-4222-8222-222222222222",
+      userId: "55555555-5555-4555-8555-555555555555",
+      domain: "iosg.vc",
+      canCreateMeetings: true,
+    };
+    getOrCreateWorkspaceForSessionUser.mockResolvedValue(workspace);
+    assertCanCreateMeetings.mockResolvedValue(undefined);
+
+    // A reused personal meeting room that matches many future events.
+    const calendarLimit = vi.fn().mockResolvedValue([
+      {
+        id: "33333333-3333-4333-8333-333333333333",
+        title: "ray <> YP",
+        meetingUrl: "https://zoom.us/j/8436420171",
+        startsAt: new Date("2026-07-22T01:00:00.000Z"),
+        endsAt: new Date("2026-07-22T01:30:00.000Z"),
+      },
+      {
+        id: "33333333-3333-4333-8333-333333333334",
+        title: "David <> YP",
+        meetingUrl: "https://zoom.us/j/8436420171",
+        startsAt: new Date("2026-07-23T15:00:00.000Z"),
+        endsAt: new Date("2026-07-23T15:30:00.000Z"),
+      },
+    ]);
+    select.mockReturnValueOnce({
+      from: () => ({
+        where: () => ({
+          orderBy: () => ({
+            limit: calendarLimit,
+          }),
+        }),
+      }),
+    });
+
+    const meetingReturning = vi
+      .fn()
+      .mockResolvedValue([{ id: "44444444-4444-4444-8444-444444444444" }]);
+    const meetingValues = vi.fn().mockReturnValue({ returning: meetingReturning });
+    insert.mockReturnValue({ values: meetingValues });
+
+    const { createScheduledMeetingBot } = await import("@/lib/meeting-bot-records");
+
+    await expect(
+      createScheduledMeetingBot({
+        sessionUser: {
+          id: "user_123",
+          email: "test@iosg.vc",
+          name: null,
+        },
+        meetingUrl: "https://zoom.us/j/8436420171",
+        platform: "zoom",
+        now: new Date("2026-07-11T02:00:00.000Z"),
+      }),
+    ).resolves.toEqual({
+      meetingId: "44444444-4444-4444-8444-444444444444",
+      teamId: "22222222-2222-4222-8222-222222222222",
+    });
+
+    expect(meetingValues).toHaveBeenCalledWith({
+      teamId: "22222222-2222-4222-8222-222222222222",
+      ownerUserId: "55555555-5555-4555-8555-555555555555",
+      title: "Zoom recording",
+      platform: "zoom",
+      status: "scheduled",
+      meetingUrl: "https://zoom.us/j/8436420171",
+    });
+  });
+
+  it("keeps the calendar match when the event starts within thirty minutes", async () => {
+    const workspace = {
+      teamId: "22222222-2222-4222-8222-222222222222",
+      userId: "55555555-5555-4555-8555-555555555555",
+      domain: "iosg.vc",
+      canCreateMeetings: true,
+    };
+    getOrCreateWorkspaceForSessionUser.mockResolvedValue(workspace);
+    assertCanCreateMeetings.mockResolvedValue(undefined);
+
+    const calendarLimit = vi.fn().mockResolvedValue([
+      {
+        id: "33333333-3333-4333-8333-333333333333",
+        title: "Kimpton <> IOSG",
+        meetingUrl: "https://zoom.us/j/8436420171",
+        startsAt: new Date("2026-07-11T02:20:00.000Z"),
+        endsAt: new Date("2026-07-11T03:00:00.000Z"),
+      },
+    ]);
+    const meetingLimit = vi.fn().mockResolvedValue([]);
+    select
+      .mockReturnValueOnce({
+        from: () => ({
+          where: () => ({
+            orderBy: () => ({
+              limit: calendarLimit,
+            }),
+          }),
+        }),
+      })
+      .mockReturnValueOnce({
+        from: () => ({
+          where: () => ({
+            limit: meetingLimit,
+          }),
+        }),
+      });
+
+    const meetingReturning = vi
+      .fn()
+      .mockResolvedValue([{ id: "44444444-4444-4444-8444-444444444444" }]);
+    const meetingValues = vi.fn().mockReturnValue({ returning: meetingReturning });
+    insert.mockReturnValue({ values: meetingValues });
+
+    const { createScheduledMeetingBot } = await import("@/lib/meeting-bot-records");
+
+    await expect(
+      createScheduledMeetingBot({
+        sessionUser: {
+          id: "user_123",
+          email: "test@iosg.vc",
+          name: null,
+        },
+        meetingUrl: "https://zoom.us/j/8436420171",
+        platform: "zoom",
+        now: new Date("2026-07-11T02:00:00.000Z"),
+      }),
+    ).resolves.toEqual({
+      meetingId: "44444444-4444-4444-8444-444444444444",
+      teamId: "22222222-2222-4222-8222-222222222222",
+      startAt: "2026-07-11T02:20:00.000Z",
+    });
+
+    expect(meetingValues).toHaveBeenCalledWith(
+      expect.objectContaining({
+        calendarEventId: "33333333-3333-4333-8333-333333333333",
+        title: "Kimpton <> IOSG",
+      }),
+    );
+  });
 });
