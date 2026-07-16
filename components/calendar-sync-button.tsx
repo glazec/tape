@@ -4,7 +4,6 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { AlertCircle, CalendarCheck, RefreshCw } from "lucide-react";
 
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 
 type SyncState =
@@ -84,7 +83,7 @@ export function CalendarSyncButton({
       if (!response.ok) {
         if (response.status === 409 && result.reconnect) {
           setState("needs_connection");
-          setMessage("Connect your calendar to start capturing meetings.");
+          setMessage("Calendar access expired. Connect again to keep capturing meetings.");
           return;
         }
 
@@ -103,7 +102,7 @@ export function CalendarSyncButton({
       }
     } catch {
       setState("error");
-      setMessage("Calendar events could not be captured.");
+      setMessage("Calendar events could not be captured. Try syncing again.");
     }
   }, [autoSync, router]);
 
@@ -165,68 +164,52 @@ export function CalendarSyncButton({
         : needsConnection
           ? "Connect calendar"
           : "Sync calendar";
-  const alertTitle =
-    state === "error"
-      ? "Calendar not synced"
-      : state === "partial"
-        ? "Calendar checked"
-      : needsConnection
-        ? "Calendar access needed"
-        : "Calendar synced";
 
   return (
-    <div className="flex flex-col items-start gap-3">
-      <Button
-        type="button"
-        onClick={needsConnection ? connectCalendar : syncCalendar}
-        disabled={isBusy}
-        variant="outline"
-      >
-        {needsConnection ? (
-          <CalendarCheck data-icon="inline-start" />
-        ) : (
-          <RefreshCw data-icon="inline-start" />
-        )}
-        {buttonLabel}
-      </Button>
-      {!needsConnection ? (
+    <div className="flex flex-col items-stretch gap-2">
+      <div className="flex items-center justify-between gap-2">
         <Button
           type="button"
-          onClick={disconnectCalendar}
+          onClick={needsConnection ? connectCalendar : syncCalendar}
           disabled={isBusy}
-          variant="ghost"
-          size="sm"
+          variant={needsConnection ? "default" : "outline"}
         >
-          {state === "disconnecting"
-            ? "Disconnecting..."
-            : "Disconnect calendar"}
+          {needsConnection ? (
+            <CalendarCheck data-icon="inline-start" />
+          ) : (
+            <RefreshCw data-icon="inline-start" />
+          )}
+          {buttonLabel}
         </Button>
-      ) : null}
+        {!needsConnection ? (
+          <Button
+            type="button"
+            onClick={disconnectCalendar}
+            disabled={isBusy}
+            variant="ghost"
+            size="sm"
+            className="text-muted-foreground"
+          >
+            {state === "disconnecting" ? "Disconnecting..." : "Disconnect"}
+          </Button>
+        ) : null}
+      </div>
       {message ? (
-        <Alert
-          variant={state === "error" ? "destructive" : "default"}
-          className="max-w-md"
+        <p
+          role="status"
+          className={
+            state === "error"
+              ? "flex items-start gap-1.5 text-sm text-destructive"
+              : "flex items-start gap-1.5 text-sm text-muted-foreground"
+          }
         >
           {state === "error" || needsConnection ? (
-            <AlertCircle />
+            <AlertCircle className="mt-0.5 size-3.5 shrink-0" />
           ) : (
-            <CalendarCheck />
+            <CalendarCheck className="mt-0.5 size-3.5 shrink-0" />
           )}
-          <AlertTitle>{alertTitle}</AlertTitle>
-          <AlertDescription className="flex flex-col items-start gap-3">
-            <span>{message}</span>
-            {needsConnection ? (
-              <Button
-                type="button"
-                onClick={connectCalendar}
-                disabled={isBusy}
-                size="sm"
-              >
-                Connect calendar
-              </Button>
-            ) : null}
-          </AlertDescription>
-        </Alert>
+          <span>{message}</span>
+        </p>
       ) : null}
     </div>
   );

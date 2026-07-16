@@ -26,13 +26,31 @@ describe("CalendarAutomationPanel", () => {
     );
 
     expect(html).toContain("Calendar capture");
-    expect(html).toContain("Calendar connected");
+    expect(html).toContain("Connected");
     expect(html).toContain("member@iosg.vc");
     expect(html).toContain("Recording coverage on");
     expect(html).toContain("Next join: IOSG Weekly Team Meeting");
     expect(html).toContain("Last checked");
     expect(html).toContain("Sync calendar");
-    expect(html).toContain("Disconnect calendar");
+    expect(html).toContain("Disconnect");
+  });
+
+  it("states the connected status once instead of repeating it per row", () => {
+    const html = renderToStaticMarkup(
+      <CalendarAutomationPanel
+        accountLabel="member@iosg.vc"
+        autoSync={false}
+        status={{
+          connected: true,
+          autoJoinEnabled: true,
+          recallCalendarStatus: "connected",
+          recallCalendarLastSyncedAt: "2026-06-27T12:00:00.000Z",
+        }}
+      />,
+    );
+
+    expect(html.match(/Connected/g)).toHaveLength(1);
+    expect(html).not.toContain("Calendar connected");
   });
 
   it("defers last checked formatting to the browser timezone", () => {
@@ -79,11 +97,12 @@ describe("CalendarAutomationPanel", () => {
       />,
     );
 
-    expect(html).toContain("Calendar not connected");
-    expect(html).toContain("Connect calendar");
-    expect(html).toContain("Future meetings are watched");
+    expect(html).toContain("Not connected");
+    expect(html).toContain("Connect Google Calendar");
+    expect(html.match(/Connect calendar/g)).toHaveLength(1);
     expect(html).not.toContain("Recall");
-    expect(html).not.toContain("Disconnect calendar");
+    expect(html).not.toContain("Disconnect");
+    expect(html).not.toContain("Last checked");
   });
 
   it("does not claim auto join is active without a Recall Calendar connection", () => {
@@ -99,8 +118,8 @@ describe("CalendarAutomationPanel", () => {
       />,
     );
 
-    expect(html).toContain("Recording coverage off");
-    expect(html).toContain("Connect calendar to enable recording");
+    expect(html).not.toContain("Recording coverage on");
+    expect(html).toContain("Connect Google Calendar");
     expect(html).not.toContain("Eligible online meetings are recorded");
   });
 

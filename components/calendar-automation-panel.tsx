@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { Bot, CalendarCheck, Clock3 } from "lucide-react";
+import { Bot, Clock3 } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import {
@@ -29,58 +29,47 @@ export function CalendarAutomationPanel({
 }: CalendarAutomationPanelProps) {
   const connected = status.connected;
   const autoJoinActive = connected && status.autoJoinEnabled;
-  const statusLabel = connected ? "Connected" : "Needs connection";
-  const statusVariant = connected ? "secondary" : "destructive";
 
   return (
     <Card size="sm" className="w-full shadow-sm sm:max-w-sm">
       <CardHeader className="border-b bg-muted/35">
         <CardTitle>Calendar capture</CardTitle>
         <CardDescription>
-          Future meetings are watched from the connected calendar.
+          {connected
+            ? (accountLabel ?? "Connected account")
+            : "Connect Google Calendar to record and transcribe meetings automatically."}
         </CardDescription>
         <CardAction>
-          <Badge variant={statusVariant}>{statusLabel}</Badge>
+          <Badge variant={connected ? "secondary" : "destructive"}>
+            {connected ? "Connected" : "Not connected"}
+          </Badge>
         </CardAction>
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
-        <div className="grid gap-3 text-sm">
-          <StatusRow
-            icon={<CalendarCheck />}
-            label={
-              connected
-                ? "Calendar connected"
-                : "Calendar not connected"
-            }
-            value={
-              connected
-                ? (accountLabel ?? "Connected account")
-                : "Connect calendar"
-            }
-          />
-          <StatusRow
-            icon={<Bot />}
-            label={
-              autoJoinActive
-                ? "Recording coverage on"
-                : "Recording coverage off"
-            }
-            value={
-              autoJoinActive
-                ? nextJoinTitle
-                  ? `Next join: ${nextJoinTitle}`
-                  : "Supported online meetings will be recorded"
-                : connected
-                  ? "Sync calendar to enable recording"
-                  : "Connect calendar to enable recording"
-            }
-          />
-          <StatusRow
-            icon={<Clock3 />}
-            label="Last checked"
-            value={formatLastSynced(status.recallCalendarLastSyncedAt)}
-          />
-        </div>
+        {connected ? (
+          <div className="grid gap-3 text-sm">
+            <StatusRow
+              icon={<Bot />}
+              label={
+                autoJoinActive
+                  ? "Recording coverage on"
+                  : "Recording coverage off"
+              }
+              value={
+                autoJoinActive
+                  ? nextJoinTitle
+                    ? `Next join: ${nextJoinTitle}`
+                    : "Supported online meetings will be recorded"
+                  : "Sync calendar to enable recording"
+              }
+            />
+            <StatusRow
+              icon={<Clock3 />}
+              label="Last checked"
+              value={formatLastSynced(status.recallCalendarLastSyncedAt)}
+            />
+          </div>
+        ) : null}
         <CalendarSyncButton autoSync={autoSync} connected={connected} />
       </CardContent>
     </Card>
