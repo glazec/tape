@@ -76,9 +76,13 @@ describe("enrich transcript", () => {
     const { set } = mockSegments();
     const polishError = new Error("OpenRouter polish returned no content");
 
-    translateTranscriptSegmentsToChinese.mockResolvedValue([
-      { id: "segment_1", text: "团队好。" },
-    ]);
+    translateTranscriptSegmentsToChinese.mockImplementation(
+      async (_segments, options) => {
+        const translations = [{ id: "segment_1", text: "团队好。" }];
+        await options.onTranslated(translations);
+        return translations;
+      },
+    );
     polishTranscriptSegmentsInOriginalLanguage.mockRejectedValue(polishError);
 
     const { enrichTranscript } = await import("@/inngest/functions");
@@ -94,7 +98,10 @@ describe("enrich transcript", () => {
     expect(markMeetingTranslationFailed).not.toHaveBeenCalled();
     expect(translateTranscriptSegmentsToChinese).toHaveBeenCalledWith(
       [{ id: "segment_1", text: "Um, hello team." }],
-      { batchSize: 10 },
+      {
+        batchSize: 10,
+        onTranslated: expect.any(Function),
+      },
     );
     expect(set).toHaveBeenCalledWith({
       translatedText: "团队好。",
@@ -110,6 +117,25 @@ describe("enrich transcript", () => {
     );
   });
 
+  it("keeps translation running while Inngest still has retries", async () => {
+    mockSegments();
+    const translationError = new Error("OpenRouter translation returned no content");
+
+    translateTranscriptSegmentsToChinese.mockRejectedValue(translationError);
+
+    const { enrichTranscript } = await import("@/inngest/functions");
+
+    await expect(
+      (enrichTranscript as unknown as RunnableInngestFunction).fn({
+        attempt: 2,
+        event: { data: { meetingId, translateToChinese: true } },
+      }),
+    ).rejects.toThrow("OpenRouter translation returned no content");
+
+    expect(markMeetingTranslationRunning).toHaveBeenCalledWith(meetingId);
+    expect(markMeetingTranslationFailed).not.toHaveBeenCalled();
+  });
+
   it("marks translation failed without starting polish when translation fails", async () => {
     mockSegments();
     const translationError = new Error("OpenRouter translation returned no content");
@@ -120,6 +146,7 @@ describe("enrich transcript", () => {
 
     await expect(
       (enrichTranscript as unknown as RunnableInngestFunction).fn({
+        attempt: 4,
         event: { data: { meetingId, translateToChinese: true } },
       }),
     ).rejects.toThrow("OpenRouter translation returned no content");

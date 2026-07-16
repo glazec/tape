@@ -62,6 +62,7 @@ const enrichTranscriptDataSchema = z.object({
   meetingId: z.uuid(),
   translateToChinese: z.boolean().optional(),
 });
+const ENRICH_TRANSCRIPT_RETRIES = 4;
 
 function getAppUrl() {
   return appUrlSchema.parse(process.env.NEXT_PUBLIC_APP_URL);
@@ -174,9 +175,10 @@ export const convertVideoToAudio = inngest.createFunction(
 export const enrichTranscript = inngest.createFunction(
   {
     id: "enrich-transcript",
+    retries: ENRICH_TRANSCRIPT_RETRIES,
     triggers: [{ event: "meeting/enrich.transcript" }],
   },
-  async ({ event }) => {
+  async ({ event, attempt = 0 }) => {
     const data = enrichTranscriptDataSchema.parse(event.data);
     const shouldTranslateToChinese = data.translateToChinese ?? true;
     let translationFinished = !shouldTranslateToChinese;
@@ -225,18 +227,21 @@ export const enrichTranscript = inngest.createFunction(
           );
           const translations = await translateTranscriptSegmentsToChinese(
             batch,
-            { batchSize: TRANSLATION_BATCH_SIZE },
+            {
+              batchSize: TRANSLATION_BATCH_SIZE,
+              onTranslated: async (translatedRows) => {
+                for (const translation of translatedRows) {
+                  await db
+                    .update(transcriptSegments)
+                    .set({
+                      translatedText: translation.text,
+                      updatedAt: new Date(),
+                    })
+                    .where(eq(transcriptSegments.id, translation.id));
+                }
+              },
+            },
           );
-
-          for (const translation of translations) {
-            await db
-              .update(transcriptSegments)
-              .set({
-                translatedText: translation.text,
-                updatedAt: new Date(),
-              })
-              .where(eq(transcriptSegments.id, translation.id));
-          }
 
           newTranslatedCount += translations.length;
         }
@@ -303,7 +308,11 @@ export const enrichTranscript = inngest.createFunction(
         translatedCount: newTranslatedCount,
       };
     } catch (error) {
-      if (shouldTranslateToChinese && !translationFinished) {
+      if (
+        shouldTranslateToChinese &&
+        !translationFinished &&
+        attempt >= ENRICH_TRANSCRIPT_RETRIES
+      ) {
         await markMeetingTranslationFailed(data.meetingId, error);
       }
       throw error;

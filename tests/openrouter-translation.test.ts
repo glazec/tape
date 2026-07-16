@@ -17,7 +17,7 @@ describe("OpenRouter translation", () => {
             {
               message: {
                 content:
-                  '{"translations":[{"id":"segment_1","text":"大家好"}]}',
+                  '{"translations":["大家好"]}',
               },
             },
           ],
@@ -45,7 +45,22 @@ describe("OpenRouter translation", () => {
     );
     expect(JSON.parse(String(fetchMock.mock.calls[0][1]?.body))).toMatchObject({
       reasoning: { effort: "none" },
-      response_format: { type: "json_object" },
+      provider: { require_parameters: true },
+      plugins: [{ id: "response-healing" }],
+      response_format: {
+        type: "json_schema",
+        json_schema: {
+          strict: true,
+          schema: {
+            properties: {
+              translations: {
+                minItems: 1,
+                maxItems: 1,
+              },
+            },
+          },
+        },
+      },
     });
   });
 
@@ -72,7 +87,7 @@ describe("OpenRouter translation", () => {
                 finish_reason: "stop",
                 message: {
                   content:
-                    '{"translations":[{"id":"segment_1","text":"大家好"}]}',
+                    '{"translations":["大家好"]}',
                 },
               },
             ],
@@ -115,9 +130,112 @@ describe("OpenRouter translation", () => {
         { id: "segment_1", text: "Hello team" },
       ]),
     ).rejects.toThrow(
-      "OpenRouter model qwen/qwen3.7-plus returned no content after 3 attempts",
+      "OpenRouter translation failed for segment segment_1 after 3 attempts",
     );
     expect(fetchMock).toHaveBeenCalledTimes(3);
+  });
+
+  it("retries only blank or missing translation positions", async () => {
+    vi.stubEnv("OPENROUTER_API_KEY", "openrouter-key");
+    vi.stubEnv("OPENROUTER_MODEL", "qwen/qwen3.7-plus");
+    const requestedTexts: string[][] = [];
+    const fetchMock = vi.fn().mockImplementation(async (_url, init) => {
+      const body = JSON.parse(String(init?.body));
+      const userMessage = body.messages.find(
+        (message: { role: string }) => message.role === "user",
+      );
+      const payload = JSON.parse(userMessage.content) as { texts: string[] };
+      requestedTexts.push(payload.texts);
+
+      return new Response(
+        JSON.stringify({
+          choices: [
+            {
+              message: {
+                content:
+                  requestedTexts.length === 1
+                    ? '{"translations":["大家好","","再见"]}'
+                    : '{"translations":["嗯"]}',
+              },
+            },
+          ],
+        }),
+      );
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const onTranslated = vi.fn();
+
+    const { translateTranscriptSegmentsToChinese } = await import(
+      "@/lib/vendors/openrouter"
+    );
+
+    await expect(
+      translateTranscriptSegmentsToChinese(
+        [
+          { id: "segment_1", text: "Hello" },
+          { id: "segment_2", text: "Um" },
+          { id: "segment_3", text: "Goodbye" },
+        ],
+        { onTranslated },
+      ),
+    ).resolves.toEqual([
+      { id: "segment_1", text: "大家好" },
+      { id: "segment_2", text: "嗯" },
+      { id: "segment_3", text: "再见" },
+    ]);
+    expect(requestedTexts).toEqual([["Hello", "Um", "Goodbye"], ["Um"]]);
+    expect(onTranslated).toHaveBeenNthCalledWith(1, [
+      { id: "segment_1", text: "大家好" },
+      { id: "segment_3", text: "再见" },
+    ]);
+    expect(onTranslated).toHaveBeenNthCalledWith(2, [
+      { id: "segment_2", text: "嗯" },
+    ]);
+  });
+
+  it("splits a malformed batch and preserves smaller successful batches", async () => {
+    vi.stubEnv("OPENROUTER_API_KEY", "openrouter-key");
+    vi.stubEnv("OPENROUTER_MODEL", "qwen/qwen3.7-plus");
+    const requestedTexts: string[][] = [];
+    const fetchMock = vi.fn().mockImplementation(async (_url, init) => {
+      const body = JSON.parse(String(init?.body));
+      const userMessage = body.messages.find(
+        (message: { role: string }) => message.role === "user",
+      );
+      const payload = JSON.parse(userMessage.content) as { texts: string[] };
+      requestedTexts.push(payload.texts);
+
+      return new Response(
+        JSON.stringify({
+          choices: [
+            {
+              message: {
+                content:
+                  payload.texts.length > 1
+                    ? '{"translations":["损坏"'
+                    : JSON.stringify({ translations: [`翻译 ${payload.texts[0]}`] }),
+              },
+            },
+          ],
+        }),
+      );
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { translateTranscriptSegmentsToChinese } = await import(
+      "@/lib/vendors/openrouter"
+    );
+
+    await expect(
+      translateTranscriptSegmentsToChinese([
+        { id: "segment_1", text: "First" },
+        { id: "segment_2", text: "Second" },
+      ]),
+    ).resolves.toEqual([
+      { id: "segment_1", text: "翻译 First" },
+      { id: "segment_2", text: "翻译 Second" },
+    ]);
+    expect(requestedTexts).toEqual([["First", "Second"], ["First"], ["Second"]]);
   });
 
   it("polishes transcript segments in their original language", async () => {
@@ -207,7 +325,7 @@ describe("OpenRouter translation", () => {
       const userMessage = body.messages.find(
         (message: { role: string }) => message.role === "user",
       );
-      const payload = JSON.parse(userMessage.content);
+      const payload = JSON.parse(userMessage.content) as { texts: string[] };
 
       return new Response(
         JSON.stringify({
@@ -215,11 +333,8 @@ describe("OpenRouter translation", () => {
             {
               message: {
                 content: JSON.stringify({
-                  translations: payload.segments.map(
-                    (segment: { id: string }) => ({
-                      id: segment.id,
-                      text: `翻译 ${segment.id}`,
-                    }),
+                  translations: payload.texts.map(
+                    (_text: string, index: number) => `翻译 ${index}`,
                   ),
                 }),
               },
@@ -257,7 +372,7 @@ describe("OpenRouter translation", () => {
       const userMessage = body.messages.find(
         (message: { role: string }) => message.role === "user",
       );
-      const payload = JSON.parse(userMessage.content);
+      const payload = JSON.parse(userMessage.content) as { texts: string[] };
 
       return new Response(
         JSON.stringify({
@@ -265,11 +380,8 @@ describe("OpenRouter translation", () => {
             {
               message: {
                 content: JSON.stringify({
-                  translations: payload.segments.map(
-                    (segment: { id: string }) => ({
-                      id: segment.id,
-                      text: `翻译 ${segment.id}`,
-                    }),
+                  translations: payload.texts.map(
+                    (_text: string, index: number) => `翻译 ${index}`,
                   ),
                 }),
               },
@@ -303,7 +415,7 @@ describe("OpenRouter translation", () => {
       const userMessage = body.messages.find(
         (message: { role: string }) => message.role === "user",
       );
-      const payload = JSON.parse(userMessage.content);
+      const payload = JSON.parse(userMessage.content) as { texts: string[] };
 
       return new Response(
         JSON.stringify({
@@ -311,11 +423,8 @@ describe("OpenRouter translation", () => {
             {
               message: {
                 content: JSON.stringify({
-                  translations: payload.segments.map(
-                    (segment: { id: string }) => ({
-                      id: segment.id,
-                      text: `翻译 ${segment.id}`,
-                    }),
+                  translations: payload.texts.map(
+                    (_text: string, index: number) => `翻译 ${index}`,
                   ),
                 }),
               },

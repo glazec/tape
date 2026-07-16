@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  buildChineseTranslationJsonSchema,
   buildChineseTranslationMessages,
   buildOriginalTranscriptPolishMessages,
   parseChineseTranslationResponse,
@@ -18,14 +19,37 @@ describe("meeting translation", () => {
       {
         role: "system",
         content:
-          "Translate meeting transcript segments into polished, concise Chinese. Remove filler words such as 然后 when they do not change meaning. Preserve speaker intent, team tone, product names, company names, numbers, and tickers. Return only JSON. Do not wrap the JSON in markdown fences.",
+          "Translate each meeting transcript text into polished, concise Chinese. Return exactly one nonempty translation for every input text, in the same order. Translate short fragments and filler minimally instead of returning an empty string. Remove filler words such as 然后 when they do not change meaning. Preserve speaker intent, team tone, product names, company names, numbers, and tickers.",
       },
       {
         role: "user",
         content:
-          '{"segments":[{"id":"segment_1","text":"Hello team"},{"id":"segment_2","text":"We need to check Solana liquidity."}]}',
+          '{"texts":["Hello team","We need to check Solana liquidity."]}',
       },
     ]);
+  });
+
+  it("builds a strict compact translation schema for the batch length", () => {
+    expect(buildChineseTranslationJsonSchema(2)).toEqual({
+      type: "json_schema",
+      json_schema: {
+        name: "transcript_translation",
+        strict: true,
+        schema: {
+          type: "object",
+          properties: {
+            translations: {
+              type: "array",
+              items: { type: "string", minLength: 1 },
+              minItems: 2,
+              maxItems: 2,
+            },
+          },
+          required: ["translations"],
+          additionalProperties: false,
+        },
+      },
+    });
   });
 
   it("builds an original-language polish prompt that handles Chinese meetings", () => {
@@ -48,31 +72,39 @@ describe("meeting translation", () => {
     ]);
   });
 
-  it("parses valid JSON translations and ignores unknown segment ids", () => {
+  it("maps compact positional translations back to segment ids", () => {
     expect(
       parseChineseTranslationResponse({
-        content:
-          '{"translations":[{"id":"segment_1","text":"大家好"},{"id":"unknown","text":"忽略"}]}',
-        segmentIds: ["segment_1"],
+        content: '{"translations":["大家好","检查流动性"]}',
+        segments: [
+          { id: "segment_1", text: "Hello team" },
+          { id: "segment_2", text: "Check liquidity" },
+        ],
       }),
-    ).toEqual([{ id: "segment_1", text: "大家好" }]);
+    ).toEqual([
+      { id: "segment_1", text: "大家好" },
+      { id: "segment_2", text: "检查流动性" },
+    ]);
   });
 
   it("parses JSON translations wrapped in a markdown code fence", () => {
     expect(
       parseChineseTranslationResponse({
-        content:
-          '```json\n{"translations":[{"id":"segment_1","text":"你好。"}]}\n```',
-        segmentIds: ["segment_1"],
+        content: '```json\n{"translations":["你好。"]}\n```',
+        segments: [{ id: "segment_1", text: "Hello" }],
       }),
     ).toEqual([{ id: "segment_1", text: "你好。" }]);
   });
 
-  it("accepts translated rows returned under the input segments key", () => {
+  it("preserves valid translations while identifying blank or missing positions", () => {
     expect(
       parseChineseTranslationResponse({
-        content: '{"segments":[{"id":"segment_1","text":"你好。"}]}',
-        segmentIds: ["segment_1"],
+        content: '{"translations":["你好。","",null]}',
+        segments: [
+          { id: "segment_1", text: "Hello" },
+          { id: "segment_2", text: "Um" },
+          { id: "segment_3", text: "Goodbye" },
+        ],
       }),
     ).toEqual([{ id: "segment_1", text: "你好。" }]);
   });

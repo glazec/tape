@@ -5,6 +5,13 @@ type SegmentForTranslation = {
   text: string;
 };
 
+export class TranslationResponseError extends Error {
+  constructor(message: string, options?: { cause?: unknown }) {
+    super(message, options);
+    this.name = "TranslationResponseError";
+  }
+}
+
 export function buildChineseTranslationMessages(
   segments: SegmentForTranslation[],
 ) {
@@ -12,18 +19,38 @@ export function buildChineseTranslationMessages(
     {
       role: "system" as const,
       content:
-        "Translate meeting transcript segments into polished, concise Chinese. Remove filler words such as 然后 when they do not change meaning. Preserve speaker intent, team tone, product names, company names, numbers, and tickers. Return only JSON. Do not wrap the JSON in markdown fences.",
+        "Translate each meeting transcript text into polished, concise Chinese. Return exactly one nonempty translation for every input text, in the same order. Translate short fragments and filler minimally instead of returning an empty string. Remove filler words such as 然后 when they do not change meaning. Preserve speaker intent, team tone, product names, company names, numbers, and tickers.",
     },
     {
       role: "user" as const,
       content: JSON.stringify({
-        segments: segments.map((segment) => ({
-          id: segment.id,
-          text: segment.text,
-        })),
+        texts: segments.map((segment) => segment.text),
       }),
     },
   ];
+}
+
+export function buildChineseTranslationJsonSchema(itemCount: number) {
+  return {
+    type: "json_schema" as const,
+    json_schema: {
+      name: "transcript_translation",
+      strict: true,
+      schema: {
+        type: "object",
+        properties: {
+          translations: {
+            type: "array",
+            items: { type: "string", minLength: 1 },
+            minItems: itemCount,
+            maxItems: itemCount,
+          },
+        },
+        required: ["translations"],
+        additionalProperties: false,
+      },
+    },
+  };
 }
 
 export function buildOriginalTranscriptPolishMessages(
@@ -49,9 +76,28 @@ export function buildOriginalTranscriptPolishMessages(
 
 export function parseChineseTranslationResponse(input: {
   content: string;
-  segmentIds: string[];
+  segments: SegmentForTranslation[];
 }) {
-  return parseTranscriptTextRows({ ...input, allowBlankText: false });
+  try {
+    const parsedJson = JSON.parse(extractJsonObject(input.content));
+    const parsedObject = z
+      .object({ translations: z.array(z.unknown()) })
+      .parse(parsedJson);
+
+    return input.segments.flatMap((segment, index) => {
+      const translatedText = parsedObject.translations[index];
+
+      if (typeof translatedText !== "string" || !translatedText.trim()) {
+        return [];
+      }
+
+      return [{ id: segment.id, text: translatedText.trim() }];
+    });
+  } catch (error) {
+    throw new TranslationResponseError("Invalid translation JSON response", {
+      cause: error,
+    });
+  }
 }
 
 export function parseOriginalTranscriptPolishResponse(input: {
