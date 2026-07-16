@@ -13,6 +13,7 @@ import { GOOGLE_CALENDAR_EVENT_READ_SCOPE } from "@/lib/google-calendar-constant
 import { parseGoogleCalendarOAuthEnv } from "@/lib/google-calendar-oauth-env";
 import {
   createRecallCalendar,
+  deleteRecallCalendar,
   updateRecallCalendar,
 } from "@/lib/vendors/recall";
 import type { WorkspaceContext } from "@/lib/workspace";
@@ -63,7 +64,7 @@ export function buildGoogleCalendarOAuthUrl(state: string) {
   );
   url.searchParams.set("access_type", "offline");
   url.searchParams.set("prompt", "consent");
-  url.searchParams.set("include_granted_scopes", "true");
+  url.searchParams.set("include_granted_scopes", "false");
   url.searchParams.set("state", state);
 
   return url.toString();
@@ -138,6 +139,36 @@ export async function storeGoogleCalendarTokens(input: {
     .returning({ id: calendarConnections.id });
 
   return connection.id;
+}
+
+export async function disconnectGoogleCalendarForWorkspace(
+  workspace: WorkspaceContext,
+) {
+  const existing = await findGoogleCalendarConnection(workspace);
+
+  if (!existing) {
+    return false;
+  }
+
+  if (existing.recallCalendarId) {
+    await deleteRecallCalendar({ calendarId: existing.recallCalendarId });
+  }
+
+  await db
+    .update(calendarConnections)
+    .set({
+      autoJoinEnabled: false,
+      oauthAccessToken: null,
+      oauthRefreshToken: null,
+      oauthAccessTokenExpiresAt: null,
+      recallCalendarId: null,
+      recallCalendarStatus: null,
+      recallCalendarLastSyncedAt: null,
+      updatedAt: new Date(),
+    })
+    .where(eq(calendarConnections.id, existing.id));
+
+  return true;
 }
 
 async function ensureRecallCalendar(input: {

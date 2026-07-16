@@ -153,6 +153,10 @@ const recallCalendarUpdateInputSchema = z.object({
   metadata: z.record(z.string(), z.string()).optional(),
 });
 
+const recallCalendarDeleteInputSchema = z.object({
+  calendarId: z.string().trim().min(1),
+});
+
 const recallCalendarEventListInputSchema = z.object({
   calendarId: z.string().trim().min(1),
   updatedAtGte: z.iso.datetime().optional(),
@@ -511,6 +515,34 @@ export async function updateRecallCalendar(input: {
   if (!response.ok) {
     throw new Error(
       `Recall calendar update failed with ${response.status} ${response.statusText}`,
+    );
+  }
+
+  return response.json();
+}
+
+export async function deleteRecallCalendar(input: { calendarId: string }) {
+  const parsedInput = recallCalendarDeleteInputSchema.parse(input);
+  const env = recallApiEnvSchema.parse(process.env);
+
+  const response = await fetch(
+    buildRecallApiUrl(
+      env,
+      `/api/v2/calendars/${encodeURIComponent(parsedInput.calendarId)}/`,
+    ),
+    {
+      method: "DELETE",
+      headers: buildRecallReadHeaders(env),
+    },
+  );
+
+  if (response.status === 404 || response.status === 204) {
+    return {};
+  }
+
+  if (!response.ok) {
+    throw new Error(
+      `Recall calendar deletion failed with ${response.status} ${response.statusText}`,
     );
   }
 

@@ -114,6 +114,35 @@ describe("Recall Calendar V2 adapter", () => {
     );
   });
 
+  it("deletes a Recall managed calendar", async () => {
+    vi.stubEnv("RECALL_API_KEY", "recall-key\n");
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(null, {
+        status: 204,
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { deleteRecallCalendar } = await import("@/lib/vendors/recall");
+
+    await expect(
+      deleteRecallCalendar({
+        calendarId: "44444444-4444-4444-8444-444444444444",
+      }),
+    ).resolves.toEqual({});
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://us-east-1.recall.ai/api/v2/calendars/44444444-4444-4444-8444-444444444444/",
+      {
+        method: "DELETE",
+        headers: {
+          Authorization: "Token recall-key",
+          Accept: "application/json",
+        },
+      },
+    );
+  });
+
   it("lists changed Recall calendar events for a calendar sync webhook", async () => {
     vi.stubEnv("RECALL_API_KEY", "recall-key\n");
     const fetchMock = vi.fn().mockResolvedValue(

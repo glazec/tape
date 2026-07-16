@@ -32,6 +32,7 @@ describe("CalendarAutomationPanel", () => {
     expect(html).toContain("Next join: IOSG Weekly Team Meeting");
     expect(html).toContain("Last checked");
     expect(html).toContain("Sync calendar");
+    expect(html).toContain("Disconnect calendar");
   });
 
   it("defers last checked formatting to the browser timezone", () => {
@@ -82,6 +83,7 @@ describe("CalendarAutomationPanel", () => {
     expect(html).toContain("Connect calendar");
     expect(html).toContain("Future meetings are watched");
     expect(html).not.toContain("Recall");
+    expect(html).not.toContain("Disconnect calendar");
   });
 
   it("does not claim auto join is active without a Recall Calendar connection", () => {

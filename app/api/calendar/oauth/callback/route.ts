@@ -62,6 +62,11 @@ export async function GET(request: Request) {
       return redirectToDashboard();
     }
 
+    console.error("calendar_oauth_callback_failed", {
+      error: serializeError(error),
+      userId: user.id,
+    });
+
     return redirectToDashboard("calendarError=connect_failed");
   }
 }
@@ -92,4 +97,10 @@ function expireOAuthStateCookie(response: NextResponse) {
 
 function getAppUrl() {
   return process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
+}
+
+function serializeError(error: unknown) {
+  return error instanceof Error
+    ? { message: error.message, name: error.name }
+    : { message: "Unknown error", name: "UnknownError" };
 }

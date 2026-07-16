@@ -9,6 +9,9 @@ describe("package scripts", () => {
       "db:migrate": "drizzle-kit migrate --config=drizzle.config.ts",
       lint: "eslint",
       test: "vitest run",
+      "test:calendar-live": expect.stringContaining(
+        "scripts/verify-calendar-connection.ts",
+      ),
       "test:coverage": "vitest run --coverage",
       "test:e2e": "playwright test",
       "test:mcp": expect.stringContaining("python -m unittest"),

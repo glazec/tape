@@ -1,8 +1,28 @@
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 
 import { describe, expect, it } from "vitest";
 
 describe("database migrations", () => {
+  it("registers every migration in chronological order", () => {
+    const journal = JSON.parse(
+      readFileSync("db/migrations/meta/_journal.json", "utf8"),
+    ) as {
+      entries: Array<{ tag: string; when: number }>;
+    };
+    const migrationTags = readdirSync("db/migrations")
+      .filter((file) => file.endsWith(".sql"))
+      .map((file) => file.slice(0, -4))
+      .sort();
+
+    expect(journal.entries.map((entry) => entry.tag)).toEqual(migrationTags);
+
+    for (let index = 1; index < journal.entries.length; index += 1) {
+      expect(journal.entries[index].when).toBeGreaterThan(
+        journal.entries[index - 1].when,
+      );
+    }
+  });
+
   it("backfills existing calendar-backed renamed meetings as manual titles", () => {
     const sql = readFileSync(
       "db/migrations/0020_meeting_title_source.sql",

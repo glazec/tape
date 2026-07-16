@@ -51,6 +51,7 @@ describe("GET /api/calendar/oauth/callback", () => {
     storeGoogleCalendarTokens.mockReset();
     syncRecallCalendarEventsForWorkspace.mockReset();
     vi.unstubAllEnvs();
+    vi.restoreAllMocks();
     vi.resetModules();
   });
 
@@ -106,5 +107,51 @@ describe("GET /api/calendar/oauth/callback", () => {
       workspace,
       autoJoinEnabled: true,
     });
+  });
+
+  it("logs provider failures before returning the reconnect error", async () => {
+    vi.stubEnv("NEXT_PUBLIC_APP_URL", "https://app.example.com");
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+    const workspace = {
+      userId: "11111111-1111-4111-8111-111111111111",
+      teamId: "22222222-2222-4222-8222-222222222222",
+      domain: "example.com",
+    };
+
+    cookies.mockResolvedValue({
+      get: vi.fn().mockReturnValue({ value: "state_123" }),
+    });
+    getCurrentUser.mockResolvedValue({
+      id: "auth_user_123",
+      email: "alice@example.com",
+      name: null,
+    });
+    getWorkspace.mockResolvedValue(workspace);
+    assertCanCreateMeetings.mockResolvedValue(undefined);
+    exchangeGoogleCalendarCode.mockRejectedValue(
+      new Error("Google token request failed"),
+    );
+
+    const { GET } = await import("@/app/api/calendar/oauth/callback/route");
+    const response = await GET(
+      new Request(
+        "https://app.example.com/api/calendar/oauth/callback?code=code_123&state=state_123",
+      ),
+    );
+
+    expect(response.status).toBe(307);
+    expect(response.headers.get("location")).toBe(
+      "https://app.example.com/dashboard?calendarError=connect_failed",
+    );
+    expect(consoleError).toHaveBeenCalledWith(
+      "calendar_oauth_callback_failed",
+      {
+        error: {
+          message: "Google token request failed",
+          name: "Error",
+        },
+        userId: "auth_user_123",
+      },
+    );
   });
 });

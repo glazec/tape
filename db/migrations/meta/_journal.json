@@ -162,6 +162,13 @@
       "when": 1784400000001,
       "tag": "0022_reconcile_cron_indexes",
       "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1784500000000,
+      "tag": "0023_meeting_share_rules",
+      "breakpoints": true
     }
   ]
 }

@@ -19,6 +19,7 @@
     "inngest:sync:image-worker": "node scripts/sync-image-worker-inngest.mjs",
     "lint": "eslint",
     "test": "vitest run",
+    "test:calendar-live": "node --env-file-if-exists=.env.local --import=tsx scripts/verify-calendar-connection.ts",
     "test:coverage": "vitest run --coverage",
     "test:watch": "vitest",
     "test:e2e": "playwright test",

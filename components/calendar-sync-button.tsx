@@ -14,6 +14,7 @@ type SyncState =
   | "partial"
   | "needs_connection"
   | "connecting"
+  | "disconnecting"
   | "error";
 
 type CalendarSyncButtonProps = {
@@ -121,8 +122,41 @@ export function CalendarSyncButton({
     window.location.href = "/api/calendar/oauth/start";
   }
 
+  async function disconnectCalendar() {
+    const confirmed = window.confirm(
+      "Disconnect your calendar? Future scheduled calendar bots will be removed. Existing meeting transcripts will stay.",
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
+    setState("disconnecting");
+    setMessage(null);
+
+    try {
+      const response = await fetch("/api/calendar/disconnect", {
+        method: "POST",
+      });
+
+      if (!response.ok) {
+        throw new Error("Calendar disconnect failed");
+      }
+
+      setState("needs_connection");
+      setMessage("Calendar disconnected. Existing meeting transcripts were kept.");
+      router.refresh();
+    } catch {
+      setState("error");
+      setMessage("Calendar could not be disconnected.");
+    }
+  }
+
   const needsConnection = state === "needs_connection" || !connected;
-  const isBusy = state === "syncing" || state === "connecting";
+  const isBusy =
+    state === "syncing" ||
+    state === "connecting" ||
+    state === "disconnecting";
   const buttonLabel =
     state === "syncing"
       ? "Syncing..."
@@ -155,6 +189,19 @@ export function CalendarSyncButton({
         )}
         {buttonLabel}
       </Button>
+      {!needsConnection ? (
+        <Button
+          type="button"
+          onClick={disconnectCalendar}
+          disabled={isBusy}
+          variant="ghost"
+          size="sm"
+        >
+          {state === "disconnecting"
+            ? "Disconnecting..."
+            : "Disconnect calendar"}
+        </Button>
+      ) : null}
       {message ? (
         <Alert
           variant={state === "error" ? "destructive" : "default"}
