@@ -1,10 +1,9 @@
-import { and, asc, eq, isNull, sql } from "drizzle-orm";
+import { and, asc, eq, sql } from "drizzle-orm";
 
 import { db } from "@/db/client";
 import {
   allowedDomains,
   meetingAccess,
-  meetingShareInvites,
   meetings,
   teamMemberships,
   teams,
@@ -243,37 +242,41 @@ async function getOrCreateUserId(sessionUser: SessionUser, email: string) {
   return user.id;
 }
 
-async function grantPendingMeetingShares(userId: string, email: string) {
-  const pendingInvites = await db
-    .select({
-      id: meetingShareInvites.id,
-      meetingId: meetingShareInvites.meetingId,
-      role: meetingShareInvites.role,
-    })
-    .from(meetingShareInvites)
-    .where(
-      and(
-        eq(meetingShareInvites.email, email),
-        isNull(meetingShareInvites.acceptedAt),
-      ),
+export async function grantPendingMeetingShares(userId: string, email: string) {
+  await db.execute(sql`
+    with pending as materialized (
+      select id, meeting_id, role, created_by_user_id
+      from meeting_share_invites
+      where email = ${email}
+        and accepted_at is null
+        and revoked_at is null
+    ), granted as (
+      insert into meeting_access (
+        meeting_id,
+        user_id,
+        role,
+        source,
+        source_id,
+        created_by_user_id
+      )
+      select
+        pending.meeting_id,
+        ${userId}::uuid,
+        pending.role,
+        'effective',
+        'materialized',
+        pending.created_by_user_id
+      from pending
+      on conflict (meeting_id, user_id) do update
+      set role = excluded.role,
+          source = 'effective',
+          source_id = 'materialized',
+          created_by_user_id = excluded.created_by_user_id,
+          revoked_at = null,
+          updated_at = now()
     )
-    .limit(50);
-
-  for (const invite of pendingInvites) {
-    await db
-      .insert(meetingAccess)
-      .values({
-        meetingId: invite.meetingId,
-        role: invite.role,
-        userId,
-      })
-      .onConflictDoNothing({
-        target: [meetingAccess.meetingId, meetingAccess.userId],
-      });
-
-    await db
-      .update(meetingShareInvites)
-      .set({ acceptedAt: new Date(), updatedAt: new Date() })
-      .where(eq(meetingShareInvites.id, invite.id));
-  }
+    update meeting_share_invites
+    set accepted_at = now(), updated_at = now()
+    where id in (select id from pending)
+  `);
 }

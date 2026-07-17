@@ -3,6 +3,7 @@ import { eq } from "drizzle-orm";
 import { db } from "@/db/client";
 import { mediaAssets, meetings, transcriptJobs } from "@/db/schema";
 import type { SessionUser } from "@/lib/auth";
+import { reconcileMeetingSharingForMeeting } from "@/lib/meeting-share-rules";
 import {
   buildMeetingObjectKey,
   getObjectMetadata,
@@ -50,6 +51,8 @@ export async function createUploadedAudioTranscription(
       startedAt: input.startedAt ?? new Date(),
     })
     .returning({ id: meetings.id });
+
+  await reconcileMeetingSharingForMeeting(meeting.id);
 
   const [asset] = await db
     .insert(mediaAssets)
@@ -99,6 +102,8 @@ export async function createUploadedVideoTranscription(
       startedAt: input.startedAt ?? new Date(),
     })
     .returning({ id: meetings.id });
+
+  await reconcileMeetingSharingForMeeting(meeting.id);
 
   const [sourceAsset] = await db
     .insert(mediaAssets)

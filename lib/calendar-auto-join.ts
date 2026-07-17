@@ -4,7 +4,6 @@ import { db } from "@/db/client";
 import {
   auditEvents,
   calendarEvents,
-  meetingAttendees,
   meetingReminders,
   meetings,
 } from "@/db/schema";
@@ -15,6 +14,7 @@ import {
   type SupportedMeetingPlatform,
 } from "@/lib/meeting-links";
 import { buildSmartMeetingTitle } from "@/lib/meeting-intelligence";
+import { syncMeetingParticipantAccess } from "@/lib/meeting-participant-access";
 import { applyMeetingShareRules } from "@/lib/meeting-share-rules";
 import {
   getMeetingBotMetadata,
@@ -207,8 +207,32 @@ export async function autoJoinCalendarEvent(input: AutoJoinInput) {
     calendarEventId: calendarEvent.id,
     teamMeetingKey: activeTeamMeetingKey,
   });
+  let participantAccessSynced = false;
+  let shareRulesApplied = false;
   const isPastRepairEvent =
     input.repairMode && isPastCalendarEvent({ startsAt, endsAt });
+
+  if (existingMeeting) {
+    await syncMeetingParticipantAccess({
+      attendeeEmails,
+      meetingId: existingMeeting.id,
+      ownerUserId: existingMeeting.ownerUserId,
+      teamId: input.connection.teamId,
+    });
+    participantAccessSynced = true;
+
+    if (input.connection.workspaceDomain) {
+      await applyMeetingShareRules({
+        attendeeEmails,
+        meetingId: existingMeeting.id,
+        ownerUserId: existingMeeting.ownerUserId,
+        teamId: input.connection.teamId,
+        title: getCalendarMeetingTitle(existingMeeting, title),
+        workspaceDomain: input.connection.workspaceDomain,
+      });
+      shareRulesApplied = true;
+    }
+  }
 
   if (!meetingUrl) {
     if (isPastRepairEvent && !existingMeeting) {
@@ -410,8 +434,6 @@ export async function autoJoinCalendarEvent(input: AutoJoinInput) {
 
   let meeting: ExistingMeeting | { id: string; ownerUserId: string } | null =
     existingMeeting;
-  let createdMeeting = false;
-
   if (!meeting) {
     try {
       meeting = (
@@ -432,7 +454,6 @@ export async function autoJoinCalendarEvent(input: AutoJoinInput) {
           })
           .returning({ id: meetings.id, ownerUserId: meetings.ownerUserId })
       )[0];
-      createdMeeting = true;
     } catch (error) {
       if (!isTeamMeetingKeyUniqueConflict(error) || !activeTeamMeetingKey) {
         throw error;
@@ -472,21 +493,16 @@ export async function autoJoinCalendarEvent(input: AutoJoinInput) {
     throw new Error("Meeting creation failed");
   }
 
-  if (createdMeeting && attendeeEmails.length > 0) {
-    await db
-      .insert(meetingAttendees)
-      .values(
-        attendeeEmails.map((email) => ({
-          meetingId: meeting.id,
-          email,
-        })),
-      )
-      .onConflictDoNothing({
-        target: [meetingAttendees.meetingId, meetingAttendees.email],
-      });
+  if (!participantAccessSynced) {
+    await syncMeetingParticipantAccess({
+      attendeeEmails,
+      meetingId: meeting.id,
+      ownerUserId: meeting.ownerUserId,
+      teamId: input.connection.teamId,
+    });
   }
 
-  if (input.connection.workspaceDomain) {
+  if (input.connection.workspaceDomain && !shareRulesApplied) {
     await applyMeetingShareRules({
       attendeeEmails,
       meetingId: meeting.id,
@@ -632,6 +648,13 @@ async function syncLocationCalendarMeeting(input: {
       })
       .where(eq(meetings.id, meeting.id));
   }
+
+  await syncMeetingParticipantAccess({
+    attendeeEmails: input.attendeeEmails,
+    meetingId: meeting.id,
+    ownerUserId: meeting.ownerUserId,
+    teamId: input.connection.teamId,
+  });
 
   if (input.connection.workspaceDomain) {
     await applyMeetingShareRules({

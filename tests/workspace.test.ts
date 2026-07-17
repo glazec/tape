@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 const {
+  execute,
   insert,
   onConflictDoNothing,
   onConflictDoUpdate,
@@ -10,6 +11,7 @@ const {
   values,
   where,
 } = vi.hoisted(() => ({
+  execute: vi.fn(),
   insert: vi.fn(),
   onConflictDoNothing: vi.fn(),
   onConflictDoUpdate: vi.fn(),
@@ -23,6 +25,7 @@ const {
 vi.mock("@/db/client", () => ({
   db: {
     insert,
+    execute,
     select,
     update,
   },
@@ -48,6 +51,7 @@ function mockSelectLimit(rows: unknown[]) {
 
 describe("getOrCreateWorkspaceForSessionUser", () => {
   afterEach(() => {
+    execute.mockReset();
     insert.mockReset();
     onConflictDoNothing.mockReset();
     onConflictDoUpdate.mockReset();
@@ -59,25 +63,24 @@ describe("getOrCreateWorkspaceForSessionUser", () => {
     vi.resetModules();
   });
 
+  it("claims every pending meeting share in one pass", async () => {
+    execute.mockResolvedValue(undefined);
+    const { grantPendingMeetingShares } = await import("@/lib/workspace");
+
+    await grantPendingMeetingShares("user_123", "guest@example.com");
+
+    expect(execute).toHaveBeenCalledTimes(1);
+    expect(insert).not.toHaveBeenCalled();
+    expect(update).not.toHaveBeenCalled();
+  });
+
   it("grants pending meeting shares when an invited email signs in", async () => {
     mockLimitedSelect([{ id: "user_123" }]);
     update.mockReturnValueOnce({ set });
     set.mockReturnValueOnce({ where });
     where.mockResolvedValueOnce(undefined);
     mockLimitedSelect([{ teamId: "team_123" }]);
-    mockLimitedSelect([
-      {
-        id: "invite_123",
-        meetingId: "meeting_123",
-        role: "shared",
-      },
-    ]);
-    insert.mockReturnValueOnce({ values });
-    values.mockReturnValueOnce({ onConflictDoNothing });
-    onConflictDoNothing.mockResolvedValueOnce(undefined);
-    update.mockReturnValueOnce({ set });
-    set.mockReturnValueOnce({ where });
-    where.mockResolvedValueOnce(undefined);
+    execute.mockResolvedValueOnce(undefined);
     insert.mockReturnValueOnce({ values });
     values.mockReturnValueOnce({ onConflictDoNothing });
     onConflictDoNothing.mockResolvedValueOnce(undefined);
@@ -98,14 +101,7 @@ describe("getOrCreateWorkspaceForSessionUser", () => {
       teamId: "team_123",
       userId: "user_123",
     });
-    expect(values).toHaveBeenCalledWith({
-      meetingId: "meeting_123",
-      role: "shared",
-      userId: "user_123",
-    });
-    expect(onConflictDoNothing).toHaveBeenCalledWith({
-      target: expect.any(Array),
-    });
+    expect(execute).toHaveBeenCalledTimes(1);
   });
 
   it("creates a read only guest workspace for unknown outside domains after bootstrap", async () => {
@@ -114,7 +110,7 @@ describe("getOrCreateWorkspaceForSessionUser", () => {
     set.mockReturnValueOnce({ where });
     where.mockResolvedValueOnce(undefined);
     mockLimitedSelect([]);
-    mockLimitedSelect([]);
+    execute.mockResolvedValueOnce(undefined);
     mockLimitedSelect([]);
     mockSelectLimit([{ id: "allowed_domain_123" }]);
     insert.mockReturnValueOnce({

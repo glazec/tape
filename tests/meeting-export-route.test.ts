@@ -296,6 +296,10 @@ describe("GET /api/meetings/[meetingId]/export", () => {
     expect(query.params).toEqual([
       "11111111-1111-4111-8111-111111111111",
       "user_123",
+      "user_123",
+      "admin",
+      "owner",
+      "user_123",
     ]);
   });
 

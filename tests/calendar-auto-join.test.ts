@@ -9,6 +9,7 @@ const {
   scheduleRecallCalendarEventBot,
   scheduleRecallBot,
   select,
+  syncMeetingParticipantAccess,
   update,
   updateScheduledRecallBot,
 } = vi.hoisted(() => ({
@@ -20,12 +21,17 @@ const {
   scheduleRecallCalendarEventBot: vi.fn(),
   scheduleRecallBot: vi.fn(),
   select: vi.fn(),
+  syncMeetingParticipantAccess: vi.fn(),
   update: vi.fn(),
   updateScheduledRecallBot: vi.fn(),
 }));
 
 vi.mock("@/lib/meeting-share-rules", () => ({
   applyMeetingShareRules,
+}));
+
+vi.mock("@/lib/meeting-participant-access", () => ({
+  syncMeetingParticipantAccess,
 }));
 
 vi.mock("@/db/client", () => ({
@@ -76,6 +82,10 @@ vi.mock("@/lib/meeting-bot-profile", () => ({
 describe("calendar auto join", () => {
   beforeEach(() => {
     applyMeetingShareRules.mockResolvedValue({ sharedCount: 0 });
+    syncMeetingParticipantAccess.mockResolvedValue({
+      attendeeCount: 0,
+      internalParticipantCount: 0,
+    });
     getMeetingBotProfile.mockResolvedValue({
       botName: "IOSG Old Friend",
       avatarJpegBase64: null,
@@ -91,6 +101,7 @@ describe("calendar auto join", () => {
     scheduleRecallCalendarEventBot.mockReset();
     scheduleRecallBot.mockReset();
     select.mockReset();
+    syncMeetingParticipantAccess.mockReset();
     update.mockReset();
     updateScheduledRecallBot.mockReset();
     vi.unstubAllEnvs();
@@ -169,19 +180,13 @@ describe("calendar auto join", () => {
       ]);
     const meetingValues = vi.fn().mockReturnValue({ returning: meetingReturning });
 
-    const attendeeOnConflictDoNothing = vi.fn().mockResolvedValue(undefined);
-    const attendeeValues = vi
-      .fn()
-      .mockReturnValue({ onConflictDoNothing: attendeeOnConflictDoNothing });
-
     const existingLimit = vi.fn().mockResolvedValue([]);
     const updateWhere = vi.fn().mockResolvedValue(undefined);
     const updateSet = vi.fn().mockReturnValue({ where: updateWhere });
 
     insert
       .mockReturnValueOnce({ values: calendarEventValues })
-      .mockReturnValueOnce({ values: meetingValues })
-      .mockReturnValueOnce({ values: attendeeValues });
+      .mockReturnValueOnce({ values: meetingValues });
     select.mockReturnValue({
       from: () => ({
         where: () => ({
@@ -256,6 +261,12 @@ describe("calendar auto join", () => {
         title: "IOSG <> Nascent",
       }),
     );
+    expect(syncMeetingParticipantAccess).toHaveBeenCalledWith({
+      attendeeEmails: ["founder@nascent.xyz", "alice@iosg.vc"],
+      meetingId: "44444444-4444-4444-8444-444444444444",
+      ownerUserId: "55555555-5555-4555-8555-555555555555",
+      teamId: "22222222-2222-4222-8222-222222222222",
+    });
     expect(applyMeetingShareRules).toHaveBeenCalledWith({
       attendeeEmails: ["founder@nascent.xyz", "alice@iosg.vc"],
       meetingId: "44444444-4444-4444-8444-444444444444",
@@ -264,16 +275,6 @@ describe("calendar auto join", () => {
       title: "IOSG <> Nascent",
       workspaceDomain: "iosg.vc",
     });
-    expect(attendeeValues).toHaveBeenCalledWith([
-      {
-        email: "founder@nascent.xyz",
-        meetingId: "44444444-4444-4444-8444-444444444444",
-      },
-      {
-        email: "alice@iosg.vc",
-        meetingId: "44444444-4444-4444-8444-444444444444",
-      },
-    ]);
     expect(scheduleRecallBot).toHaveBeenCalledWith({
       botName: "Deal Scribe",
       avatarJpegBase64: "custom-avatar",
@@ -1984,6 +1985,7 @@ describe("calendar auto join", () => {
     const existingLimit = vi.fn().mockResolvedValue([
       {
         id: "44444444-4444-4444-8444-444444444444",
+        ownerUserId: "55555555-5555-4555-8555-555555555555",
         calendarEventId: "33333333-3333-4333-8333-333333333333",
         teamMeetingKey:
           "team:22222222-2222-4222-8222-222222222222:start:2026-07-01T20:30:00.000Z:url:https://meet.google.com/abc-defg-hij",
@@ -2052,6 +2054,14 @@ describe("calendar auto join", () => {
         title: "Test User and External Guest",
       }),
     );
+    expect(applyMeetingShareRules).toHaveBeenCalledWith({
+      attendeeEmails: ["guest.test@gmail.com", "test@iosg.vc"],
+      meetingId: "44444444-4444-4444-8444-444444444444",
+      ownerUserId: "55555555-5555-4555-8555-555555555555",
+      teamId: "22222222-2222-4222-8222-222222222222",
+      title: "Test User and External Guest",
+      workspaceDomain: "iosg.vc",
+    });
     expect(scheduleRecallCalendarEventBot).not.toHaveBeenCalled();
     expect(scheduleRecallBot).not.toHaveBeenCalled();
   });

@@ -1,4 +1,15 @@
-import { and, asc, desc, eq, ilike, inArray, ne, or, sql } from "drizzle-orm";
+import {
+  and,
+  asc,
+  desc,
+  eq,
+  ilike,
+  inArray,
+  isNull,
+  ne,
+  or,
+  sql,
+} from "drizzle-orm";
 import { z } from "zod";
 
 import { db } from "@/db/client";
@@ -222,6 +233,7 @@ export async function listMeetingLibraryPageForWorkspace(
     .select({
       id: meetings.id,
       teamId: meetings.teamId,
+      canManage: getMeetingManagerCondition(workspace),
       title: meetings.title,
       platform: meetings.platform,
       status: meetings.status,
@@ -300,8 +312,7 @@ export async function listMeetingLibraryPageForWorkspace(
           status: meeting.status,
         }),
         ...(participantNames.length > 0 ? { participantNames } : {}),
-        accessScope:
-          meeting.teamId === workspace.teamId ? "workspace" : "shared",
+        accessScope: getMeetingAccessScope(Boolean(meeting.canManage)),
         externalParticipantKeys: getExternalParticipantKeys(
           meeting.calendarAttendeeEmails,
           workspace.domain,
@@ -1068,6 +1079,7 @@ export async function getMeetingTranscriptForWorkspace(
   const meetingRows = await db
     .select({
       id: meetings.id,
+      ownerUserId: meetings.ownerUserId,
       teamId: meetings.teamId,
       title: meetings.title,
       platform: meetings.platform,
@@ -1112,7 +1124,8 @@ export async function getMeetingTranscriptForWorkspace(
     return null;
   }
 
-  const accessScope = getMeetingAccessScope(meeting.teamId, workspace);
+  const canManage = Boolean(meeting.canManage);
+  const accessScope = getMeetingAccessScope(canManage);
   const [
     segments,
     speakerSuggestions,
@@ -1144,11 +1157,11 @@ export async function getMeetingTranscriptForWorkspace(
         ),
       )
       .orderBy(asc(transcriptSegments.startMs)),
-    accessScope === "workspace"
+    canManage
       ? listMeetingSpeakerSuggestions(meeting.id, meeting.calendarAttendeeEmails)
       : Promise.resolve([]),
-    accessScope === "shared"
-      ? listMeetingAccessPeople(meeting.id)
+    canManage
+      ? listMeetingAccessPeople(meeting.id, meeting.ownerUserId)
       : Promise.resolve([]),
     db
       .select({
@@ -1507,17 +1520,32 @@ async function listMeetingSpeakerSuggestions(
 
 async function listMeetingAccessPeople(
   meetingId: string,
+  ownerUserId: string,
 ): Promise<MeetingAccessPerson[]> {
-  return db
+  const rows = await db
     .select({
       email: users.email,
+      id: users.id,
       name: users.name,
     })
     .from(meetingAccess)
     .innerJoin(users, eq(meetingAccess.userId, users.id))
-    .where(eq(meetingAccess.meetingId, meetingId))
+    .where(
+      and(
+        eq(meetingAccess.meetingId, meetingId),
+        isNull(meetingAccess.revokedAt),
+      ),
+    )
     .orderBy(asc(users.email))
-    .limit(20);
+    .limit(100);
+
+  return Array.from(
+    new Map(
+      rows
+        .filter(({ id }) => id !== ownerUserId)
+        .map(({ email, name }) => [email, { email, name }]),
+    ).values(),
+  ).slice(0, 20);
 }
 
 function normalizeEmotionLabel(value: string | null) {

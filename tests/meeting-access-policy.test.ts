@@ -14,7 +14,7 @@ function toQuery(condition: SQL) {
 }
 
 describe("meeting access policy", () => {
-  it("lets workspace members read organization meetings and explicit shares", () => {
+  it("limits reads to owners, team managers, and active grants", () => {
     const query = toQuery(
       getReadableMeetingsCondition({
         teamId: "team_123",
@@ -24,34 +24,16 @@ describe("meeting access policy", () => {
       }),
     );
 
-    expect(query.sql).toContain('"meetings"."team_id" = $1');
+    expect(query.sql).toContain('"meetings"."owner_user_id" = $1');
+    expect(query.sql).toContain('"team_memberships"');
     expect(query.sql).toContain('"meeting_access"');
-    expect(query.params).toEqual(["team_123", "user_123"]);
-  });
-
-  it("limits shared only users to meetings explicitly shared with them", () => {
-    const query = toQuery(
-      getReadableMeetingsCondition({
-        teamId: "guest_team_123",
-        userId: "user_123",
-        domain: "partner.com",
-        canCreateMeetings: false,
-      }),
-    );
-
+    expect(query.sql).toContain('"meeting_access"."revoked_at" is null');
     expect(query.sql).not.toContain('"meetings"."team_id" =');
-    expect(query.sql).toContain('"meeting_access"');
-    expect(query.params).toEqual(["user_123"]);
+    expect(query.params).toContain("user_123");
   });
 
-  it("treats a shared only user's own guest team as shared access", () => {
-    expect(
-      getMeetingAccessScope("guest_team_123", {
-        teamId: "guest_team_123",
-        userId: "user_123",
-        domain: "partner.com",
-        canCreateMeetings: false,
-      }),
-    ).toBe("shared");
+  it("uses managed scope only for meeting managers", () => {
+    expect(getMeetingAccessScope(true)).toBe("workspace");
+    expect(getMeetingAccessScope(false)).toBe("shared");
   });
 });

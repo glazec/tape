@@ -28,6 +28,7 @@ import {
   isWithinLocalRecorderAutoClaimWindow,
   type LocalRecorderCandidate,
 } from "@/lib/local-recorder-policy";
+import { reconcileMeetingSharingForMeeting } from "@/lib/meeting-share-rules";
 import {
   buildMeetingObjectKey,
   createUploadUrl,
@@ -449,6 +450,8 @@ export async function createManualLocalRecorderIntent(input: {
       title,
     })
     .returning({ id: meetings.id, title: meetings.title });
+
+  await reconcileMeetingSharingForMeeting(meeting.id);
 
   await db.insert(localRecordingAttempts).values({
     attemptState: "started",

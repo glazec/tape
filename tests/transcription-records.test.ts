@@ -8,6 +8,7 @@ const meetingReturning = vi.fn();
 const assetReturning = vi.fn();
 const jobReturning = vi.fn();
 const update = vi.fn();
+const reconcileMeetingSharingForMeeting = vi.fn();
 
 vi.mock("@/db/client", () => ({
   db: {
@@ -37,6 +38,10 @@ vi.mock("@/lib/workspace", () => ({
   getOrCreateWorkspaceForSessionUser,
 }));
 
+vi.mock("@/lib/meeting-share-rules", () => ({
+  reconcileMeetingSharingForMeeting,
+}));
+
 describe("createUploadedAudioTranscription", () => {
   afterEach(() => {
     assertCanCreateMeetings.mockReset();
@@ -47,6 +52,7 @@ describe("createUploadedAudioTranscription", () => {
     assetReturning.mockReset();
     jobReturning.mockReset();
     update.mockReset();
+    reconcileMeetingSharingForMeeting.mockReset();
     vi.resetModules();
   });
 
@@ -94,6 +100,9 @@ describe("createUploadedAudioTranscription", () => {
       mediaAssetId: "44444444-4444-4444-8444-444444444444",
       transcriptJobId: "55555555-5555-4555-8555-555555555555",
     });
+    expect(reconcileMeetingSharingForMeeting).toHaveBeenCalledWith(
+      "33333333-3333-4333-8333-333333333333",
+    );
     expect(values).toHaveBeenNthCalledWith(
       1,
       expect.objectContaining({ startedAt }),

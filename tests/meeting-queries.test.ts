@@ -83,26 +83,6 @@ describe("getWorkspaceMeetingTranscript", () => {
       })
       .mockReturnValueOnce({
         from: () => ({
-          leftJoin: () => ({
-            where: () => ({
-              orderBy: () => ({
-                limit: vi.fn().mockResolvedValue([]),
-              }),
-            }),
-          }),
-        }),
-      })
-      .mockReturnValueOnce({
-        from: () => ({
-          where: () => ({
-            orderBy: () => ({
-              limit: vi.fn().mockResolvedValue([]),
-            }),
-          }),
-        }),
-      })
-      .mockReturnValueOnce({
-        from: () => ({
           where: () => ({
             orderBy: vi.fn().mockResolvedValue([]),
           }),
@@ -192,26 +172,6 @@ describe("getWorkspaceMeetingTranscript", () => {
       })
       .mockReturnValueOnce({
         from: () => ({
-          leftJoin: () => ({
-            where: () => ({
-              orderBy: () => ({
-                limit: vi.fn().mockResolvedValue([]),
-              }),
-            }),
-          }),
-        }),
-      })
-      .mockReturnValueOnce({
-        from: () => ({
-          where: () => ({
-            orderBy: () => ({
-              limit: vi.fn().mockResolvedValue([]),
-            }),
-          }),
-        }),
-      })
-      .mockReturnValueOnce({
-        from: () => ({
           where: () => ({
             orderBy: vi.fn().mockResolvedValue([]),
           }),
@@ -268,6 +228,7 @@ describe("getWorkspaceMeetingTranscript", () => {
                 orderBy: () => ({
                   limit: vi.fn().mockResolvedValue([
                     {
+                      canManage: true,
                       id: "11111111-1111-4111-8111-111111111111",
                       teamId: "team_123",
                       title: "Customer sync",
@@ -328,6 +289,17 @@ describe("getWorkspaceMeetingTranscript", () => {
                   name: "Participant",
                 },
               ]),
+            }),
+          }),
+        }),
+      })
+      .mockReturnValueOnce({
+        from: () => ({
+          innerJoin: () => ({
+            where: () => ({
+              orderBy: () => ({
+                limit: vi.fn().mockResolvedValue([]),
+              }),
             }),
           }),
         }),
@@ -530,22 +502,6 @@ describe("getWorkspaceMeetingTranscript", () => {
       })
       .mockReturnValueOnce({
         from: () => ({
-          innerJoin: () => ({
-            where: () => ({
-              orderBy: () => ({
-                limit: vi.fn().mockResolvedValue([
-                  {
-                    email: "user@example.com",
-                    name: "Shared User",
-                  },
-                ]),
-              }),
-            }),
-          }),
-        }),
-      })
-      .mockReturnValueOnce({
-        from: () => ({
           where: () => ({
             orderBy: vi.fn().mockResolvedValue([]),
           }),
@@ -573,12 +529,7 @@ describe("getWorkspaceMeetingTranscript", () => {
       ),
     ).resolves.toMatchObject({
       accessScope: "shared",
-      accessPeople: [
-        {
-          email: "user@example.com",
-          name: "Shared User",
-        },
-      ],
+      accessPeople: [],
       audioUrl:
         "/api/meetings/11111111-1111-4111-8111-111111111111/audio",
     });
@@ -774,6 +725,7 @@ describe("listMeetingsForWorkspace", () => {
             where: () => ({
               orderBy: vi.fn().mockResolvedValue([
                 {
+                  canManage: true,
                   id: "33333333-3333-4333-8333-333333333333",
                   teamId: "team_123",
                   title: "Investment review",

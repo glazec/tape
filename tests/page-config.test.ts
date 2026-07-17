@@ -38,6 +38,10 @@ vi.mock("@/lib/meeting-library-views", () => ({
   getDefaultMeetingLibraryView: vi.fn(),
 }));
 
+vi.mock("@/lib/meeting-share-service", () => ({
+  listActiveMeetingShares: vi.fn(),
+}));
+
 vi.mock("@/lib/workspace", () => ({
   getOrCreateWorkspaceForSessionUser: vi.fn(),
   getWorkspaceAccessSummary: vi.fn(),

@@ -6,6 +6,8 @@ const {
   getCurrentUser,
   getWorkspace,
   limit,
+  reconcileMeetingSharingForMeeting,
+  revokeMeetingSharesSeededByMeeting,
   deleteMeeting,
   selectWhere,
   updateMeeting,
@@ -15,6 +17,8 @@ const {
     getCurrentUser: vi.fn(),
     getWorkspace: vi.fn(),
     limit: vi.fn(),
+    reconcileMeetingSharingForMeeting: vi.fn(),
+    revokeMeetingSharesSeededByMeeting: vi.fn(),
     deleteMeeting: vi.fn(),
     selectWhere: vi.fn(),
     updateMeeting: vi.fn(),
@@ -27,6 +31,14 @@ vi.mock("@/lib/auth", () => ({
 
 vi.mock("@/lib/workspace", () => ({
   getOrCreateWorkspaceForSessionUser: getWorkspace,
+}));
+
+vi.mock("@/lib/meeting-share-rules", () => ({
+  reconcileMeetingSharingForMeeting,
+}));
+
+vi.mock("@/lib/meeting-share-service", () => ({
+  revokeMeetingSharesSeededByMeeting,
 }));
 
 vi.mock("@/db/client", () => ({
@@ -131,6 +143,9 @@ describe("DELETE /api/meetings/[meetingId]", () => {
 
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toEqual({ deleted: true });
+    expect(revokeMeetingSharesSeededByMeeting).toHaveBeenCalledWith(
+      "11111111-1111-4111-8111-111111111111",
+    );
     expect(deleteMeeting).toHaveBeenCalled();
     expect(where).toHaveBeenCalled();
     const query = toQuery(selectWhere.mock.calls[0][0]);
@@ -171,6 +186,9 @@ describe("PATCH /api/meetings/[meetingId]", () => {
       meetingId: "11111111-1111-4111-8111-111111111111",
       title: "New weekly sync",
     });
+    expect(reconcileMeetingSharingForMeeting).toHaveBeenCalledWith(
+      "11111111-1111-4111-8111-111111111111",
+    );
     expect(updateMeeting).toHaveBeenCalled();
     expect(updateSet).toHaveBeenCalledWith(
       expect.objectContaining({

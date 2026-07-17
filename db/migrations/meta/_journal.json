@@ -169,6 +169,20 @@
       "when": 1784500000000,
       "tag": "0023_meeting_share_rules",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1784600000000,
+      "tag": "0024_participant_related_permissions",
+      "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1784700000000,
+      "tag": "0025_sharing_policy_lifecycle",
+      "breakpoints": true
     }
   ]
 }

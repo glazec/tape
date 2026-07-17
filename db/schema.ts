@@ -351,12 +351,23 @@ export const meetingAccess = pgTable(
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
     role: accessRole("role").notNull(),
+    source: text("source").notNull().default("manual"),
+    sourceId: text("source_id").notNull().default("direct"),
+    createdByUserId: uuid("created_by_user_id").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    revokedAt: timestamp("revoked_at", { withTimezone: true }),
     ...timestamps,
   },
   (table) => [
     uniqueIndex("meeting_access_meeting_user_unique").on(
       table.meetingId,
       table.userId,
+    ),
+    index("meeting_access_active_user_index").on(
+      table.userId,
+      table.meetingId,
+      table.revokedAt,
     ),
   ],
 );
@@ -391,7 +402,10 @@ export const meetingShareInvites = pgTable(
     createdByUserId: uuid("created_by_user_id")
       .notNull()
       .references(() => users.id),
+    source: text("source").notNull().default("manual"),
+    sourceId: text("source_id").notNull().default("direct"),
     acceptedAt: timestamp("accepted_at", { withTimezone: true }),
+    revokedAt: timestamp("revoked_at", { withTimezone: true }),
     ...timestamps,
   },
   (table) => [
@@ -400,6 +414,93 @@ export const meetingShareInvites = pgTable(
       table.email,
     ),
     index("meeting_share_invites_email_index").on(table.email),
+  ],
+);
+
+export const meetingSharePolicies = pgTable(
+  "meeting_share_policies",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    teamId: uuid("team_id")
+      .notNull()
+      .references(() => teams.id, { onDelete: "cascade" }),
+    ownerUserId: uuid("owner_user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    seedMeetingId: uuid("seed_meeting_id").references(() => meetings.id, {
+      onDelete: "set null",
+    }),
+    recipientEmail: text("recipient_email").notNull(),
+    scope: text("scope").notNull(),
+    role: accessRole("role").notNull().default("shared"),
+    createdByUserId: uuid("created_by_user_id")
+      .notNull()
+      .references(() => users.id),
+    revokedAt: timestamp("revoked_at", { withTimezone: true }),
+    ...timestamps,
+  },
+  (table) => [
+    index("meeting_share_policies_seed_active_index").on(
+      table.seedMeetingId,
+      table.revokedAt,
+    ),
+    index("meeting_share_policies_lookup_index").on(
+      table.teamId,
+      table.ownerUserId,
+      table.scope,
+      table.revokedAt,
+    ),
+  ],
+);
+
+export const meetingSharePolicyKeys = pgTable(
+  "meeting_share_policy_keys",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    policyId: uuid("policy_id")
+      .notNull()
+      .references(() => meetingSharePolicies.id, { onDelete: "cascade" }),
+    matchKey: text("match_key").notNull(),
+    ...timestamps,
+  },
+  (table) => [
+    uniqueIndex("meeting_share_policy_keys_policy_key_unique").on(
+      table.policyId,
+      table.matchKey,
+    ),
+    index("meeting_share_policy_keys_match_index").on(table.matchKey),
+  ],
+);
+
+export const meetingAccessSources = pgTable(
+  "meeting_access_sources",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    meetingId: uuid("meeting_id")
+      .notNull()
+      .references(() => meetings.id, { onDelete: "cascade" }),
+    recipientEmail: text("recipient_email").notNull(),
+    role: accessRole("role").notNull().default("shared"),
+    source: text("source").notNull(),
+    sourceId: text("source_id").notNull(),
+    createdByUserId: uuid("created_by_user_id").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    revokedAt: timestamp("revoked_at", { withTimezone: true }),
+    ...timestamps,
+  },
+  (table) => [
+    uniqueIndex("meeting_access_sources_source_unique").on(
+      table.meetingId,
+      table.recipientEmail,
+      table.source,
+      table.sourceId,
+    ),
+    index("meeting_access_sources_active_index").on(
+      table.meetingId,
+      table.recipientEmail,
+      table.revokedAt,
+    ),
   ],
 );
 
@@ -419,6 +520,7 @@ export const meetingShareRules = pgTable(
     createdByUserId: uuid("created_by_user_id")
       .notNull()
       .references(() => users.id),
+    revokedAt: timestamp("revoked_at", { withTimezone: true }),
     ...timestamps,
   },
   (table) => [

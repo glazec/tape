@@ -1,12 +1,8 @@
-import { and, eq, inArray } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 
-import { db } from "@/db/client";
-import {
-  meetingAccess,
-  meetingShareInvites,
-  meetingShareRules,
-  users,
-} from "@/db/schema";
+import { databaseSql, db } from "@/db/client";
+import { calendarEvents, meetings, users } from "@/db/schema";
+import { normalizeEmailDomain } from "@/lib/access";
 import { getMeetingShareMatchKeys } from "@/lib/meeting-sharing";
 
 export async function applyMeetingShareRules(input: {
@@ -18,71 +14,186 @@ export async function applyMeetingShareRules(input: {
   workspaceDomain: string;
 }) {
   const matchKeys = getMeetingShareMatchKeys(input);
+  const result = await databaseSql.transaction((txn) => [
+    txn`
+      update meeting_access_sources as source
+      set revoked_at = now(), updated_at = now()
+      where source.meeting_id = ${input.meetingId}::uuid
+        and source.source = 'share_policy'
+        and exists (
+          select 1
+          from meeting_share_policies as policy
+          where policy.id::text = source.source_id
+            and policy.scope = 'related'
+        )
+    `,
+    txn`
+      insert into meeting_access_sources (
+        meeting_id,
+        recipient_email,
+        role,
+        source,
+        source_id,
+        created_by_user_id
+      )
+      select distinct
+        ${input.meetingId}::uuid,
+        policy.recipient_email,
+        policy.role,
+        'share_policy',
+        policy.id::text,
+        policy.created_by_user_id
+      from meeting_share_policies as policy
+      join meeting_share_policy_keys as policy_key
+        on policy_key.policy_id = policy.id
+      where policy.team_id = ${input.teamId}::uuid
+        and policy.owner_user_id = ${input.ownerUserId}::uuid
+        and policy.scope = 'related'
+        and policy.revoked_at is null
+        and policy_key.match_key = any(${matchKeys}::text[])
+      on conflict (meeting_id, recipient_email, source, source_id) do update
+      set role = excluded.role,
+          created_by_user_id = excluded.created_by_user_id,
+          revoked_at = null,
+          updated_at = now()
+    `,
+    txn`
+      insert into meeting_access (
+        meeting_id,
+        user_id,
+        role,
+        source,
+        source_id,
+        created_by_user_id
+      )
+      select distinct on (source.meeting_id, app_user.id)
+        source.meeting_id,
+        app_user.id,
+        source.role,
+        'effective',
+        'materialized',
+        source.created_by_user_id
+      from meeting_access_sources as source
+      join users as app_user on lower(app_user.email) = source.recipient_email
+      where source.meeting_id = ${input.meetingId}::uuid
+        and source.revoked_at is null
+        and app_user.id <> ${input.ownerUserId}::uuid
+      order by source.meeting_id, app_user.id, source.created_at
+      on conflict (meeting_id, user_id) do update
+      set role = excluded.role,
+          source = 'effective',
+          source_id = 'materialized',
+          created_by_user_id = excluded.created_by_user_id,
+          revoked_at = null,
+          updated_at = now()
+    `,
+    txn`
+      insert into meeting_share_invites (
+        meeting_id,
+        email,
+        role,
+        created_by_user_id,
+        source,
+        source_id
+      )
+      select distinct on (source.meeting_id, source.recipient_email)
+        source.meeting_id,
+        source.recipient_email,
+        source.role,
+        source.created_by_user_id,
+        'effective',
+        'materialized'
+      from meeting_access_sources as source
+      where source.meeting_id = ${input.meetingId}::uuid
+        and source.revoked_at is null
+        and not exists (
+          select 1 from users where lower(users.email) = source.recipient_email
+        )
+      order by source.meeting_id, source.recipient_email, source.created_at
+      on conflict (meeting_id, email) do update
+      set role = excluded.role,
+          created_by_user_id = excluded.created_by_user_id,
+          source = 'effective',
+          source_id = 'materialized',
+          accepted_at = null,
+          revoked_at = null,
+          updated_at = now()
+    `,
+    txn`
+      update meeting_access as access
+      set revoked_at = now(), updated_at = now()
+      from users as app_user
+      where access.meeting_id = ${input.meetingId}::uuid
+        and access.user_id = app_user.id
+        and not exists (
+          select 1
+          from meeting_access_sources as source
+          where source.meeting_id = access.meeting_id
+            and source.recipient_email = lower(app_user.email)
+            and source.revoked_at is null
+        )
+    `,
+    txn`
+      update meeting_share_invites as invite
+      set revoked_at = now(), updated_at = now()
+      where invite.meeting_id = ${input.meetingId}::uuid
+        and not exists (
+          select 1
+          from meeting_access_sources as source
+          where source.meeting_id = invite.meeting_id
+            and source.recipient_email = lower(invite.email)
+            and source.revoked_at is null
+        )
+    `,
+    txn`
+      select count(distinct policy.id)::integer as shared_count
+      from meeting_share_policies as policy
+      join meeting_share_policy_keys as policy_key
+        on policy_key.policy_id = policy.id
+      where policy.team_id = ${input.teamId}::uuid
+        and policy.owner_user_id = ${input.ownerUserId}::uuid
+        and policy.scope = 'related'
+        and policy.revoked_at is null
+        and policy_key.match_key = any(${matchKeys}::text[])
+    `,
+  ]);
+  const rows = result.at(-1) as Array<{ shared_count?: number }> | undefined;
 
-  if (matchKeys.length === 0) {
-    return { sharedCount: 0 };
-  }
+  return { sharedCount: rows?.[0]?.shared_count ?? 0 };
+}
 
-  const rules = await db
+export async function reconcileMeetingSharingForMeeting(meetingId: string) {
+  const [meeting] = await db
     .select({
-      createdByUserId: meetingShareRules.createdByUserId,
-      recipientEmail: meetingShareRules.recipientEmail,
-      role: meetingShareRules.role,
+      attendeeEmails: calendarEvents.attendeeEmails,
+      id: meetings.id,
+      ownerEmail: users.email,
+      ownerUserId: meetings.ownerUserId,
+      teamId: meetings.teamId,
+      title: meetings.title,
     })
-    .from(meetingShareRules)
-    .where(
-      and(
-        eq(meetingShareRules.teamId, input.teamId),
-        eq(meetingShareRules.ownerUserId, input.ownerUserId),
-        inArray(meetingShareRules.matchKey, matchKeys),
-      ),
-    );
-  const uniqueRules = Array.from(
-    new Map(rules.map((rule) => [rule.recipientEmail, rule])).values(),
-  );
+    .from(meetings)
+    .innerJoin(users, eq(users.id, meetings.ownerUserId))
+    .leftJoin(calendarEvents, eq(calendarEvents.id, meetings.calendarEventId))
+    .where(eq(meetings.id, meetingId))
+    .limit(1);
 
-  if (uniqueRules.length === 0) {
+  if (!meeting) {
     return { sharedCount: 0 };
   }
 
-  const recipientRows = await db
-    .select({ email: users.email, id: users.id })
-    .from(users)
-    .where(
-      inArray(
-        users.email,
-        uniqueRules.map((rule) => rule.recipientEmail),
-      ),
-    );
-  const userIdByEmail = new Map(
-    recipientRows.map((recipient) => [recipient.email, recipient.id]),
-  );
+  const workspaceDomain = normalizeEmailDomain(meeting.ownerEmail);
 
-  for (const rule of uniqueRules) {
-    const userId = userIdByEmail.get(rule.recipientEmail);
-
-    if (userId) {
-      await db
-        .insert(meetingAccess)
-        .values({ meetingId: input.meetingId, role: rule.role, userId })
-        .onConflictDoNothing({
-          target: [meetingAccess.meetingId, meetingAccess.userId],
-        });
-      continue;
-    }
-
-    await db
-      .insert(meetingShareInvites)
-      .values({
-        createdByUserId: rule.createdByUserId,
-        email: rule.recipientEmail,
-        meetingId: input.meetingId,
-        role: rule.role,
-      })
-      .onConflictDoNothing({
-        target: [meetingShareInvites.meetingId, meetingShareInvites.email],
-      });
+  if (!workspaceDomain) {
+    return { sharedCount: 0 };
   }
 
-  return { sharedCount: uniqueRules.length };
+  return applyMeetingShareRules({
+    attendeeEmails: meeting.attendeeEmails,
+    meetingId: meeting.id,
+    ownerUserId: meeting.ownerUserId,
+    teamId: meeting.teamId,
+    title: meeting.title,
+    workspaceDomain,
+  });
 }

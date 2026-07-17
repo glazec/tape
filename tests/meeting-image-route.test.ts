@@ -149,6 +149,10 @@ describe("GET /api/meetings/[meetingId]/images/[assetId]", () => {
       "screenshot",
       "video_frame",
       "user_123",
+      "user_123",
+      "admin",
+      "owner",
+      "user_123",
     ]);
   });
 });

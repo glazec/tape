@@ -4,6 +4,7 @@ import { db } from "@/db/client";
 import { calendarEvents, meetings } from "@/db/schema";
 import type { SessionUser } from "@/lib/auth";
 import type { SupportedMeetingPlatform } from "@/lib/meeting-links";
+import { reconcileMeetingSharingForMeeting } from "@/lib/meeting-share-rules";
 import {
   assertCanCreateMeetings,
   getOrCreateWorkspaceForSessionUser,
@@ -67,6 +68,8 @@ export async function createScheduledMeetingBot(
         })
         .where(eq(meetings.id, existingMeeting.id));
 
+      await reconcileMeetingSharingForMeeting(existingMeeting.id);
+
       return {
         meetingId: existingMeeting.id,
         teamId: workspace.teamId,
@@ -92,6 +95,8 @@ export async function createScheduledMeetingBot(
       })
       .returning({ id: meetings.id });
 
+    await reconcileMeetingSharingForMeeting(meeting.id);
+
     return {
       meetingId: meeting.id,
       teamId: workspace.teamId,
@@ -110,6 +115,8 @@ export async function createScheduledMeetingBot(
       meetingUrl: input.meetingUrl,
     })
     .returning({ id: meetings.id });
+
+  await reconcileMeetingSharingForMeeting(meeting.id);
 
   return { meetingId: meeting.id, teamId: workspace.teamId };
 }

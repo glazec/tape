@@ -13,9 +13,11 @@ import { TranscriptViewer } from "@/components/transcript-viewer";
 import { Badge } from "@/components/ui/badge";
 import { requireCurrentUser } from "@/lib/auth-guards";
 import { getMeetingDisplayStatus } from "@/lib/meeting-display-status";
+import { listActiveMeetingShares } from "@/lib/meeting-share-service";
 import {
   getMeetingTranscriptForWorkspace,
   listMeetingDetailRelatedMeetingsForWorkspace,
+  listWorkspaceShareRecipients,
 } from "@/lib/meeting-queries";
 import { getOrCreateWorkspaceForSessionUser } from "@/lib/workspace";
 
@@ -41,6 +43,12 @@ export default async function MeetingPage({
   }
 
   const canManage = meeting.canManage;
+  const [shareRecipients, activeShares] = canManage
+    ? await Promise.all([
+        listWorkspaceShareRecipients(workspace),
+        listActiveMeetingShares(meetingId),
+      ])
+    : [[], []];
   const displayStatus = getMeetingDisplayStatus({
     meetingStatus: meeting.status,
     transcriptJobStatus: meeting.transcriptJobStatus,
@@ -48,10 +56,10 @@ export default async function MeetingPage({
   return (
     <AppShell
       activeHref="/dashboard"
-      canCreateMeetings={meeting.accessScope === "workspace"}
+      canCreateMeetings={workspace.canCreateMeetings !== false}
       oneSignalExternalId={workspace.userId}
     >
-      <div className="grid min-w-0 gap-8 lg:grid-cols-[1fr_20rem]">
+      <div className="grid min-w-0 gap-8 lg:grid-cols-[1fr_20rem] lg:grid-rows-[auto_1fr]">
         <section className="min-w-0">
           <MeetingAutoRefresh
             meetingStatus={meeting.status}
@@ -112,16 +120,57 @@ export default async function MeetingPage({
               </dd>
             </div>
           </dl>
+        </section>
+
+        <aside
+          className={`min-w-0 lg:col-start-2 lg:row-span-2 lg:row-start-1 ${
+            canManage ? "lg:pt-8" : "lg:pt-24"
+          }`}
+        >
           {canManage ? (
-            <div className="mt-2 lg:hidden">
-              <ShareDialog
-                instanceId="mobile"
-                meetingId={meetingId}
-                organizationDomain={workspace.domain}
-              />
-            </div>
-          ) : null}
-          <div className="mt-6 border-t pt-6">
+            <>
+              <div className="hidden lg:flex">
+                <MeetingActions
+                  imageCount={meeting.visualAssets.length}
+                  instanceId="desktop"
+                  meetingId={meetingId}
+                />
+              </div>
+              <div className="lg:mt-8">
+                <ShareDialog
+                  initialShares={activeShares}
+                  instanceId="meeting-sharing"
+                  meetingId={meetingId}
+                  teamMembers={shareRecipients}
+                />
+              </div>
+              {displayStatus === "failed" ? (
+                <div className="mt-6">
+                  <MeetingRecoveryUploadPanel meetingId={meetingId} />
+                </div>
+              ) : null}
+              <div className="hidden lg:mt-6 lg:block">
+                <RelatedMeetingsCard meetings={relatedMeetings} />
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="rounded-lg border bg-card p-5">
+                <p className="text-sm font-semibold">Shared transcript</p>
+                <p className="mt-2 text-sm leading-6 text-muted-foreground">
+                  You can read this transcript. Editing and sharing stay with
+                  the meeting owner.
+                </p>
+              </div>
+              <div className="hidden lg:mt-6 lg:block">
+                <RelatedMeetingsCard meetings={relatedMeetings} />
+              </div>
+            </>
+          )}
+        </aside>
+
+        <section className="min-w-0 lg:col-start-1 lg:row-start-2">
+          <div className="border-t pt-6">
             <MeetingEntityLinks entities={meeting.entities} />
             <div className={meeting.entities.length > 0 ? "mt-8" : undefined}>
               <TranscriptViewer
@@ -148,50 +197,8 @@ export default async function MeetingPage({
           </div>
         </section>
 
-        <aside
-          className={`min-w-0 ${
-            canManage ? "lg:pt-8" : "lg:pt-24"
-          }`}
-        >
-          {canManage ? (
-            <>
-              <div className="hidden lg:flex">
-                <MeetingActions
-                  imageCount={meeting.visualAssets.length}
-                  instanceId="desktop"
-                  meetingId={meetingId}
-                />
-              </div>
-              <div className="hidden lg:mt-8 lg:block">
-                <ShareDialog
-                  instanceId="desktop"
-                  meetingId={meetingId}
-                  organizationDomain={workspace.domain}
-                />
-              </div>
-              {displayStatus === "failed" ? (
-                <div className="mt-6">
-                  <MeetingRecoveryUploadPanel meetingId={meetingId} />
-                </div>
-              ) : null}
-              <div className="mt-6">
-                <RelatedMeetingsCard meetings={relatedMeetings} />
-              </div>
-            </>
-          ) : (
-            <>
-              <div className="rounded-lg border bg-card p-5">
-                <p className="text-sm font-semibold">Shared transcript</p>
-                <p className="mt-2 text-sm leading-6 text-muted-foreground">
-                  You can read this transcript. Editing and sharing stay with
-                  the meeting owner.
-                </p>
-              </div>
-              <div className="mt-6">
-                <RelatedMeetingsCard meetings={relatedMeetings} />
-              </div>
-            </>
-          )}
+        <aside className="min-w-0 lg:hidden">
+          <RelatedMeetingsCard meetings={relatedMeetings} />
         </aside>
       </div>
     </AppShell>

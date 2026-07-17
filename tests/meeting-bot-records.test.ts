@@ -1,10 +1,11 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-const { assertCanCreateMeetings, getOrCreateWorkspaceForSessionUser, insert, select, update } =
+const { assertCanCreateMeetings, getOrCreateWorkspaceForSessionUser, insert, reconcileMeetingSharingForMeeting, select, update } =
   vi.hoisted(() => ({
     assertCanCreateMeetings: vi.fn(),
     getOrCreateWorkspaceForSessionUser: vi.fn(),
     insert: vi.fn(),
+    reconcileMeetingSharingForMeeting: vi.fn(),
     select: vi.fn(),
     update: vi.fn(),
   }));
@@ -20,6 +21,10 @@ vi.mock("@/db/client", () => ({
 vi.mock("@/lib/workspace", () => ({
   assertCanCreateMeetings,
   getOrCreateWorkspaceForSessionUser,
+}));
+
+vi.mock("@/lib/meeting-share-rules", () => ({
+  reconcileMeetingSharingForMeeting,
 }));
 
 function collectStrings(value: unknown, seen = new WeakSet<object>()): string[] {
@@ -49,6 +54,7 @@ describe("meeting bot records", () => {
     assertCanCreateMeetings.mockReset();
     getOrCreateWorkspaceForSessionUser.mockReset();
     insert.mockReset();
+    reconcileMeetingSharingForMeeting.mockReset();
     select.mockReset();
     update.mockReset();
     vi.resetModules();
@@ -115,6 +121,9 @@ describe("meeting bot records", () => {
       teamId: "22222222-2222-4222-8222-222222222222",
       startAt: "2026-07-02T02:00:00.000Z",
     });
+    expect(reconcileMeetingSharingForMeeting).toHaveBeenCalledWith(
+      "44444444-4444-4444-8444-444444444444",
+    );
 
     expect(meetingValues).toHaveBeenCalledWith({
       teamId: "22222222-2222-4222-8222-222222222222",

@@ -3,6 +3,8 @@ import { z } from "zod";
 import { db } from "@/db/client";
 import { meetings } from "@/db/schema";
 import { getCurrentUser } from "@/lib/auth";
+import { reconcileMeetingSharingForMeeting } from "@/lib/meeting-share-rules";
+import { revokeMeetingSharesSeededByMeeting } from "@/lib/meeting-share-service";
 import { getManageableMeetingCondition } from "@/lib/meeting-write-policy";
 import { getOrCreateWorkspaceForSessionUser } from "@/lib/workspace";
 
@@ -57,6 +59,8 @@ export async function PATCH(
     })
     .where(getManageableMeetingCondition(workspace, parsedMeetingId.data));
 
+  await reconcileMeetingSharingForMeeting(parsedMeetingId.data);
+
   return Response.json({
     meetingId: parsedMeetingId.data,
     title: parsedBody.data.title,
@@ -90,6 +94,8 @@ export async function DELETE(
   if (!meetingRows[0]) {
     return Response.json({ error: "Meeting not found" }, { status: 404 });
   }
+
+  await revokeMeetingSharesSeededByMeeting(parsedMeetingId.data);
 
   await db
     .delete(meetings)

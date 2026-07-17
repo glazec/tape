@@ -4,16 +4,16 @@ import { describe, expect, it } from "vitest";
 import { MeetingAccessSummary } from "@/components/meeting-access-summary";
 
 describe("MeetingAccessSummary", () => {
-  it("keeps organization access compact", () => {
+  it("shows when a managed meeting is private", () => {
     const html = renderToStaticMarkup(
       <MeetingAccessSummary accessPeople={[]} accessScope="workspace" />,
     );
 
-    expect(html).toContain("Organization");
+    expect(html).toContain("Not shared beyond participants");
     expect(html).not.toContain("People with access");
   });
 
-  it("lists people for narrow shared access", () => {
+  it("keeps shared access details compact", () => {
     const html = renderToStaticMarkup(
       <MeetingAccessSummary
         accessPeople={[
@@ -24,8 +24,8 @@ describe("MeetingAccessSummary", () => {
       />,
     );
 
-    expect(html).toContain("Shared with 2 people");
-    expect(html).toContain("Alice Chen (alice@example.com)");
-    expect(html).toContain("bob@example.com");
+    expect(html).toContain("Shared with you");
+    expect(html).not.toContain("alice@example.com");
+    expect(html).not.toContain("bob@example.com");
   });
 });
