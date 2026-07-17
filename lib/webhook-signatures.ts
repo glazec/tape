@@ -11,7 +11,6 @@ export class WebhookVerificationError extends Error {
   }
 }
 
-const elevenLabsClient = new ElevenLabsClient();
 const RECALL_WEBHOOK_TIMESTAMP_TOLERANCE_SECONDS = 5 * 60;
 const RECALL_DESKTOP_REALTIME_TOKEN_CONTEXT =
   "meeting-note:recall-desktop-realtime:v1";
@@ -32,6 +31,8 @@ export async function verifyElevenLabsWebhook(
   }
 
   try {
+    const elevenLabsClient = new ElevenLabsClient();
+
     return await elevenLabsClient.webhooks.constructEvent(
       rawBody,
       signature,
