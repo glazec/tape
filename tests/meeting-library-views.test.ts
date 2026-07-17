@@ -66,7 +66,12 @@ describe("meeting library views", () => {
     );
 
     await saveDefaultMeetingLibraryView({
-      config: { query: "Alice", searchScope: "all" },
+      config: {
+        query: "Alice",
+        searchScope: "all",
+        sort: "smart",
+        status: "all",
+      },
       workspace,
     });
 
