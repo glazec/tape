@@ -1340,6 +1340,7 @@ describe("vendor job creation", () => {
     await sendRecallChatMessage({
       botId: "bot_123",
       message: "Answer from the bot",
+      to: "16778240",
     });
 
     expect(fetchMock).toHaveBeenCalledWith(
@@ -1351,7 +1352,10 @@ describe("vendor job creation", () => {
           "Content-Type": "application/json",
           Accept: "application/json",
         },
-        body: JSON.stringify({ message: "Answer from the bot" }),
+        body: JSON.stringify({
+          message: "Answer from the bot",
+          to: "16778240",
+        }),
       },
     );
   });

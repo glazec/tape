@@ -128,6 +128,7 @@ const recallBotUpdateInputSchema = z.object({
 const recallChatMessageInputSchema = z.object({
   botId: z.string().trim().min(1),
   message: z.string().trim().min(1).max(4096),
+  to: z.string().trim().min(1).optional(),
 });
 
 const recallDesktopSdkUploadInputSchema = z.object({
@@ -824,6 +825,7 @@ export async function deleteScheduledRecallBot(input: { botId: string }) {
 export async function sendRecallChatMessage(input: {
   botId: string;
   message: string;
+  to?: string;
 }) {
   const parsedInput = recallChatMessageInputSchema.parse(input);
   const env = recallApiEnvSchema.parse(process.env);
@@ -836,7 +838,10 @@ export async function sendRecallChatMessage(input: {
     {
       method: "POST",
       headers: buildRecallJsonHeaders(env),
-      body: JSON.stringify({ message: parsedInput.message }),
+      body: JSON.stringify({
+        message: parsedInput.message,
+        ...(parsedInput.to ? { to: parsedInput.to } : {}),
+      }),
     },
   );
 

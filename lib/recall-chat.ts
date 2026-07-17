@@ -96,6 +96,10 @@ export async function answerRecallChatMessage(event: RecallChatMessage) {
   await sendRecallChatMessage({
     botId: event.botId,
     message: reply,
+    to:
+      event.to === "only_bot"
+        ? String(event.participant.id)
+        : "everyone",
   });
 
   return { action: "replied" as const, reply };
