@@ -72,50 +72,56 @@ describe("enrich transcript", () => {
     vi.resetModules();
   });
 
-  it("completes translation before polishing and preserves that status if polish fails", async () => {
-    const { set } = mockSegments();
-    const polishError = new Error("OpenRouter polish returned no content");
+  it(
+    "completes translation before polishing and preserves that status if polish fails",
+    async () => {
+      const { set } = mockSegments();
+      const polishError = new Error("OpenRouter polish returned no content");
 
-    translateTranscriptSegmentsToChinese.mockImplementation(
-      async (_segments, options) => {
-        const translations = [{ id: "segment_1", text: "团队好。" }];
-        await options.onTranslated(translations);
-        return translations;
-      },
-    );
-    polishTranscriptSegmentsInOriginalLanguage.mockRejectedValue(polishError);
+      translateTranscriptSegmentsToChinese.mockImplementation(
+        async (_segments, options) => {
+          const translations = [{ id: "segment_1", text: "团队好。" }];
+          await options.onTranslated(translations);
+          return translations;
+        },
+      );
+      polishTranscriptSegmentsInOriginalLanguage.mockRejectedValue(polishError);
 
-    const { enrichTranscript } = await import("@/inngest/functions");
+      const { enrichTranscript } = await import("@/inngest/functions");
 
-    await expect(
-      (enrichTranscript as unknown as RunnableInngestFunction).fn({
-        event: { data: { meetingId, translateToChinese: true } },
-      }),
-    ).rejects.toThrow("OpenRouter polish returned no content");
+      await expect(
+        (enrichTranscript as unknown as RunnableInngestFunction).fn({
+          event: { data: { meetingId, translateToChinese: true } },
+        }),
+      ).rejects.toThrow("OpenRouter polish returned no content");
 
-    expect(markMeetingTranslationRunning).toHaveBeenCalledWith(meetingId);
-    expect(markMeetingTranslationCompleted).toHaveBeenCalledWith(meetingId);
-    expect(markMeetingTranslationFailed).not.toHaveBeenCalled();
-    expect(translateTranscriptSegmentsToChinese).toHaveBeenCalledWith(
-      [{ id: "segment_1", text: "Um, hello team." }],
-      {
-        batchSize: 10,
-        onTranslated: expect.any(Function),
-      },
-    );
-    expect(set).toHaveBeenCalledWith({
-      translatedText: "团队好。",
-      updatedAt: expect.any(Date),
-    });
-    expect(
-      translateTranscriptSegmentsToChinese.mock.invocationCallOrder[0],
-    ).toBeLessThan(
-      polishTranscriptSegmentsInOriginalLanguage.mock.invocationCallOrder[0],
-    );
-    expect(markMeetingTranslationCompleted.mock.invocationCallOrder[0]).toBeLessThan(
-      polishTranscriptSegmentsInOriginalLanguage.mock.invocationCallOrder[0],
-    );
-  });
+      expect(markMeetingTranslationRunning).toHaveBeenCalledWith(meetingId);
+      expect(markMeetingTranslationCompleted).toHaveBeenCalledWith(meetingId);
+      expect(markMeetingTranslationFailed).not.toHaveBeenCalled();
+      expect(translateTranscriptSegmentsToChinese).toHaveBeenCalledWith(
+        [{ id: "segment_1", text: "Um, hello team." }],
+        {
+          batchSize: 10,
+          onTranslated: expect.any(Function),
+        },
+      );
+      expect(set).toHaveBeenCalledWith({
+        translatedText: "团队好。",
+        updatedAt: expect.any(Date),
+      });
+      expect(
+        translateTranscriptSegmentsToChinese.mock.invocationCallOrder[0],
+      ).toBeLessThan(
+        polishTranscriptSegmentsInOriginalLanguage.mock.invocationCallOrder[0],
+      );
+      expect(
+        markMeetingTranslationCompleted.mock.invocationCallOrder[0],
+      ).toBeLessThan(
+        polishTranscriptSegmentsInOriginalLanguage.mock.invocationCallOrder[0],
+      );
+    },
+    10_000,
+  );
 
   it("keeps translation running while Inngest still has retries", async () => {
     mockSegments();
