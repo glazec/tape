@@ -1,6 +1,6 @@
-# Meeting Note MCP API
+# Tape MCP API
 
-This MCP exposes Meeting Note as a read only tool surface for authenticated colleagues. It reuses Neon Auth for caller identity, maps the verified subject to `users.auth_user_id`, then gives the agent a safe SQL layer over meeting data.
+This MCP exposes Tape as a read only tool surface for authenticated colleagues. It reuses Neon Auth for caller identity, maps the verified subject to `users.auth_user_id`, then gives the agent a safe SQL layer over meeting data.
 
 ## Design Choice
 
@@ -20,7 +20,7 @@ Visible tools:
 
 ## Access Model
 
-Interactive MCP callers authenticate with Google OAuth through FastMCP's OAuth proxy. Direct bearer clients can still send a Neon Auth JWT in the `Authorization: Bearer ...` header. The server verifies Neon JWTs against `NEON_AUTH_JWKS_URL`, `NEON_AUTH_ISSUER`, and `NEON_AUTH_AUDIENCE` when configured. It resolves Neon JWTs by `users.auth_user_id`; Google OAuth users are resolved by the verified email already registered in Meeting Note.
+Interactive MCP callers authenticate with Google OAuth through FastMCP's OAuth proxy. Direct bearer clients can still send a Neon Auth JWT in the `Authorization: Bearer ...` header. The server verifies Neon JWTs against `NEON_AUTH_JWKS_URL`, `NEON_AUTH_ISSUER`, and `NEON_AUTH_AUDIENCE` when configured. It resolves Neon JWTs by `users.auth_user_id`; Google OAuth users are resolved by the verified email already registered in Tape.
 
 MCP data access mirrors the app read policy:
 

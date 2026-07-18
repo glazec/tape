@@ -1,12 +1,12 @@
 {
-  "name": "meeting-transcript-implementation",
+  "name": "tape",
   "version": "0.1.0",
   "description": "Team meeting capture, transcription, review, and follow-up workspace.",
   "private": true,
   "license": "PolyForm-Noncommercial-1.0.0",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/glazec/meeting-note.git"
+    "url": "git+https://github.com/glazec/tape.git"
   },
   "scripts": {
     "dev": "next dev",

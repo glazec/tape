@@ -1,4 +1,4 @@
-# Meeting Note Setup
+# Tape Setup
 
 This guide covers the web application, provider callbacks, and the optional macOS local recorder.
 
@@ -16,8 +16,8 @@ The macOS recorder additionally requires macOS 15 or newer and Swift 6.
 ## Install
 
 ```bash
-git clone https://github.com/glazec/meeting-note.git
-cd meeting-note
+git clone https://github.com/glazec/tape.git
+cd tape
 npm install
 cp .env.example .env.local
 ```

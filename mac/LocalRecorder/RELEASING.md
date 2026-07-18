@@ -6,7 +6,7 @@ The app is ad hoc signed like Shuttle. It is not signed with an Apple Developer 
 
 ## One time GitHub setup
 
-The `SPARKLE_PRIVATE_KEY` Actions secret is already configured in the `glazec/meeting-note` repository. Its public key is embedded in `script/build_and_run.sh`. Keep the local Keychain item named `meeting-note` as the recovery copy.
+The `SPARKLE_PRIVATE_KEY` Actions secret is already configured in the `glazec/tape` repository. Its public key is embedded in `script/build_and_run.sh`. Keep the local Keychain item named `meeting-note` as the recovery copy.
 
 No Apple certificate or App Store Connect secrets are required for this release mode.
 
@@ -50,4 +50,4 @@ open /Applications/MeetingNoteLocalRecorder.app
 
 5. Grant Microphone, Screen Recording, Accessibility, and Notifications when macOS asks.
 
-If removing quarantine reports a permission error, run the same `xattr` command with `sudo`. This bypass is necessary because the app is not notarized. Only use the ZIP downloaded from the official `glazec/meeting-note` GitHub Release and verify its published SHA256 checksum before opening it.
+If removing quarantine reports a permission error, run the same `xattr` command with `sudo`. This bypass is necessary because the app is not notarized. Only use the ZIP downloaded from the official `glazec/tape` GitHub Release and verify its published SHA256 checksum before opening it.

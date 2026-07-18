@@ -1,6 +1,6 @@
-# Meeting Transcript
+# Tape
 
-Meeting Transcript captures team conversations from Google Meet, Zoom, or the macOS recorder and turns them into searchable, shareable meeting records. It combines calendar based capture, speaker aware transcripts, translation, detected entities, synchronized playback, and screen share images in one review workflow.
+Tape captures team conversations from Google Meet, Zoom, or the macOS recorder and turns them into searchable, shareable meeting records. It combines calendar based capture, speaker aware transcripts, translation, detected entities, synchronized playback, and screen share images in one review workflow.
 
 This repository is source available for noncommercial use. See [License](#license) before using or redistributing it.
 
@@ -35,7 +35,7 @@ Review speaker participation, correct speaker names, play individual contributio
 The companion recorder captures microphone and system audio, shows the next calendar meeting, verifies permissions, and lets the user confirm audio levels before recording.
 
 <p align="center">
-  <img src="assets/product/macos-recorder.png" alt="Meeting Note macOS recorder with the next meeting, recording control, permissions, and audio level checks" width="405">
+  <img src="assets/product/macos-recorder.png" alt="Tape macOS recorder with the next meeting, recording control, permissions, and audio level checks" width="405">
 </p>
 
 ## Documentation
@@ -43,7 +43,7 @@ The companion recorder captures microphone and system audio, shows the next cale
 1. [Setup guide](docs/setup.md)
 2. [Contributing](CONTRIBUTING.md)
 3. [Security policy](SECURITY.md)
-4. [Meeting Note MCP API](docs/meeting-note-mcp-api.md)
+4. [Tape MCP API](docs/meeting-note-mcp-api.md)
 
 ## Stack
 
@@ -63,8 +63,8 @@ The companion recorder captures microphone and system audio, shows the next cale
 Use the [setup guide](docs/setup.md) for prerequisites, environment variables, database migration, webhooks, local development, and macOS recorder setup.
 
 ```bash
-git clone https://github.com/glazec/meeting-note.git
-cd meeting-note
+git clone https://github.com/glazec/tape.git
+cd tape
 npm install
 cp .env.example .env.local
 npm run db:migrate
