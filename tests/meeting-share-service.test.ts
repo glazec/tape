@@ -1,9 +1,12 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { PgDialect } from "drizzle-orm/pg-core";
 
-const { execute } = vi.hoisted(() => ({ execute: vi.fn() }));
+const { execute, select } = vi.hoisted(() => ({
+  execute: vi.fn(),
+  select: vi.fn(),
+}));
 
-vi.mock("@/db/client", () => ({ db: { execute, select: vi.fn() } }));
+vi.mock("@/db/client", () => ({ db: { execute, select } }));
 
 describe("meeting share service", () => {
   afterEach(() => {
@@ -47,6 +50,112 @@ describe("meeting share service", () => {
     expect(query).toContain("where revoked_at is null");
     expect(query).toMatch(/do update\s+set/);
     expect(query).toContain("active_policy");
+  });
+
+  it("falls back to the generated policy id when the database returns no row", async () => {
+    vi.spyOn(globalThis.crypto, "randomUUID").mockReturnValue(
+      "55555555-5555-4555-8555-555555555555",
+    );
+    execute.mockResolvedValue({ rows: [] });
+    const { createMeetingSharePolicy } = await import(
+      "@/lib/meeting-share-service"
+    );
+
+    await expect(
+      createMeetingSharePolicy({
+        createdByUserId: "11111111-1111-4111-8111-111111111111",
+        matchKeys: [],
+        meetingIds: ["22222222-2222-4222-8222-222222222222"],
+        ownerUserId: "11111111-1111-4111-8111-111111111111",
+        recipientEmail: "invitee@example.com",
+        scope: "single",
+        seedMeetingId: "22222222-2222-4222-8222-222222222222",
+        teamId: "44444444-4444-4444-8444-444444444444",
+      }),
+    ).resolves.toEqual({
+      id: "55555555-5555-4555-8555-555555555555",
+      pending: true,
+    });
+  });
+
+  it("lists supported active share scopes and their pending state", async () => {
+    const orderBy = vi.fn().mockResolvedValue([
+      {
+        email: "member@example.com",
+        id: "11111111-1111-4111-8111-111111111111",
+        scope: "single",
+        userId: "22222222-2222-4222-8222-222222222222",
+      },
+      {
+        email: "invitee@example.com",
+        id: "33333333-3333-4333-8333-333333333333",
+        scope: "related",
+        userId: null,
+      },
+      {
+        email: "ignored@example.com",
+        id: "44444444-4444-4444-8444-444444444444",
+        scope: "legacy",
+        userId: null,
+      },
+    ]);
+    select.mockReturnValue({
+      from: vi.fn(() => ({
+        leftJoin: vi.fn(() => ({
+          where: vi.fn(() => ({ orderBy })),
+        })),
+      })),
+    });
+    const { listActiveMeetingShares } = await import(
+      "@/lib/meeting-share-service"
+    );
+
+    await expect(
+      listActiveMeetingShares("55555555-5555-4555-8555-555555555555"),
+    ).resolves.toEqual([
+      {
+        email: "member@example.com",
+        id: "11111111-1111-4111-8111-111111111111",
+        pending: false,
+        scope: "single",
+      },
+      {
+        email: "invitee@example.com",
+        id: "33333333-3333-4333-8333-333333333333",
+        pending: true,
+        scope: "related",
+      },
+    ]);
+  });
+
+  it("reports whether an active policy applies to a meeting", async () => {
+    const limit = vi
+      .fn()
+      .mockResolvedValueOnce([
+        { id: "11111111-1111-4111-8111-111111111111" },
+      ])
+      .mockResolvedValueOnce([]);
+    select.mockReturnValue({
+      from: vi.fn(() => ({
+        where: vi.fn(() => ({ limit })),
+      })),
+    });
+    const { meetingSharePolicyAppliesToMeeting } = await import(
+      "@/lib/meeting-share-service"
+    );
+
+    await expect(
+      meetingSharePolicyAppliesToMeeting(
+        "11111111-1111-4111-8111-111111111111",
+        "22222222-2222-4222-8222-222222222222",
+      ),
+    ).resolves.toBe(true);
+    await expect(
+      meetingSharePolicyAppliesToMeeting(
+        "33333333-3333-4333-8333-333333333333",
+        "44444444-4444-4444-8444-444444444444",
+      ),
+    ).resolves.toBe(false);
   });
 
   it("revokes a policy and reconciles effective access in one statement", async () => {

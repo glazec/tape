@@ -66,4 +66,29 @@ describe("meeting access grants", () => {
       }),
     ).resolves.toEqual({ email: "newhire@example.com", pending: true });
   });
+
+  it("returns stable fallback user fields when the database omits its row", async () => {
+    execute.mockResolvedValue({ rows: [] });
+    const { grantMeetingAccessByEmail } = await import(
+      "@/lib/meeting-access-grants"
+    );
+
+    await expect(
+      grantMeetingAccessByEmail({
+        createdByUserId: "owner_123",
+        email: "Alice@Example.com",
+        meetingId: "meeting_123",
+        role: "shared",
+        source: "manual",
+        sourceId: "manual-share",
+      }),
+    ).resolves.toEqual({
+      pending: false,
+      user: {
+        email: "alice@example.com",
+        id: "owner_123",
+        name: null,
+      },
+    });
+  });
 });
