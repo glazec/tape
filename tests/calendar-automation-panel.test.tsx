@@ -25,14 +25,14 @@ describe("CalendarAutomationPanel", () => {
       />,
     );
 
-    expect(html).toContain("Calendar capture");
+    expect(html).toContain("Calendar");
     expect(html).toContain("Connected");
     expect(html).toContain("member@iosg.vc");
     expect(html).toContain("Recording coverage on");
     expect(html).toContain("Next join: IOSG Weekly Team Meeting");
     expect(html).toContain("Last checked");
     expect(html).toContain("Sync calendar");
-    expect(html).toContain("Disconnect");
+    expect(html).toContain('aria-label="Calendar options"');
   });
 
   it("states the connected status once instead of repeating it per row", () => {
@@ -101,7 +101,7 @@ describe("CalendarAutomationPanel", () => {
     expect(html).toContain("Connect Google Calendar");
     expect(html.match(/Connect calendar/g)).toHaveLength(1);
     expect(html).not.toContain("Recall");
-    expect(html).not.toContain("Disconnect");
+    expect(html).not.toContain("Calendar options");
     expect(html).not.toContain("Last checked");
   });
 

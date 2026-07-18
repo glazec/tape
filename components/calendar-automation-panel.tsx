@@ -31,9 +31,9 @@ export function CalendarAutomationPanel({
   const autoJoinActive = connected && status.autoJoinEnabled;
 
   return (
-    <Card size="sm" className="w-full shadow-sm sm:max-w-sm">
+    <Card size="sm" className="h-full w-full shadow-sm">
       <CardHeader className="border-b bg-muted/35">
-        <CardTitle>Calendar capture</CardTitle>
+        <CardTitle>Calendar</CardTitle>
         <CardDescription>
           {connected
             ? (accountLabel ?? "Connected account")

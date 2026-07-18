@@ -2,9 +2,21 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { AlertCircle, CalendarCheck, RefreshCw } from "lucide-react";
+import {
+  AlertCircle,
+  CalendarCheck,
+  ChevronDown,
+  RefreshCw,
+  Unplug,
+} from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
 type SyncState =
   | "idle"
@@ -167,32 +179,58 @@ export function CalendarSyncButton({
 
   return (
     <div className="flex flex-col items-stretch gap-2">
-      <div className="flex items-center justify-between gap-2">
-        <Button
-          type="button"
-          onClick={needsConnection ? connectCalendar : syncCalendar}
-          disabled={isBusy}
-          variant={needsConnection ? "default" : "outline"}
-        >
-          {needsConnection ? (
-            <CalendarCheck data-icon="inline-start" />
-          ) : (
-            <RefreshCw data-icon="inline-start" />
-          )}
-          {buttonLabel}
-        </Button>
-        {!needsConnection ? (
+      <div className="flex items-center justify-end">
+        {needsConnection ? (
           <Button
             type="button"
-            onClick={disconnectCalendar}
+            onClick={connectCalendar}
             disabled={isBusy}
-            variant="ghost"
-            size="sm"
-            className="text-muted-foreground"
+            variant="default"
           >
-            {state === "disconnecting" ? "Disconnecting..." : "Disconnect"}
+            <CalendarCheck data-icon="inline-start" />
+            {buttonLabel}
           </Button>
-        ) : null}
+        ) : (
+          <div className="flex items-center">
+            <Button
+              type="button"
+              onClick={syncCalendar}
+              disabled={isBusy}
+              variant="outline"
+              className="rounded-r-none"
+            >
+              <RefreshCw data-icon="inline-start" />
+              {buttonLabel}
+            </Button>
+            <DropdownMenu>
+              <DropdownMenuTrigger
+                render={
+                  <Button
+                    aria-label="Calendar options"
+                    className="-ml-px rounded-l-none px-2"
+                    disabled={isBusy}
+                    type="button"
+                    variant="outline"
+                  />
+                }
+              >
+                <ChevronDown />
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-52">
+                <DropdownMenuItem
+                  disabled={isBusy}
+                  onClick={() => void disconnectCalendar()}
+                  variant="destructive"
+                >
+                  <Unplug />
+                  {state === "disconnecting"
+                    ? "Disconnecting..."
+                    : "Disconnect calendar"}
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+        )}
       </div>
       {message ? (
         <p
