@@ -171,4 +171,25 @@ describe("database migrations", () => {
       "public.meeting_share_policy_keys",
     );
   });
+
+  it("deduplicates active share policies before enforcing one identity", () => {
+    const sql = readFileSync(
+      "db/migrations/0026_share_policy_integrity.sql",
+      "utf8",
+    ).replace(/\s+/g, " ");
+
+    expect(sql).toContain('INSERT INTO "meeting_share_policy_keys"');
+    expect(sql).toContain('INSERT INTO "meeting_access_sources"');
+    expect(sql).toContain('UPDATE "meeting_access_sources"');
+    expect(sql).toContain('UPDATE "meeting_share_policies"');
+    expect(sql).toContain('SET "revoked_at" = now()');
+    expect(sql).toContain(
+      'CREATE UNIQUE INDEX "meeting_share_policies_active_identity_unique"',
+    );
+    expect(sql.indexOf('SET "revoked_at" = now()')).toBeLessThan(
+      sql.indexOf(
+        'CREATE UNIQUE INDEX "meeting_share_policies_active_identity_unique"',
+      ),
+    );
+  });
 });

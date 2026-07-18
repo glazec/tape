@@ -450,6 +450,15 @@ export const meetingSharePolicies = pgTable(
       table.scope,
       table.revokedAt,
     ),
+    uniqueIndex("meeting_share_policies_active_identity_unique")
+      .on(
+        table.teamId,
+        table.ownerUserId,
+        table.seedMeetingId,
+        table.recipientEmail,
+        table.scope,
+      )
+      .where(sql`${table.revokedAt} is null`),
   ],
 );
 

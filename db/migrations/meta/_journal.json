@@ -183,6 +183,13 @@
       "when": 1784700000000,
       "tag": "0025_sharing_policy_lifecycle",
       "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1784800000000,
+      "tag": "0026_share_policy_integrity",
+      "breakpoints": true
     }
   ]
 }

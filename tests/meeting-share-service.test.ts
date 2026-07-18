@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { PgDialect } from "drizzle-orm/pg-core";
 
 const { execute } = vi.hoisted(() => ({ execute: vi.fn() }));
 
@@ -10,7 +11,14 @@ describe("meeting share service", () => {
   });
 
   it("creates a policy and all grants in one database statement", async () => {
-    execute.mockResolvedValue({ rows: [{ pending: false }] });
+    execute.mockResolvedValue({
+      rows: [
+        {
+          id: "55555555-5555-4555-8555-555555555555",
+          pending: false,
+        },
+      ],
+    });
     const { createMeetingSharePolicy } = await import(
       "@/lib/meeting-share-service"
     );
@@ -29,8 +37,16 @@ describe("meeting share service", () => {
         seedMeetingId: "22222222-2222-4222-8222-222222222222",
         teamId: "44444444-4444-4444-8444-444444444444",
       }),
-    ).resolves.toMatchObject({ pending: false });
+    ).resolves.toMatchObject({
+      id: "55555555-5555-4555-8555-555555555555",
+      pending: false,
+    });
     expect(execute).toHaveBeenCalledTimes(1);
+    const query = new PgDialect().sqlToQuery(execute.mock.calls[0][0]).sql;
+    expect(query).toContain("on conflict");
+    expect(query).toContain("where revoked_at is null");
+    expect(query).toMatch(/do update\s+set/);
+    expect(query).toContain("active_policy");
   });
 
   it("revokes a policy and reconciles effective access in one statement", async () => {

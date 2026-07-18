@@ -27,8 +27,8 @@ export async function createMeetingSharePolicy(input: {
   teamId: string;
 }) {
   const policyId = crypto.randomUUID();
-  const result = await db.execute<{ pending: boolean }>(sql`
-    with new_policy as (
+  const result = await db.execute<{ id: string; pending: boolean }>(sql`
+    with active_policy as (
       insert into meeting_share_policies (
         id,
         team_id,
@@ -48,11 +48,22 @@ export async function createMeetingSharePolicy(input: {
         'shared',
         ${input.createdByUserId}::uuid
       )
+      on conflict (
+        team_id,
+        owner_user_id,
+        seed_meeting_id,
+        recipient_email,
+        scope
+      ) where revoked_at is null do update
+      set role = excluded.role,
+          created_by_user_id = excluded.created_by_user_id,
+          updated_at = now()
       returning id
     ), new_keys as (
       insert into meeting_share_policy_keys (policy_id, match_key)
-      select ${policyId}::uuid, key
-      from unnest(${input.matchKeys}::text[]) as key
+      select active_policy.id, key
+      from active_policy
+      cross join unnest(${input.matchKeys}::text[]) as key
       on conflict (policy_id, match_key) do nothing
     ), new_sources as (
       insert into meeting_access_sources (
@@ -68,9 +79,10 @@ export async function createMeetingSharePolicy(input: {
         ${input.recipientEmail},
         'shared',
         'share_policy',
-        ${policyId},
+        active_policy.id::text,
         ${input.createdByUserId}::uuid
-      from unnest(${input.meetingIds}::uuid[]) as meeting_id
+      from active_policy
+      cross join unnest(${input.meetingIds}::uuid[]) as meeting_id
       on conflict (meeting_id, recipient_email, source, source_id) do update
       set role = excluded.role,
           created_by_user_id = excluded.created_by_user_id,
@@ -130,12 +142,18 @@ export async function createMeetingSharePolicy(input: {
           revoked_at = null,
           updated_at = now()
     )
-    select not exists (
-      select 1 from users where lower(email) = ${input.recipientEmail}
-    ) as pending
+    select
+      active_policy.id,
+      not exists (
+        select 1 from users where lower(email) = ${input.recipientEmail}
+      ) as pending
+    from active_policy
   `);
 
-  return { id: policyId, pending: result.rows[0]?.pending ?? true };
+  return {
+    id: result.rows[0]?.id ?? policyId,
+    pending: result.rows[0]?.pending ?? true,
+  };
 }
 
 export async function listActiveMeetingShares(
