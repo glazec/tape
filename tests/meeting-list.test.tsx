@@ -207,6 +207,20 @@ describe("MeetingList", () => {
     expect(html).toContain(
       "/api/meetings/22222222-2222-4222-8222-222222222222/join",
     );
+
+    const joinButton = html.match(
+      /<button[^>]*aria-label="Join Partner call now"[^>]*>[\s\S]*?<\/button>/,
+    )?.[0];
+
+    expect(joinButton).toBeDefined();
+    expect(joinButton).toContain("h-11 w-24");
+    expect(joinButton).toContain("border-primary");
+    expect(joinButton).toContain("text-primary");
+    expect(joinButton).toContain("meeting-join-action");
+    expect(joinButton).toContain('aria-busy="false"');
+    expect(joinButton).toContain("Join now");
+    expect(html).toContain("meeting-join-badge");
+    expect(html).toContain("Scheduled");
   });
 
   it("shows uploaded queued audio as in progress", () => {

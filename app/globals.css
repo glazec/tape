@@ -59,26 +59,21 @@ select {
   }
 
   .meeting-join-action[data-state="idle"] {
-    height: 1.5rem;
-    border-radius: 9999px;
-    padding-inline: 0.5rem;
     opacity: 0;
+    pointer-events: none;
   }
 
   .meeting-row:hover .meeting-join-badge,
   .meeting-row:focus-within .meeting-join-badge {
     opacity: 0;
+    pointer-events: none;
   }
 
   .meeting-row:hover .meeting-join-action[data-state="idle"],
-  .meeting-row:focus-within .meeting-join-action[data-state="idle"] {
-    opacity: 1;
-  }
-
+  .meeting-row:focus-within .meeting-join-action[data-state="idle"],
   .meeting-join-action:not([data-state="idle"]) {
-    height: 1.5rem;
-    border-radius: 9999px;
-    padding-inline: 0.5rem;
+    opacity: 1;
+    pointer-events: auto;
   }
 }
 
