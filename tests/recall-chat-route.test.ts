@@ -204,7 +204,7 @@ describe("POST /api/recall/chat/webhook", () => {
       eventType: "participant_events.chat_message",
       idempotencyKey: "msg_chat",
       payload: chatPayload,
-      processingClaimTimeoutMs: 30_000,
+      processingClaimTimeoutMs: 600_000,
     });
     expect(answerRecallChatMessage).toHaveBeenCalledWith(
       expect.objectContaining({

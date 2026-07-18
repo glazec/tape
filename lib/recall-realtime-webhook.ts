@@ -15,6 +15,7 @@ import { logWebhookProcessingError } from "@/lib/webhook-error-logging";
 import { persistRecallRealtimeParticipantTimelineEvent } from "@/lib/meeting-participant-timeline";
 
 const RECALL_REALTIME_PROCESSING_CLAIM_TIMEOUT_MS = 30 * 1000;
+const RECALL_CHAT_PROCESSING_CLAIM_TIMEOUT_MS = 10 * 60 * 1000;
 
 export async function handleRecallRealtimeWebhook(request: Request) {
   const rawBody = await request.text();
@@ -47,7 +48,10 @@ export async function handleRecallRealtimeWebhook(request: Request) {
       eventType,
       idempotencyKey,
       payload: body,
-      processingClaimTimeoutMs: RECALL_REALTIME_PROCESSING_CLAIM_TIMEOUT_MS,
+      processingClaimTimeoutMs:
+        eventType === "participant_events.chat_message"
+          ? RECALL_CHAT_PROCESSING_CLAIM_TIMEOUT_MS
+          : RECALL_REALTIME_PROCESSING_CLAIM_TIMEOUT_MS,
     });
 
     if (!recorded.shouldProcess) {
