@@ -8,6 +8,7 @@ import {
   getSpeakerRenameSuggestions,
   getVisualAssetPlacements,
   getWaveformHoverSnapshot,
+  MeetingVisualLightbox,
   shouldDecodeAudioWaveform,
   TranscriptViewer,
   type EditingSpeaker,
@@ -662,6 +663,36 @@ describe("TranscriptViewer", () => {
     expect(html.indexOf('id="segment_123"')).toBeLessThan(
       html.lastIndexOf("Open image from 1:05"),
     );
+  });
+
+  it("shows the target image number and loading state while it downloads", () => {
+    const html = renderToStaticMarkup(
+      <MeetingVisualLightbox
+        assetIndex={1}
+        onClose={vi.fn()}
+        onNavigate={vi.fn()}
+        onShowInTranscript={vi.fn()}
+        visualAssets={[
+          {
+            id: "image_123",
+            capturedAt: null,
+            timestampMs: 0,
+            url: "/images/image_123",
+          },
+          {
+            id: "image_456",
+            capturedAt: null,
+            timestampMs: 1000,
+            url: "/images/image_456",
+          },
+        ]}
+      />,
+    );
+
+    expect(html).toContain("2 of 2");
+    expect(html).toContain("Loading image 2 of 2");
+    expect(html).toContain('aria-busy="true"');
+    expect(html).toContain('src="/images/image_456"');
   });
 
   it("places visual assets on the segment speaking when they were captured", () => {

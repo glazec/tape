@@ -19,6 +19,7 @@ import {
   ChevronRight,
   Check,
   Languages,
+  LoaderCircle,
   Maximize2,
   Pause,
   Pencil,
@@ -1586,7 +1587,7 @@ function MeetingVisualGalleryOverview({
   );
 }
 
-function MeetingVisualLightbox({
+export function MeetingVisualLightbox({
   assetIndex,
   onClose,
   onNavigate,
@@ -1603,6 +1604,11 @@ function MeetingVisualLightbox({
   const hasPrevious = assetIndex > 0;
   const hasNext = assetIndex < visualAssets.length - 1;
   const closeButtonRef = useRef<HTMLButtonElement>(null);
+  const [loadedAssetId, setLoadedAssetId] = useState<string | null>(null);
+  const [failedAssetId, setFailedAssetId] = useState<string | null>(null);
+  const isAssetLoading =
+    loadedAssetId !== asset?.id && failedAssetId !== asset?.id;
+  const didAssetFail = failedAssetId === asset?.id;
 
   useEffect(() => {
     const previousFocus = document.activeElement as HTMLElement | null;
@@ -1687,13 +1693,45 @@ function MeetingVisualLightbox({
             </Button>
           </div>
         </div>
-        <div className="relative flex min-h-0 flex-1 items-center justify-center overflow-hidden rounded-xl border bg-neutral-950 p-2 md:p-5">
+        <div
+          aria-busy={isAssetLoading}
+          className="relative flex min-h-0 flex-1 items-center justify-center overflow-hidden rounded-xl border bg-neutral-950 p-2 md:p-5"
+        >
           {/* eslint-disable-next-line @next/next/no-img-element -- protected image routes need browser auth cookies */}
           <img
             alt=""
-            className="h-full max-h-full w-full object-contain"
+            className={cn(
+              "h-full max-h-full w-full object-contain transition-opacity duration-150",
+              isAssetLoading || didAssetFail ? "opacity-0" : "opacity-100",
+            )}
+            key={asset.id}
+            onError={() => setFailedAssetId(asset.id)}
+            onLoad={() => {
+              setLoadedAssetId(asset.id);
+              setFailedAssetId(null);
+            }}
             src={asset.url}
           />
+          {isAssetLoading ? (
+            <div
+              aria-live="polite"
+              className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-sm font-medium text-neutral-200"
+              role="status"
+            >
+              <LoaderCircle className="size-5 animate-spin" />
+              <span>
+                Loading image {assetIndex + 1} of {visualAssets.length}
+              </span>
+            </div>
+          ) : null}
+          {didAssetFail ? (
+            <p
+              className="absolute inset-0 flex items-center justify-center text-sm font-medium text-neutral-200"
+              role="alert"
+            >
+              Image could not be loaded
+            </p>
+          ) : null}
           {hasPrevious ? (
             <Button
               aria-label="Previous image"
