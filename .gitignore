@@ -13,3 +13,5 @@ coverage/
 .playwright-mcp/
 /tmp/
 *.tsbuildinfo
+pnpm-lock.yaml
+pnpm-workspace.yaml
