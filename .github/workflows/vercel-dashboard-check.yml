@@ -23,8 +23,37 @@ jobs:
           --retry 5 --retry-all-errors --retry-delay 5
           "${DEPLOYMENT_URL%/}/api/health/dashboard"
 
+      - name: Set Vercel status pending
+        if: always()
+        env:
+          DEPLOYMENT_SHA: ${{ github.event.client_payload.git.sha }}
+          GH_TOKEN: ${{ github.token }}
+          STATUS_CONTEXT: "Vercel - meeting-note: dashboard"
+          STATUS_TARGET_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: >-
+          gh api --method POST
+          "repos/${GITHUB_REPOSITORY}/statuses/${DEPLOYMENT_SHA}"
+          -f state=pending
+          -f "context=${STATUS_CONTEXT}"
+          -f "target_url=${STATUS_TARGET_URL}"
+
       - name: Notify Vercel
         if: always()
-        uses: vercel/repository-dispatch/actions/status@v1
-        with:
-          name: "Vercel - meeting-note: dashboard"
+        env:
+          DEPLOYMENT_SHA: ${{ github.event.client_payload.git.sha }}
+          GH_TOKEN: ${{ github.token }}
+          JOB_STATUS: ${{ job.status }}
+          STATUS_CONTEXT: "Vercel - meeting-note: dashboard"
+          STATUS_TARGET_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          state="$JOB_STATUS"
+          if [[ "$state" != "success" ]]; then
+            state="failure"
+          fi
+          gh api --method POST \
+            "repos/${GITHUB_REPOSITORY}/statuses/${DEPLOYMENT_SHA}" \
+            -f "state=${state}" \
+            -f "context=${STATUS_CONTEXT}" \
+            -f "target_url=${STATUS_TARGET_URL}"
