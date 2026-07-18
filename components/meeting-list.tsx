@@ -340,7 +340,7 @@ function ScheduledMeetingAction({ meeting }: { meeting: MeetingListBaseItem }) {
           : "";
 
   return (
-    <span className="inline-grid w-24 justify-items-end">
+    <span className="inline-grid w-[5.625rem] items-center justify-items-end">
       {state === "idle" ? (
         <Badge
           className="meeting-join-badge col-start-1 row-start-1 hidden transition-opacity"
@@ -353,7 +353,7 @@ function ScheduledMeetingAction({ meeting }: { meeting: MeetingListBaseItem }) {
         aria-busy={state === "joining"}
         aria-label={`Join ${meeting.title} now`}
         className={cn(
-          "meeting-join-action col-start-1 row-start-1 h-11 w-24 border-primary bg-background px-3 text-xs text-primary shadow-xs hover:bg-primary/10 hover:text-primary",
+          "meeting-join-action col-start-1 row-start-1 h-5 w-[5.625rem] rounded-4xl border-primary bg-background px-2 py-0.5 text-xs text-primary shadow-none hover:bg-primary/10 hover:text-primary",
           state === "error" &&
             "border-destructive/50 text-destructive hover:bg-destructive/10 hover:text-destructive",
         )}
