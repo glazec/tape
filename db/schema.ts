@@ -278,6 +278,9 @@ export const meetings = pgTable(
     ownerUserId: uuid("owner_user_id")
       .notNull()
       .references(() => users.id),
+    organizationAccessEnabled: boolean("organization_access_enabled")
+      .notNull()
+      .default(false),
     calendarEventId: uuid("calendar_event_id").references(
       () => calendarEvents.id,
       {

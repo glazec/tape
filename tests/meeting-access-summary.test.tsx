@@ -28,4 +28,17 @@ describe("MeetingAccessSummary", () => {
     expect(html).not.toContain("alice@example.com");
     expect(html).not.toContain("bob@example.com");
   });
+
+  it("shows organization access instead of calling the meeting private", () => {
+    const html = renderToStaticMarkup(
+      <MeetingAccessSummary
+        accessPeople={[]}
+        accessScope="workspace"
+        organizationShared
+      />,
+    );
+
+    expect(html).toContain("Shared with organization");
+    expect(html).not.toContain("Not shared beyond participants");
+  });
 });

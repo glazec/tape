@@ -1,10 +1,14 @@
-import { and, eq, ne } from "drizzle-orm";
+import { and, eq, ne, sql } from "drizzle-orm";
 import { z } from "zod";
 
 import { db } from "@/db/client";
-import { calendarEvents, meetings } from "@/db/schema";
+import { calendarEvents, meetings, users } from "@/db/schema";
 import { normalizeEmail } from "@/lib/access";
 import { getCurrentUser } from "@/lib/auth";
+import {
+  icTeamMembers,
+  isIosgIcTeamAvailable,
+} from "@/lib/meeting-share-audiences";
 import {
   createMeetingSharePolicy,
   listActiveMeetingShares,
@@ -23,7 +27,7 @@ export const runtime = "nodejs";
 
 const meetingIdSchema = z.uuid();
 const shareIdSchema = z.uuid();
-const shareRequestSchema = z.strictObject({
+const emailShareRequestSchema = z.strictObject({
   email: z
     .string()
     .trim()
@@ -32,6 +36,13 @@ const shareRequestSchema = z.strictObject({
   includeRelated: z.boolean().optional().default(false),
   preview: z.boolean().optional().default(false),
 });
+const audienceShareRequestSchema = z.strictObject({
+  audience: z.enum(["organization", "ic_team"]),
+});
+const shareRequestSchema = z.union([
+  emailShareRequestSchema,
+  audienceShareRequestSchema,
+]);
 
 type MeetingMatchCandidate = {
   attendeeEmails: unknown;
@@ -50,6 +61,7 @@ export async function GET(
   }
 
   return Response.json({
+    organizationShared: access.meeting.organizationAccessEnabled,
     shares: await listActiveMeetingShares(access.meeting.id),
   });
 }
@@ -71,20 +83,26 @@ export async function POST(
     return Response.json({ error: "Invalid sharing details" }, { status: 400 });
   }
 
-  if (result.data.email === normalizeEmail(access.user.email)) {
+  const shareRequest = result.data;
+
+  if ("audience" in shareRequest) {
+    return shareWithAudience(shareRequest.audience, access);
+  }
+
+  if (shareRequest.email === normalizeEmail(access.user.email)) {
     return Response.json({ error: "You already have access" }, { status: 400 });
   }
 
-  const scope = result.data.includeRelated ? "related" : "single";
+  const scope = shareRequest.includeRelated ? "related" : "single";
   const activeShares = await listActiveMeetingShares(access.meeting.id);
   const existingShare = activeShares.find(
-    (share) => share.email === result.data.email && share.scope === scope,
+    (share) => share.email === shareRequest.email && share.scope === scope,
   );
 
-  if (existingShare && !result.data.preview) {
+  if (existingShare && !shareRequest.preview) {
     return Response.json({
       alreadyShared: true,
-      email: result.data.email,
+      email: shareRequest.email,
       futureMeetings: scope === "related",
       meetingCount: 1,
       pending: existingShare.pending,
@@ -92,20 +110,20 @@ export async function POST(
     });
   }
 
-  if (!result.data.includeRelated) {
+  if (!shareRequest.includeRelated) {
     const shared = await createMeetingSharePolicy({
       createdByUserId: access.workspace.userId,
       matchKeys: [],
       meetingIds: [access.meeting.id],
       ownerUserId: access.meeting.ownerUserId,
-      recipientEmail: result.data.email,
+      recipientEmail: shareRequest.email,
       scope: "single",
       seedMeetingId: access.meeting.id,
       teamId: access.workspace.teamId,
     });
 
     return Response.json({
-      email: result.data.email,
+      email: shareRequest.email,
       futureMeetings: false,
       meetingCount: 1,
       pending: shared.pending,
@@ -152,9 +170,9 @@ export async function POST(
     relatedMeetings.unshift(access.meeting);
   }
 
-  if (result.data.preview) {
+  if (shareRequest.preview) {
     return Response.json({
-      email: result.data.email,
+      email: shareRequest.email,
       futureMeetings: true,
       meetingCount: relatedMeetings.length,
       meetings: relatedMeetings.map(({ id, title }) => ({ id, title })),
@@ -168,14 +186,14 @@ export async function POST(
     matchKeys,
     meetingIds: relatedMeetings.map(({ id }) => id),
     ownerUserId: access.meeting.ownerUserId,
-    recipientEmail: result.data.email,
+    recipientEmail: shareRequest.email,
     scope: "related",
     seedMeetingId: access.meeting.id,
     teamId: access.workspace.teamId,
   });
 
   return Response.json({
-    email: result.data.email,
+    email: shareRequest.email,
     futureMeetings: true,
     meetingCount: relatedMeetings.length,
     pending: shared.pending,
@@ -193,7 +211,19 @@ export async function DELETE(
     return access;
   }
 
-  const shareId = new URL(request.url).searchParams.get("shareId");
+  const searchParams = new URL(request.url).searchParams;
+
+  if (searchParams.get("audience") === "organization") {
+    await setOrganizationSharing(access.meeting.id, access.workspace.teamId, false);
+
+    return Response.json({
+      audience: "organization",
+      organizationShared: false,
+      revoked: true,
+    });
+  }
+
+  const shareId = searchParams.get("shareId");
   const parsedShareId = shareIdSchema.safeParse(shareId);
 
   if (
@@ -243,6 +273,12 @@ async function getManageableMeeting(context: {
     .select({
       attendeeEmails: calendarEvents.attendeeEmails,
       id: meetings.id,
+      organizationAccessEnabled: meetings.organizationAccessEnabled,
+      ownerEmail: sql<string>`(
+        select lower(${users.email})
+        from ${users}
+        where ${users.id} = ${meetings.ownerUserId}
+      )`,
       ownerUserId: meetings.ownerUserId,
       title: meetings.title,
     })
@@ -256,4 +292,72 @@ async function getManageableMeeting(context: {
   }
 
   return { meeting, user, workspace };
+}
+
+type ManageableMeetingAccess = Exclude<
+  Awaited<ReturnType<typeof getManageableMeeting>>,
+  Response
+>;
+
+async function shareWithAudience(
+  audience: "organization" | "ic_team",
+  access: ManageableMeetingAccess,
+) {
+  if (audience === "organization") {
+    await setOrganizationSharing(access.meeting.id, access.workspace.teamId, true);
+
+    return Response.json({
+      audience,
+      organizationShared: true,
+      shared: true,
+    });
+  }
+
+  if (!isIosgIcTeamAvailable(access.workspace.domain)) {
+    return Response.json(
+      { error: "The IC team audience is not available in this organization" },
+      { status: 400 },
+    );
+  }
+
+  const currentUserEmail = normalizeEmail(access.user.email);
+  const recipients = icTeamMembers.filter(
+    ({ email }) =>
+      email !== currentUserEmail && email !== access.meeting.ownerEmail,
+  );
+
+  await Promise.all(
+    recipients.map(({ email }) =>
+      createMeetingSharePolicy({
+        createdByUserId: access.workspace.userId,
+        matchKeys: [],
+        meetingIds: [access.meeting.id],
+        ownerUserId: access.meeting.ownerUserId,
+        recipientEmail: email,
+        scope: "single",
+        seedMeetingId: access.meeting.id,
+        teamId: access.workspace.teamId,
+      }),
+    ),
+  );
+
+  return Response.json({
+    audience,
+    recipientCount: recipients.length,
+    shared: true,
+  });
+}
+
+async function setOrganizationSharing(
+  meetingId: string,
+  teamId: string,
+  enabled: boolean,
+) {
+  await db
+    .update(meetings)
+    .set({
+      organizationAccessEnabled: enabled,
+      updatedAt: new Date(),
+    })
+    .where(and(eq(meetings.id, meetingId), eq(meetings.teamId, teamId)));
 }

@@ -13,6 +13,7 @@ import { TranscriptViewer } from "@/components/transcript-viewer";
 import { Badge } from "@/components/ui/badge";
 import { requireCurrentUser } from "@/lib/auth-guards";
 import { getMeetingDisplayStatus } from "@/lib/meeting-display-status";
+import { isIosgIcTeamAvailable } from "@/lib/meeting-share-audiences";
 import { listActiveMeetingShares } from "@/lib/meeting-share-service";
 import {
   getMeetingTranscriptForWorkspace,
@@ -116,6 +117,7 @@ export default async function MeetingPage({
                 <MeetingAccessSummary
                   accessPeople={meeting.accessPeople}
                   accessScope={meeting.accessScope}
+                  organizationShared={meeting.organizationAccessEnabled}
                 />
               </dd>
             </div>
@@ -138,9 +140,14 @@ export default async function MeetingPage({
               </div>
               <div className="lg:mt-8">
                 <ShareDialog
+                  initialAccessPeople={meeting.accessPeople}
+                  initialOrganizationShared={
+                    meeting.organizationAccessEnabled
+                  }
                   initialShares={activeShares}
                   instanceId="meeting-sharing"
                   meetingId={meetingId}
+                  showIcTeamAudience={isIosgIcTeamAvailable(workspace.domain)}
                   teamMembers={shareRecipients}
                 />
               </div>

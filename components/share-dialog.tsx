@@ -1,22 +1,37 @@
 "use client";
 
 import { FormEvent, useState } from "react";
-import { AlertCircle, CheckCircle2, ChevronDown, Send, X } from "lucide-react";
+import {
+  AlertCircle,
+  Building2,
+  CheckCircle2,
+  ChevronDown,
+  Send,
+  Users,
+  X,
+} from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import type { ShareRecipient } from "@/lib/meeting-queries";
+import { icTeamMembers } from "@/lib/meeting-share-audiences";
+import type {
+  MeetingAccessPerson,
+  ShareRecipient,
+} from "@/lib/meeting-queries";
 import type {
   ActiveMeetingShare,
   MeetingShareScope,
 } from "@/lib/meeting-share-service";
 
 type ShareDialogProps = {
+  initialAccessPeople?: MeetingAccessPerson[];
+  initialOrganizationShared?: boolean;
   initialShares?: ActiveMeetingShare[];
   instanceId: string;
   meetingId: string;
+  showIcTeamAudience?: boolean;
   teamMembers: ShareRecipient[];
 };
 
@@ -29,9 +44,12 @@ type SharePreview = {
 };
 
 export function ShareDialog({
+  initialAccessPeople = [],
+  initialOrganizationShared = false,
   instanceId,
   initialShares = [],
   meetingId,
+  showIcTeamAudience = false,
   teamMembers,
 }: ShareDialogProps) {
   const [email, setEmail] = useState("");
@@ -40,6 +58,9 @@ export function ShareDialog({
   const [message, setMessage] = useState<string | null>(null);
   const [preview, setPreview] = useState<SharePreview | null>(null);
   const [shares, setShares] = useState<ActiveMeetingShare[]>(initialShares);
+  const [organizationShared, setOrganizationShared] = useState(
+    initialOrganizationShared,
+  );
   const encodedMeetingId = encodeURIComponent(meetingId);
   const titleId = `${instanceId}-share-title`;
   const emailId = `${instanceId}-share-email`;
@@ -52,8 +73,12 @@ export function ShareDialog({
       return;
     }
 
-    const body = (await response.json()) as { shares?: ActiveMeetingShare[] };
+    const body = (await response.json()) as {
+      organizationShared?: boolean;
+      shares?: ActiveMeetingShare[];
+    };
     setShares(body.shares ?? []);
+    setOrganizationShared(body.organizationShared ?? false);
   }
 
   async function submitShare(event: FormEvent<HTMLFormElement>) {
@@ -137,12 +162,98 @@ export function ShareDialog({
     await loadShares();
   }
 
+  async function requestAudience(audience: "organization" | "ic_team") {
+    setState("loading");
+    setMessage(null);
+
+    const stopOrganizationShare =
+      audience === "organization" && organizationShared;
+    const response = await fetch(
+      stopOrganizationShare
+        ? `/api/meetings/${encodedMeetingId}/share?audience=organization`
+        : `/api/meetings/${encodedMeetingId}/share`,
+      {
+        method: stopOrganizationShare ? "DELETE" : "POST",
+        ...(!stopOrganizationShare
+          ? {
+              body: JSON.stringify({ audience }),
+              headers: { "content-type": "application/json" },
+            }
+          : {}),
+      },
+    ).catch(() => null);
+    const body = (await response?.json().catch(() => null)) as {
+      error?: string;
+      organizationShared?: boolean;
+      recipientCount?: number;
+    } | null;
+
+    if (!response?.ok) {
+      setState("error");
+      setMessage(body?.error ?? "Could not update access right now.");
+      return;
+    }
+
+    setState("success");
+    setOrganizationShared(body?.organizationShared ?? organizationShared);
+    setMessage(
+      stopOrganizationShare
+        ? "Organization access removed."
+        : audience === "organization"
+          ? "Shared with your whole organization."
+          : `Shared with ${body?.recipientCount ?? icTeamMembers.length} IC team members.`,
+    );
+    await loadShares();
+  }
+
+  const peopleWithAccess = buildPeopleWithAccess({
+    accessPeople: initialAccessPeople,
+    organizationShared,
+    shares,
+    teamMembers,
+  });
+
   return (
     <Card aria-labelledby={titleId} size="sm">
       <CardHeader>
         <CardTitle id={titleId}>Share</CardTitle>
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
+        <div className="flex flex-col gap-2">
+          <Label>Share this meeting with</Label>
+          <div
+            className={`grid gap-2 ${showIcTeamAudience ? "grid-cols-2" : "grid-cols-1"}`}
+          >
+            <Button
+              disabled={state === "loading"}
+              onClick={() => void requestAudience("organization")}
+              type="button"
+              variant="outline"
+            >
+              <Building2 data-icon="inline-start" />
+              {organizationShared
+                ? "Stop organization sharing"
+                : "Share with organization"}
+            </Button>
+            {showIcTeamAudience ? (
+              <Button
+                disabled={state === "loading"}
+                onClick={() => void requestAudience("ic_team")}
+                type="button"
+                variant="outline"
+              >
+                <Users data-icon="inline-start" />
+                Share with IC team
+              </Button>
+            ) : null}
+          </div>
+          {showIcTeamAudience ? (
+            <p className="text-xs leading-5 text-muted-foreground">
+              IC team includes Jocy, Yiping, Frank, Mario, Jeffrey, and Turbo.
+            </p>
+          ) : null}
+        </div>
+
         {preview ? (
           <SharePreviewPanel
             busy={state === "loading"}
@@ -209,10 +320,49 @@ export function ShareDialog({
 
         {message ? <ShareMessage message={message} state={state} /> : null}
 
+        <div className="border-t pt-3">
+          <p className="text-xs font-medium text-muted-foreground">
+            People with access · {peopleWithAccess.length}
+          </p>
+          {organizationShared ? (
+            <div className="mt-3 flex items-center gap-3 rounded-lg bg-muted/60 px-3 py-2">
+              <Building2 className="size-4 shrink-0 text-muted-foreground" />
+              <div>
+                <p className="text-sm font-medium">Whole organization</p>
+                <p className="text-xs text-muted-foreground">
+                  Current and future workspace members
+                </p>
+              </div>
+            </div>
+          ) : null}
+          {peopleWithAccess.length > 0 ? (
+            <ul className="mt-2 max-h-48 space-y-2 overflow-y-auto">
+              {peopleWithAccess.map((person) => (
+                <li
+                  className="rounded-lg bg-muted/60 px-3 py-2"
+                  key={person.email}
+                >
+                  <p className="truncate text-sm font-medium">
+                    {person.name ?? person.email}
+                  </p>
+                  <p className="truncate text-xs text-muted-foreground">
+                    {person.name ? `${person.email} · ` : ""}
+                    {person.detail}
+                  </p>
+                </li>
+              ))}
+            </ul>
+          ) : !organizationShared ? (
+            <p className="mt-2 text-xs leading-5 text-muted-foreground">
+              No one beyond the meeting owner has access yet.
+            </p>
+          ) : null}
+        </div>
+
         {shares.length > 0 ? (
-          <details className="group border-t pt-3">
+          <details className="group">
             <summary className="flex cursor-pointer list-none items-center justify-between text-xs font-medium text-muted-foreground">
-              <span>Manage access · {shares.length}</span>
+              <span>Manage manual access · {shares.length}</span>
               <ChevronDown className="size-4 transition-transform group-open:rotate-180" />
             </summary>
             <div className="mt-3 flex flex-col gap-2">
@@ -242,13 +392,68 @@ export function ShareDialog({
               ))}
             </div>
           </details>
-        ) : (
-          <p className="text-xs leading-5 text-muted-foreground">
-            Participants already have access.
-          </p>
-        )}
+        ) : null}
+
+        <p className="text-xs leading-5 text-muted-foreground">
+          Eligible internal participants receive access automatically. Share
+          manually with external guests.
+        </p>
       </CardContent>
     </Card>
+  );
+}
+
+function buildPeopleWithAccess({
+  accessPeople,
+  organizationShared,
+  shares,
+  teamMembers,
+}: {
+  accessPeople: MeetingAccessPerson[];
+  organizationShared: boolean;
+  shares: ActiveMeetingShare[];
+  teamMembers: ShareRecipient[];
+}) {
+  const people = new Map<
+    string,
+    { detail: string; email: string; name: string | null }
+  >();
+  const knownPeople = new Map(
+    [...teamMembers, ...icTeamMembers].map((person) => [person.email, person]),
+  );
+
+  for (const person of accessPeople) {
+    people.set(person.email, { ...person, detail: "Meeting participant" });
+  }
+
+  for (const share of shares) {
+    const knownPerson = knownPeople.get(share.email);
+
+    people.set(share.email, {
+      detail: share.pending
+        ? "Invite pending"
+        : share.scope === "related"
+          ? "Related meetings"
+          : "This meeting",
+      email: share.email,
+      name: knownPerson?.name ?? people.get(share.email)?.name ?? null,
+    });
+  }
+
+  if (organizationShared) {
+    for (const member of teamMembers) {
+      const existing = people.get(member.email);
+
+      people.set(member.email, {
+        email: member.email,
+        name: member.name,
+        detail: existing?.detail ?? "Organization member",
+      });
+    }
+  }
+
+  return Array.from(people.values()).sort((left, right) =>
+    (left.name ?? left.email).localeCompare(right.name ?? right.email),
   );
 }
 

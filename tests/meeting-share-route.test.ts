@@ -8,6 +8,9 @@ const {
   meetingSharePolicyAppliesToMeeting,
   revokeMeetingSharePolicy,
   select,
+  set,
+  update,
+  updateWhere,
 } = vi.hoisted(() => ({
   createMeetingSharePolicy: vi.fn(),
   getCurrentUser: vi.fn(),
@@ -16,6 +19,9 @@ const {
   meetingSharePolicyAppliesToMeeting: vi.fn(),
   revokeMeetingSharePolicy: vi.fn(),
   select: vi.fn(),
+  set: vi.fn(),
+  update: vi.fn(),
+  updateWhere: vi.fn(),
 }));
 
 vi.mock("@/lib/auth", () => ({ getCurrentUser }));
@@ -28,7 +34,7 @@ vi.mock("@/lib/meeting-share-service", () => ({
   meetingSharePolicyAppliesToMeeting,
   revokeMeetingSharePolicy,
 }));
-vi.mock("@/db/client", () => ({ db: { select } }));
+vi.mock("@/db/client", () => ({ db: { select, update } }));
 
 const meetingId = "11111111-1111-4111-8111-111111111111";
 
@@ -50,6 +56,18 @@ async function deleteShareRequest(shareId: string) {
   return DELETE(
     new Request(
       `https://app.example.com/api/meetings/${meetingId}/share?shareId=${shareId}`,
+      { method: "DELETE" },
+    ),
+    { params: Promise.resolve({ meetingId }) },
+  );
+}
+
+async function stopOrganizationShareRequest() {
+  const { DELETE } = await import("@/app/api/meetings/[meetingId]/share/route");
+
+  return DELETE(
+    new Request(
+      `https://app.example.com/api/meetings/${meetingId}/share?audience=organization`,
       { method: "DELETE" },
     ),
     { params: Promise.resolve({ meetingId }) },
@@ -78,6 +96,9 @@ describe("POST /api/meetings/[meetingId]/share", () => {
   beforeEach(() => {
     listActiveMeetingShares.mockResolvedValue([]);
     meetingSharePolicyAppliesToMeeting.mockResolvedValue(true);
+    update.mockReturnValue({ set });
+    set.mockReturnValue({ where: updateWhere });
+    updateWhere.mockResolvedValue(undefined);
   });
 
   afterEach(() => {
@@ -134,6 +155,119 @@ describe("POST /api/meetings/[meetingId]/share", () => {
       seedMeetingId: meetingId,
       teamId: "team_123",
     });
+  });
+
+  it("shares a meeting with the whole workspace organization", async () => {
+    getCurrentUser.mockResolvedValue({
+      email: "owner@example.com",
+      id: "auth_owner",
+      name: null,
+    });
+    getWorkspace.mockResolvedValue({
+      domain: "example.com",
+      teamId: "team_123",
+      userId: "owner_user_id",
+    });
+    mockMeetingRows([
+      {
+        attendeeEmails: [],
+        id: meetingId,
+        organizationAccessEnabled: false,
+        ownerUserId: "owner_user_id",
+        title: "Weekly sync",
+      },
+    ]);
+
+    const response = await shareMeetingRequest({ audience: "organization" });
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      audience: "organization",
+      organizationShared: true,
+      shared: true,
+    });
+    expect(update).toHaveBeenCalled();
+    expect(set).toHaveBeenCalledWith(
+      expect.objectContaining({ organizationAccessEnabled: true }),
+    );
+    expect(updateWhere).toHaveBeenCalled();
+    expect(createMeetingSharePolicy).not.toHaveBeenCalled();
+  });
+
+  it("shares with every named IC member except the current user", async () => {
+    getCurrentUser.mockResolvedValue({
+      email: "yiping@iosg.vc",
+      id: "auth_owner",
+      name: "YiPing Lu",
+    });
+    getWorkspace.mockResolvedValue({
+      domain: "iosg.vc",
+      teamId: "team_123",
+      userId: "owner_user_id",
+    });
+    mockMeetingRows([
+      {
+        attendeeEmails: [],
+        id: meetingId,
+        organizationAccessEnabled: false,
+        ownerUserId: "owner_user_id",
+        title: "IC meeting",
+      },
+    ]);
+    createMeetingSharePolicy.mockResolvedValue({ pending: true });
+
+    const response = await shareMeetingRequest({ audience: "ic_team" });
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      audience: "ic_team",
+      recipientCount: 5,
+      shared: true,
+    });
+    expect(createMeetingSharePolicy).toHaveBeenCalledTimes(5);
+    expect(
+      createMeetingSharePolicy.mock.calls.map(([input]) => input.recipientEmail),
+    ).toEqual([
+      "jocy@iosg.vc",
+      "frank@iosg.vc",
+      "mario@iosg.vc",
+      "jeffrey@iosg.vc",
+      "turbo@iosg.vc",
+    ]);
+    expect(createMeetingSharePolicy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        meetingIds: [meetingId],
+        scope: "single",
+        teamId: "team_123",
+      }),
+    );
+  });
+
+  it("does not expose the IOSG IC audience in another organization", async () => {
+    getCurrentUser.mockResolvedValue({
+      email: "owner@example.com",
+      id: "auth_owner",
+      name: null,
+    });
+    getWorkspace.mockResolvedValue({
+      domain: "example.com",
+      teamId: "team_123",
+      userId: "owner_user_id",
+    });
+    mockMeetingRows([
+      {
+        attendeeEmails: [],
+        id: meetingId,
+        organizationAccessEnabled: false,
+        ownerUserId: "owner_user_id",
+        title: "Customer meeting",
+      },
+    ]);
+
+    const response = await shareMeetingRequest({ audience: "ic_team" });
+
+    expect(response.status).toBe(400);
+    expect(createMeetingSharePolicy).not.toHaveBeenCalled();
   });
 
   it("previews related meetings without writing", async () => {
@@ -339,5 +473,35 @@ describe("POST /api/meetings/[meetingId]/share", () => {
 
     expect(response.status).toBe(200);
     expect(revokeMeetingSharePolicy).toHaveBeenCalledWith(shareId);
+  });
+
+  it("stops organization sharing without touching individual policies", async () => {
+    getCurrentUser.mockResolvedValue({
+      email: "owner@example.com",
+      id: "auth_owner",
+      name: null,
+    });
+    getWorkspace.mockResolvedValue({
+      domain: "example.com",
+      teamId: "team_123",
+      userId: "owner_user_id",
+    });
+    mockMeetingRows([
+      {
+        attendeeEmails: [],
+        id: meetingId,
+        organizationAccessEnabled: true,
+        ownerUserId: "owner_user_id",
+        title: "Weekly sync",
+      },
+    ]);
+
+    const response = await stopOrganizationShareRequest();
+
+    expect(response.status).toBe(200);
+    expect(set).toHaveBeenCalledWith(
+      expect.objectContaining({ organizationAccessEnabled: false }),
+    );
+    expect(revokeMeetingSharePolicy).not.toHaveBeenCalled();
   });
 });

@@ -119,6 +119,7 @@ export type MeetingTranscript = {
   speakerSuggestions: SpeakerSuggestion[];
   accessScope: "workspace" | "shared";
   canManage: boolean;
+  organizationAccessEnabled: boolean;
   accessPeople: MeetingAccessPerson[];
   entities: MeetingTranscriptEntity[];
 };
@@ -1080,6 +1081,7 @@ export async function getMeetingTranscriptForWorkspace(
     .select({
       id: meetings.id,
       ownerUserId: meetings.ownerUserId,
+      organizationAccessEnabled: meetings.organizationAccessEnabled,
       teamId: meetings.teamId,
       title: meetings.title,
       platform: meetings.platform,
@@ -1235,6 +1237,7 @@ export async function getMeetingTranscriptForWorkspace(
     speakerSuggestions,
     accessScope,
     canManage: Boolean(meeting.canManage),
+    organizationAccessEnabled: meeting.organizationAccessEnabled,
     accessPeople,
     entities: normalizeMeetingTranscriptEntities(entities),
   };
@@ -1568,6 +1571,7 @@ export async function listWorkspaceShareRecipients(
       and(
         eq(teamMemberships.teamId, workspace.teamId),
         ne(teamMemberships.userId, workspace.userId),
+        ne(teamMemberships.role, "external"),
       ),
     )
     .orderBy(asc(users.email))

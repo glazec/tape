@@ -3,15 +3,19 @@ import type { MeetingAccessPerson } from "@/lib/meeting-queries";
 type MeetingAccessSummaryProps = {
   accessPeople: MeetingAccessPerson[];
   accessScope: "workspace" | "shared";
+  organizationShared?: boolean;
 };
 
 export function MeetingAccessSummary({
   accessPeople,
   accessScope,
+  organizationShared = false,
 }: MeetingAccessSummaryProps) {
   const label =
     accessScope === "workspace"
-      ? formatManagedAccessLabel(accessPeople)
+      ? organizationShared
+        ? "Shared with organization"
+        : formatManagedAccessLabel(accessPeople)
       : "Shared with you";
 
   return (

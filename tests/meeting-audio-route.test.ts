@@ -177,6 +177,9 @@ describe("GET /api/meetings/[meetingId]/audio", () => {
       "user_123",
       "admin",
       "owner",
+      true,
+      "user_123",
+      "external",
       "user_123",
     ]);
   });

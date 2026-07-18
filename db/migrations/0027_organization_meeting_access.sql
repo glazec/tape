@@ -1,0 +1,1 @@
+ALTER TABLE "meetings" ADD COLUMN "organization_access_enabled" boolean DEFAULT false NOT NULL;

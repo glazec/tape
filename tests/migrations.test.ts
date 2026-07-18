@@ -192,4 +192,15 @@ describe("database migrations", () => {
       ),
     );
   });
+
+  it("adds workspace organization sharing as an explicit meeting setting", () => {
+    const sql = readFileSync(
+      "db/migrations/0027_organization_meeting_access.sql",
+      "utf8",
+    ).replace(/\s+/g, " ");
+
+    expect(sql).toContain(
+      'ADD COLUMN "organization_access_enabled" boolean DEFAULT false NOT NULL',
+    );
+  });
 });
