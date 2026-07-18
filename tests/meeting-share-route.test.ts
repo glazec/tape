@@ -263,6 +263,35 @@ describe("POST /api/meetings/[meetingId]/share", () => {
     expect(createMeetingSharePolicy).not.toHaveBeenCalled();
   });
 
+  it("rejects related sharing based on a title alone", async () => {
+    getCurrentUser.mockResolvedValue({
+      email: "owner@example.com",
+      id: "auth_owner",
+      name: null,
+    });
+    getWorkspace.mockResolvedValue({
+      domain: "example.com",
+      teamId: "team_123",
+      userId: "owner_user_id",
+    });
+    mockMeetingRows([
+      {
+        attendeeEmails: [],
+        id: meetingId,
+        ownerUserId: "owner_user_id",
+        title: "Weekly investor update",
+      },
+    ]);
+
+    const response = await shareMeetingRequest({
+      email: "jeffrey@example.com",
+      includeRelated: true,
+    });
+
+    expect(response.status).toBe(400);
+    expect(createMeetingSharePolicy).not.toHaveBeenCalled();
+  });
+
   it("revokes an active share policy", async () => {
     getCurrentUser.mockResolvedValue({
       email: "owner@example.com",

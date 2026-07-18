@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 const { transaction, txn } = vi.hoisted(() => ({
   transaction: vi.fn(),
-  txn: vi.fn(() => ({})),
+  txn: vi.fn((strings: TemplateStringsArray) => strings),
 }));
 
 vi.mock("@/db/client", () => ({
@@ -63,5 +63,15 @@ describe("meeting share rules", () => {
         workspaceDomain: "example.com",
       }),
     ).resolves.toEqual({ sharedCount: 1 });
+
+    const materializeSql = txn.mock.calls[1]?.[0].join(" ") ?? "";
+    const countSql = txn.mock.calls[6]?.[0].join(" ") ?? "";
+
+    expect(materializeSql).toContain("participant:email:%");
+    expect(materializeSql).toContain("title:%");
+    expect(materializeSql).toContain("participant:domain:%");
+    expect(countSql).toContain("meeting_access_sources as source");
+    expect(countSql).toContain("source.source_id = policy.id::text");
+    expect(countSql).toContain("source.revoked_at is null");
   });
 });

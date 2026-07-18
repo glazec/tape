@@ -44,13 +44,35 @@ export async function applyMeetingShareRules(input: {
         policy.id::text,
         policy.created_by_user_id
       from meeting_share_policies as policy
-      join meeting_share_policy_keys as policy_key
-        on policy_key.policy_id = policy.id
       where policy.team_id = ${input.teamId}::uuid
         and policy.owner_user_id = ${input.ownerUserId}::uuid
         and policy.scope = 'related'
         and policy.revoked_at is null
-        and policy_key.match_key = any(${matchKeys}::text[])
+        and (
+          exists (
+            select 1
+            from meeting_share_policy_keys as email_key
+            where email_key.policy_id = policy.id
+              and email_key.match_key like 'participant:email:%'
+              and email_key.match_key = any(${matchKeys}::text[])
+          )
+          or (
+            exists (
+              select 1
+              from meeting_share_policy_keys as title_key
+              where title_key.policy_id = policy.id
+                and title_key.match_key like 'title:%'
+                and title_key.match_key = any(${matchKeys}::text[])
+            )
+            and exists (
+              select 1
+              from meeting_share_policy_keys as domain_key
+              where domain_key.policy_id = policy.id
+                and domain_key.match_key like 'participant:domain:%'
+                and domain_key.match_key = any(${matchKeys}::text[])
+            )
+          )
+        )
       on conflict (meeting_id, recipient_email, source, source_id) do update
       set role = excluded.role,
           created_by_user_id = excluded.created_by_user_id,
@@ -148,13 +170,13 @@ export async function applyMeetingShareRules(input: {
     txn`
       select count(distinct policy.id)::integer as shared_count
       from meeting_share_policies as policy
-      join meeting_share_policy_keys as policy_key
-        on policy_key.policy_id = policy.id
-      where policy.team_id = ${input.teamId}::uuid
-        and policy.owner_user_id = ${input.ownerUserId}::uuid
+      join meeting_access_sources as source
+        on source.source = 'share_policy'
+        and source.source_id = policy.id::text
+      where source.meeting_id = ${input.meetingId}::uuid
+        and source.revoked_at is null
         and policy.scope = 'related'
         and policy.revoked_at is null
-        and policy_key.match_key = any(${matchKeys}::text[])
     `,
   ]);
   const rows = result.at(-1) as Array<{ shared_count?: number }> | undefined;

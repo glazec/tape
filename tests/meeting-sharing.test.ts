@@ -2,11 +2,12 @@ import { describe, expect, it } from "vitest";
 
 import {
   getMeetingShareMatchKeys,
-  meetingsShareAnyMatchKey,
+  hasReliableMeetingShareMatchKeys,
+  meetingsShareReliableMatch,
 } from "@/lib/meeting-sharing";
 
 describe("meeting sharing", () => {
-  it("matches similar meetings by stable title or external participants", () => {
+  it("matches related meetings by exact participant or title and company", () => {
     const currentKeys = getMeetingShareMatchKeys({
       attendeeEmails: ["alice@nascent.xyz", "owner@iosg.vc"],
       title: "IOSG <> Nascent",
@@ -19,7 +20,7 @@ describe("meeting sharing", () => {
       "participant:domain:nascent.xyz",
     ]);
     expect(
-      meetingsShareAnyMatchKey(
+      meetingsShareReliableMatch(
         currentKeys,
         getMeetingShareMatchKeys({
           attendeeEmails: ["alice@nascent.xyz"],
@@ -29,7 +30,7 @@ describe("meeting sharing", () => {
       ),
     ).toBe(true);
     expect(
-      meetingsShareAnyMatchKey(
+      meetingsShareReliableMatch(
         currentKeys,
         getMeetingShareMatchKeys({
           attendeeEmails: ["bob@example.com"],
@@ -37,6 +38,67 @@ describe("meeting sharing", () => {
           workspaceDomain: "iosg.vc",
         }),
       ),
+    ).toBe(false);
+
+    expect(
+      meetingsShareReliableMatch(
+        getMeetingShareMatchKeys({
+          attendeeEmails: ["alice@nascent.xyz"],
+          title: "Quarterly update",
+          workspaceDomain: "iosg.vc",
+        }),
+        getMeetingShareMatchKeys({
+          attendeeEmails: ["bob@nascent.xyz"],
+          title: "Quarterly update",
+          workspaceDomain: "iosg.vc",
+        }),
+      ),
+    ).toBe(true);
+    expect(
+      meetingsShareReliableMatch(
+        getMeetingShareMatchKeys({
+          attendeeEmails: ["alice@nascent.xyz"],
+          title: "Quarterly update",
+          workspaceDomain: "iosg.vc",
+        }),
+        getMeetingShareMatchKeys({
+          attendeeEmails: ["bob@other.xyz"],
+          title: "Quarterly update",
+          workspaceDomain: "iosg.vc",
+        }),
+      ),
+    ).toBe(false);
+    expect(
+      meetingsShareReliableMatch(
+        getMeetingShareMatchKeys({
+          attendeeEmails: ["alice@nascent.xyz"],
+          title: "Quarterly update",
+          workspaceDomain: "iosg.vc",
+        }),
+        getMeetingShareMatchKeys({
+          attendeeEmails: ["bob@nascent.xyz"],
+          title: "Product demo",
+          workspaceDomain: "iosg.vc",
+        }),
+      ),
+    ).toBe(false);
+  });
+
+  it("requires an exact participant or a title and company pair", () => {
+    expect(
+      hasReliableMeetingShareMatchKeys(["participant:email:a@vendor.com"]),
+    ).toBe(true);
+    expect(
+      hasReliableMeetingShareMatchKeys([
+        "title:weekly sync",
+        "participant:domain:vendor.com",
+      ]),
+    ).toBe(true);
+    expect(hasReliableMeetingShareMatchKeys(["title:weekly sync"])).toBe(
+      false,
+    );
+    expect(
+      hasReliableMeetingShareMatchKeys(["participant:domain:vendor.com"]),
     ).toBe(false);
   });
 

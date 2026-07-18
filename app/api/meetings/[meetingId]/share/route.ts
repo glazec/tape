@@ -13,7 +13,8 @@ import {
 } from "@/lib/meeting-share-service";
 import {
   getMeetingShareMatchKeys,
-  meetingsShareAnyMatchKey,
+  hasReliableMeetingShareMatchKeys,
+  meetingsShareReliableMatch,
 } from "@/lib/meeting-sharing";
 import { getManageableMeetingCondition } from "@/lib/meeting-write-policy";
 import { getOrCreateWorkspaceForSessionUser } from "@/lib/workspace";
@@ -118,7 +119,7 @@ export async function POST(
     workspaceDomain: access.workspace.domain,
   });
 
-  if (matchKeys.length === 0) {
+  if (!hasReliableMeetingShareMatchKeys(matchKeys)) {
     return Response.json(
       { error: "This meeting has no reliable related meeting pattern" },
       { status: 400 },
@@ -141,7 +142,7 @@ export async function POST(
       ),
     );
   const relatedMeetings = candidates.filter((candidate) =>
-    meetingsShareAnyMatchKey(
+    meetingsShareReliableMatch(
       matchKeys,
       getCandidateMatchKeys(candidate, access.workspace.domain),
     ),
