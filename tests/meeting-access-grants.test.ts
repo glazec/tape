@@ -1,10 +1,13 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { PgDialect } from "drizzle-orm/pg-core";
 
-const { execute } = vi.hoisted(() => ({ execute: vi.fn() }));
+const { execute, transaction } = vi.hoisted(() => ({
+  execute: vi.fn(),
+  transaction: vi.fn(),
+}));
 
 vi.mock("@/db/client", () => ({
-  databaseSql: { transaction: vi.fn() },
+  databaseSql: { transaction },
   db: { execute },
 }));
 
@@ -93,5 +96,25 @@ describe("meeting access grants", () => {
         name: null,
       },
     });
+  });
+
+  it("reconciles effective access and pending invites in one transaction", async () => {
+    const txn = vi.fn((strings: TemplateStringsArray) => strings.join("?"));
+    transaction.mockImplementation(
+      async (callback: (transaction: typeof txn) => unknown) => callback(txn),
+    );
+    const { reconcileEffectiveMeetingAccess } = await import(
+      "@/lib/meeting-access-grants"
+    );
+
+    await reconcileEffectiveMeetingAccess("meeting_123", "owner_123");
+
+    expect(transaction).toHaveBeenCalledTimes(1);
+    expect(txn).toHaveBeenCalledTimes(4);
+    const queries = txn.mock.results.map(({ value }) => value).join("\n");
+    expect(queries).toContain("insert into meeting_access");
+    expect(queries).toContain("insert into meeting_share_invites");
+    expect(queries).toContain("update meeting_access as access");
+    expect(queries).toContain("update meeting_share_invites as invite");
   });
 });

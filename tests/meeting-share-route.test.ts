@@ -50,6 +50,27 @@ async function shareMeetingRequest(body: unknown) {
   );
 }
 
+async function getSharesRequest() {
+  const { GET } = await import("@/app/api/meetings/[meetingId]/share/route");
+
+  return GET(
+    new Request(`https://app.example.com/api/meetings/${meetingId}/share`),
+    { params: Promise.resolve({ meetingId }) },
+  );
+}
+
+async function shareMeetingRawRequest(body: string) {
+  const { POST } = await import("@/app/api/meetings/[meetingId]/share/route");
+
+  return POST(
+    new Request(`https://app.example.com/api/meetings/${meetingId}/share`, {
+      body,
+      method: "POST",
+    }),
+    { params: Promise.resolve({ meetingId }) },
+  );
+}
+
 async function deleteShareRequest(shareId: string) {
   const { DELETE } = await import("@/app/api/meetings/[meetingId]/share/route");
 
@@ -113,6 +134,121 @@ describe("POST /api/meetings/[meetingId]/share", () => {
     });
 
     expect(response.status).toBe(401);
+    expect(createMeetingSharePolicy).not.toHaveBeenCalled();
+  });
+
+  it("lists the active shares for a manageable meeting", async () => {
+    getCurrentUser.mockResolvedValue({
+      email: "owner@example.com",
+      id: "auth_owner",
+      name: null,
+    });
+    getWorkspace.mockResolvedValue({
+      domain: "example.com",
+      teamId: "team_123",
+      userId: "owner_user_id",
+    });
+    mockMeetingRows([
+      {
+        attendeeEmails: [],
+        id: meetingId,
+        ownerUserId: "owner_user_id",
+        title: "Weekly sync",
+      },
+    ]);
+    listActiveMeetingShares.mockResolvedValue([
+      {
+        email: "guest@example.com",
+        id: "share_123",
+        pending: false,
+        scope: "single",
+      },
+    ]);
+
+    const response = await getSharesRequest();
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({
+      shares: [
+        {
+          email: "guest@example.com",
+          id: "share_123",
+          pending: false,
+          scope: "single",
+        },
+      ],
+    });
+    expect(listActiveMeetingShares).toHaveBeenCalledWith(meetingId);
+  });
+
+  it("rejects malformed JSON", async () => {
+    getCurrentUser.mockResolvedValue({
+      email: "owner@example.com",
+      id: "auth_owner",
+      name: null,
+    });
+    getWorkspace.mockResolvedValue({
+      domain: "example.com",
+      teamId: "team_123",
+      userId: "owner_user_id",
+    });
+    mockMeetingRows([
+      {
+        attendeeEmails: [],
+        id: meetingId,
+        ownerUserId: "owner_user_id",
+        title: "Weekly sync",
+      },
+    ]);
+
+    const response = await shareMeetingRawRequest("{");
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toEqual({
+      error: "Invalid sharing details",
+    });
+    expect(createMeetingSharePolicy).not.toHaveBeenCalled();
+  });
+
+  it("does not create a duplicate active share", async () => {
+    getCurrentUser.mockResolvedValue({
+      email: "owner@example.com",
+      id: "auth_owner",
+      name: null,
+    });
+    getWorkspace.mockResolvedValue({
+      domain: "example.com",
+      teamId: "team_123",
+      userId: "owner_user_id",
+    });
+    mockMeetingRows([
+      {
+        attendeeEmails: [],
+        id: meetingId,
+        ownerUserId: "owner_user_id",
+        title: "Weekly sync",
+      },
+    ]);
+    listActiveMeetingShares.mockResolvedValue([
+      {
+        email: "guest@example.com",
+        id: "share_123",
+        pending: false,
+        scope: "single",
+      },
+    ]);
+
+    const response = await shareMeetingRequest({
+      email: "guest@example.com",
+      includeRelated: false,
+    });
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      alreadyShared: true,
+      email: "guest@example.com",
+      shared: true,
+    });
     expect(createMeetingSharePolicy).not.toHaveBeenCalled();
   });
 
