@@ -174,6 +174,8 @@ describe("DashboardPage", () => {
     );
     expect(html).toContain("Showing last 12 months");
     expect(html).toContain("Load more meetings");
+    expect(html).toContain("Welcome back, member.");
+    expect(html).not.toContain("Meeting hub");
   });
 
   it("uses a saved default meeting view when the dashboard opens without filters", async () => {

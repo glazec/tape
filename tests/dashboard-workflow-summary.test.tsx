@@ -152,7 +152,7 @@ describe("DashboardWorkflowSummary", () => {
     });
   });
 
-  it("renders only upcoming join status", () => {
+  it("renders the weekly activity card without a duplicate join card", () => {
     const html = renderToStaticMarkup(
       <DashboardWorkflowSummary
         summary={getDashboardWorkflowSummary([
@@ -167,10 +167,11 @@ describe("DashboardWorkflowSummary", () => {
       />,
     );
 
-    expect(html).toContain("Upcoming joins");
-    expect(html).toContain("Founder follow up");
-    expect(html).toContain("Auto join");
+    expect(html).toContain("This week");
+    expect(html).toContain("Meeting activity from the last 7 days.");
     expect(html).toContain("bg-secondary");
+    expect(html).not.toContain("Upcoming joins");
+    expect(html).not.toContain("Founder follow up");
     expect(html).not.toContain("Ready for review");
     expect(html).not.toContain("Needs attention");
   });
@@ -225,13 +226,13 @@ describe("DashboardWorkflowSummary", () => {
       <DashboardWorkflowSummary summary={summary} />,
     );
 
-    expect(html).toContain("Your 7 days");
+    expect(html).toContain("This week");
     expect(html).toContain("Meetings");
     expect(html).toContain("Meeting time");
-    expect(html).toContain("+100% vs previous 7 days");
+    expect(html).toContain("+100% vs last week");
     expect(html).toContain("2h");
     expect(html).toContain("Words");
-    expect(html).toContain("4 words, 33% talk share");
+    expect(html).toContain("33% talk share");
     expect(html).toContain("Tone");
     expect(html).toContain("Hard 67%");
   });

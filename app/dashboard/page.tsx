@@ -1,5 +1,11 @@
 import Link from "next/link";
-import { ChevronLeft, ChevronRight, Search, Star } from "lucide-react";
+import {
+  CalendarCheck2,
+  ChevronLeft,
+  ChevronRight,
+  Search,
+  Star,
+} from "lucide-react";
 
 import { AppShell } from "@/components/app-shell";
 import { CalendarAutomationPanel } from "@/components/calendar-automation-panel";
@@ -125,32 +131,35 @@ export default async function DashboardPage({
       oneSignalExternalId={workspace.userId}
     >
       <section className="flex flex-col gap-6">
-        <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_18rem_18rem] md:items-start xl:grid-cols-[1fr_22rem_22rem]">
-          <div>
-            <p className="text-sm font-medium uppercase tracking-normal text-primary">
-              Dashboard
-            </p>
-            <h1 className="mt-3 text-3xl font-semibold">
-              {accessSummary.isSharedOnly ? "Shared transcripts" : "Meeting hub"}
-            </h1>
-            <p className="mt-3 max-w-2xl text-base leading-7 text-muted-foreground">
-              {accessSummary.isSharedOnly
-                ? "Open transcripts that teammates shared with you."
-                : "Track founder calls, IC discussions, and team syncs from calendar invite to reviewed transcript."}
-            </p>
-          </div>
-          {calendarStatus ? (
-            <CalendarAutomationPanel
-              accountLabel={user.email}
-              autoSync={getSearchParamValue(syncCalendar) === "1"}
-              nextJoinTitle={dashboardSummary?.nextBotJoin?.title ?? null}
-              status={calendarStatus}
+        {accessSummary.isSharedOnly ? (
+          <Card>
+            <CardHeader>
+              <CardTitle>Shared transcripts</CardTitle>
+              <CardDescription>
+                Open transcripts that teammates shared with you.
+              </CardDescription>
+            </CardHeader>
+          </Card>
+        ) : (
+          <div className="grid gap-4 lg:grid-cols-2">
+            <DashboardGreetingCard
+              meetingCount={dashboardSummary?.userStats.last7DaysMeetings ?? 0}
+              name={getDashboardFirstName(user.name, user.email)}
+              needsAttention={dashboardSummary?.needsAttention ?? 0}
             />
-          ) : null}
-          {dashboardSummary ? (
-            <DashboardWorkflowSummary summary={dashboardSummary} />
-          ) : null}
-        </div>
+            {dashboardSummary ? (
+              <DashboardWorkflowSummary summary={dashboardSummary} />
+            ) : null}
+            {calendarStatus ? (
+              <CalendarAutomationPanel
+                accountLabel={user.email}
+                autoSync={getSearchParamValue(syncCalendar) === "1"}
+                nextJoinTitle={dashboardSummary?.nextBotJoin?.title ?? null}
+                status={calendarStatus}
+              />
+            ) : null}
+          </div>
+        )}
 
         <Card className="gap-0 py-0 shadow-sm">
           <CardHeader className="border-b bg-muted/25 px-4 py-4 sm:px-5">
@@ -241,6 +250,61 @@ export default async function DashboardPage({
       </section>
     </AppShell>
   );
+}
+
+function DashboardGreetingCard({
+  meetingCount,
+  name,
+  needsAttention,
+}: {
+  meetingCount: number;
+  name: string;
+  needsAttention: number;
+}) {
+  return (
+    <Card className="relative min-h-72 overflow-hidden bg-[radial-gradient(circle_at_top_right,color-mix(in_oklch,var(--primary)_12%,transparent),transparent_42%)] lg:row-span-2">
+      <CardContent className="flex flex-1 flex-col justify-center py-8 sm:px-8">
+        <div className="relative z-10 max-w-md">
+          <p className="text-sm font-medium text-primary">Dashboard</p>
+          <h1 className="mt-3 text-3xl font-semibold tracking-tight sm:text-4xl">
+            Welcome back, {name}.
+          </h1>
+          <p className="mt-4 text-base leading-7 text-muted-foreground">
+            {formatGreetingSummary(meetingCount, needsAttention)}
+          </p>
+        </div>
+        <CalendarCheck2 className="absolute right-8 bottom-8 size-24 text-primary/10 sm:size-32" />
+      </CardContent>
+    </Card>
+  );
+}
+
+function getDashboardFirstName(name: string | null, email: string) {
+  const firstName = name?.trim().split(/\s+/)[0];
+
+  if (firstName) {
+    return firstName;
+  }
+
+  return email.split("@")[0] || "there";
+}
+
+function formatGreetingSummary(meetingCount: number, needsAttention: number) {
+  const meetingSummary =
+    meetingCount === 1
+      ? "You had 1 meeting in the last 7 days."
+      : `You had ${meetingCount.toLocaleString()} meetings in the last 7 days.`;
+
+  if (needsAttention === 0) {
+    return `${meetingSummary} Everything is on track.`;
+  }
+
+  const attentionSummary =
+    needsAttention === 1
+      ? "One needs your attention."
+      : `${needsAttention.toLocaleString()} need your attention.`;
+
+  return `${meetingSummary} ${attentionSummary}`;
 }
 
 function MeetingLibraryViewBar({
