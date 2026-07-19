@@ -1480,7 +1480,7 @@ function MeetingVisualTimeline({
   );
 }
 
-function MeetingVisualGalleryOverview({
+export function MeetingVisualGalleryOverview({
   onClose,
   onOpenAsset,
   visualAssets,

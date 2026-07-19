@@ -9,8 +9,8 @@ describe("meeting header metadata", () => {
   it("uses a compact relative date for meetings today", () => {
     expect(
       formatMeetingHeaderDateTime(
-        "2026-07-18T10:00:00-04:00",
-        new Date("2026-07-18T18:00:00-04:00"),
+        "2026-07-18T10:00:00",
+        new Date("2026-07-18T18:00:00"),
       ),
     ).toBe("Today, 10:00 AM");
   });
