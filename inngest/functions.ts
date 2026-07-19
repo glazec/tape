@@ -68,7 +68,7 @@ function getAppUrl() {
   return appUrlSchema.parse(process.env.NEXT_PUBLIC_APP_URL);
 }
 
-export const scheduleMeetingBot = inngest.createFunction(
+const scheduleMeetingBot = inngest.createFunction(
   { id: "schedule-meeting-bot", triggers: [{ event: "meeting/schedule.bot" }] },
   async ({ event }) => {
     const data = scheduleMeetingBotDataSchema.parse(event.data);
@@ -320,7 +320,7 @@ export const enrichTranscript = inngest.createFunction(
   },
 );
 
-export const sendLocationReminders = inngest.createFunction(
+const sendLocationReminders = inngest.createFunction(
   {
     id: "send-location-reminders",
     triggers: [
@@ -339,7 +339,7 @@ export const syncRecallCalendarsHourly = inngest.createFunction(
   async () => syncRecallCalendarEventsForAllConnectedUsers(),
 );
 
-export const reconcileStaleJobs = inngest.createFunction(
+const reconcileStaleJobs = inngest.createFunction(
   {
     id: "reconcile-stale-meeting-jobs",
     triggers: [{ cron: "*/15 * * * *" }],

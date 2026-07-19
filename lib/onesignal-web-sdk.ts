@@ -1,9 +1,9 @@
-export const DEFAULT_ONESIGNAL_APP_ID =
+const DEFAULT_ONESIGNAL_APP_ID =
   "117c1d1c-ada4-4b49-bb2e-9f4b5cb747ef";
 
-export const ONESIGNAL_SERVICE_WORKER_PATH = "OneSignalSDKWorker.js";
-export const ONESIGNAL_MOBILE_MEDIA_QUERY = "(hover: none) and (pointer: coarse)";
-export const DEFAULT_ONESIGNAL_ALLOWED_ORIGINS = [
+const ONESIGNAL_SERVICE_WORKER_PATH = "OneSignalSDKWorker.js";
+const ONESIGNAL_MOBILE_MEDIA_QUERY = "(hover: none) and (pointer: coarse)";
+const DEFAULT_ONESIGNAL_ALLOWED_ORIGINS = [
   "https://meeting-note-swart.vercel.app",
 ];
 

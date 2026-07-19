@@ -12,8 +12,6 @@ import { getManageableMeetingCondition } from "@/lib/meeting-write-policy";
 import { parseR2Env } from "@/lib/r2";
 import type { WorkspaceContext } from "@/lib/workspace";
 
-export { parseManualTranscriptText } from "@/lib/manual-transcript-parser";
-
 export class MeetingRecoveryUploadError extends Error {}
 
 export async function completeMeetingAudioUpload(input: {

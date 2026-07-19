@@ -28,12 +28,6 @@ vi.mock("@/lib/auth-config", () => ({
   getNeonAuthCookieSecret: () => "test-cookie-secret",
 }));
 
-vi.mock("@/lib/env", () => ({
-  env: {
-    NEXT_PUBLIC_APP_URL: "https://app.example.com",
-  },
-}));
-
 vi.mock("@/lib/vendors/recall", () => ({
   createRecallCalendar,
   deleteRecallCalendar,

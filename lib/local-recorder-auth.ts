@@ -174,7 +174,7 @@ export async function createLocalRecorderDeviceSession(input: {
   return { redirectUrl: callbackUrl.toString() };
 }
 
-export async function hashLocalRecorderSecret(value: string) {
+async function hashLocalRecorderSecret(value: string) {
   const digest = await crypto.subtle.digest(
     "SHA-256",
     new TextEncoder().encode(value),

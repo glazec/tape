@@ -20,13 +20,13 @@ type EntitySegment = {
   text: string;
 };
 
-export type MeetingEntityType =
+type MeetingEntityType =
   | "meeting_link"
   | "money"
   | "name"
   | "organization"
   | "product";
-export type MeetingEntitySource =
+type MeetingEntitySource =
   | "calendar"
   | "elevenlabs"
   | "meeting_url"

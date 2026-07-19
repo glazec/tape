@@ -24,7 +24,7 @@ function getServerSnapshot() {
   return "";
 }
 
-export function formatLocalDateTime(value: string) {
+function formatLocalDateTime(value: string) {
   return new Intl.DateTimeFormat("en", {
     month: "short",
     day: "numeric",

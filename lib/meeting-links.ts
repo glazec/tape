@@ -50,7 +50,7 @@ export async function resolveMeetingJoinUrl(meetingUrl: string) {
   return canonicalUrl;
 }
 
-export function canonicalizeMeetingUrl(meetingUrl: string) {
+function canonicalizeMeetingUrl(meetingUrl: string) {
   const url = parseMeetingUrl(meetingUrl);
 
   if (!url) {

@@ -1,4 +1,4 @@
-export type LocalRecorderMeetingStatus =
+type LocalRecorderMeetingStatus =
   | "scheduled"
   | "recording"
   | "processing"

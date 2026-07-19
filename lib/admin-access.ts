@@ -6,7 +6,7 @@ export const ADMIN_IMPERSONATION_COOKIE = "meeting_note_impersonated_user_id";
 
 const ADMIN_IMPERSONATION_MAX_AGE_SECONDS = 60 * 60 * 8;
 
-export function getConfiguredAdminEmails(
+function getConfiguredAdminEmails(
   source: Record<string, string | undefined> = process.env,
 ) {
   return (source.APP_ADMIN_EMAILS ?? "")

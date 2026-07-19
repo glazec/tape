@@ -34,13 +34,13 @@ type GoogleTokenResponse = {
   error_description?: unknown;
 };
 
-export class GoogleCalendarOAuthError extends Error {
+class GoogleCalendarOAuthError extends Error {
   constructor(message = "Calendar connection failed") {
     super(message);
   }
 }
 
-export function getGoogleCalendarOAuthRedirectUri() {
+function getGoogleCalendarOAuthRedirectUri() {
   return new URL(
     "/api/calendar/oauth/callback",
     getAppUrl(),

@@ -114,7 +114,7 @@ export function parseRecallParticipantTimeline(
   return entries.sort((left, right) => left.startMs - right.startMs);
 }
 
-export async function persistMeetingParticipantTimeline(input: {
+async function persistMeetingParticipantTimeline(input: {
   meetingId: string;
   timeline: ParticipantTimelineEntry[];
 }) {

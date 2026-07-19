@@ -8,7 +8,7 @@ export function buildGoogleSignInOptions(callbackURL?: string | string[]) {
   };
 }
 
-export function normalizeGoogleSignInCallbackURL(
+function normalizeGoogleSignInCallbackURL(
   value?: string | string[],
 ) {
   const callbackURL = Array.isArray(value) ? value[0] : value;

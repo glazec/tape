@@ -22,7 +22,7 @@ type SyncAllResult = {
   syncedEventCount: number;
 };
 
-export class RecallCalendarBulkSyncError extends Error {
+class RecallCalendarBulkSyncError extends Error {
   readonly result: SyncAllResult;
 
   constructor(result: SyncAllResult) {

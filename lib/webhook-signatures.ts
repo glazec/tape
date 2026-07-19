@@ -2,7 +2,7 @@ import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 
 import { ElevenLabsClient } from "@elevenlabs/elevenlabs-js";
 
-export class WebhookVerificationError extends Error {
+class WebhookVerificationError extends Error {
   constructor(
     message: string,
     readonly status: 401 | 500,

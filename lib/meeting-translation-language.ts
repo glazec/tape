@@ -7,7 +7,7 @@ export function shouldAutoTranslateTranscript(text: string) {
   return !isMostlyChineseTranscript(text);
 }
 
-export function isMostlyChineseTranscript(text: string) {
+function isMostlyChineseTranscript(text: string) {
   const trimmedText = text.trim();
 
   if (!trimmedText) {

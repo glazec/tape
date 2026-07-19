@@ -76,10 +76,6 @@ type RecallAutomaticVideoOutput = {
 
 let recallBotLogoJpegBase64: string | null = null;
 
-export function getDefaultRecallBotVideoOutput(): RecallAutomaticVideoOutput {
-  return buildRecallBotVideoOutput(getRecallBotLogoJpegBase64());
-}
-
 function buildRecallBotVideoOutput(
   avatarJpegBase64: string,
 ): RecallAutomaticVideoOutput {

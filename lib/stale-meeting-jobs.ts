@@ -2,7 +2,7 @@ import { sql } from "drizzle-orm";
 
 import { db } from "@/db/client";
 
-export const STALE_MEETING_JOB_TIMEOUT_MS = 6 * 60 * 60 * 1_000;
+const STALE_MEETING_JOB_TIMEOUT_MS = 6 * 60 * 60 * 1_000;
 
 export async function reconcileStaleMeetingJobs(
   input: { now?: Date } = {},

@@ -31,7 +31,6 @@ vi.mock("@/lib/meeting-queries", () => ({
   listMeetingLibraryPageForWorkspace: vi.fn(),
   listMeetingsForWorkspace: vi.fn(),
   listWorkspaceShareRecipients: vi.fn(),
-  listWorkspaceMeetings: vi.fn(),
 }));
 
 vi.mock("@/lib/meeting-library-views", () => ({

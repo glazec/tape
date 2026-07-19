@@ -4,7 +4,7 @@ const databaseEnvSchema = z.object({
   DATABASE_URL: z.string().trim().url(),
 });
 
-export function parseDatabaseEnv(source: Record<string, string | undefined>) {
+function parseDatabaseEnv(source: Record<string, string | undefined>) {
   return databaseEnvSchema.parse(source);
 }
 

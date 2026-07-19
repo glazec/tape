@@ -28,7 +28,7 @@ type NextMeeting = {
   startedAt: string;
 };
 
-export type DashboardMeetingEmotion = "hard" | "chill" | "neutral";
+type DashboardMeetingEmotion = "hard" | "chill" | "neutral";
 
 export type DashboardUserStats = {
   last7DaysMeetings: number;

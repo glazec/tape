@@ -52,7 +52,7 @@ export type LocalRecorderMeetingItem = {
   title: string;
 };
 
-export type LocalRecorderBotStatus =
+type LocalRecorderBotStatus =
   | "not_planned"
   | "planned"
   | "in_meeting_room"
@@ -62,7 +62,7 @@ export type LocalRecorderBotStatus =
   | "failed"
   | "cancelled";
 
-export type LocalRecorderMonitoringMeeting = {
+type LocalRecorderMonitoringMeeting = {
   botStatus: LocalRecorderBotStatus;
   botStatusDetail: string;
   botStatusLabel: string;

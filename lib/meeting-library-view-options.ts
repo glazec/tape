@@ -98,7 +98,7 @@ export function parseMeetingLibrarySort(
   return parseEnumValue(value, meetingLibrarySorts, "smart");
 }
 
-export function normalizeMeetingLibraryQuery(
+function normalizeMeetingLibraryQuery(
   value: string | string[] | FormDataEntryValue | null | undefined,
 ) {
   const stringValue = Array.isArray(value) ? value[0] : value;

@@ -13,7 +13,7 @@ import {
   type TranscriptJobStatus,
 } from "@/lib/meeting-display-status";
 
-export const MEETING_AUTO_REFRESH_INTERVAL_MS = 5000;
+const MEETING_AUTO_REFRESH_INTERVAL_MS = 5000;
 
 type MeetingAutoRefreshProps = {
   meetingStatus: MeetingRecordStatus;

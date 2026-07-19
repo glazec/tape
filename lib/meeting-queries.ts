@@ -86,12 +86,12 @@ import {
 import { getMeetingManagerCondition } from "@/lib/meeting-write-policy";
 
 const uuidSchema = z.uuid();
-export const MEETING_LIBRARY_PAGE_SIZE = 50;
+const MEETING_LIBRARY_PAGE_SIZE = 50;
 export const DEFAULT_MEETING_LIBRARY_HISTORY_MONTHS = 6;
 export const DEFAULT_RELATED_MEETING_HISTORY_MONTHS = 2;
 export const MEETING_LIBRARY_HISTORY_MONTH_STEP = 6;
 export const MAX_MEETING_LIBRARY_HISTORY_MONTHS = 60;
-export const MEETING_DETAIL_RELATED_TRANSCRIPT_SEGMENT_LIMIT = 60;
+const MEETING_DETAIL_RELATED_TRANSCRIPT_SEGMENT_LIMIT = 60;
 const genericMeetingGroupTitles = new Set([
   "google meet",
   "google meet recording",
@@ -126,21 +126,21 @@ export type MeetingTranscript = {
   entities: MeetingTranscriptEntity[];
 };
 
-export type MeetingVisualAsset = {
+type MeetingVisualAsset = {
   id: string;
   capturedAt: string | null;
   timestampMs: number | null;
   url: string;
 };
 
-export type MeetingTranscriptEntity = {
+type MeetingTranscriptEntity = {
   aliases: string[];
   normalizedValue: string;
   type: string;
   value: string;
 };
 
-export type MeetingDetailRelatedTranscriptSegment = {
+type MeetingDetailRelatedTranscriptSegment = {
   id: string;
   speaker: string | null;
   startMs: number;
@@ -187,15 +187,6 @@ export type MeetingLibraryPageOptions = {
   sort?: MeetingLibrarySort;
   status?: MeetingLibraryStatusFilter;
 };
-
-export async function listWorkspaceMeetings(
-  sessionUser: SessionUser,
-  query?: string,
-): Promise<MeetingListItem[]> {
-  const workspace = await getOrCreateWorkspaceForSessionUser(sessionUser);
-
-  return listMeetingsForWorkspace(workspace, query);
-}
 
 export async function listMeetingsForWorkspace(
   workspace: WorkspaceContext,
