@@ -99,4 +99,18 @@ describe("Neon Auth configuration", () => {
       }),
     ).toBe("https://auth.example.com/custom/auth");
   });
+
+  it("rejects incomplete Auth configuration", async () => {
+    const { getNeonAuthBaseUrl, getNeonAuthCookieSecret } = await import(
+      "@/lib/auth-config"
+    );
+
+    expect(() => getNeonAuthBaseUrl({})).toThrow("NEON_AUTH_JWKS_URL is required");
+    expect(() => getNeonAuthBaseUrl({
+      NEON_AUTH_JWKS_URL: "https://auth.example.com/wrong-path",
+    })).toThrow("NEON_AUTH_JWKS_URL must end with /.well-known/jwks.json");
+    expect(() => getNeonAuthCookieSecret({
+      NEON_AUTH_COOKIE_SECRET: "too-short",
+    })).toThrow("NEON_AUTH_COOKIE_SECRET must be at least 32 characters");
+  });
 });

@@ -31,7 +31,9 @@ export async function verifyElevenLabsWebhook(
   }
 
   try {
-    const elevenLabsClient = new ElevenLabsClient();
+    const elevenLabsClient = new ElevenLabsClient({
+      apiKey: process.env.ELEVENLABS_API_KEY?.trim() || secret,
+    });
 
     return await elevenLabsClient.webhooks.constructEvent(
       rawBody,

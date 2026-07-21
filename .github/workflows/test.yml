@@ -40,6 +40,7 @@ jobs:
       - uses: astral-sh/setup-uv@v8.3.2
         with:
           enable-cache: true
+      - run: sudo apt-get update && sudo apt-get install -y ffmpeg
       - run: npm ci
       - run: npx playwright install --with-deps chromium
       - run: npm run verify

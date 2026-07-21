@@ -554,6 +554,10 @@ function getLocalRecorderBotStatus(
     return "failed";
   }
 
+  if (meeting.status === "recording" && meeting.recallBotId) {
+    return meeting.recallRecordingId ? "recording" : "joined";
+  }
+
   if (
     meeting.status === "processing" ||
     meeting.status === "ready" ||
@@ -564,10 +568,6 @@ function getLocalRecorderBotStatus(
 
   if (!meeting.recallBotId) {
     return "not_planned";
-  }
-
-  if (meeting.status === "recording") {
-    return meeting.recallRecordingId ? "recording" : "joined";
   }
 
   if (

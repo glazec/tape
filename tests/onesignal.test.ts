@@ -98,4 +98,39 @@ describe("OneSignal vendor", () => {
       "OneSignal notification failed: invalid_aliases.external_id",
     );
   });
+
+  it("reports HTTP, missing id, and primitive API errors", async () => {
+    vi.stubEnv("ONESIGNAL_REST_API_KEY", "rest-key");
+    vi.stubEnv(
+      "NEXT_PUBLIC_ONESIGNAL_APP_ID",
+      "117c1d1c-ada4-4b49-bb2e-9f4b5cb747ef",
+    );
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(null, {
+        status: 503,
+        statusText: "Unavailable",
+      }))
+      .mockResolvedValueOnce(Response.json({}))
+      .mockResolvedValueOnce(Response.json({ errors: "invalid player" }));
+    vi.stubGlobal("fetch", fetchMock);
+    const { sendOneSignalLocationReminder } = await import(
+      "@/lib/vendors/onesignal"
+    );
+    const input = {
+      externalUserId: "user_1",
+      meetingId: "meeting_1",
+      meetingTitle: "Weekly sync",
+      location: "Room 12",
+    };
+
+    await expect(sendOneSignalLocationReminder(input)).rejects.toThrow(
+      "OneSignal notification failed with 503 Unavailable",
+    );
+    await expect(sendOneSignalLocationReminder(input)).rejects.toThrow(
+      "OneSignal notification failed: missing notification id",
+    );
+    await expect(sendOneSignalLocationReminder(input)).rejects.toThrow(
+      "OneSignal notification failed: invalid player",
+    );
+  });
 });

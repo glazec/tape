@@ -2,12 +2,15 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 const {
   createRecallDesktopSdkUpload,
+  createUploadUrl,
   db,
   getObjectMetadata,
   inngestSend,
   retrieveRecallBot,
+  reconcileMeetingSharingForMeeting,
 } = vi.hoisted(() => ({
     createRecallDesktopSdkUpload: vi.fn(),
+    createUploadUrl: vi.fn(),
     db: {
       insert: vi.fn(),
       select: vi.fn(),
@@ -17,6 +20,7 @@ const {
     getObjectMetadata: vi.fn(),
     inngestSend: vi.fn(),
     retrieveRecallBot: vi.fn(),
+    reconcileMeetingSharingForMeeting: vi.fn(),
   }));
 
 vi.mock("@/db/client", () => ({
@@ -29,11 +33,16 @@ vi.mock("@/inngest/client", () => ({
   },
 }));
 
+vi.mock("@/lib/meeting-share-rules", () => ({
+  reconcileMeetingSharingForMeeting,
+}));
+
 vi.mock("@/lib/r2", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/r2")>();
 
   return {
     ...actual,
+    createUploadUrl,
     getObjectMetadata,
     parseR2Env: () => ({ R2_BUCKET: "meeting-audio" }),
   };
@@ -48,6 +57,8 @@ vi.mock("@/lib/vendors/recall", () => ({
 import {
   buildLocalRecorderTranscriptionEvent,
   completeLocalRecorderRecordingUpload,
+  claimLocalRecorderIntent,
+  createManualLocalRecorderIntent,
   createRecallDesktopSdkUploadForLocalRecorder,
   failLocalRecorderIntent,
   getLocalRecorderMonitoringStatus,
@@ -57,6 +68,7 @@ import {
   isLocalRecorderPrimaryClaimConflict,
   listMissedLocalRecorderMeetings,
   markRecallDesktopSdkFallback,
+  prepareLocalRecorderRecordingUpload,
 } from "@/lib/local-recorder-records";
 
 function selectRows(rows: unknown[]) {
@@ -79,9 +91,11 @@ describe("local recorder records", () => {
     db.transaction.mockReset();
     db.update.mockReset();
     createRecallDesktopSdkUpload.mockReset();
+    createUploadUrl.mockReset();
     getObjectMetadata.mockReset();
     inngestSend.mockReset();
     retrieveRecallBot.mockReset();
+    reconcileMeetingSharingForMeeting.mockReset();
   });
 
   it("creates a Recall Desktop SDK upload for a valid local recorder intent", async () => {
@@ -410,6 +424,51 @@ describe("local recorder records", () => {
     expect(attemptValues).not.toHaveBeenCalled();
   });
 
+  it("creates one fallback intent for an eligible missed meeting", async () => {
+    const deviceConflict = vi.fn().mockResolvedValue(undefined);
+    const attemptValues = vi.fn().mockResolvedValue(undefined);
+    db.insert
+      .mockReturnValueOnce({
+        values: vi.fn(() => ({ onConflictDoUpdate: deviceConflict })),
+      })
+      .mockReturnValueOnce({ values: attemptValues });
+    db.select
+      .mockReturnValueOnce(selectRows([{
+        activeTranscriptJob: false,
+        endedAt: new Date("2026-07-01T12:30:00.000Z"),
+        id: "meeting_123",
+        meetingUrl: "https://meet.google.com/abc-defg-hij",
+        recallAudioAsset: false,
+        recallBotId: null,
+        recallRecordingId: null,
+        startedAt: new Date("2026-07-01T12:00:00.000Z"),
+        status: "scheduled",
+        title: "Weekly sync",
+      }]))
+      .mockReturnValueOnce(selectRows([]));
+
+    const result = await listMissedLocalRecorderMeetings({
+      deviceId: "mac_123",
+      now: new Date("2026-07-01T12:02:00.000Z"),
+      workspace: workspace(),
+    });
+
+    expect(result).toEqual([
+      expect.objectContaining({
+        displayTimeWindow: {
+          endsAt: "2026-07-01T12:30:00.000Z",
+          startsAt: "2026-07-01T12:00:00.000Z",
+        },
+        title: "Weekly sync",
+      }),
+    ]);
+    expect(attemptValues).toHaveBeenCalledWith(expect.objectContaining({
+      attemptState: "notified",
+      meetingId: "meeting_123",
+      notificationState: "shown",
+    }));
+  });
+
   it("returns the next monitored meeting with the bot status", async () => {
     const deviceOnConflictDoUpdate = vi.fn().mockResolvedValue(undefined);
     const deviceValues = vi.fn(() => ({
@@ -480,6 +539,51 @@ describe("local recorder records", () => {
     expect(db.select).toHaveBeenCalledTimes(2);
   });
 
+  it.each([
+    ["cancelled", "bot_1", null, "cancelled", "Cancelled", "Meeting was cancelled"],
+    ["failed", "bot_1", null, "failed", "Failed", "Bot could not record"],
+    ["processing", "bot_1", null, "done", "Done", "Bot recording finished"],
+    ["scheduled", null, null, "not_planned", "Not planned", "No bot is scheduled"],
+    ["recording", null, null, "not_planned", "Not planned", "No bot is scheduled"],
+    ["recording", "bot_1", null, "joined", "Joined", "Bot joined the call"],
+    ["recording", "bot_1", "rec_1", "recording", "Recording", "Bot is recording"],
+    ["scheduled", "bot_1", null, "in_meeting_room", "In meeting room", "Bot is waiting or joining"],
+  ])("reports %s meetings as %s", async (
+    status,
+    recallBotId,
+    recallRecordingId,
+    botStatus,
+    botStatusLabel,
+    botStatusDetail,
+  ) => {
+    db.insert.mockReturnValueOnce({
+      values: vi.fn(() => ({ onConflictDoUpdate: vi.fn().mockResolvedValue(undefined) })),
+    });
+    db.select
+      .mockReturnValueOnce(selectRows([]))
+      .mockReturnValueOnce(selectRows([{
+        endedAt: new Date("2026-07-20T12:30:00.000Z"),
+        id: "meeting_1",
+        recallBotId,
+        recallRecordingId,
+        startedAt: new Date("2026-07-20T12:00:00.000Z"),
+        status,
+        title: "Status meeting",
+      }]));
+
+    const result = await getLocalRecorderMonitoringStatus({
+      deviceId: "mac_1",
+      now: new Date("2026-07-20T12:05:00.000Z"),
+      workspace: workspace(),
+    });
+
+    expect(result.nextMeeting).toEqual(expect.objectContaining({
+      botStatus,
+      botStatusDetail,
+      botStatusLabel,
+    }));
+  });
+
   it("fails the intent and moves a still-recording meeting to failed", async () => {
     db.select.mockReturnValueOnce(
       selectRows([{ id: "attempt_1", meetingId: "meeting_1" }]),
@@ -519,4 +623,321 @@ describe("local recorder records", () => {
       },
     ]);
   });
+
+  it("claims an eligible recorder intent", async () => {
+    const now = new Date("2026-07-20T12:00:00.000Z");
+    db.select
+      .mockReturnValueOnce(selectRows([{
+        activeTranscriptJob: false,
+        endedAt: new Date("2026-07-20T12:30:00.000Z"),
+        expiresAt: new Date("2026-07-20T13:00:00.000Z"),
+        id: "attempt_1",
+        meetingId: "meeting_1",
+        meetingUrl: "https://meet.google.com/abc-defg-hij",
+        recallAudioAsset: false,
+        recallRecordingId: null,
+        startedAt: new Date("2026-07-20T11:55:00.000Z"),
+        status: "scheduled",
+        title: "Weekly sync",
+      }]))
+      .mockReturnValueOnce(selectRows([]));
+    db.update.mockReturnValue({
+      set: vi.fn(() => ({ where: vi.fn().mockResolvedValue(undefined) })),
+    });
+
+    await expect(claimLocalRecorderIntent({
+      deviceId: "mac_1",
+      fallbackIntentId: "intent_1",
+      now,
+      workspace: workspace(),
+    })).resolves.toEqual({ claimed: true, meetingTitle: "Weekly sync" });
+  });
+
+  it("rejects missing and competing recorder claims", async () => {
+    db.select.mockReturnValueOnce(selectRows([]));
+    await expect(claimLocalRecorderIntent({
+      deviceId: "mac_1",
+      fallbackIntentId: "intent_1",
+      now: new Date("2026-07-20T12:00:00.000Z"),
+      workspace: workspace(),
+    })).resolves.toEqual({ claimed: false, reason: "expired_or_missing" });
+
+    db.select
+      .mockReturnValueOnce(selectRows([{
+        activeTranscriptJob: false,
+        endedAt: null,
+        expiresAt: new Date("2026-07-20T13:00:00.000Z"),
+        id: "attempt_1",
+        meetingId: "meeting_1",
+        meetingUrl: "https://meet.google.com/abc-defg-hij",
+        recallAudioAsset: false,
+        recallRecordingId: null,
+        startedAt: new Date("2026-07-20T11:55:00.000Z"),
+        status: "scheduled",
+        title: "Meeting",
+      }]))
+      .mockReturnValueOnce(selectRows([{ id: "attempt_2" }]));
+    await expect(claimLocalRecorderIntent({
+      deviceId: "mac_1",
+      fallbackIntentId: "intent_1",
+      now: new Date("2026-07-20T12:01:00.000Z"),
+      workspace: workspace(),
+    })).resolves.toEqual({ claimed: false, reason: "already_recording" });
+  });
+
+  it("recommends an ad hoc recording for an automatic claim outside the meeting window", async () => {
+    db.select.mockReturnValueOnce(selectRows([{
+      activeTranscriptJob: false,
+      endedAt: null,
+      expiresAt: new Date("2026-07-20T13:00:00.000Z"),
+      id: "attempt_1",
+      meetingId: "meeting_1",
+      meetingUrl: "https://meet.google.com/abc-defg-hij",
+      recallAudioAsset: false,
+      recallRecordingId: null,
+      startedAt: new Date("2026-07-20T11:00:00.000Z"),
+      status: "scheduled",
+      title: "Past meeting",
+    }]));
+
+    await expect(claimLocalRecorderIntent({
+      deviceId: "mac_1",
+      explicit: false,
+      fallbackIntentId: "intent_1",
+      now: new Date("2026-07-20T12:00:00.000Z"),
+      workspace: workspace(),
+    })).resolves.toEqual({ claimed: false, reason: "ad_hoc_recommended" });
+    expect(db.update).not.toHaveBeenCalled();
+  });
+
+  it("turns a concurrent claim constraint into an already recording result", async () => {
+    db.select
+      .mockReturnValueOnce(selectRows([eligibleAttempt()]))
+      .mockReturnValueOnce(selectRows([]));
+    db.update.mockReturnValue({
+      set: vi.fn(() => ({
+        where: vi.fn().mockRejectedValue({
+          code: "23505",
+          constraint: "local_recording_attempts_primary_active_unique",
+        }),
+      })),
+    });
+
+    await expect(claimLocalRecorderIntent({
+      deviceId: "mac_1",
+      fallbackIntentId: "intent_1",
+      now: new Date("2026-07-20T12:00:00.000Z"),
+      workspace: workspace(),
+    })).resolves.toEqual({ claimed: false, reason: "already_recording" });
+  });
+
+  it("returns missing when failing an unknown intent", async () => {
+    db.select.mockReturnValueOnce(selectRows([]));
+
+    await expect(failLocalRecorderIntent({
+      deviceId: "mac_1",
+      errorMessage: null,
+      fallbackIntentId: "intent_1",
+      now: new Date("2026-07-20T12:00:00.000Z"),
+      workspace: workspace(),
+    })).resolves.toEqual({ failed: false, reason: "expired_or_missing" });
+    expect(db.update).not.toHaveBeenCalled();
+  });
+
+  it("prepares three direct upload URLs for a valid recording", async () => {
+    db.select
+      .mockReturnValueOnce(selectRows([{
+        attemptState: "started",
+        expiresAt: new Date("2026-07-20T13:00:00.000Z"),
+        id: "attempt_1",
+        meetingId: "meeting_1",
+      }]))
+      .mockReturnValueOnce(selectRows([]));
+    db.update.mockReturnValue({
+      set: vi.fn(() => ({ where: vi.fn().mockResolvedValue(undefined) })),
+    });
+    createUploadUrl
+      .mockResolvedValueOnce("https://upload/computer")
+      .mockResolvedValueOnce("https://upload/microphone")
+      .mockResolvedValueOnce("https://upload/synthesized");
+
+    const result = await prepareLocalRecorderRecordingUpload({
+      clientRecordingId: "recording_1",
+      deviceId: "mac_1",
+      fallbackIntentId: "intent_1",
+      manifest: {},
+      recordingStartedAt: new Date("2026-07-20T12:00:00.000Z"),
+      recordingStoppedAt: new Date("2026-07-20T12:10:00.000Z"),
+      workspace: workspace(),
+    });
+
+    expect(result.assets.computerAudio.uploadUrl).toBe("https://upload/computer");
+    expect(result.assets.microphoneAudio.uploadUrl).toBe("https://upload/microphone");
+    expect(result.assets.synthesizedAudio.uploadUrl).toBe("https://upload/synthesized");
+    expect(createUploadUrl).toHaveBeenCalledTimes(3);
+  });
+
+  it("rejects preparing a recording that was already uploaded", async () => {
+    db.select
+      .mockReturnValueOnce(selectRows([uploadableAttempt()]))
+      .mockReturnValueOnce(selectRows([{ id: "recording_1", meetingId: "meeting_1" }]));
+
+    await expect(
+      prepareLocalRecorderRecordingUpload(recordingUploadInput()),
+    ).rejects.toThrow("Local recording already uploaded");
+    expect(createUploadUrl).not.toHaveBeenCalled();
+  });
+
+  it("requeues transcription when upload completion is retried", async () => {
+    db.select
+      .mockReturnValueOnce(selectRows([uploadableAttempt()]))
+      .mockReturnValueOnce(selectRows([{ id: "recording_1", meetingId: "meeting_1" }]))
+      .mockReturnValueOnce(selectRows([{
+        mediaAssetId: "asset_3",
+        meetingId: "meeting_1",
+        objectKey: "teams/team_123/meetings/meeting_1/assets/asset_3.wav",
+        transcriptJobId: "job_1",
+      }]));
+    inngestSend.mockResolvedValue(undefined);
+
+    await expect(
+      completeLocalRecorderRecordingUpload(recordingUploadInput()),
+    ).resolves.toEqual({
+      localRecordingId: "recording_1",
+      meetingId: "meeting_1",
+      queued: true,
+    });
+    expect(inngestSend).toHaveBeenCalledWith(expect.objectContaining({
+      id: "local-recorder-transcribe-job_1",
+    }));
+    expect(getObjectMetadata).not.toHaveBeenCalled();
+  });
+
+  it("rejects an upload retry attached to another meeting", async () => {
+    db.select
+      .mockReturnValueOnce(selectRows([uploadableAttempt()]))
+      .mockReturnValueOnce(selectRows([{ id: "recording_1", meetingId: "meeting_2" }]));
+
+    await expect(
+      completeLocalRecorderRecordingUpload(recordingUploadInput()),
+    ).rejects.toThrow("Local recording already belongs to another meeting");
+    expect(inngestSend).not.toHaveBeenCalled();
+  });
+
+  it("reports missing audio when an uploaded object cannot be read", async () => {
+    db.select
+      .mockReturnValueOnce(selectRows([uploadableAttempt()]))
+      .mockReturnValueOnce(selectRows([]));
+    getObjectMetadata.mockRejectedValue(new Error("not found"));
+
+    await expect(
+      completeLocalRecorderRecordingUpload(recordingUploadInput()),
+    ).rejects.toThrow("Uploaded local recording audio not found");
+    expect(db.insert).not.toHaveBeenCalled();
+  });
+
+  it("rejects malformed Recall SDK upload responses", async () => {
+    db.select
+      .mockReturnValueOnce(selectRows([{
+        attemptState: "started",
+        expiresAt: new Date(Date.now() + 60_000),
+        id: "attempt_1",
+        meetingId: "meeting_1",
+      }]))
+      .mockReturnValueOnce(selectRows([{
+        attemptState: "started",
+        expiresAt: new Date(Date.now() + 60_000),
+        id: "attempt_1",
+        meetingId: "meeting_1",
+      }]));
+    createRecallDesktopSdkUpload
+      .mockResolvedValueOnce({ upload_token: "token" })
+      .mockResolvedValueOnce({ id: "upload_1" });
+    const input = {
+      clientRecordingId: "recording_1",
+      deviceId: "mac_1",
+      fallbackIntentId: "intent_1",
+      requestUrl: "https://app.example.com/webhook",
+      workspace: workspace(),
+    };
+
+    await expect(
+      createRecallDesktopSdkUploadForLocalRecorder(input),
+    ).rejects.toThrow("Recall Desktop SDK upload is invalid");
+    await expect(
+      createRecallDesktopSdkUploadForLocalRecorder(input),
+    ).rejects.toThrow("Recall Desktop SDK upload is invalid");
+  });
+
+  it("creates a manual recording and its claim intent", async () => {
+    const deviceConflict = vi.fn().mockResolvedValue(undefined);
+    const attemptValues = vi.fn().mockResolvedValue(undefined);
+    db.insert
+      .mockReturnValueOnce({ values: vi.fn(() => ({ onConflictDoUpdate: deviceConflict })) })
+      .mockReturnValueOnce({ values: vi.fn(() => ({ returning: vi.fn().mockResolvedValue([{ id: "meeting_1", title: "Manual recording" }]) })) })
+      .mockReturnValueOnce({ values: attemptValues });
+
+    const result = await createManualLocalRecorderIntent({
+      deviceId: "mac_1",
+      now: new Date("2026-07-20T12:00:00.000Z"),
+      title: "   ",
+      workspace: workspace(),
+    });
+
+    expect(result.meetingTitle).toBe("Manual recording");
+    expect(result.fallbackIntentId).toBeTruthy();
+    expect(reconcileMeetingSharingForMeeting).toHaveBeenCalledWith("meeting_1");
+    expect(attemptValues).toHaveBeenCalled();
+  });
 });
+
+function workspace() {
+  return {
+    canCreateMeetings: true,
+    domain: "",
+    teamId: "team_123",
+    userId: "user_123",
+  };
+}
+
+function eligibleAttempt() {
+  return {
+    activeTranscriptJob: false,
+    endedAt: new Date("2026-07-20T12:30:00.000Z"),
+    expiresAt: new Date("2026-07-20T13:00:00.000Z"),
+    id: "attempt_1",
+    meetingId: "meeting_1",
+    meetingUrl: "https://meet.google.com/abc-defg-hij",
+    recallAudioAsset: false,
+    recallRecordingId: null,
+    startedAt: new Date("2026-07-20T11:55:00.000Z"),
+    status: "scheduled",
+    title: "Weekly sync",
+  };
+}
+
+function uploadableAttempt() {
+  return {
+    attemptState: "uploading",
+    expiresAt: new Date("2026-07-20T13:00:00.000Z"),
+    id: "attempt_1",
+    meetingId: "meeting_1",
+  };
+}
+
+function recordingUploadInput() {
+  return {
+    assets: {
+      computerAudioAssetId: "asset_1",
+      microphoneAudioAssetId: "asset_2",
+      synthesizedAudioAssetId: "asset_3",
+    },
+    clientRecordingId: "recording_1",
+    deviceId: "mac_1",
+    fallbackIntentId: "intent_1",
+    manifest: {},
+    recordingStartedAt: new Date("2026-07-20T12:00:00.000Z"),
+    recordingStoppedAt: new Date("2026-07-20T12:10:00.000Z"),
+    workspace: workspace(),
+  };
+}

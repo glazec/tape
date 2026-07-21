@@ -1,4 +1,5 @@
 import { spawn, spawnSync } from "node:child_process";
+import { existsSync } from "node:fs";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -11,16 +12,12 @@ import {
   type ProcessRunOptions,
 } from "@/lib/video-frame-ffmpeg";
 
-const ffmpegPath = process.env.FFMPEG_PATH ?? "ffmpeg";
-const ffprobePath = process.env.FFPROBE_PATH ?? "ffprobe";
-const mediaAvailable =
-  spawnSync(ffmpegPath, ["-version"]).status === 0 &&
-  spawnSync(ffprobePath, ["-version"]).status === 0;
-const describeMedia = mediaAvailable ? describe : describe.skip;
+const ffmpegPath = resolveMediaBinary("FFMPEG_PATH", "ffmpeg");
+const ffprobePath = resolveMediaBinary("FFPROBE_PATH", "ffprobe");
 const trustedVideoUrl =
   "https://ap-northeast-1-recallai-production-bot-data.s3.amazonaws.com/generated.mp4";
 
-describeMedia(
+describe(
   "generated frame extraction integration (requires ffmpeg and ffprobe)",
   () => {
     let directory: string;
@@ -89,6 +86,21 @@ describeMedia(
     }, 30_000);
   },
 );
+
+function resolveMediaBinary(envName: string, binaryName: string) {
+  const configuredPath = process.env[envName]?.trim();
+  const candidates = [
+    configuredPath,
+    `/opt/homebrew/bin/${binaryName}`,
+    `/usr/local/bin/${binaryName}`,
+    `/usr/bin/${binaryName}`,
+  ];
+
+  return (
+    candidates.find((candidate) => candidate && existsSync(candidate)) ??
+    binaryName
+  );
+}
 
 function generatePresentationVideo(outputPath: string) {
   const slideA = "between(t,3,5.999)+between(t,10,12.999)";

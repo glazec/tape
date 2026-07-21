@@ -1,34 +1,93 @@
-import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it, vi } from "vitest";
+// @vitest-environment happy-dom
+
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+const { refresh, replace } = vi.hoisted(() => ({ refresh: vi.fn(), replace: vi.fn() }));
+
+vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh, replace }) }));
 
 import { UploadDropzone } from "@/components/upload-dropzone";
 
-vi.mock("next/navigation", () => ({
-  useRouter: () => ({
-    refresh: vi.fn(),
-    replace: vi.fn(),
-  }),
-}));
-
 describe("UploadDropzone", () => {
-  it("accepts audio and video uploads", () => {
-    const html = renderToStaticMarkup(<UploadDropzone />);
-
-    expect(html).toContain("Upload recording");
-    expect(html).toContain("audio/mpeg");
-    expect(html).toContain("audio/mp4");
-    expect(html).toContain(".m4a");
-    expect(html).toContain("video/mp4");
-    expect(html).toContain("video/quicktime");
-    expect(html).toContain("1 GB maximum");
+  beforeEach(() => {
+    refresh.mockReset();
+    replace.mockReset();
+    vi.stubGlobal("fetch", vi.fn());
   });
 
-  it("allows users to set the uploaded meeting start time", () => {
-    const html = renderToStaticMarkup(<UploadDropzone />);
+  afterEach(() => vi.unstubAllGlobals());
 
-    expect(html).toContain("Start time");
-    expect(html).toContain('id="meeting-start-time"');
-    expect(html).toContain('name="startedAt"');
-    expect(html).toContain('type="datetime-local"');
+  it("validates missing, oversized, and unsupported files", async () => {
+    render(<UploadDropzone />);
+    fireEvent.click(screen.getByRole("button", { name: "Upload" }));
+    expect(await screen.findByText("Select a recording file first")).toBeTruthy();
+
+    selectFile(new File(["bad"], "notes.txt"));
+    fireEvent.click(screen.getByRole("button", { name: "Upload" }));
+    expect(await screen.findByText(/Only MP3/)).toBeTruthy();
+
+    const oversized = new File(["audio"], "meeting.mp3", { type: "audio/mpeg" });
+    Object.defineProperty(oversized, "size", { value: 1024 ** 3 + 1 });
+    selectFile(oversized);
+    fireEvent.click(screen.getByRole("button", { name: "Upload" }));
+    expect(await screen.findByText("Recording file must be 1 GB or smaller")).toBeTruthy();
+  });
+
+  it("uploads directly and queues transcription", async () => {
+    vi.mocked(fetch)
+      .mockResolvedValueOnce(response({ uploadId: "up_1", uploadUrl: "https://upload" }))
+      .mockResolvedValueOnce(response({}))
+      .mockResolvedValueOnce(response({ redirectTo: "/meetings/new" }));
+    render(<UploadDropzone />);
+    selectFile(new File(["audio"], "meeting.mp3", { type: "audio/mpeg" }));
+    fireEvent.change(screen.getByLabelText("Start time"), {
+      target: { value: "2026-07-20T09:30" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Upload" }));
+
+    expect(await screen.findByText("Upload complete. Transcription queued")).toBeTruthy();
+    expect(fetch).toHaveBeenNthCalledWith(2, "https://upload", expect.objectContaining({ method: "PUT" }));
+    expect(replace).toHaveBeenCalledWith("/dashboard");
+    expect(refresh).toHaveBeenCalled();
+  });
+
+  it("falls back to server upload when the direct upload fails", async () => {
+    vi.mocked(fetch)
+      .mockResolvedValueOnce(response({ uploadId: "up_1", uploadUrl: "https://upload" }))
+      .mockRejectedValueOnce(new Error("network"))
+      .mockResolvedValueOnce(response({}));
+    render(<UploadDropzone />);
+    selectFile(new File(["audio"], "meeting.m4a", { type: "audio/mp4" }));
+    fireEvent.click(screen.getByRole("button", { name: "Upload" }));
+
+    await waitFor(() => expect(replace).toHaveBeenCalledWith("/dashboard"));
+    expect(fetch).toHaveBeenNthCalledWith(3, "/api/uploads/audio", expect.objectContaining({ method: "POST" }));
+  });
+
+  it("shows sign in and generic service failures", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(response({}, 401));
+    render(<UploadDropzone />);
+    selectFile(new File(["audio"], "meeting.mp3", { type: "audio/mpeg" }));
+    fireEvent.click(screen.getByRole("button", { name: "Upload" }));
+    expect(await screen.findByText("Sign in to upload recordings")).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Sign in" })).toBeTruthy();
+
+    vi.mocked(fetch).mockResolvedValueOnce(response({}, 500));
+    fireEvent.click(screen.getByRole("button", { name: "Upload" }));
+    expect((await screen.findAllByText("Upload failed")).length).toBeGreaterThan(0);
   });
 });
+
+function selectFile(file: File) {
+  fireEvent.change(screen.getByLabelText("Recording file"), {
+    target: { files: [file] },
+  });
+}
+
+function response(body: unknown, status = 200) {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { "content-type": "application/json" },
+  });
+}

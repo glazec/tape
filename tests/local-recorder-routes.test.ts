@@ -11,6 +11,7 @@ const completeLocalRecorderRecordingUpload = vi.fn();
 const prepareLocalRecorderRecordingUpload = vi.fn();
 const createRecallDesktopSdkUploadForLocalRecorder = vi.fn();
 const markRecallDesktopSdkFallback = vi.fn();
+const LocalRecorderUploadError = vi.hoisted(() => class LocalRecorderUploadError extends Error {});
 
 vi.mock("@/lib/local-recorder-auth", () => ({
   createLocalRecorderDeviceSession,
@@ -26,6 +27,7 @@ vi.mock("@/lib/local-recorder-records", () => ({
   getLocalRecorderMonitoringStatus,
   listMissedLocalRecorderMeetings,
   markRecallDesktopSdkFallback,
+  LocalRecorderUploadError,
   prepareLocalRecorderRecordingUpload,
 }));
 
@@ -445,6 +447,24 @@ describe("local recorder API routes", () => {
     });
   });
 
+  it("rejects an invalid Recall SDK fallback request", async () => {
+    mockSignedInDevice();
+    const { POST } = await import(
+      "@/app/api/local-recorder/recordings/sdk-upload/fallback/route"
+    );
+
+    const response = await POST(new Request("https://app.example.com/route", {
+      method: "POST",
+      body: "null",
+    }));
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toEqual({
+      error: "Invalid Recall Desktop SDK fallback request",
+    });
+    expect(markRecallDesktopSdkFallback).not.toHaveBeenCalled();
+  });
+
   it("completes a direct local recorder upload and queues processing", async () => {
     mockSignedInDevice();
     completeLocalRecorderRecordingUpload.mockResolvedValue({
@@ -523,6 +543,124 @@ describe("local recorder API routes", () => {
       error: "Invalid local recording completion",
     });
     expect(completeLocalRecorderRecordingUpload).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    [
+      "preparation",
+      prepareLocalRecorderRecordingUpload,
+      () => import("@/app/api/local-recorder/recordings/prepare/route"),
+      {
+        clientRecordingId: "recording_123",
+        fallbackIntentId: "intent_123",
+        manifest: {},
+        recordingStartedAt: "2026-07-20T12:00:00.000Z",
+        recordingStoppedAt: "2026-07-20T12:30:00.000Z",
+      },
+      "Local recording preparation unavailable",
+    ],
+    [
+      "completion",
+      completeLocalRecorderRecordingUpload,
+      () => import("@/app/api/local-recorder/recordings/complete/route"),
+      {
+        assets: {
+          computerAudioAssetId: "asset_1",
+          microphoneAudioAssetId: "asset_2",
+          synthesizedAudioAssetId: "asset_3",
+        },
+        clientRecordingId: "recording_123",
+        fallbackIntentId: "intent_123",
+        manifest: {},
+        recordingStartedAt: "2026-07-20T12:00:00.000Z",
+        recordingStoppedAt: "2026-07-20T12:30:00.000Z",
+      },
+      "Local recording completion unavailable",
+    ],
+    [
+      "SDK upload",
+      createRecallDesktopSdkUploadForLocalRecorder,
+      () => import("@/app/api/local-recorder/recordings/sdk-upload/route"),
+      {
+        clientRecordingId: "recording_123",
+        fallbackIntentId: "intent_123",
+      },
+      "Recall Desktop SDK upload unavailable",
+    ],
+  ])("maps expected and unexpected %s errors", async (
+    _name,
+    operation,
+    loadRoute,
+    body,
+    unavailableMessage,
+  ) => {
+    mockSignedInDevice();
+    const { POST } = await loadRoute();
+    operation.mockRejectedValueOnce(new LocalRecorderUploadError("Upload conflict"));
+
+    const conflictResponse = await POST(new Request("https://app.example.com/route", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }));
+    expect(conflictResponse.status).toBe(409);
+    await expect(conflictResponse.json()).resolves.toEqual({ error: "Upload conflict" });
+
+    operation.mockRejectedValueOnce(new Error("vendor unavailable"));
+    const failureResponse = await POST(new Request("https://app.example.com/route", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }));
+    expect(failureResponse.status).toBe(500);
+    await expect(failureResponse.json()).resolves.toEqual({ error: unavailableMessage });
+  });
+
+  it("rejects unauthorized and invalid preparation requests", async () => {
+    const { POST } = await import(
+      "@/app/api/local-recorder/recordings/prepare/route"
+    );
+    getLocalRecorderDeviceRequestContext.mockResolvedValueOnce({
+      ok: false,
+      error: "Device authentication required",
+      status: 401,
+    });
+    const unauthorized = await POST(new Request("https://app.example.com/route", {
+      method: "POST",
+      body: "{}",
+    }));
+    expect(unauthorized.status).toBe(401);
+
+    mockSignedInDevice();
+    const invalid = await POST(new Request("https://app.example.com/route", {
+      method: "POST",
+      body: "{}",
+    }));
+    expect(invalid.status).toBe(400);
+    await expect(invalid.json()).resolves.toEqual({
+      error: "Invalid local recording preparation",
+    });
+  });
+
+  it.each([
+    ["completion", () => import("@/app/api/local-recorder/recordings/complete/route")],
+    ["SDK upload", () => import("@/app/api/local-recorder/recordings/sdk-upload/route")],
+    ["SDK fallback", () => import("@/app/api/local-recorder/recordings/sdk-upload/fallback/route")],
+  ])("rejects an unauthorized %s request", async (_name, loadRoute) => {
+    getLocalRecorderDeviceRequestContext.mockResolvedValue({
+      ok: false,
+      error: "Device authentication required",
+      status: 401,
+    });
+    const { POST } = await loadRoute();
+
+    const response = await POST(new Request("https://app.example.com/route", {
+      method: "POST",
+      body: "{}",
+    }));
+
+    expect(response.status).toBe(401);
+    await expect(response.json()).resolves.toEqual({
+      error: "Device authentication required",
+    });
   });
 
   it("redirects signed in web users back to the Mac app with a device token", async () => {

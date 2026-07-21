@@ -42,6 +42,7 @@ describe("Google Calendar OAuth storage", () => {
     insert.mockReset();
     select.mockReset();
     update.mockReset();
+    vi.unstubAllGlobals();
     vi.unstubAllEnvs();
     vi.resetModules();
   });
@@ -165,5 +166,98 @@ describe("Google Calendar OAuth storage", () => {
       recallCalendarLastSyncedAt: null,
       updatedAt: expect.any(Date),
     });
+  });
+
+  it("exchanges Google authorization codes and rejects invalid token responses", async () => {
+    vi.stubEnv("GOOGLE_CALENDAR_CLIENT_ID", "google-client-id");
+    vi.stubEnv("GOOGLE_CALENDAR_CLIENT_SECRET", "google-client-secret");
+    vi.stubEnv("NEXT_PUBLIC_APP_URL", "https://app.example.com");
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    const { exchangeGoogleCalendarCode, shouldUseSecureCalendarOAuthCookie } =
+      await import("@/lib/google-calendar-oauth");
+
+    expect(shouldUseSecureCalendarOAuthCookie()).toBe(true);
+    fetchMock.mockResolvedValueOnce(Response.json({
+      access_token: "access_token",
+      refresh_token: "refresh_token",
+      expires_in: 3600,
+    }));
+    await expect(exchangeGoogleCalendarCode("authorization_code")).resolves.toEqual({
+      accessToken: "access_token",
+      refreshToken: "refresh_token",
+      accessTokenExpiresAt: expect.any(Date),
+    });
+
+    fetchMock.mockResolvedValueOnce(Response.json(
+      { error: "invalid_grant", error_description: "Code expired" },
+      { status: 400 },
+    ));
+    await expect(exchangeGoogleCalendarCode("expired_code")).rejects.toThrow("Code expired");
+
+    fetchMock.mockResolvedValueOnce(Response.json({ access_token: "access_token" }));
+    await expect(exchangeGoogleCalendarCode("incomplete_code")).rejects.toThrow(
+      "Google token response is incomplete",
+    );
+  });
+
+  it("updates an existing Google and Recall calendar connection", async () => {
+    vi.stubEnv("GOOGLE_CALENDAR_CLIENT_ID", "google-client-id");
+    vi.stubEnv("GOOGLE_CALENDAR_CLIENT_SECRET", "google-client-secret");
+    select.mockReturnValue({
+      from: () => ({
+        where: () => ({
+          limit: vi.fn().mockResolvedValue([{
+            id: "connection_1",
+            oauthRefreshToken: "legacy-refresh-token",
+            recallCalendarId: "recall_calendar_1",
+            recallCalendarStatus: "connecting",
+          }]),
+        }),
+      }),
+    });
+    updateRecallCalendar.mockResolvedValue({
+      id: "recall_calendar_1",
+      status: "connected",
+    });
+    const updateSet = vi.fn(() => ({ where: vi.fn().mockResolvedValue(undefined) }));
+    update.mockReturnValue({ set: updateSet });
+    const { storeGoogleCalendarTokens } = await import("@/lib/google-calendar-oauth");
+
+    await expect(storeGoogleCalendarTokens({
+      workspace: {
+        userId: "user_1",
+        teamId: "team_1",
+        domain: "example.com",
+      },
+      accessToken: "new-access-token",
+      accessTokenExpiresAt: new Date("2026-07-20T13:00:00.000Z"),
+      refreshToken: null,
+    })).resolves.toBe("connection_1");
+
+    expect(updateRecallCalendar).toHaveBeenCalledWith({
+      calendarId: "recall_calendar_1",
+      oauthRefreshToken: "legacy-refresh-token",
+      metadata: { teamId: "team_1", userId: "user_1" },
+    });
+    expect(updateSet).toHaveBeenCalledWith(expect.objectContaining({
+      autoJoinEnabled: true,
+      recallCalendarId: "recall_calendar_1",
+      recallCalendarStatus: "connected",
+    }));
+  });
+
+  it("requires a refresh token for a new connection", async () => {
+    select.mockReturnValue({
+      from: () => ({ where: () => ({ limit: vi.fn().mockResolvedValue([]) }) }),
+    });
+    const { storeGoogleCalendarTokens } = await import("@/lib/google-calendar-oauth");
+
+    await expect(storeGoogleCalendarTokens({
+      workspace: { userId: "user_1", teamId: "team_1", domain: "example.com" },
+      accessToken: "access-token",
+      accessTokenExpiresAt: new Date("2026-07-20T13:00:00.000Z"),
+      refreshToken: null,
+    })).rejects.toThrow("Google did not return a refresh token");
   });
 });

@@ -46,6 +46,29 @@ describe("local recorder policy", () => {
     });
   });
 
+  it("rejects incomplete and expired meeting candidates", () => {
+    expect(getLocalRecorderEligibility({
+      ...baseMeeting,
+      meetingUrl: null,
+    }, { now: new Date("2026-06-30T12:01:10.000Z") })).toEqual({
+      eligible: false,
+      reason: "missing_meeting_link",
+    });
+    expect(getLocalRecorderEligibility({
+      ...baseMeeting,
+      startedAt: null,
+    }, { now: new Date("2026-06-30T12:01:10.000Z") })).toEqual({
+      eligible: false,
+      reason: "missing_start_time",
+    });
+    expect(getLocalRecorderEligibility(baseMeeting, {
+      now: new Date("2026-06-30T14:00:01.000Z"),
+    })).toEqual({
+      eligible: false,
+      reason: "outside_recording_window",
+    });
+  });
+
   it("does not mark a meeting eligible when Recall has joined or recorded", () => {
     expect(
       getLocalRecorderEligibility(
@@ -170,6 +193,15 @@ describe("local recorder policy", () => {
         recallAudioAvailableAt: new Date("2026-06-30T12:01:00.000Z"),
       }),
     ).toBe("recall");
+
+    expect(choosePrimaryRecordingSource({
+      localClaimStartedAt: null,
+      recallAudioAvailableAt: new Date("2026-06-30T12:01:00.000Z"),
+    })).toBe("recall");
+    expect(choosePrimaryRecordingSource({
+      localClaimStartedAt: new Date("2026-06-30T12:02:00.000Z"),
+      recallAudioAvailableAt: null,
+    })).toBe("local_recorder");
   });
 
   describe("isWithinLocalRecorderAutoClaimWindow", () => {
