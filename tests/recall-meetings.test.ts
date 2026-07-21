@@ -503,6 +503,98 @@ describe("applyRecallMeetingEvent", () => {
     });
   });
 
+  it("fails a completed SDK upload when Recall has terminal failed media", async () => {
+    const initialSet = vi.fn().mockReturnValue({ where });
+    const failureSet = vi.fn().mockReturnValue({ where });
+    update
+      .mockReturnValueOnce({ set: initialSet })
+      .mockReturnValueOnce({ set: failureSet });
+    select.mockReturnValue({ from: selectFrom });
+    selectFrom.mockReturnValue({ where: selectWhere });
+    selectWhere.mockReturnValue({ limit: selectLimit });
+    selectLimit.mockResolvedValue([]);
+    retrieveRecallRecording.mockResolvedValue({
+      id: "recording_123",
+      status: { code: "done" },
+      media_shortcuts: {
+        audio_mixed: null,
+        video_mixed: {
+          status: { code: "failed" },
+          data: { download_url: null },
+        },
+      },
+    });
+
+    await applyRecallMeetingEvent({
+      eventType: "sdk_upload.complete",
+      botId: null,
+      recordingId: "recording_123",
+      meetingUrl: null,
+      statusCode: "complete",
+      code: "complete",
+      subCode: null,
+      updatedAt: "2026-07-08T12:00:00Z",
+      metadata: {
+        meetingId: "11111111-1111-4111-8111-111111111111",
+        source: "local_recorder_sdk",
+      },
+    });
+
+    expect(failureSet).toHaveBeenCalledWith(
+      expect.objectContaining({ status: "failed" }),
+    );
+    expect(createRecallRecordingTranscription).not.toHaveBeenCalled();
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it("fails terminal bot media when a recording id is absent from the webhook", async () => {
+    const initialSet = vi.fn().mockReturnValue({ where });
+    const failureSet = vi.fn().mockReturnValue({ where });
+    update
+      .mockReturnValueOnce({ set: initialSet })
+      .mockReturnValueOnce({ set: failureSet });
+    select.mockReturnValue({ from: selectFrom });
+    selectFrom.mockReturnValue({ where: selectWhere });
+    selectWhere.mockReturnValue({ limit: selectLimit });
+    selectLimit.mockResolvedValue([]);
+    retrieveRecallBot.mockResolvedValue({
+      id: "bot_123",
+      recordings: [
+        {
+          id: "recording_123",
+          status: { code: "done" },
+          media_shortcuts: {
+            audio_mixed: null,
+            video_mixed: {
+              status: { code: "failed" },
+              data: { download_url: null },
+            },
+          },
+        },
+      ],
+    });
+
+    await applyRecallMeetingEvent({
+      eventType: "bot.status_change",
+      botId: "bot_123",
+      recordingId: null,
+      meetingUrl: null,
+      statusCode: "done",
+      code: "done",
+      subCode: "recording_done",
+      updatedAt: "2026-07-08T12:00:00Z",
+      metadata: {
+        meetingId: "11111111-1111-4111-8111-111111111111",
+      },
+    });
+
+    expect(failureSet).toHaveBeenCalledWith(
+      expect.objectContaining({ status: "failed" }),
+    );
+    expect(createRecallRecordingTranscription).not.toHaveBeenCalled();
+    expect(send).not.toHaveBeenCalled();
+  });
+
   it("retries SDK completion when the final speaker timeline cannot be persisted", async () => {
     update.mockReturnValue({
       set: vi.fn().mockReturnValue({ where }),

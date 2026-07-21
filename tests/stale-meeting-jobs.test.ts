@@ -19,6 +19,7 @@ describe("reconcileStaleMeetingJobs", () => {
     execute.mockResolvedValue({
       rows: [
         {
+          failed_processing_count: 4,
           failed_recording_count: 3,
           failed_transcript_job_count: 2,
           failed_translation_count: 1,
@@ -35,6 +36,7 @@ describe("reconcileStaleMeetingJobs", () => {
         now: new Date("2026-07-11T18:00:00.000Z"),
       }),
     ).resolves.toEqual({
+      failedProcessingCount: 4,
       failedRecordingCount: 3,
       failedTranscriptJobCount: 2,
       failedTranslationCount: 1,
@@ -49,6 +51,8 @@ describe("reconcileStaleMeetingJobs", () => {
     // live job remains.
     expect(query).not.toContain("as newer");
     expect(query).toContain("from transcript_jobs as alive");
+    expect(query).toContain("meeting.updated_at <");
+    expect(query).toContain("from transcript_jobs as any_job");
     // The recording sweep keys off device liveness, not meetings.updated_at.
     expect(query).toContain("meeting.status = 'recording'");
     expect(query).toContain("local_recorder_devices");

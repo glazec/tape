@@ -10,6 +10,7 @@ export async function reconcileStaleMeetingJobs(
   const now = input.now ?? new Date();
   const cutoff = new Date(now.getTime() - STALE_MEETING_JOB_TIMEOUT_MS);
   const rows = await db.execute<{
+    failed_processing_count: number;
     failed_recording_count: number;
     failed_transcript_job_count: number;
     failed_translation_count: number;
@@ -30,7 +31,18 @@ export async function reconcileStaleMeetingJobs(
         status = 'failed',
         updated_at = ${now}
       where meeting.status = 'processing'
-        and meeting.id in (select meeting_id from stale_transcript_jobs)
+        and (
+          meeting.id in (select meeting_id from stale_transcript_jobs)
+          or (
+            meeting.updated_at < ${cutoff}
+            and not exists (
+              select 1
+              from transcript_jobs as any_job
+              where any_job.meeting_id = meeting.id
+                and any_job.status in ('queued', 'running', 'completed')
+            )
+          )
+        )
         and not exists (
           -- Keep the meeting processing while any job could still succeed:
           -- a completed job, or a fresh (non-stale) queued/running retry.
@@ -86,6 +98,8 @@ export async function reconcileStaleMeetingJobs(
     select
       (select count(*)::integer from stale_transcript_jobs)
         as failed_transcript_job_count,
+      (select count(*)::integer from failed_meetings)
+        as failed_processing_count,
       (select count(*)::integer from failed_translations)
         as failed_translation_count,
       (select count(*)::integer from stale_recording_meetings)
@@ -94,6 +108,7 @@ export async function reconcileStaleMeetingJobs(
   const result = rows.rows[0];
 
   return {
+    failedProcessingCount: Number(result?.failed_processing_count ?? 0),
     failedRecordingCount: Number(result?.failed_recording_count ?? 0),
     failedTranscriptJobCount: Number(result?.failed_transcript_job_count ?? 0),
     failedTranslationCount: Number(result?.failed_translation_count ?? 0),

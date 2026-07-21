@@ -180,6 +180,21 @@ async function queueRecallRecordingTranscription(
   );
 
   if (!audioUrl) {
+    if (
+      hasTerminalRecallMediaFailure(
+        recallArtifact,
+        update.recallRecordingId,
+      )
+    ) {
+      await db
+        .update(meetings)
+        .set({
+          status: "failed",
+          updatedAt: new Date(),
+        })
+        .where(eq(meetings.id, update.meetingId));
+    }
+
     return;
   }
 
@@ -212,6 +227,78 @@ async function queueRecallRecordingTranscription(
       ...transcription,
     },
   });
+}
+
+function hasTerminalRecallMediaFailure(
+  recallArtifact: unknown,
+  recordingId: string | null,
+) {
+  const recording = findRecallRecordingRecord(recallArtifact, recordingId);
+
+  if (!recording) {
+    return false;
+  }
+
+  const recordingStatus = getRecallStatusCode(recording.status);
+
+  if (/(fail|error|cancel)/.test(recordingStatus)) {
+    return true;
+  }
+
+  if (!/(done|complete)/.test(recordingStatus)) {
+    return false;
+  }
+
+  const mediaShortcuts = getUnknownRecord(recording.media_shortcuts);
+
+  return ["audio_mixed", "video_mixed"].some((shortcut) =>
+    /(fail|error|cancel)/.test(
+      getRecallStatusCode(getUnknownRecord(mediaShortcuts?.[shortcut])?.status),
+    ),
+  );
+}
+
+function findRecallRecordingRecord(
+  recallArtifact: unknown,
+  recordingId: string | null,
+) {
+  const artifact = getUnknownRecord(recallArtifact);
+
+  if (!artifact) {
+    return null;
+  }
+
+  if (recordingId && artifact.id === recordingId) {
+    return artifact;
+  }
+
+  const recordings = Array.isArray(artifact.recordings)
+    ? artifact.recordings
+    : [];
+  const recordingRecords = recordings.map(getUnknownRecord);
+
+  if (!recordingId) {
+    return artifact.media_shortcuts
+      ? artifact
+      : recordingRecords.find(Boolean) ?? artifact;
+  }
+
+  return (
+    recordingRecords.find((recording) => recording?.id === recordingId) ?? null
+  );
+}
+
+function getRecallStatusCode(value: unknown) {
+  const status = getUnknownRecord(value);
+  const code = status?.code;
+
+  return typeof code === "string" ? code.toLowerCase() : "";
+}
+
+function getUnknownRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object"
+    ? (value as Record<string, unknown>)
+    : null;
 }
 
 async function hasActiveTranscriptJob(meetingId: string) {
