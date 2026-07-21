@@ -17,6 +17,17 @@ export type ActiveMeetingShare = {
   scope: MeetingShareScope;
 };
 
+function postgresArray(values: readonly string[], type: "text" | "uuid") {
+  const elements = sql.join(
+    values.map((value) => sql`${value}`),
+    sql`, `,
+  );
+
+  return type === "text"
+    ? sql`array[${elements}]::text[]`
+    : sql`array[${elements}]::uuid[]`;
+}
+
 export async function createMeetingSharePolicy(input: {
   createdByUserId: string;
   matchKeys: string[];
@@ -28,10 +39,12 @@ export async function createMeetingSharePolicy(input: {
   teamId: string;
 }) {
   const policyId = crypto.randomUUID();
+  const matchKeys = postgresArray(input.matchKeys, "text");
+  const meetingIds = postgresArray(input.meetingIds, "uuid");
   const result = await db.execute<{ id: string; pending: boolean }>(sql`
     with cleared_exclusions as (
       delete from meeting_access_exclusions
-      where meeting_id = any(${input.meetingIds}::uuid[])
+      where meeting_id = any(${meetingIds})
         and recipient_email = ${input.recipientEmail}
     ), active_policy as (
       insert into meeting_share_policies (
@@ -68,7 +81,7 @@ export async function createMeetingSharePolicy(input: {
       insert into meeting_share_policy_keys (policy_id, match_key)
       select active_policy.id, key
       from active_policy
-      cross join unnest(${input.matchKeys}::text[]) as key
+      cross join unnest(${matchKeys}) as key
       on conflict (policy_id, match_key) do nothing
     ), new_sources as (
       insert into meeting_access_sources (
@@ -87,7 +100,7 @@ export async function createMeetingSharePolicy(input: {
         active_policy.id::text,
         ${input.createdByUserId}::uuid
       from active_policy
-      cross join unnest(${input.meetingIds}::uuid[]) as meeting_id
+      cross join unnest(${meetingIds}) as meeting_id
       on conflict (meeting_id, recipient_email, source, source_id) do update
       set role = excluded.role,
           created_by_user_id = excluded.created_by_user_id,
@@ -109,7 +122,7 @@ export async function createMeetingSharePolicy(input: {
         'effective',
         'materialized',
         ${input.createdByUserId}::uuid
-      from unnest(${input.meetingIds}::uuid[]) as meeting_id
+      from unnest(${meetingIds}) as meeting_id
       join users as app_user on lower(app_user.email) = ${input.recipientEmail}
       on conflict (meeting_id, user_id) do update
       set role = excluded.role,
@@ -134,7 +147,7 @@ export async function createMeetingSharePolicy(input: {
         ${input.createdByUserId}::uuid,
         'effective',
         'materialized'
-      from unnest(${input.meetingIds}::uuid[]) as meeting_id
+      from unnest(${meetingIds}) as meeting_id
       where not exists (
         select 1 from users where lower(email) = ${input.recipientEmail}
       )

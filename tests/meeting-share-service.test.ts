@@ -51,6 +51,10 @@ describe("meeting share service", () => {
     expect(query).toMatch(/do update\s+set/);
     expect(query).toContain("active_policy");
     expect(query).toContain("delete from meeting_access_exclusions");
+    expect(query).toMatch(/unnest\(array\[\$\d+\]::text\[\]\)/);
+    expect(query).toMatch(
+      /unnest\(array\[\$\d+, \$\d+\]::uuid\[\]\)/,
+    );
   });
 
   it("falls back to the generated policy id when the database returns no row", async () => {
@@ -77,6 +81,10 @@ describe("meeting share service", () => {
       id: "55555555-5555-4555-8555-555555555555",
       pending: true,
     });
+    const query = new PgDialect().sqlToQuery(execute.mock.calls[0][0]).sql;
+    expect(query).toContain("unnest(array[]::text[])");
+    expect(query).toMatch(/unnest\(array\[\$\d+\]::uuid\[\]\)/);
+    expect(query).not.toContain("unnest(()");
   });
 
   it("lists supported active share scopes and their pending state", async () => {
