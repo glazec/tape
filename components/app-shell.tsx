@@ -68,7 +68,7 @@ export function AppShell({
                       }),
                       !isPrimaryAction &&
                         (isActive ? "text-foreground" : "text-muted-foreground"),
-                      "shadow-none",
+                      "min-h-11 shadow-none sm:min-h-8",
                     )}
                   >
                     {item.label}

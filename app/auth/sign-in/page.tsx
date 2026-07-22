@@ -6,8 +6,8 @@ import { SignInForm } from "./sign-in-form";
 
 const PANEL_POINTS = [
   "Recordings and transcripts stay in your workspace",
-  "Search everything on the web, or ask your AI assistant via MCP",
-  "Share outside the team only with links that expire",
+  "Search meetings, speakers, and transcript text",
+  "Share selected transcripts with colleagues",
 ];
 
 export default async function SignInPage({
@@ -84,21 +84,15 @@ export default async function SignInPage({
             </h1>
             <p className="mt-5 text-base leading-7 text-ash">
               Use your company Google account to open your team&apos;s meeting
-              workspace — transcripts, summaries, and follow-ups included.
+              workspace and review recordings, transcripts, and shared meetings.
             </p>
             <div className="mt-10">
               <SignInForm callbackUrl={signInCallbackUrl} />
             </div>
-            <div className="mt-12 grid gap-4 border-t border-ink/10 pt-8 text-sm leading-6 text-ash">
-              <p>
-                <span className="font-medium text-ink">Members</span> review and
-                add meetings across the workspace.
-              </p>
-              <p>
-                <span className="font-medium text-ink">External readers</span>{" "}
-                only see transcripts explicitly shared with them.
-              </p>
-            </div>
+            <p className="mt-10 border-t border-ink/10 pt-6 text-sm leading-6 text-ash">
+              Access follows your workspace membership and meetings shared with
+              your account.
+            </p>
           </div>
         </div>
       </section>

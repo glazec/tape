@@ -26,7 +26,7 @@ export function LandingCta() {
               href="/auth/sign-in"
               className="inline-flex h-12 items-center rounded-full bg-ink px-8 text-[15px] font-medium text-paper transition-colors hover:bg-graphite"
             >
-              Start recording
+              Sign in to Tape
             </Link>
             <p className="font-mono text-[11px] uppercase tracking-[0.2em] text-ash">
               SSO with Google · No credit card

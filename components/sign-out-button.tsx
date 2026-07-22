@@ -88,7 +88,7 @@ export function SignOutButton() {
   return (
     <div className="flex min-w-0 flex-wrap items-center gap-2">
       <Button
-        className="text-muted-foreground"
+        className="min-h-11 text-muted-foreground sm:min-h-7"
         disabled={isPending}
         onClick={signOut}
         type="button"

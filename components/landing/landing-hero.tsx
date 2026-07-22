@@ -116,7 +116,7 @@ export function LandingHero() {
                 href="/auth/sign-in"
                 className="inline-flex h-12 items-center rounded-full bg-ink px-8 text-[15px] font-medium text-paper transition-colors hover:bg-graphite"
               >
-                Start recording
+                Sign in to Tape
               </Link>
               <a
                 href="#archive"
