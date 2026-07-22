@@ -35,6 +35,10 @@ export async function reconcileStaleMeetingJobs(
           meeting.id in (select meeting_id from stale_transcript_jobs)
           or (
             meeting.updated_at < ${cutoff}
+            and (
+              meeting.recall_bot_id is not null
+              or meeting.recall_recording_id is not null
+            )
             and not exists (
               select 1
               from transcript_jobs as any_job

@@ -53,6 +53,8 @@ describe("reconcileStaleMeetingJobs", () => {
     expect(query).toContain("from transcript_jobs as alive");
     expect(query).toContain("meeting.updated_at <");
     expect(query).toContain("from transcript_jobs as any_job");
+    expect(query).toContain("meeting.recall_bot_id is not null");
+    expect(query).toContain("meeting.recall_recording_id is not null");
     // The recording sweep keys off device liveness, not meetings.updated_at.
     expect(query).toContain("meeting.status = 'recording'");
     expect(query).toContain("local_recorder_devices");
