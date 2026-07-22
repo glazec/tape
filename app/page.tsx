@@ -1,21 +1,22 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 
+import { LandingArchive } from "@/components/landing/landing-archive";
 import { LandingCta } from "@/components/landing/landing-cta";
-import { LandingCustomers } from "@/components/landing/landing-customers";
+import { LandingEnterprise } from "@/components/landing/landing-enterprise";
 import { LandingHero } from "@/components/landing/landing-hero";
-import { LandingInsights } from "@/components/landing/landing-insights";
-import { LandingLayers } from "@/components/landing/landing-layers";
+import { LandingIntelligence } from "@/components/landing/landing-intelligence";
 import { LandingNav } from "@/components/landing/landing-nav";
 import { LandingPartners } from "@/components/landing/landing-partners";
+import { LandingRecorder } from "@/components/landing/landing-recorder";
 import { getAuthenticatedUser } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = {
-  title: "Tape — Meeting intelligence for teams",
+  title: "Tape — Every conversation, on the record",
   description:
-    "Tape records, transcribes, and peels every meeting into layers — recording, transcript, summary, and the decisions your team actually needs.",
+    "Tape records, transcribes, and understands your meetings — and you own every word. Search on the web or through MCP, record locally on macOS, and keep the archive in your own workspace.",
 };
 
 export default async function LandingPage() {
@@ -26,13 +27,14 @@ export default async function LandingPage() {
   }
 
   return (
-    <main className="min-h-screen bg-ivory font-landing text-ink antialiased">
+    <main className="min-h-screen bg-paper font-landing text-ink antialiased">
       <LandingNav />
       <LandingHero />
-      <LandingCustomers />
-      <LandingLayers />
-      <LandingInsights />
       <LandingPartners />
+      <LandingArchive />
+      <LandingRecorder />
+      <LandingIntelligence />
+      <LandingEnterprise />
       <LandingCta />
     </main>
   );

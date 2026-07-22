@@ -1,62 +1,56 @@
 "use client";
 
-import { motion } from "framer-motion";
+import Image from "next/image";
+
+import { FadeIn } from "./landing-section";
 
 const PARTNERS = [
-  { name: "Vercel", kind: "Hosting" },
-  { name: "Neon", kind: "Database" },
-  { name: "AWS", kind: "Storage & Compute" },
-  { name: "Inngest", kind: "Workflows" },
-  { name: "ElevenLabs", kind: "Voice AI" },
-  { name: "OneSignal", kind: "Notifications" },
-  { name: "Recall.ai", kind: "Meeting Capture" },
-  { name: "Anthropic", kind: "Models" },
+  { name: "Google Meet", src: "/brand/partners/googlemeet.svg", width: 22 },
+  { name: "Zoom", src: "/brand/partners/zoom.svg", width: 22 },
+  { name: "Recall.ai", src: null, width: 0 },
+  { name: "ElevenLabs", src: "/brand/partners/elevenlabs.svg", width: 22 },
+  { name: "Neon", src: "/brand/partners/neon.svg", width: 22 },
+  { name: "Cloudflare", src: "/brand/partners/cloudflare.svg", width: 22 },
+  { name: "OpenRouter", src: "/brand/partners/openrouter.svg", width: 22 },
 ];
 
 export function LandingPartners() {
   return (
-    <section id="partners" className="border-b-2 border-ink">
-      <div className="mx-auto w-full max-w-7xl px-5 py-16 sm:px-8 lg:py-20">
-        <motion.div
-          initial={{ opacity: 0, y: 12 }}
-          whileInView={{ opacity: 1, y: 0 }}
-          viewport={{ once: true, margin: "-60px" }}
-          transition={{ duration: 0.6 }}
-          className="flex flex-wrap items-end justify-between gap-6"
-        >
-          <div>
-            <p className="font-mono text-[11px] uppercase tracking-[0.3em] text-cobalt">
-              Built on
-            </p>
-            <h2 className="font-display mt-4 text-3xl tracking-tight text-ink sm:text-4xl">
-              Infrastructure your team already trusts.
-            </h2>
-          </div>
-          <p className="max-w-[36ch] text-sm leading-6 text-ink/60">
-            Tape runs on proven SaaS and cloud infrastructure — no snowflake
-            stack for your IT team to babysit.
-          </p>
-        </motion.div>
-        <div className="mt-10 grid grid-cols-2 gap-px border-2 border-ink bg-ink/15 sm:grid-cols-4">
-          {PARTNERS.map((partner, i) => (
-            <motion.div
-              key={partner.name}
-              initial={{ opacity: 0 }}
-              whileInView={{ opacity: 1 }}
-              viewport={{ once: true, margin: "-40px" }}
-              transition={{ duration: 0.5, delay: i * 0.05 }}
-              className="group flex h-28 flex-col items-center justify-center gap-2 bg-ivory transition-colors hover:bg-ivory-deep"
+    <section className="border-b border-ink/10 bg-paper">
+      <FadeIn className="mx-auto w-full max-w-7xl px-5 py-14 sm:px-8">
+        <p className="text-center font-mono text-[11px] uppercase tracking-[0.22em] text-ash">
+          Works with the tools your team already uses
+        </p>
+        <div className="mt-9 flex flex-wrap items-center justify-center gap-x-12 gap-y-6">
+          {PARTNERS.map((p) => (
+            <span
+              key={p.name}
+              className="flex items-center gap-2.5 text-graphite opacity-80 transition-opacity hover:opacity-100"
             >
-              <span className="font-display text-xl tracking-tight text-ink transition-colors group-hover:text-cobalt sm:text-2xl">
-                {partner.name}
+              {p.src ? (
+                <Image
+                  src={p.src}
+                  alt=""
+                  width={p.width}
+                  height={p.width}
+                  unoptimized
+                  className="h-[22px] w-[22px]"
+                />
+              ) : (
+                <span
+                  aria-hidden
+                  className="flex h-[22px] w-[22px] items-center justify-center rounded-md border border-graphite/40 font-mono text-[11px] font-semibold"
+                >
+                  R
+                </span>
+              )}
+              <span className="font-mono text-[11px] uppercase tracking-[0.18em]">
+                {p.name}
               </span>
-              <span className="font-mono text-[10px] uppercase tracking-[0.25em] text-ink/45">
-                {partner.kind}
-              </span>
-            </motion.div>
+            </span>
           ))}
         </div>
-      </div>
+      </FadeIn>
     </section>
   );
 }

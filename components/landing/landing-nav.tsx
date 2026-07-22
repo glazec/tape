@@ -5,49 +5,55 @@ import Link from "next/link";
 
 import { ProductLogo } from "@/components/product-logo";
 
+const EASE = [0.16, 1, 0.3, 1] as const;
+
+const LINKS = [
+  { href: "#archive", label: "Archive" },
+  { href: "#recorder", label: "Recorder" },
+  { href: "#intelligence", label: "Intelligence" },
+  { href: "#enterprise", label: "Enterprise" },
+];
+
 export function LandingNav() {
   return (
     <motion.header
       initial={{ y: -64 }}
       animate={{ y: 0 }}
-      transition={{ duration: 0.7, ease: [0.16, 1, 0.3, 1] }}
-      className="fixed inset-x-0 top-0 z-50 border-b-2 border-ink bg-ivory/90 backdrop-blur-sm"
+      transition={{ duration: 0.7, ease: EASE }}
+      className="fixed inset-x-0 top-0 z-50 border-b border-ink/10 bg-paper/85 backdrop-blur-md"
     >
       <div className="mx-auto flex h-16 w-full max-w-7xl items-center justify-between px-5 sm:px-8">
         <Link
           href="/"
           aria-label="Tape home"
-          className="rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cobalt focus-visible:ring-offset-4"
+          className="rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-graphite focus-visible:ring-offset-4"
         >
           <ProductLogo />
         </Link>
         <nav
           aria-label="Site"
-          className="hidden items-center gap-8 font-mono text-[11px] uppercase tracking-[0.2em] text-ink/70 md:flex"
+          className="hidden items-center gap-8 font-mono text-[11px] uppercase tracking-[0.2em] text-ink/60 md:flex"
         >
-          <a href="#how-it-works" className="transition-colors hover:text-ink">
-            Layers
-          </a>
-          <a href="#insights" className="transition-colors hover:text-ink">
-            Insights
-          </a>
-          <a href="#customers" className="transition-colors hover:text-ink">
-            Customers
-          </a>
-          <a href="#partners" className="transition-colors hover:text-ink">
-            Partners
-          </a>
+          {LINKS.map((link) => (
+            <a
+              key={link.href}
+              href={link.href}
+              className="transition-colors hover:text-ink"
+            >
+              {link.label}
+            </a>
+          ))}
         </nav>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-5">
           <Link
             href="/auth/sign-in"
-            className="hidden font-mono text-[11px] uppercase tracking-[0.2em] text-ink/70 transition-colors hover:text-ink sm:inline"
+            className="hidden font-mono text-[11px] uppercase tracking-[0.2em] text-ink/60 transition-colors hover:text-ink sm:inline"
           >
             Sign in
           </Link>
           <Link
             href="/auth/sign-in"
-            className="inline-flex h-9 items-center border-2 border-ink bg-ink px-4 font-mono text-[11px] font-semibold uppercase tracking-[0.2em] text-ivory transition-colors hover:bg-cobalt hover:border-cobalt"
+            className="inline-flex h-9 items-center rounded-full bg-ink px-5 font-mono text-[11px] font-medium uppercase tracking-[0.2em] text-paper transition-colors hover:bg-graphite"
           >
             Get started
           </Link>

@@ -48,7 +48,7 @@ export function SignInForm({ callbackUrl }: { callbackUrl?: string }) {
         type="button"
         onClick={signInWithGoogle}
         disabled={isPending}
-        className="inline-flex h-12 w-full items-center justify-center gap-3 border-2 border-ink bg-ivory font-mono text-xs font-semibold uppercase tracking-[0.2em] text-ink shadow-[4px_4px_0_0_var(--ink)] transition-all duration-150 hover:-translate-x-0.5 hover:-translate-y-0.5 hover:bg-cobalt hover:text-ivory hover:shadow-[6px_6px_0_0_var(--ink)] active:translate-x-0.5 active:translate-y-0.5 active:shadow-[1px_1px_0_0_var(--ink)] disabled:pointer-events-none disabled:opacity-60"
+        className="inline-flex h-12 w-full items-center justify-center gap-3 rounded-full bg-ink font-mono text-xs font-medium uppercase tracking-[0.2em] text-paper transition-colors duration-150 hover:bg-graphite disabled:pointer-events-none disabled:opacity-60"
       >
         <GoogleMark />
         {isPending ? "Opening Google…" : "Continue with Google"}

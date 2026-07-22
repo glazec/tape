@@ -1,124 +1,143 @@
 "use client";
 
-import { useState } from "react";
-import { motion } from "framer-motion";
+import { useEffect, useRef, useSyncExternalStore } from "react";
+import dynamic from "next/dynamic";
+import {
+  motion,
+  useMotionValue,
+  useTransform,
+} from "framer-motion";
 import Link from "next/link";
 
-import { HeroStack } from "./hero-stack";
-import { LAYERS } from "./layers-data";
-import { ProductLogo } from "@/components/product-logo";
-import { cn } from "@/lib/utils";
+const HeroScene = dynamic(() => import("./hero-scene"), { ssr: false });
 
 const EASE = [0.16, 1, 0.3, 1] as const;
 
+function usePrefersReducedMotion() {
+  return useSyncExternalStore(
+    (onChange) => {
+      const mq = window.matchMedia("(prefers-reduced-motion: reduce)");
+      mq.addEventListener("change", onChange);
+      return () => mq.removeEventListener("change", onChange);
+    },
+    () => window.matchMedia("(prefers-reduced-motion: reduce)").matches,
+    () => false,
+  );
+}
+
 export function LandingHero() {
-  const [activeId, setActiveId] = useState<string>("insight");
-  const active = LAYERS.find((l) => l.id === activeId) ?? LAYERS[0];
+  const regionRef = useRef<HTMLElement>(null);
+  // Measured manually — deterministic 0→1 across the sticky region.
+  const scrollYProgress = useMotionValue(0);
+  useEffect(() => {
+    const measure = () => {
+      const el = regionRef.current;
+      if (!el) return;
+      const max = el.offsetHeight - window.innerHeight;
+      const p =
+        max > 0
+          ? Math.min(1, Math.max(0, (window.scrollY - el.offsetTop) / max))
+          : 0;
+      scrollYProgress.set(p);
+    };
+    measure();
+    window.addEventListener("scroll", measure, { passive: true });
+    window.addEventListener("resize", measure);
+    return () => {
+      window.removeEventListener("scroll", measure);
+      window.removeEventListener("resize", measure);
+    };
+  }, [scrollYProgress]);
+
+  // Beat 1: intro copy fades/slides out as the wind begins.
+  const copyOpacity = useTransform(scrollYProgress, [0.04, 0.26], [1, 0]);
+  const copyY = useTransform(scrollYProgress, [0.04, 0.3], [0, -48]);
+  // Beat 2: closing caption fades in over the take-up detail shot.
+  const captionOpacity = useTransform(scrollYProgress, [0.72, 0.9], [0, 1]);
+  const captionY = useTransform(scrollYProgress, [0.72, 0.92], [28, 0]);
+
+  const reducedMotion = usePrefersReducedMotion();
 
   return (
-    <section className="relative overflow-hidden border-b-2 border-ink">
-      {/* faint engineering grid */}
-      <div
-        aria-hidden
-        className="pointer-events-none absolute inset-0 [background-image:linear-gradient(to_right,var(--grid-line)_1px,transparent_1px),linear-gradient(to_bottom,var(--grid-line)_1px,transparent_1px)] [background-size:56px_56px]"
-      />
-      <div className="relative mx-auto grid w-full max-w-7xl gap-10 px-5 pb-16 pt-28 sm:px-8 lg:grid-cols-[1.05fr_1fr] lg:gap-4 lg:pb-24 lg:pt-36">
-        <div className="flex flex-col justify-center">
-          <motion.p
-            initial={{ opacity: 0, y: 16 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.7, ease: EASE }}
-            className="font-mono text-[11px] uppercase tracking-[0.3em] text-cobalt"
-          >
-            Meeting intelligence for teams
-          </motion.p>
-          <motion.h1
-            initial={{ opacity: 0, y: 24 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.8, delay: 0.08, ease: EASE }}
-            className="font-display mt-6 max-w-[14ch] text-5xl leading-[0.98] tracking-tight text-ink sm:text-7xl lg:text-[5.4rem]"
-          >
-            Every meeting, unrolled into{" "}
-            <em className="font-light italic text-cobalt">insight</em>.
-          </motion.h1>
-          <motion.p
-            initial={{ opacity: 0, y: 24 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.8, delay: 0.16, ease: EASE }}
-            className="mt-7 max-w-[46ch] text-lg leading-8 text-ink/70"
-          >
-            Tape records, transcribes, and peels every call into layers —
-            recording, transcript, summary, and the decisions your team
-            actually needs. No rewatching. No lost follow-ups.
-          </motion.p>
-          <motion.div
-            initial={{ opacity: 0, y: 24 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.8, delay: 0.24, ease: EASE }}
-            className="mt-10 flex flex-wrap items-center gap-4"
-          >
-            <Link
-              href="/auth/sign-in"
-              className="group inline-flex h-12 items-center gap-3 border-2 border-ink bg-cobalt px-7 font-mono text-xs font-semibold uppercase tracking-[0.2em] text-ivory shadow-[6px_6px_0_0_var(--ink)] transition-transform duration-200 hover:-translate-x-0.5 hover:-translate-y-0.5 hover:shadow-[8px_8px_0_0_var(--ink)] active:translate-x-0.5 active:translate-y-0.5 active:shadow-[2px_2px_0_0_var(--ink)]"
-            >
-              Start free
-              <span aria-hidden className="transition-transform duration-200 group-hover:translate-x-1">
-                →
-              </span>
-            </Link>
-            <a
-              href="#how-it-works"
-              className="inline-flex h-12 items-center border-2 border-ink bg-transparent px-7 font-mono text-xs font-semibold uppercase tracking-[0.2em] text-ink transition-colors hover:bg-ink hover:text-ivory"
-            >
-              See the layers
-            </a>
-          </motion.div>
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ duration: 1, delay: 0.5 }}
-            className="mt-14 hidden items-end gap-10 lg:flex"
-          >
-            <div className="font-mono text-[10px] uppercase tracking-[0.25em] text-ink/50">
-              Active layer
-              <div className="mt-2 flex gap-1.5" role="tablist" aria-label="Layers">
-                {LAYERS.map((layer) => (
-                  <button
-                    key={layer.id}
-                    role="tab"
-                    aria-selected={layer.id === activeId}
-                    onClick={() => setActiveId(layer.id)}
-                    className={cn(
-                      "h-1.5 w-10 transition-colors",
-                      layer.id === activeId ? "bg-cobalt" : "bg-ink/15 hover:bg-ink/30",
-                    )}
-                    aria-label={layer.tag}
-                  />
-                ))}
-              </div>
-            </div>
-            <p className="max-w-[30ch] border-l-2 border-cobalt pl-4 text-sm leading-6 text-ink/70">
-              <span className="font-mono text-[10px] uppercase tracking-[0.25em] text-ink/50">
-                {active.tag}
-                <br />
-              </span>
-              {active.body}
-            </p>
-          </motion.div>
+    <section
+      ref={regionRef}
+      className={
+        reducedMotion
+          ? "relative bg-paper"
+          : "relative h-[220vh] bg-paper lg:h-[300vh]"
+      }
+    >
+      <div className="sticky top-0 h-screen overflow-hidden">
+        {/* full-bleed 3D scene */}
+        <div className="absolute inset-0">
+          <HeroScene progress={scrollYProgress} />
         </div>
 
+        {/* intro copy */}
         <motion.div
-          initial={{ opacity: 0, scale: 0.96 }}
-          animate={{ opacity: 1, scale: 1 }}
-          transition={{ duration: 1, delay: 0.3, ease: EASE }}
-          className="relative h-[440px] sm:h-[520px] lg:h-[560px]"
+          style={{ opacity: copyOpacity, y: copyY }}
+          className="pointer-events-none relative mx-auto flex h-full w-full max-w-7xl items-center px-5 pb-24 pt-32 sm:px-8"
         >
-          <div className="absolute inset-0 hidden items-center justify-center lg:flex">
-            <ProductLogo className="sr-only" />
+          <div className="pointer-events-auto max-w-2xl">
+            <motion.p
+              initial={{ opacity: 0, y: 16 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.7, ease: EASE }}
+              className="font-mono text-[11px] uppercase tracking-[0.22em] text-brand"
+            >
+              Meeting intelligence, owned by you
+            </motion.p>
+            <motion.h1
+              initial={{ opacity: 0, y: 24 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.8, delay: 0.08, ease: EASE }}
+              className="font-display mt-7 text-6xl leading-[1.02] tracking-tight text-ink sm:text-7xl lg:text-[4.1rem]"
+            >
+              Every conversation,
+              <br />
+              <em className="italic text-brand">on the record.</em>
+            </motion.h1>
+            <motion.p
+              initial={{ opacity: 0, y: 24 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.8, delay: 0.16, ease: EASE }}
+              className="mt-7 max-w-[44ch] text-lg leading-8 text-ash"
+            >
+              Tape records, transcribes, and understands your meetings — and you
+              own every word. Search it on the web, or ask your AI assistant.
+            </motion.p>
+            <motion.div
+              initial={{ opacity: 0, y: 24 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.8, delay: 0.24, ease: EASE }}
+              className="mt-10 flex flex-wrap items-center gap-7"
+            >
+              <Link
+                href="/auth/sign-in"
+                className="inline-flex h-12 items-center rounded-full bg-ink px-8 text-[15px] font-medium text-paper transition-colors hover:bg-graphite"
+              >
+                Start recording
+              </Link>
+              <a
+                href="#archive"
+                className="border-b border-ink/25 pb-0.5 text-[15px] text-ink/70 transition-colors hover:border-ink hover:text-ink"
+              >
+                See how it works
+              </a>
+            </motion.div>
           </div>
-          <HeroStack activeId={activeId} onActivate={setActiveId} />
-          <p className="absolute bottom-2 left-1/2 w-full -translate-x-1/2 text-center font-mono text-[10px] uppercase tracking-[0.3em] text-ink/40">
-            Click a layer · move to tilt
+        </motion.div>
+
+        {/* closing caption over the take-up detail shot */}
+        <motion.div
+          style={{ opacity: captionOpacity, y: captionY }}
+          className="pointer-events-none absolute left-5 top-28 sm:left-8 lg:left-[calc((100vw-80rem)/2+2rem)] lg:top-32"
+        >
+          <p className="font-mono text-[11px] uppercase tracking-[0.22em] text-brand">
+            While you talk
+          </p>
+          <p className="font-display mt-4 max-w-[16ch] text-3xl leading-[1.15] tracking-tight text-ink sm:text-4xl">
+            It listens, <em className="italic">so you can think.</em>
           </p>
         </motion.div>
       </div>

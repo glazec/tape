@@ -20,11 +20,7 @@ describe("sign in page", () => {
     const page = await SignInPage({ searchParams: Promise.resolve({ callbackUrl: ["/meetings/one", "/ignored"] }) });
     render(page);
     expect(screen.getByRole("heading", { name: "Sign in to Tape." })).toBeTruthy();
-    expect(
-      screen.getByText(
-        /Use your company Google account|Recordings and transcripts stay/,
-      ),
-    ).toBeTruthy();
+    expect(screen.getByText(/Use your company Google account/)).toBeTruthy();
     expect(screen.getAllByRole("link", { name: /Tape home|Back to site/ })).toHaveLength(2);
   });
 
