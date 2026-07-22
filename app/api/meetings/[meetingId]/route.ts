@@ -3,6 +3,7 @@ import { z } from "zod";
 import { db } from "@/db/client";
 import { meetings } from "@/db/schema";
 import { getCurrentUser } from "@/lib/auth";
+import { deleteMeetingMediaObjects } from "@/lib/meeting-media-cleanup";
 import { reconcileMeetingSharingForMeeting } from "@/lib/meeting-share-rules";
 import { revokeMeetingSharesSeededByMeeting } from "@/lib/meeting-share-service";
 import { getManageableMeetingCondition } from "@/lib/meeting-write-policy";
@@ -93,6 +94,15 @@ export async function DELETE(
 
   if (!meetingRows[0]) {
     return Response.json({ error: "Meeting not found" }, { status: 404 });
+  }
+
+  try {
+    await deleteMeetingMediaObjects(parsedMeetingId.data);
+  } catch {
+    return Response.json(
+      { error: "Meeting media could not be deleted" },
+      { status: 503 },
+    );
   }
 
   await revokeMeetingSharesSeededByMeeting(parsedMeetingId.data);
