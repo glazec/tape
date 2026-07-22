@@ -9,7 +9,7 @@ test("shows the Tape landing page", async ({ page }) => {
     }),
   ).toBeVisible();
   await expect(
-    page.getByRole("link", { name: "Start recording" }).first(),
+    page.getByRole("link", { name: "Sign in to Tape" }).first(),
   ).toHaveAttribute("href", "/auth/sign-in");
   await expect(page.getByText("01 · Your archive")).toBeVisible();
   await expect(page.getByText("Google Meet", { exact: true })).toBeVisible();

@@ -106,4 +106,42 @@ describe("NewMeetingSources", () => {
     );
     expect(push).not.toHaveBeenCalled();
   });
+
+  it("requires transcript content before creating a meeting", async () => {
+    render(<NewMeetingSources />);
+    fireEvent.click(screen.getByRole("button", { name: /Transcript/ }));
+
+    fireEvent.click(screen.getByRole("button", { name: "Add transcript" }));
+
+    expect(
+      await screen.findByText("Paste transcript text or choose a transcript file"),
+    ).toBeTruthy();
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it("opens the created meeting after adding transcript text", async () => {
+    vi.mocked(fetch)
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ meetingId: "meeting_123" }), {
+          headers: { "content-type": "application/json" },
+          status: 201,
+        }),
+      )
+      .mockResolvedValueOnce(new Response(null, { status: 200 }));
+    render(<NewMeetingSources />);
+    fireEvent.click(screen.getByRole("button", { name: /Transcript/ }));
+    fireEvent.change(screen.getByLabelText("Meeting title"), {
+      target: { value: "Customer interview" },
+    });
+    fireEvent.change(screen.getByLabelText("Transcript text"), {
+      target: { value: "Alice: Important notes" },
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Add transcript" }));
+
+    await vi.waitFor(() => {
+      expect(push).toHaveBeenCalledWith("/meetings/meeting_123");
+      expect(refresh).toHaveBeenCalledOnce();
+    });
+  });
 });
