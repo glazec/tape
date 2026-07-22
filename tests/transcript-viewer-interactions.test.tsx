@@ -51,18 +51,39 @@ describe("TranscriptViewer interactions", () => {
     vi.unstubAllGlobals();
   });
 
-  it("switches transcript language and text version", () => {
+  it("switches transcript language and text version", async () => {
     render(<TranscriptViewer segments={segments} />);
     expect(document.getElementById("seg_1")?.textContent).toContain("Polished opening words");
 
-    fireEvent.change(screen.getByLabelText("Transcript style"), { target: { value: "raw" } });
-    expect(document.getElementById("seg_1")?.textContent).toContain("raw opening words");
+    fireEvent.click(screen.getByLabelText("Transcript style"));
+    const rawOption = await screen.findByRole("option", { name: "Raw" });
+    fireEvent.pointerDown(rawOption, { pointerType: "mouse" });
+    fireEvent.click(rawOption);
+    await waitFor(() =>
+      expect(document.getElementById("seg_1")?.textContent).toContain(
+        "raw opening words",
+      ),
+    );
 
-    fireEvent.change(screen.getByLabelText("Transcript language"), { target: { value: "zh" } });
-    expect(document.getElementById("seg_1")?.textContent).toContain("开场白");
+    fireEvent.click(screen.getByLabelText("Transcript language"));
+    const chineseOption = await screen.findByRole("option", { name: "Chinese" });
+    fireEvent.pointerDown(chineseOption, { pointerType: "mouse" });
+    fireEvent.click(chineseOption);
+    await waitFor(() =>
+      expect(document.getElementById("seg_1")?.textContent).toContain("开场白"),
+    );
 
-    fireEvent.change(screen.getByLabelText("Transcript language"), { target: { value: "original" } });
-    expect(document.getElementById("seg_1")?.textContent).toContain("Polished opening words");
+    fireEvent.click(screen.getByLabelText("Transcript language"));
+    const originalOption = await screen.findByRole("option", {
+      name: "Original language",
+    });
+    fireEvent.pointerDown(originalOption, { pointerType: "mouse" });
+    fireEvent.click(originalOption);
+    await waitFor(() =>
+      expect(document.getElementById("seg_1")?.textContent).toContain(
+        "Polished opening words",
+      ),
+    );
   });
 
   it("validates, saves, scopes, and cancels speaker edits", async () => {
@@ -77,14 +98,26 @@ describe("TranscriptViewer interactions", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Edit speaker Speaker 1" }));
     const input = screen.getByLabelText("Speaker name");
+    expect(screen.queryByLabelText("Speaker suggestions")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Alice Smith" })).toBeNull();
     fireEvent.change(input, { target: { value: "" } });
     fireEvent.click(screen.getByRole("button", { name: "Save speaker" }));
     expect(await screen.findByText("Add a speaker name.")).toBeTruthy();
 
-    fireEvent.click(screen.getByRole("button", { name: "Alice Smith" }));
+    fireEvent.click(screen.getByRole("button", { name: "Show suggestions" }));
+    const aliceOption = await screen.findByRole("option", {
+      name: /Alice Smith.*alice@example.com/,
+    });
+    fireEvent.pointerDown(aliceOption, { pointerType: "mouse" });
+    fireEvent.click(aliceOption);
     fireEvent.click(screen.getByRole("button", { name: "This line" }));
     fireEvent.click(screen.getByRole("button", { name: "Save speaker" }));
-    expect(await screen.findByText("Alice Smith")).toBeTruthy();
+    await waitFor(() =>
+      expect(screen.queryByLabelText("Speaker name")).toBeNull(),
+    );
+    expect(
+      screen.getByRole("button", { name: "Edit speaker Alice Smith" }),
+    ).toBeTruthy();
     expect(fetch).toHaveBeenCalledWith(
       "/api/meetings/meeting%2Fone/speakers",
       expect.objectContaining({ method: "PATCH" }),
@@ -269,7 +302,6 @@ describe("TranscriptViewer interactions", () => {
     const statuses = [
       { status: "queued" as const, title: "Translation queued" },
       { status: "partial" as const, title: "Translation partially available" },
-      { status: "not_started" as const, title: "Translation not started" },
     ];
     for (const item of statuses) {
       const view = render(<TranscriptViewer segments={segments} translationSummary={{
@@ -281,6 +313,15 @@ describe("TranscriptViewer interactions", () => {
       expect(screen.getByText(item.title)).toBeTruthy();
       view.unmount();
     }
+
+    const notStarted = render(<TranscriptViewer segments={segments} translationSummary={{
+      hasTranslations: false,
+      status: "not_started",
+      totalSegments: 2,
+      translatedSegments: 0,
+    }} />);
+    expect(screen.getByText("Translation not started")).toBeTruthy();
+    notStarted.unmount();
   });
 
   it("reports playback rejection instead of leaving the player looking healthy", async () => {

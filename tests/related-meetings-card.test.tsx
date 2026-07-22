@@ -37,6 +37,10 @@ describe("RelatedMeetingsCard", () => {
     expect(html).toContain("0:42");
     expect(html).toContain("We discussed the next product milestone.");
     expect(html).toContain("max-h-80");
+    expect(html).toContain("lg:max-h-48");
+    expect(html).toContain("overflow-visible");
+    expect(html).toContain("lg:right-full");
+    expect(html).toContain("lg:bottom-0");
     expect(html).toContain("Open the meeting for the full transcript.");
   });
 });

@@ -63,7 +63,7 @@ export function MeetingEntityLinks({
   }
 
   return (
-    <div>
+    <div className="mt-8">
       <p className="text-xs font-medium uppercase tracking-normal text-muted-foreground">
         Detected entities
       </p>

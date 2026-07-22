@@ -95,8 +95,8 @@ describe("TranscriptViewer", () => {
   it("renders transcript rows without divider classes", () => {
     const html = renderToStaticMarkup(<TranscriptViewer segments={segments} />);
 
-    expect(html).not.toContain("border-t");
-    expect(html).not.toContain("border-b");
+    expect(html).not.toMatch(/<li[^>]*border-t/);
+    expect(html).not.toMatch(/<li[^>]*border-b/);
   });
 
   it("makes transcript words seekable when audio is available", () => {
@@ -529,12 +529,11 @@ describe("TranscriptViewer", () => {
     );
 
     expect(html).toContain("Polished");
-    expect(html).toContain("Raw");
     expect(html).toContain("Original language");
-    expect(html).toContain("Chinese");
     expect(html).toContain('aria-label="Transcript language"');
     expect(html).toContain('aria-label="Transcript style"');
-    expect(html).toContain("<select");
+    expect(html).toContain('data-slot="select-trigger"');
+    expect(html).not.toContain("<select");
     expect(html).not.toContain("Show original language transcript");
     expect(html).not.toContain("Show polished transcript");
     expect(html).toContain("Hello,");
@@ -563,7 +562,6 @@ describe("TranscriptViewer", () => {
     );
 
     expect(html).toContain("Polished");
-    expect(html).toContain("Raw");
     expect(html).toContain('aria-label="Transcript style"');
     expect(html).toContain("我们先看");
     expect(html).toContain("pipeline。");

@@ -66,7 +66,13 @@ export default async function MeetingPage({
       canCreateMeetings={workspace.canCreateMeetings !== false}
       oneSignalExternalId={workspace.userId}
     >
-      <div className="grid min-w-0 gap-8 lg:grid-cols-[1fr_20rem] lg:grid-rows-[auto_1fr]">
+      <div
+        className={`grid min-w-0 gap-8 ${
+          shouldCenterMeetingSource
+            ? "lg:grid-cols-1"
+            : "lg:grid-cols-[1fr_20rem] lg:grid-rows-[auto_1fr]"
+        }`}
+      >
         <section className="min-w-0">
           <MeetingAutoRefresh
             meetingStatus={meeting.status}
@@ -109,15 +115,20 @@ export default async function MeetingPage({
           />
         </section>
 
-        <section className="min-w-0 lg:col-start-1 lg:row-start-2">
+        <section
+          className={`min-w-0 ${
+            shouldCenterMeetingSource
+              ? ""
+              : "lg:col-start-1 lg:row-start-2"
+          }`}
+        >
           <div>
-            <MeetingEntityLinks entities={meeting.entities} />
-            <div className={meeting.entities.length > 0 ? "mt-8" : undefined}>
-              {shouldCenterMeetingSource ? (
-                <div className="mx-auto w-full max-w-2xl py-2 sm:py-6">
-                  <MeetingRecoveryUploadPanel meetingId={meetingId} />
-                </div>
-              ) : (
+            {shouldCenterMeetingSource ? (
+              <div className="mx-auto w-full max-w-2xl py-2 sm:py-6">
+                <MeetingRecoveryUploadPanel meetingId={meetingId} />
+              </div>
+            ) : (
+              <>
                 <TranscriptViewer
                   audioUrl={meeting.audioUrl}
                   key={getTranscriptViewerRenderKey({
@@ -138,64 +149,75 @@ export default async function MeetingPage({
                   translationSummary={meeting.translationSummary}
                   visualAssets={meeting.visualAssets}
                 />
-              )}
-            </div>
+                <MeetingEntityLinks entities={meeting.entities} />
+              </>
+            )}
           </div>
         </section>
 
-        <aside
-          className={`min-w-0 lg:col-start-2 lg:row-span-2 lg:row-start-1 ${
-            canManage ? "lg:pt-8" : "lg:pt-24"
-          }`}
-        >
-          {canManage ? (
-            <>
-              <div>
-                <ShareDialog
-                  customAudience={
-                    teamConfiguration?.shareAudience
-                      ? {
-                          memberCount:
-                            teamConfiguration.shareAudience.emails.length,
-                          name: teamConfiguration.shareAudience.name,
+        {shouldCenterMeetingSource ? (
+          <aside className="mx-auto w-full max-w-2xl min-w-0">
+            <RelatedMeetingsCard meetings={relatedMeetings} />
+          </aside>
+        ) : (
+          <>
+            <aside
+              className={`min-w-0 lg:col-start-2 lg:row-span-2 lg:row-start-1 ${
+                canManage ? "lg:pt-8" : "lg:pt-24"
+              }`}
+            >
+              {canManage ? (
+                <>
+                  {meeting.segments.length > 0 ? (
+                    <div>
+                      <ShareDialog
+                        customAudience={
+                          teamConfiguration?.shareAudience
+                            ? {
+                                memberCount:
+                                  teamConfiguration.shareAudience.emails.length,
+                                name: teamConfiguration.shareAudience.name,
+                              }
+                            : null
                         }
-                      : null
-                  }
-                  initialAccessPeople={meeting.accessPeople}
-                  initialShares={activeShares}
-                  instanceId="meeting-sharing"
-                  meetingId={meetingId}
-                  teamMembers={shareRecipients}
-                />
-              </div>
-              {canAddMeetingSource && !shouldCenterMeetingSource ? (
-                <div className="mt-6">
-                  <MeetingRecoveryUploadPanel meetingId={meetingId} />
-                </div>
-              ) : null}
-              <div className="hidden lg:mt-6 lg:block">
-                <RelatedMeetingsCard meetings={relatedMeetings} />
-              </div>
-            </>
-          ) : (
-            <>
-              <div className="rounded-lg border bg-card p-5">
-                <p className="text-sm font-semibold">Shared transcript</p>
-                <p className="mt-2 text-sm leading-6 text-muted-foreground">
-                  You can read this transcript. Editing and sharing stay with
-                  the meeting owner.
-                </p>
-              </div>
-              <div className="hidden lg:mt-6 lg:block">
-                <RelatedMeetingsCard meetings={relatedMeetings} />
-              </div>
-            </>
-          )}
-        </aside>
+                        initialAccessPeople={meeting.accessPeople}
+                        initialShares={activeShares}
+                        instanceId="meeting-sharing"
+                        meetingId={meetingId}
+                        teamMembers={shareRecipients}
+                      />
+                    </div>
+                  ) : null}
+                  {canAddMeetingSource ? (
+                    <div className="mt-6">
+                      <MeetingRecoveryUploadPanel meetingId={meetingId} />
+                    </div>
+                  ) : null}
+                  <div className="hidden lg:mt-6 lg:block">
+                    <RelatedMeetingsCard meetings={relatedMeetings} />
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="rounded-lg border bg-card p-5">
+                    <p className="text-sm font-semibold">Shared transcript</p>
+                    <p className="mt-2 text-sm leading-6 text-muted-foreground">
+                      You can read this transcript. Editing and sharing stay
+                      with the meeting owner.
+                    </p>
+                  </div>
+                  <div className="hidden lg:mt-6 lg:block">
+                    <RelatedMeetingsCard meetings={relatedMeetings} />
+                  </div>
+                </>
+              )}
+            </aside>
 
-        <aside className="min-w-0 lg:hidden">
-          <RelatedMeetingsCard meetings={relatedMeetings} />
-        </aside>
+            <aside className="min-w-0 lg:hidden">
+              <RelatedMeetingsCard meetings={relatedMeetings} />
+            </aside>
+          </>
+        )}
       </div>
     </AppShell>
   );

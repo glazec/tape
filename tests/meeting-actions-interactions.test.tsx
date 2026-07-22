@@ -75,11 +75,12 @@ describe("MeetingActions interactions", () => {
       .mockResolvedValueOnce(new Response(null, { status: 500 }))
       .mockResolvedValueOnce(new Response(null, { status: 200 }));
     render(<MeetingActions meetingId="meeting/one" />);
-    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+    fireEvent.click(screen.getByLabelText("More meeting actions"));
+    fireEvent.click(screen.getByRole("button", { name: "Delete meeting" }));
     expect(fetch).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+    fireEvent.click(screen.getByRole("button", { name: "Delete meeting" }));
     expect(await screen.findByText("Could not delete this meeting.")).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+    fireEvent.click(screen.getByRole("button", { name: "Delete meeting" }));
     await act(async () => Promise.resolve());
     expect(push).toHaveBeenCalledWith("/dashboard");
     expect(refresh).toHaveBeenCalled();

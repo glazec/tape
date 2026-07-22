@@ -7,11 +7,11 @@ import {
   ChevronDown,
   Copy,
   Download,
+  MoreHorizontal,
   Trash2,
 } from "lucide-react";
 
-import { Button } from "@/components/ui/button";
-import { cn } from "@/lib/utils";
+import { Button, buttonVariants } from "@/components/ui/button";
 
 type MeetingActionsProps = {
   hasAudio?: boolean;
@@ -246,31 +246,27 @@ export function MeetingActions({
           {copyStatus === "copied" ? "Copied" : "Copy"}
         </Button>
       ) : null}
-      <Button
-        aria-label={hasExportableContent ? undefined : "Delete meeting"}
-        className={cn(
-          !hasExportableContent &&
-            "text-muted-foreground hover:bg-destructive/10 hover:text-destructive",
-        )}
-        disabled={isDeleting}
-        onClick={deleteMeeting}
-        size={hasExportableContent ? "default" : "icon-sm"}
-        type="button"
-        variant={hasExportableContent ? "destructive" : "ghost"}
-      >
-        <Trash2 data-icon="inline-start" />
-        {hasExportableContent ? (
-          isDeleting ? (
-            "Deleting"
-          ) : (
-            "Delete"
-          )
-        ) : (
-          <span className="sr-only">
-            {isDeleting ? "Deleting meeting" : "Delete meeting"}
-          </span>
-        )}
-      </Button>
+      <details className="group relative">
+        <summary
+          aria-label="More meeting actions"
+          className={`${buttonVariants({ size: "icon", variant: "ghost" })} min-h-11 min-w-11 list-none text-muted-foreground`}
+        >
+          <MoreHorizontal />
+          <span className="sr-only">More meeting actions</span>
+        </summary>
+        <div className="absolute right-0 z-20 mt-2 w-44 rounded-lg border bg-popover p-1.5 text-popover-foreground shadow-lg">
+          <Button
+            className="w-full justify-start text-destructive hover:bg-destructive/10 hover:text-destructive"
+            disabled={isDeleting}
+            onClick={deleteMeeting}
+            type="button"
+            variant="ghost"
+          >
+            <Trash2 data-icon="inline-start" />
+            {isDeleting ? "Deleting" : "Delete meeting"}
+          </Button>
+        </div>
+      </details>
       {error ? (
         <p className="basis-full text-sm font-medium text-destructive">
           {error}

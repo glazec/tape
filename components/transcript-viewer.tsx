@@ -14,7 +14,6 @@ import {
 } from "react";
 import { useRouter } from "next/navigation";
 import {
-  ChevronDown,
   ChevronLeft,
   ChevronRight,
   Check,
@@ -30,7 +29,21 @@ import {
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import {
+  Combobox,
+  ComboboxContent,
+  ComboboxEmpty,
+  ComboboxInput,
+  ComboboxItem,
+  ComboboxList,
+} from "@/components/ui/combobox";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   getTranslationProgressLabel,
   type MeetingTranslationSummary,
@@ -705,24 +718,54 @@ export function TranscriptViewer({
     return (
       <form className="flex w-full max-w-xl flex-col gap-2" onSubmit={saveSpeaker}>
         <div className="flex min-w-0 items-center gap-1.5">
-          <Input
-            aria-label="Speaker name"
-            aria-invalid={hasError}
-            autoFocus
-            list="speaker-suggestions"
-            onChange={(event) => setDraftSpeaker(event.currentTarget.value)}
-            placeholder="Speaker name"
-            value={draftSpeaker}
-          />
-          <datalist id="speaker-suggestions">
-            {speakerRenameSuggestions.map((suggestion) => (
-              <option
-                key={suggestion.email}
-                label={suggestion.email}
-                value={suggestion.name}
-              />
-            ))}
-          </datalist>
+          <Combobox<SpeakerSuggestion>
+            autoHighlight
+            filter={(suggestion, query) =>
+              [suggestion.name, suggestion.email].some((text) =>
+                text.toLowerCase().includes(query.trim().toLowerCase()),
+              )
+            }
+            inputValue={draftSpeaker}
+            isItemEqualToValue={(suggestion, value) =>
+              suggestion.email === value.email
+            }
+            items={speakerRenameSuggestions}
+            itemToStringLabel={(suggestion) => suggestion.name}
+            itemToStringValue={(suggestion) => suggestion.name}
+            onInputValueChange={setDraftSpeaker}
+            onValueChange={(suggestion) => {
+              if (suggestion) {
+                setDraftSpeaker(suggestion.name);
+              }
+            }}
+          >
+            <ComboboxInput
+              aria-label="Speaker name"
+              aria-invalid={hasError}
+              autoComplete="off"
+              autoFocus
+              placeholder="Speaker name"
+            />
+            <ComboboxContent>
+              <ComboboxEmpty>
+                No matching participant. You can still use this name.
+              </ComboboxEmpty>
+              <ComboboxList>
+                {(suggestion: SpeakerSuggestion) => (
+                  <ComboboxItem key={suggestion.email} value={suggestion}>
+                    <span className="min-w-0">
+                      <span className="block truncate font-medium">
+                        {suggestion.name}
+                      </span>
+                      <span className="block truncate text-xs text-muted-foreground">
+                        {suggestion.email}
+                      </span>
+                    </span>
+                  </ComboboxItem>
+                )}
+              </ComboboxList>
+            </ComboboxContent>
+          </Combobox>
           {previewClips.length > 0 && canSeekTranscript ? (
             <Button
               aria-label="Preview speaker voice"
@@ -756,23 +799,6 @@ export function TranscriptViewer({
             <X />
           </Button>
         </div>
-        {speakerRenameSuggestions.length > 0 ? (
-          <div
-            aria-label="Speaker suggestions"
-            className="flex max-h-40 flex-wrap gap-1.5 overflow-y-auto pr-1"
-          >
-            {speakerRenameSuggestions.map((suggestion) => (
-              <button
-                className="inline-flex h-7 max-w-full items-center rounded-md border px-2 text-xs font-medium text-foreground outline-none hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/50"
-                key={suggestion.email}
-                onClick={() => setDraftSpeaker(suggestion.name)}
-                type="button"
-              >
-                <span className="truncate">{suggestion.name}</span>
-              </button>
-            ))}
-          </div>
-        ) : null}
         {showScope ? (
           <div className="inline-flex w-fit rounded-md border bg-background p-0.5">
             <button
@@ -1227,7 +1253,7 @@ export function TranscriptViewer({
                         )}
                         {shouldShowRawTooltip ? (
                           <div
-                            className="pointer-events-none absolute left-0 top-full z-30 mt-2 w-[min(32rem,calc(100vw-3rem))] translate-y-1 rounded-md border bg-background p-3 text-sm text-foreground opacity-0 shadow-lg ring-1 ring-border transition group-hover/original:translate-y-0 group-hover/original:opacity-100 group-focus-within/original:translate-y-0 group-focus-within/original:opacity-100"
+                            className="pointer-events-none absolute left-0 top-full z-30 mt-2 w-[min(32rem,calc(100vw-6rem))] translate-y-1 rounded-md border bg-background p-3 text-sm text-foreground opacity-0 shadow-lg ring-1 ring-border transition group-hover/original:translate-y-0 group-hover/original:opacity-100 group-focus-within/original:translate-y-0 group-focus-within/original:opacity-100 sm:w-[min(32rem,calc(100vw-3rem))]"
                             id={`${segment.id}-original-text`}
                             role="tooltip"
                           >
@@ -1311,26 +1337,26 @@ function TranscriptControlSelect({
   value: string;
 }) {
   return (
-    <label className="relative inline-flex max-w-full">
-      <select
-        aria-label={ariaLabel}
-        className="h-8 max-w-full appearance-none rounded-md border bg-background py-1 pr-8 pl-3 text-sm font-medium text-foreground shadow-xs outline-none transition hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/50"
-        onChange={(event: ChangeEvent<HTMLSelectElement>) =>
-          onChange(event.currentTarget.value)
+    <Select
+      items={options}
+      onValueChange={(nextValue) => {
+        if (nextValue) {
+          onChange(nextValue);
         }
-        value={value}
-      >
+      }}
+      value={value}
+    >
+      <SelectTrigger aria-label={ariaLabel}>
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent align="end">
         {options.map((option) => (
-          <option key={option.value} value={option.value}>
+          <SelectItem key={option.value} value={option.value}>
             {option.label}
-          </option>
+          </SelectItem>
         ))}
-      </select>
-      <ChevronDown
-        aria-hidden="true"
-        className="pointer-events-none absolute top-1/2 right-2 size-3.5 -translate-y-1/2 text-muted-foreground"
-      />
-    </label>
+      </SelectContent>
+    </Select>
   );
 }
 

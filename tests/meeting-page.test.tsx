@@ -55,6 +55,7 @@ describe("meeting page", () => {
     expect(html).toContain("recovery panel");
     expect(html).toContain("Google Meet:Failed");
     expect(html).toContain("transcript:meeting_1");
+    expect(html).toContain("lg:grid-cols-[1fr_20rem]");
     expect(mocks.listRecipients).toHaveBeenCalled();
   });
 
@@ -91,9 +92,9 @@ describe("meeting page", () => {
     expect(html).toContain("recovery panel");
     expect(html).not.toContain("transcript:missed_meeting");
     expect(html).toContain("meeting actions:delete only");
-    expect(html.indexOf("recovery panel")).toBeLessThan(
-      html.indexOf("share dialog"),
-    );
+    expect(html).not.toContain("share dialog");
+    expect(html).toContain("lg:grid-cols-1");
+    expect(html).not.toContain("lg:grid-cols-[1fr_20rem]");
   });
 
   it("does not offer recovery uploads for ready meetings", async () => {

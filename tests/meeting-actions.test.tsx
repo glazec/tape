@@ -48,7 +48,8 @@ describe("MeetingActions", () => {
 
     expect(html).not.toContain("Export");
     expect(html).not.toContain("Copy");
-    expect(html).toContain('aria-label="Delete meeting"');
+    expect(html).toContain('aria-label="More meeting actions"');
+    expect(html).toContain("Delete meeting");
   });
 
   it("offers only actions backed by available meeting content", () => {
