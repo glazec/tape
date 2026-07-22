@@ -19,6 +19,10 @@ import {
   createUploadedVideoTranscription,
 } from "@/lib/transcription-records";
 import { SharedOnlyAccessError } from "@/lib/access-errors";
+import {
+  MAX_RECORDING_DURATION_MS,
+  normalizeRecordingDurationMs,
+} from "@/lib/recording-duration";
 import { titleFromUploadFileName } from "@/lib/upload-titles";
 import {
   getSupportedUploadMedia,
@@ -32,6 +36,7 @@ const completeUploadSchema = z.strictObject({
   extension: z.string().trim().toLowerCase().min(1).default("mp3"),
   contentType: z.string().trim().toLowerCase().min(1).default("audio/mpeg"),
   fileName: z.string().optional(),
+  durationMs: z.number().int().positive().max(MAX_RECORDING_DURATION_MS).optional(),
   startedAt: z.iso.datetime().optional(),
 });
 
@@ -97,12 +102,14 @@ export async function POST(request: Request) {
     const startedAt = result.data.startedAt
       ? new Date(result.data.startedAt)
       : undefined;
+    const durationMs = normalizeRecordingDurationMs(result.data.durationMs);
     if (uploadMedia.kind === "audio") {
       const transcription = await createUploadedAudioTranscription({
         sessionUser: user,
         objectKey: key,
         ...(title ? { title } : {}),
         ...(startedAt ? { startedAt } : {}),
+        ...(durationMs ? { durationMs } : {}),
         fileSizeBytes: objectMetadata.contentLength,
         mimeType: objectMetadata.contentType,
       });
@@ -130,6 +137,7 @@ export async function POST(request: Request) {
       objectKey: key,
       ...(title ? { title } : {}),
       ...(startedAt ? { startedAt } : {}),
+      ...(durationMs ? { durationMs } : {}),
       fileSizeBytes: objectMetadata.contentLength,
       mimeType: objectMetadata.contentType,
     });
@@ -143,6 +151,7 @@ export async function POST(request: Request) {
         audioMediaAssetId: transcription.audioMediaAssetId,
         audioObjectKey: transcription.audioObjectKey,
         transcriptJobId: transcription.transcriptJobId,
+        recordingId: transcription.recordingId,
       },
     });
 

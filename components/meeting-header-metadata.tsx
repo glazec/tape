@@ -28,6 +28,7 @@ export function MeetingHeaderMetadata({
     durationMs,
     endedAt,
     startedAt,
+    status,
   });
 
   return (
@@ -100,14 +101,24 @@ export function formatMeetingHeaderDuration({
   durationMs,
   endedAt,
   startedAt,
+  status,
+  now = new Date(),
 }: {
   durationMs: number | null;
   endedAt: string | null;
   startedAt: string | null;
+  status?: string;
+  now?: Date;
 }) {
   let resolvedDurationMs = durationMs;
 
-  if (startedAt && endedAt) {
+  if (
+    (!resolvedDurationMs || resolvedDurationMs <= 0) &&
+    status === "Scheduled" &&
+    startedAt &&
+    new Date(startedAt).getTime() > now.getTime() &&
+    endedAt
+  ) {
     const startTime = new Date(startedAt).getTime();
     const endTime = new Date(endedAt).getTime();
     const intervalMs = endTime - startTime;

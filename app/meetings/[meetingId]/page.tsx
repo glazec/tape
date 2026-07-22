@@ -63,6 +63,7 @@ export default async function MeetingPage({
     segmentCount: meeting.segments.length,
     startedAt: meeting.startedAt,
     status: displayStatus,
+    updatedAt: meeting.updatedAt,
   });
   const canAddMeetingSource =
     displayStatus === "failed" ||

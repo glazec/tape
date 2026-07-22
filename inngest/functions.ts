@@ -42,12 +42,14 @@ const transcribeAudioDataSchema = z.union([
     audioUrl: z.url(),
     meetingId: z.uuid().optional(),
     mediaAssetId: z.uuid().optional(),
+    recordingId: z.uuid().optional(),
     transcriptJobId: z.uuid().optional(),
   }),
   z.object({
     objectKey: z.string().min(1),
     meetingId: z.uuid().optional(),
     mediaAssetId: z.uuid().optional(),
+    recordingId: z.uuid().optional(),
     transcriptJobId: z.uuid().optional(),
   }),
 ]);
@@ -59,6 +61,7 @@ const convertVideoToAudioDataSchema = z.object({
   sourceObjectKey: z.string().min(1),
   audioMediaAssetId: z.uuid(),
   audioObjectKey: z.string().min(1),
+  recordingId: z.uuid().optional(),
   transcriptJobId: z.uuid(),
 });
 const CONVERT_VIDEO_TO_AUDIO_RETRIES = 2;
@@ -160,6 +163,7 @@ export const convertVideoToAudio = inngest.createFunction(
         meetingId: data.meetingId,
         audioMediaAssetId: data.audioMediaAssetId,
         audioObjectKey: data.audioObjectKey,
+        recordingId: data.recordingId,
         transcriptJobId: data.transcriptJobId,
       });
 
@@ -410,6 +414,10 @@ function buildTranscriptMetadata(data: z.infer<typeof transcribeAudioDataSchema>
 
   if (data.mediaAssetId) {
     metadata.mediaAssetId = data.mediaAssetId;
+  }
+
+  if (data.recordingId) {
+    metadata.recordingId = data.recordingId;
   }
 
   if (data.transcriptJobId) {

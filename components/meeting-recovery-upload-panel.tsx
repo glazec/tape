@@ -16,6 +16,10 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
+  readMediaFileDurationMs,
+  waitForRecordingDurationMs,
+} from "@/lib/recording-duration";
+import {
   audioUploadMediaAccept,
   getUploadMediaFromFile,
   isUploadMediaSizeAllowed,
@@ -52,6 +56,9 @@ export function MeetingRecoveryUploadPanel({
   const [message, setMessage] = useState<string | null>(null);
   const [signInRequired, setSignInRequired] = useState(false);
   const [audioFile, setAudioFile] = useState<File | null>(null);
+  const audioDurationPromiseRef = useRef<Promise<number | undefined> | null>(
+    null,
+  );
   const [transcriptFile, setTranscriptFile] = useState<File | null>(null);
   const [transcriptText, setTranscriptText] = useState("");
 
@@ -62,7 +69,12 @@ export function MeetingRecoveryUploadPanel({
   }
 
   function handleAudioChange(event: ChangeEvent<HTMLInputElement>) {
-    setAudioFile(event.currentTarget.files?.[0] ?? null);
+    const file = event.currentTarget.files?.[0] ?? null;
+
+    setAudioFile(file);
+    audioDurationPromiseRef.current = file
+      ? readMediaFileDurationMs(file)
+      : null;
     resetMessage();
   }
 
@@ -113,7 +125,11 @@ export function MeetingRecoveryUploadPanel({
     }
 
     try {
+      const durationMs = await waitForRecordingDurationMs(
+        audioDurationPromiseRef.current,
+      );
       const queuedResult = await uploadRecoveryAudio({
+        durationMs,
         file: audioFile,
         meetingId,
         uploadMedia,
@@ -365,10 +381,12 @@ export function MeetingRecoveryUploadPanel({
 }
 
 async function uploadRecoveryAudio({
+  durationMs,
   file,
   meetingId,
   uploadMedia,
 }: {
+  durationMs?: number;
   file: File;
   meetingId: string;
   uploadMedia: { contentType: string; extension: string };
@@ -388,7 +406,7 @@ async function uploadRecoveryAudio({
   }
 
   if (!signResponse.ok) {
-    return uploadRecoveryAudioViaServer({ file, meetingId });
+    return uploadRecoveryAudioViaServer({ durationMs, file, meetingId });
   }
 
   const { uploadId, uploadUrl } = (await signResponse.json()) as {
@@ -397,7 +415,7 @@ async function uploadRecoveryAudio({
   };
 
   if (!uploadId || !uploadUrl) {
-    return uploadRecoveryAudioViaServer({ file, meetingId });
+    return uploadRecoveryAudioViaServer({ durationMs, file, meetingId });
   }
 
   const uploadedDirectly = await uploadDirectly(
@@ -407,7 +425,7 @@ async function uploadRecoveryAudio({
   );
 
   if (!uploadedDirectly) {
-    return uploadRecoveryAudioViaServer({ file, meetingId });
+    return uploadRecoveryAudioViaServer({ durationMs, file, meetingId });
   }
 
   const completeResponse = await fetch(
@@ -419,6 +437,7 @@ async function uploadRecoveryAudio({
         uploadId,
         extension: uploadMedia.extension,
         contentType: uploadMedia.contentType,
+        ...(durationMs ? { durationMs } : {}),
       }),
     },
   );
@@ -435,14 +454,19 @@ async function uploadRecoveryAudio({
 }
 
 async function uploadRecoveryAudioViaServer({
+  durationMs,
   file,
   meetingId,
 }: {
+  durationMs?: number;
   file: File;
   meetingId: string;
 }) {
   const formData = new FormData();
   formData.set("meeting-audio", file);
+  if (durationMs) {
+    formData.set("durationMs", String(durationMs));
+  }
 
   const response = await fetch(`/api/meetings/${meetingId}/uploads/audio`, {
     method: "POST",

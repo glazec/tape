@@ -4,6 +4,7 @@ import { db } from "@/db/client";
 import {
   mediaAssets,
   meetings,
+  recordings,
   transcriptJobs,
   transcriptSegments,
 } from "@/db/schema";
@@ -15,22 +16,38 @@ import type { WorkspaceContext } from "@/lib/workspace";
 export class MeetingRecoveryUploadError extends Error {}
 
 export async function completeMeetingAudioUpload(input: {
+  durationMs?: number;
   fileSizeBytes?: number;
   meetingId: string;
   mimeType?: string;
   objectKey: string;
+  recordingStartedAt?: Date;
   workspace: WorkspaceContext;
 }) {
   await assertCanManageMeeting(input.workspace, input.meetingId);
 
   const env = parseR2Env(process.env);
   const now = new Date();
+  const [recording] = await db
+    .insert(recordings)
+    .values({
+      durationMs: input.durationMs,
+      endedAt:
+        input.recordingStartedAt && input.durationMs
+          ? new Date(input.recordingStartedAt.getTime() + input.durationMs)
+          : undefined,
+      meetingId: input.meetingId,
+      source: "upload",
+      startedAt: input.recordingStartedAt,
+    })
+    .returning({ id: recordings.id });
   const [asset] = await db
     .insert(mediaAssets)
     .values({
       bucket: env.R2_BUCKET,
       fileSizeBytes: input.fileSizeBytes,
       meetingId: input.meetingId,
+      recordingId: recording.id,
       mimeType: input.mimeType ?? "audio/mpeg",
       objectKey: input.objectKey,
       source: "upload",
@@ -59,6 +76,7 @@ export async function completeMeetingAudioUpload(input: {
     mediaAssetId: asset.id,
     meetingId: input.meetingId,
     objectKey: input.objectKey,
+    recordingId: recording.id,
     transcriptJobId: job.id,
   };
 }
@@ -94,6 +112,7 @@ export async function completeManualTranscriptUpload(input: {
       jobId: job.id,
       meetingId: input.meetingId,
       speaker: segment.speaker,
+      endMs: segment.endMs,
       startMs: segment.startMs,
       text: segment.text,
     })),

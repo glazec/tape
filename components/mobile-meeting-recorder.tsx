@@ -42,6 +42,7 @@ export function MobileMeetingRecorder({
   const discardRecordingRef = useRef(false);
   const skipNextPopStateRef = useRef(false);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const recordingStartedAtRef = useRef<Date | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const timerRef = useRef<number | null>(null);
   const uploadAbortControllerRef = useRef<AbortController | null>(null);
@@ -159,6 +160,7 @@ export function MobileMeetingRecorder({
         }
       });
       recorder.start(1000);
+      recordingStartedAtRef.current = new Date();
       setElapsedSeconds(0);
       timerRef.current = window.setInterval(() => {
         setElapsedSeconds((seconds) => seconds + 1);
@@ -234,6 +236,14 @@ export function MobileMeetingRecorder({
     );
     const formData = new FormData();
     formData.set("meeting-audio", file);
+    const recordingStartedAt = recordingStartedAtRef.current;
+    if (recordingStartedAt) {
+      formData.set(
+        "durationMs",
+        String(Math.max(1, Date.now() - recordingStartedAt.getTime())),
+      );
+      formData.set("recordingStartedAt", recordingStartedAt.toISOString());
+    }
     const controller = new AbortController();
     uploadAbortControllerRef.current = controller;
 

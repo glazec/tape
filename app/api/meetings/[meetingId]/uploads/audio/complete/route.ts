@@ -19,6 +19,7 @@ import {
   isUploadMediaSizeAllowed,
 } from "@/lib/upload-media";
 import { getOrCreateWorkspaceForSessionUser } from "@/lib/workspace";
+import { MAX_RECORDING_DURATION_MS } from "@/lib/recording-duration";
 
 export const runtime = "nodejs";
 
@@ -26,6 +27,7 @@ const completeMeetingAudioUploadSchema = z.strictObject({
   uploadId: z.string().min(1),
   extension: z.string().trim().toLowerCase().min(1).default("mp3"),
   contentType: z.string().trim().toLowerCase().min(1).default("audio/mpeg"),
+  durationMs: z.number().int().positive().max(MAX_RECORDING_DURATION_MS).optional(),
 });
 
 export async function POST(
@@ -90,6 +92,7 @@ export async function POST(
 
     const transcription = await completeMeetingAudioUpload({
       fileSizeBytes: objectMetadata.contentLength,
+      durationMs: result.data.durationMs,
       meetingId,
       mimeType: objectMetadata.contentType,
       objectKey,

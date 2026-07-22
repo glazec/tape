@@ -62,6 +62,8 @@ describe("getWorkspaceMeetingTranscript", () => {
               audioObjectKey: null,
               calendarAttendeeEmails: [],
               recallRecordingId: null,
+              recordedDurationMs: 45 * 60 * 1000,
+              transcriptDurationMs: 30 * 60 * 1000,
               translationErrorMessage: null,
               translationLanguage: "en",
               translationStatus: null,
@@ -126,6 +128,7 @@ describe("getWorkspaceMeetingTranscript", () => {
     ).resolves.toMatchObject({
       id: "11111111-1111-4111-8111-111111111111",
       status: "cancelled",
+      durationMs: 45 * 60 * 1000,
       title: "Cancelled partner sync",
       translationLanguage: "en",
     });
@@ -572,6 +575,7 @@ describe("listMeetingDetailRelatedMeetingsForWorkspace", () => {
             id: "11111111-1111-4111-8111-111111111111",
             title: "Nascent intro",
             startedAt: new Date("2026-06-20T12:00:00.000Z"),
+            recordedStartedAt: new Date("2026-06-20T12:05:00.000Z"),
             createdAt: new Date("2026-06-20T11:59:00.000Z"),
             calendarAttendeeEmails: [
               "bob@iosg.vc",
@@ -636,7 +640,7 @@ describe("listMeetingDetailRelatedMeetingsForWorkspace", () => {
       {
         id: "11111111-1111-4111-8111-111111111111",
         title: "Nascent intro",
-        startedAt: "2026-06-20T12:00:00.000Z",
+        startedAt: "2026-06-20T12:05:00.000Z",
         hasMoreTranscriptSegments: false,
         transcriptPreview: [
           {
@@ -836,10 +840,14 @@ describe("listMeetingsForWorkspace", () => {
     ]);
 
     const projection = select.mock.calls[0][0] as {
+      calendarAttendeeEmails: SQL;
       recognizedSpeakerCount: SQL;
       transcriptDurationMs: SQL;
       transcriptSegmentCount: SQL;
     };
+    const attendeeQuery = toQuery(projection.calendarAttendeeEmails);
+    expect(attendeeQuery.sql).toContain('from "meeting_attendees"');
+    expect(attendeeQuery.sql).toContain('"calendar_events"."attendee_emails"');
     expectUsesCurrentTranscriptJob(projection.recognizedSpeakerCount);
     expectUsesCurrentTranscriptJob(projection.transcriptSegmentCount);
     expectUsesCurrentTranscriptJob(projection.transcriptDurationMs);

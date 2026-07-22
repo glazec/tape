@@ -17,6 +17,7 @@ import {
   createUploadedVideoTranscription,
 } from "@/lib/transcription-records";
 import { SharedOnlyAccessError } from "@/lib/access-errors";
+import { normalizeRecordingDurationMs } from "@/lib/recording-duration";
 import { titleFromUploadFileName } from "@/lib/upload-titles";
 import {
   getUploadMediaFromFile,
@@ -37,6 +38,9 @@ export async function POST(request: Request) {
   const formData = await request.formData().catch(() => null);
   const file = formData?.get("meeting-audio");
   const startedAt = parseUploadStartedAt(formData?.get("startedAt"));
+  const durationMs = normalizeRecordingDurationMs(
+    Number(formData?.get("durationMs")),
+  );
   const uploadMedia = file instanceof File ? getUploadMediaFromFile(file) : null;
 
   if (
@@ -82,6 +86,7 @@ export async function POST(request: Request) {
         objectKey: key,
         title: titleFromUploadFileName(file.name),
         ...(startedAt ? { startedAt } : {}),
+        ...(durationMs ? { durationMs } : {}),
         fileSizeBytes: file.size,
         mimeType: uploadMedia.contentType,
       });
@@ -109,6 +114,7 @@ export async function POST(request: Request) {
       objectKey: key,
       title: titleFromUploadFileName(file.name),
       ...(startedAt ? { startedAt } : {}),
+      ...(durationMs ? { durationMs } : {}),
       fileSizeBytes: file.size,
       mimeType: uploadMedia.contentType,
     });
@@ -122,6 +128,7 @@ export async function POST(request: Request) {
         audioMediaAssetId: transcription.audioMediaAssetId,
         audioObjectKey: transcription.audioObjectKey,
         transcriptJobId: transcription.transcriptJobId,
+        recordingId: transcription.recordingId,
       },
     });
 

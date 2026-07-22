@@ -3,9 +3,19 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const { refresh, replace } = vi.hoisted(() => ({ refresh: vi.fn(), replace: vi.fn() }));
+const { readMediaFileDurationMs, refresh, replace } = vi.hoisted(() => ({
+  readMediaFileDurationMs: vi.fn(),
+  refresh: vi.fn(),
+  replace: vi.fn(),
+}));
 
 vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh, replace }) }));
+vi.mock("@/lib/recording-duration", () => ({
+  readMediaFileDurationMs,
+  waitForRecordingDurationMs: async (
+    pendingDuration: Promise<number | undefined> | null,
+  ) => pendingDuration ? pendingDuration : undefined,
+}));
 
 import { UploadDropzone } from "@/components/upload-dropzone";
 
@@ -13,6 +23,7 @@ describe("UploadDropzone", () => {
   beforeEach(() => {
     refresh.mockReset();
     replace.mockReset();
+    readMediaFileDurationMs.mockReset().mockResolvedValue(undefined);
     vi.stubGlobal("fetch", vi.fn());
   });
 
@@ -35,6 +46,7 @@ describe("UploadDropzone", () => {
   });
 
   it("uploads directly and queues transcription", async () => {
+    readMediaFileDurationMs.mockResolvedValueOnce(45 * 60 * 1_000);
     vi.mocked(fetch)
       .mockResolvedValueOnce(response({ uploadId: "up_1", uploadUrl: "https://upload" }))
       .mockResolvedValueOnce(response({}))
@@ -48,6 +60,11 @@ describe("UploadDropzone", () => {
 
     expect(await screen.findByText("Upload complete. Transcription queued")).toBeTruthy();
     expect(fetch).toHaveBeenNthCalledWith(2, "https://upload", expect.objectContaining({ method: "PUT" }));
+    expect(
+      JSON.parse(
+        String((vi.mocked(fetch).mock.calls[2]?.[1] as RequestInit).body),
+      ),
+    ).toEqual(expect.objectContaining({ durationMs: 45 * 60 * 1_000 }));
     expect(replace).toHaveBeenCalledWith("/dashboard");
     expect(refresh).toHaveBeenCalled();
   });

@@ -1,4 +1,4 @@
-import { eq, sql } from "drizzle-orm";
+import { and, eq, isNull, sql } from "drizzle-orm";
 
 import { db } from "@/db/client";
 import {
@@ -6,6 +6,7 @@ import {
   localRecordings,
   meetingEntities,
   meetings,
+  recordings,
   transcriptJobs,
   transcriptSegments,
   users,
@@ -43,6 +44,7 @@ type TranscriptSegmentInput = {
 type CompleteTranscriptPersistence = {
   action: "complete";
   meetingId: string;
+  recordingId?: string;
   providerJobId?: string;
   entities: ExtractedMeetingEntity[];
   segments: TranscriptSegmentInput[];
@@ -116,6 +118,11 @@ export function buildElevenLabsTranscriptPersistence(
     "transcript_job_id",
   );
   const providerJobId = event.requestId ?? event.transcriptId ?? undefined;
+  const recordingId = getMetadataString(
+    event.metadata,
+    "recordingId",
+    "recording_id",
+  ) ?? undefined;
 
   if (!transcriptJobId) {
     return { action: "skip", reason: "missing_transcript_job_id" };
@@ -164,6 +171,7 @@ export function buildElevenLabsTranscriptPersistence(
       buildEntityExtractionContext(event, options.entityContext),
     ),
     meetingId,
+    ...(recordingId ? { recordingId } : {}),
     providerJobId,
     segments: segments.length > 0 ? segments : buildSingleSegment(text),
     text,
@@ -295,6 +303,24 @@ export async function applyElevenLabsTranscriptEvent(
           meetingEntities.normalizedValue,
         ],
       });
+  }
+
+  const transcriptDurationMs = persistence.segments.reduce(
+    (maximum, segment) =>
+      Math.max(maximum, segment.endMs ?? segment.startMs),
+    0,
+  );
+
+  if (persistence.recordingId && transcriptDurationMs > 0) {
+    await db
+      .update(recordings)
+      .set({ durationMs: transcriptDurationMs, updatedAt: now })
+      .where(
+        and(
+          eq(recordings.id, persistence.recordingId),
+          isNull(recordings.durationMs),
+        ),
+      );
   }
 
   await db

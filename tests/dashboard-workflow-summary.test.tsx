@@ -143,6 +143,22 @@ describe("DashboardWorkflowSummary", () => {
     expect(summary.userStats.meetingHours).toBe(0.2);
   });
 
+  it("prefers persisted media duration over transcript and calendar timing", () => {
+    const summary = getDashboardWorkflowSummary(
+      [
+        meeting({
+          durationMs: 45 * 60 * 1000,
+          startedAt: "2026-06-27T10:00:00.000Z",
+          endedAt: "2026-06-27T10:30:00.000Z",
+          segments: [segment({ startMs: 0, endMs: 42 * 60 * 1000 })],
+        }),
+      ],
+      new Date("2026-06-28T12:00:00.000Z"),
+    );
+
+    expect(summary.userStats.meetingHours).toBe(0.8);
+  });
+
   it("ignores cancelled meetings in workflow counts and user stats", () => {
     const summary = getDashboardWorkflowSummary(
       [

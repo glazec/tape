@@ -17,6 +17,7 @@ import {
   isUploadMediaSizeAllowed,
 } from "@/lib/upload-media";
 import { getOrCreateWorkspaceForSessionUser } from "@/lib/workspace";
+import { normalizeRecordingDurationMs } from "@/lib/recording-duration";
 
 export const runtime = "nodejs";
 
@@ -36,6 +37,14 @@ export async function POST(
     await assertCanManageMeeting(workspace, meetingId);
     const formData = await request.formData().catch(() => null);
     const file = formData?.get("meeting-audio");
+    const durationMs = normalizeRecordingDurationMs(
+      Number(formData?.get("durationMs")),
+    );
+    const recordingStartedAtValue = formData?.get("recordingStartedAt");
+    const recordingStartedAt =
+      typeof recordingStartedAtValue === "string" && recordingStartedAtValue
+        ? new Date(recordingStartedAtValue)
+        : undefined;
     const uploadMedia =
       file instanceof File ? getUploadMediaFromFile(file) : null;
 
@@ -73,6 +82,10 @@ export async function POST(
 
     const transcription = await completeMeetingAudioUpload({
       fileSizeBytes: file.size,
+      durationMs,
+      ...(recordingStartedAt && !Number.isNaN(recordingStartedAt.getTime())
+        ? { recordingStartedAt }
+        : {}),
       meetingId,
       mimeType: uploadMedia.contentType,
       objectKey,

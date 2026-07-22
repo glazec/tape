@@ -55,8 +55,44 @@ describe("parseManualTranscriptText", () => {
       },
       {
         speaker: "Bob",
-        startMs: 1000,
+        startMs: 0,
         text: "Thanks",
+      },
+    ]);
+  });
+
+  it("preserves real SRT cue timing", () => {
+    expect(
+      parseManualTranscriptText(
+        "1\n00:00:03,250 --> 00:00:05,750\nAlice: Hello\n\n2\n00:44:58,000 --> 00:45:00,000\nBob: Thanks",
+      ),
+    ).toEqual([
+      {
+        endMs: 5750,
+        speaker: "Alice",
+        startMs: 3250,
+        text: "Hello",
+      },
+      {
+        endMs: 45 * 60 * 1000,
+        speaker: "Bob",
+        startMs: 44 * 60 * 1000 + 58_000,
+        text: "Thanks",
+      },
+    ]);
+  });
+
+  it("preserves VTT cues without creating a WEBVTT transcript line", () => {
+    expect(
+      parseManualTranscriptText(
+        "WEBVTT\n\n00:03.250 --> 00:05.750 align:start\nAlice: Hello",
+      ),
+    ).toEqual([
+      {
+        endMs: 5750,
+        speaker: "Alice",
+        startMs: 3250,
+        text: "Hello",
       },
     ]);
   });
@@ -73,6 +109,7 @@ describe("meeting recovery uploads", () => {
     values.mockReturnValue({ returning });
     insert.mockReturnValue({ values });
     returning
+      .mockResolvedValueOnce([{ id: "recording_123" }])
       .mockResolvedValueOnce([{ id: "asset_123" }])
       .mockResolvedValueOnce([{ id: "job_123" }]);
     set.mockReturnValue({ where });
@@ -84,6 +121,7 @@ describe("meeting recovery uploads", () => {
     await expect(
       completeMeetingAudioUpload({
         fileSizeBytes: 1234,
+        durationMs: 45 * 60 * 1000,
         meetingId: "meeting_123",
         mimeType: "audio/mp4",
         objectKey: "uploads/recovery.m4a",
@@ -93,13 +131,23 @@ describe("meeting recovery uploads", () => {
       mediaAssetId: "asset_123",
       meetingId: "meeting_123",
       objectKey: "uploads/recovery.m4a",
+      recordingId: "recording_123",
       transcriptJobId: "job_123",
     });
     expect(values).toHaveBeenNthCalledWith(
       1,
       expect.objectContaining({
+        durationMs: 45 * 60 * 1000,
+        meetingId: "meeting_123",
+        source: "upload",
+      }),
+    );
+    expect(values).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
         bucket: "meeting-audio",
         meetingId: "meeting_123",
+        recordingId: "recording_123",
         type: "audio",
       }),
     );

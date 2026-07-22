@@ -926,6 +926,47 @@ export function findRecallRecordingMediaUrl(
   return null;
 }
 
+export function findRecallRecordingDurationMs(
+  artifact: unknown,
+  recordingId: string,
+) {
+  return findRecallRecordingTiming(artifact, recordingId)?.durationMs;
+}
+
+export function findRecallRecordingTiming(
+  artifact: unknown,
+  recordingId: string,
+) {
+  const artifactRecord = getRecord(artifact);
+  const recordings = getArray(artifactRecord?.recordings);
+  const recording =
+    artifactRecord?.id === recordingId
+      ? artifactRecord
+      : getRecord(
+          recordings?.find(
+            (candidate) => getRecord(candidate)?.id === recordingId,
+          ),
+        );
+  const startedAt = getString(recording?.started_at);
+  const completedAt = getString(recording?.completed_at);
+
+  if (!startedAt || !completedAt) {
+    return null;
+  }
+
+  const recordingStartedAt = new Date(startedAt);
+  const recordingEndedAt = new Date(completedAt);
+  const durationMs = recordingEndedAt.getTime() - recordingStartedAt.getTime();
+
+  return Number.isFinite(durationMs) && durationMs > 0
+    ? {
+        durationMs: Math.round(durationMs),
+        endedAt: recordingEndedAt,
+        startedAt: recordingStartedAt,
+      }
+    : null;
+}
+
 export function findRecallVideoFrameArtifacts(
   bot: unknown,
   recordingId: string,

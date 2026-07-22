@@ -19,6 +19,7 @@ import {
   localRecordings,
   mediaAssets,
   meetings,
+  recordings,
   transcriptJobs,
 } from "@/db/schema";
 import { inngest } from "@/inngest/client";
@@ -87,6 +88,7 @@ type LocalRecorderTranscriptionEventInput = {
   mediaAssetId: string;
   meetingId: string;
   objectKey: string;
+  recordingId: string;
   transcriptJobId: string;
 };
 
@@ -107,6 +109,7 @@ export function buildLocalRecorderTranscriptionEvent(
       mediaAssetId: input.mediaAssetId,
       meetingId: input.meetingId,
       objectKey: input.objectKey,
+      recordingId: input.recordingId,
       transcriptJobId: input.transcriptJobId,
     },
   };
@@ -1017,6 +1020,29 @@ export async function completeLocalRecorderRecordingUpload(input: {
     .returning({ id: localRecordings.id });
 
   await db
+    .insert(recordings)
+    .values({
+      durationMs:
+        input.recordingStoppedAt.getTime() - input.recordingStartedAt.getTime(),
+      endedAt: input.recordingStoppedAt,
+      id: recording.id,
+      meetingId: attempt.meetingId,
+      source: "local_recorder",
+      startedAt: input.recordingStartedAt,
+    })
+    .onConflictDoUpdate({
+      target: recordings.id,
+      set: {
+        durationMs:
+          input.recordingStoppedAt.getTime() -
+          input.recordingStartedAt.getTime(),
+        endedAt: input.recordingStoppedAt,
+        startedAt: input.recordingStartedAt,
+        updatedAt: now,
+      },
+    });
+
+  await db
     .update(localRecordingAttempts)
     .set({ attemptState: "uploaded", updatedAt: now })
     .where(eq(localRecordingAttempts.id, attempt.id));
@@ -1024,7 +1050,6 @@ export async function completeLocalRecorderRecordingUpload(input: {
   await db
     .update(meetings)
     .set({
-      endedAt: input.recordingStoppedAt,
       status: "processing",
       updatedAt: now,
     })
@@ -1059,6 +1084,7 @@ async function getOrCreateLocalRecorderTranscriptionEventInput(input: {
       mediaAssetId: mediaAssets.id,
       meetingId: localRecordings.meetingId,
       objectKey: mediaAssets.objectKey,
+      recordingId: localRecordings.id,
       transcriptJobId: transcriptJobs.id,
     })
     .from(localRecordings)
@@ -1086,6 +1112,7 @@ async function getOrCreateLocalRecorderTranscriptionEventInput(input: {
       mediaAssetId: recording.mediaAssetId,
       meetingId: recording.meetingId,
       objectKey: recording.objectKey,
+      recordingId: recording.recordingId,
       transcriptJobId: recording.transcriptJobId,
     };
   }
@@ -1104,6 +1131,7 @@ async function getOrCreateLocalRecorderTranscriptionEventInput(input: {
     mediaAssetId: recording.mediaAssetId,
     meetingId: recording.meetingId,
     objectKey: recording.objectKey,
+    recordingId: recording.recordingId,
     transcriptJobId: job.id,
   };
 }

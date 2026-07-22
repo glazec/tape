@@ -1,9 +1,15 @@
 import { createHash } from "node:crypto";
 
-import { and, asc, eq, gt, isNull } from "drizzle-orm";
+import { and, asc, eq, gt, isNull, sql } from "drizzle-orm";
 
 import { db } from "@/db/client";
-import { meetings, shareLinks, transcriptSegments, users } from "@/db/schema";
+import {
+  meetings,
+  recordings,
+  shareLinks,
+  transcriptSegments,
+  users,
+} from "@/db/schema";
 import type { TranscriptSegment } from "@/components/transcript-viewer";
 import { currentTranscriptJobIdSubquery } from "@/lib/current-transcript-job";
 
@@ -25,6 +31,13 @@ export async function getSharedTranscriptByToken(
     .select({
       title: meetings.title,
       startedAt: meetings.startedAt,
+      recordedStartedAt: sql<Date | null>`(
+        select ${recordings.startedAt}
+        from ${recordings}
+        where ${recordings.meetingId} = ${meetings.id}
+        order by ${recordings.createdAt} desc
+        limit 1
+      )`,
       sharedByEmail: users.email,
       sharedByName: users.name,
       segmentId: transcriptSegments.id,
@@ -59,7 +72,8 @@ export async function getSharedTranscriptByToken(
 
   return {
     sharedBy: rows[0].sharedByName || rows[0].sharedByEmail,
-    startedAt: rows[0].startedAt?.toISOString() ?? null,
+    startedAt:
+      (rows[0].recordedStartedAt ?? rows[0].startedAt)?.toISOString() ?? null,
     title: rows[0].title,
     segments: rows
       .filter((row) => row.segmentId !== null)

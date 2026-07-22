@@ -1,6 +1,6 @@
 "use client";
 
-import { ChangeEvent, FormEvent, useState } from "react";
+import { ChangeEvent, FormEvent, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { AlertCircle, CheckCircle2, UploadCloud } from "lucide-react";
 
@@ -15,6 +15,10 @@ import {
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  readMediaFileDurationMs,
+  waitForRecordingDurationMs,
+} from "@/lib/recording-duration";
 import {
   getUploadMediaFromFile,
   isUploadMediaSizeAllowed,
@@ -33,10 +37,18 @@ export function UploadDropzone() {
   const [message, setMessage] = useState<string | null>(null);
   const [signInRequired, setSignInRequired] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const selectedDurationPromiseRef = useRef<Promise<number | undefined> | null>(
+    null,
+  );
   const [startTime, setStartTime] = useState("");
 
   function handleFileChange(event: ChangeEvent<HTMLInputElement>) {
-    setSelectedFile(event.currentTarget.files?.[0] ?? null);
+    const file = event.currentTarget.files?.[0] ?? null;
+
+    setSelectedFile(file);
+    selectedDurationPromiseRef.current = file
+      ? readMediaFileDurationMs(file)
+      : null;
     setState("idle");
     setMessage(null);
     setSignInRequired(false);
@@ -112,11 +124,14 @@ export function UploadDropzone() {
         selectedFile,
         uploadMedia.contentType,
       );
+      const durationMs = await waitForRecordingDurationMs(
+        selectedDurationPromiseRef.current,
+      );
 
       let queuedResult: UploadQueuedResponse;
 
       if (!uploadedDirectly) {
-        queuedResult = await uploadViaServer(selectedFile, startedAt);
+        queuedResult = await uploadViaServer(selectedFile, startedAt, durationMs);
       } else {
         const completeResponse = await fetch("/api/uploads/complete", {
           method: "POST",
@@ -126,6 +141,7 @@ export function UploadDropzone() {
             fileName: selectedFile.name,
             extension: uploadMedia.extension,
             contentType: uploadMedia.contentType,
+            ...(durationMs ? { durationMs } : {}),
             ...(startedAt ? { startedAt } : {}),
           }),
         });
@@ -257,11 +273,18 @@ async function uploadDirectly(
   }
 }
 
-async function uploadViaServer(file: File, startedAt: string | undefined) {
+async function uploadViaServer(
+  file: File,
+  startedAt: string | undefined,
+  durationMs: number | undefined,
+) {
   const formData = new FormData();
   formData.set("meeting-audio", file);
   if (startedAt) {
     formData.set("startedAt", startedAt);
+  }
+  if (durationMs) {
+    formData.set("durationMs", String(durationMs));
   }
 
   const response = await fetch("/api/uploads/audio", {

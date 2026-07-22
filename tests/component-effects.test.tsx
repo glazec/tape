@@ -91,7 +91,7 @@ describe("client component effects", () => {
     render(<>
       <LocalDateTime value="2026-07-20T12:30:00.000Z" />
       <MeetingHeaderMetadata
-        durationMs={null}
+        durationMs={65 * 60 * 1_000}
         endedAt="2026-07-20T13:35:00.000Z"
         platform="Zoom"
         startedAt="2026-07-20T12:30:00.000Z"

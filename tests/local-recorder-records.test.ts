@@ -233,6 +233,12 @@ describe("local recorder records", () => {
     const insertRecordingValues = vi.fn(() => ({
       onConflictDoUpdate: recordingOnConflictDoUpdate,
     }));
+    const canonicalRecordingOnConflictDoUpdate = vi
+      .fn()
+      .mockResolvedValue(undefined);
+    const insertCanonicalRecordingValues = vi.fn(() => ({
+      onConflictDoUpdate: canonicalRecordingOnConflictDoUpdate,
+    }));
     const jobReturning = vi
       .fn()
       .mockResolvedValue([{ id: "66666666-6666-4666-8666-666666666666" }]);
@@ -243,6 +249,7 @@ describe("local recorder records", () => {
     db.insert
       .mockReturnValueOnce({ values: insertMediaValues })
       .mockReturnValueOnce({ values: insertRecordingValues })
+      .mockReturnValueOnce({ values: insertCanonicalRecordingValues })
       .mockReturnValueOnce({ values: insertJobValues });
     db.select
       .mockReturnValueOnce(
@@ -307,8 +314,14 @@ describe("local recorder records", () => {
     expect(updateSet).toHaveBeenNthCalledWith(
       2,
       expect.objectContaining({
-        endedAt: new Date("2026-07-01T12:01:00.000Z"),
         status: "processing",
+      }),
+    );
+    expect(insertCanonicalRecordingValues).toHaveBeenCalledWith(
+      expect.objectContaining({
+        durationMs: 60_000,
+        id: "55555555-5555-4555-8555-555555555555",
+        source: "local_recorder",
       }),
     );
     expect(updateWhere).toHaveBeenCalledTimes(2);

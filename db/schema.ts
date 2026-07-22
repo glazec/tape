@@ -602,6 +602,8 @@ export const recordings = pgTable("recordings", {
     .notNull()
     .references(() => meetings.id, { onDelete: "cascade" }),
   source: assetSource("source").notNull(),
+  startedAt: timestamp("started_at", { withTimezone: true }),
+  endedAt: timestamp("ended_at", { withTimezone: true }),
   durationMs: integer("duration_ms"),
   ...timestamps,
 });

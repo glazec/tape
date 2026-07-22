@@ -5,6 +5,7 @@ const assertCanCreateMeetings = vi.fn();
 const insert = vi.fn();
 const values = vi.fn();
 const meetingReturning = vi.fn();
+const recordingReturning = vi.fn();
 const assetReturning = vi.fn();
 const jobReturning = vi.fn();
 const update = vi.fn();
@@ -49,6 +50,7 @@ describe("createUploadedAudioTranscription", () => {
     insert.mockReset();
     values.mockReset();
     meetingReturning.mockReset();
+    recordingReturning.mockReset();
     assetReturning.mockReset();
     jobReturning.mockReset();
     update.mockReset();
@@ -68,11 +70,15 @@ describe("createUploadedAudioTranscription", () => {
     assetReturning.mockResolvedValue([
       { id: "44444444-4444-4444-8444-444444444444" },
     ]);
+    recordingReturning.mockResolvedValue([
+      { id: "77777777-7777-4777-8777-777777777777" },
+    ]);
     jobReturning.mockResolvedValue([
       { id: "55555555-5555-4555-8555-555555555555" },
     ]);
     values
       .mockReturnValueOnce({ returning: meetingReturning })
+      .mockReturnValueOnce({ returning: recordingReturning })
       .mockReturnValueOnce({ returning: assetReturning })
       .mockReturnValueOnce({ returning: jobReturning });
     insert.mockReturnValue({ values });
@@ -92,12 +98,14 @@ describe("createUploadedAudioTranscription", () => {
         objectKey: "users/user_123/uploads/upload.mp3",
         title: "Customer call",
         startedAt,
+        durationMs: 45 * 60 * 1000,
         fileSizeBytes: 1024,
         mimeType: "audio/mpeg",
       }),
     ).resolves.toEqual({
       meetingId: "33333333-3333-4333-8333-333333333333",
       mediaAssetId: "44444444-4444-4444-8444-444444444444",
+      recordingId: "77777777-7777-4777-8777-777777777777",
       transcriptJobId: "55555555-5555-4555-8555-555555555555",
     });
     expect(reconcileMeetingSharingForMeeting).toHaveBeenCalledWith(
@@ -106,6 +114,13 @@ describe("createUploadedAudioTranscription", () => {
     expect(values).toHaveBeenNthCalledWith(
       1,
       expect.objectContaining({ startedAt }),
+    );
+    expect(values).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        durationMs: 45 * 60 * 1000,
+        source: "upload",
+      }),
     );
   });
 });
@@ -117,6 +132,7 @@ describe("createUploadedVideoTranscription", () => {
     insert.mockReset();
     values.mockReset();
     meetingReturning.mockReset();
+    recordingReturning.mockReset();
     assetReturning.mockReset();
     jobReturning.mockReset();
     update.mockReset();
@@ -139,11 +155,15 @@ describe("createUploadedVideoTranscription", () => {
     assetReturning.mockResolvedValue([
       { id: "44444444-4444-4444-8444-444444444444" },
     ]);
+    recordingReturning.mockResolvedValue([
+      { id: "77777777-7777-4777-8777-777777777777" },
+    ]);
     jobReturning.mockResolvedValue([
       { id: "55555555-5555-4555-8555-555555555555" },
     ]);
     values
       .mockReturnValueOnce({ returning: meetingReturning })
+      .mockReturnValueOnce({ returning: recordingReturning })
       .mockReturnValueOnce({ returning: assetReturning })
       .mockReturnValueOnce({ returning: jobReturning });
     insert.mockReturnValue({ values });
@@ -168,19 +188,20 @@ describe("createUploadedVideoTranscription", () => {
       meetingId: "33333333-3333-4333-8333-333333333333",
       sourceMediaAssetId: "44444444-4444-4444-8444-444444444444",
       audioMediaAssetId: "66666666-6666-4666-8666-666666666666",
+      recordingId: "77777777-7777-4777-8777-777777777777",
       transcriptJobId: "55555555-5555-4555-8555-555555555555",
       audioObjectKey:
         "teams/22222222-2222-4222-8222-222222222222/meetings/33333333-3333-4333-8333-333333333333/assets/66666666-6666-4666-8666-666666666666.mp3",
     });
     expect(values).toHaveBeenNthCalledWith(
-      2,
+      3,
       expect.objectContaining({
         objectKey: "users/user_123/uploads/upload.mp4",
         type: "transcript_source",
       }),
     );
     expect(values).toHaveBeenNthCalledWith(
-      3,
+      4,
       expect.objectContaining({
         mediaAssetId: null,
         status: "queued",

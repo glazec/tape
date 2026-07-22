@@ -6,6 +6,7 @@ import {
 } from "@/lib/meeting-display-status";
 
 export type DashboardWorkflowMeeting = {
+  durationMs?: number | null;
   title: string;
   startedAt: string;
   endedAt?: string | null;
@@ -240,6 +241,10 @@ function getMeetingChangePercent(current: number, previous: number) {
 }
 
 function getMeetingDurationMs(meeting: DashboardWorkflowMeeting) {
+  if (meeting.durationMs && meeting.durationMs > 0) {
+    return meeting.durationMs;
+  }
+
   const segmentDurations = meeting.segments
     ?.map((segment) => segment.endMs ?? 0)
     .filter((endMs) => endMs > 0);

@@ -1,7 +1,7 @@
 import { eq } from "drizzle-orm";
 
 import { db } from "@/db/client";
-import { mediaAssets, meetings, transcriptJobs } from "@/db/schema";
+import { mediaAssets, meetings, recordings, transcriptJobs } from "@/db/schema";
 import type { SessionUser } from "@/lib/auth";
 import { reconcileMeetingSharingForMeeting } from "@/lib/meeting-share-rules";
 import {
@@ -19,6 +19,7 @@ type CreateUploadedAudioTranscriptionInput = {
   objectKey: string;
   title?: string;
   startedAt?: Date;
+  durationMs?: number;
   fileSizeBytes?: number;
   mimeType?: string;
 };
@@ -31,6 +32,7 @@ type CompleteUploadedVideoConversionInput = {
   audioMediaAssetId: string;
   audioObjectKey: string;
   transcriptJobId: string;
+  recordingId?: string;
 };
 
 export async function createUploadedAudioTranscription(
@@ -54,10 +56,25 @@ export async function createUploadedAudioTranscription(
 
   await reconcileMeetingSharingForMeeting(meeting.id);
 
+  const [recording] = await db
+    .insert(recordings)
+    .values({
+      durationMs: input.durationMs,
+      endedAt:
+        input.startedAt && input.durationMs
+          ? new Date(input.startedAt.getTime() + input.durationMs)
+          : undefined,
+      meetingId: meeting.id,
+      source: "upload",
+      startedAt: input.startedAt,
+    })
+    .returning({ id: recordings.id });
+
   const [asset] = await db
     .insert(mediaAssets)
     .values({
       meetingId: meeting.id,
+      recordingId: recording.id,
       source: "upload",
       type: "audio",
       bucket: env.R2_BUCKET,
@@ -80,6 +97,7 @@ export async function createUploadedAudioTranscription(
   return {
     meetingId: meeting.id,
     mediaAssetId: asset.id,
+    recordingId: recording.id,
     transcriptJobId: job.id,
   };
 }
@@ -105,10 +123,25 @@ export async function createUploadedVideoTranscription(
 
   await reconcileMeetingSharingForMeeting(meeting.id);
 
+  const [recording] = await db
+    .insert(recordings)
+    .values({
+      durationMs: input.durationMs,
+      endedAt:
+        input.startedAt && input.durationMs
+          ? new Date(input.startedAt.getTime() + input.durationMs)
+          : undefined,
+      meetingId: meeting.id,
+      source: "upload",
+      startedAt: input.startedAt,
+    })
+    .returning({ id: recordings.id });
+
   const [sourceAsset] = await db
     .insert(mediaAssets)
     .values({
       meetingId: meeting.id,
+      recordingId: recording.id,
       source: "upload",
       type: "transcript_source",
       bucket: env.R2_BUCKET,
@@ -141,6 +174,7 @@ export async function createUploadedVideoTranscription(
     sourceMediaAssetId: sourceAsset.id,
     audioMediaAssetId,
     audioObjectKey,
+    recordingId: recording.id,
     transcriptJobId: job.id,
   };
 }
@@ -158,6 +192,7 @@ export async function completeUploadedVideoConversion(
     .values({
       id: input.audioMediaAssetId,
       meetingId: input.meetingId,
+      recordingId: input.recordingId,
       source: "upload",
       type: "audio",
       bucket: env.R2_BUCKET,
@@ -179,13 +214,27 @@ export async function completeUploadedVideoConversion(
     meetingId: input.meetingId,
     mediaAssetId: input.audioMediaAssetId,
     objectKey: input.audioObjectKey,
+    ...(input.recordingId ? { recordingId: input.recordingId } : {}),
     transcriptJobId: input.transcriptJobId,
   };
 }
 
 export async function createRecallRecordingTranscription(input: {
+  durationMs?: number;
+  endedAt?: Date;
   meetingId: string;
+  startedAt?: Date;
 }) {
+  const [recording] = await db
+    .insert(recordings)
+    .values({
+      durationMs: input.durationMs,
+      endedAt: input.endedAt,
+      meetingId: input.meetingId,
+      source: "recall",
+      startedAt: input.startedAt,
+    })
+    .returning({ id: recordings.id });
   const [job] = await db
     .insert(transcriptJobs)
     .values({
@@ -197,6 +246,7 @@ export async function createRecallRecordingTranscription(input: {
 
   return {
     meetingId: input.meetingId,
+    recordingId: recording.id,
     transcriptJobId: job.id,
   };
 }

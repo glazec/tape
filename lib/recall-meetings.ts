@@ -9,6 +9,7 @@ import { createRecallRecordingTranscription } from "@/lib/transcription-records"
 import type { normalizeRecallWebhook } from "@/lib/vendors/recall";
 import {
   findRecallRecordingMediaUrl,
+  findRecallRecordingTiming,
   findRecallSpeakerTimelineUrl,
   retrieveRecallBot,
   retrieveRecallRecording,
@@ -226,7 +227,11 @@ async function queueRecallRecordingTranscription(
     }
   }
 
+  const recordingTiming = update.recallRecordingId
+    ? findRecallRecordingTiming(recallArtifact, update.recallRecordingId)
+    : null;
   const transcription = await createRecallRecordingTranscription({
+    ...(recordingTiming ?? {}),
     meetingId: update.meetingId,
   });
 

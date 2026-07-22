@@ -21,6 +21,7 @@ import {
   meetingEntities,
   meetingParticipantTimeline,
   meetings,
+  recordings,
   teamMemberships,
   transcriptJobs,
   transcriptSegments,
@@ -116,6 +117,7 @@ export type MeetingTranscript = {
   status: MeetingListItem["status"];
   startedAt: string | null;
   endedAt: string | null;
+  updatedAt: string;
   durationMs: number | null;
   transcriptJobStatus: TranscriptJobStatus | null;
   translationLanguage: TranslationLanguage;
@@ -243,7 +245,7 @@ export async function listMeetingLibraryPageForWorkspace(
         order by ${transcriptJobs.createdAt} desc
         limit 1
       )`,
-      calendarAttendeeEmails: calendarEvents.attendeeEmails,
+      calendarAttendeeEmails: getMeetingAttendeeEmailsSnapshot(),
       recallBotId: meetings.recallBotId,
       startedAt: meetings.startedAt,
       endedAt: meetings.endedAt,
@@ -271,6 +273,9 @@ export async function listMeetingLibraryPageForWorkspace(
         where ${transcriptSegments.meetingId} = ${meetings.id}
           and ${transcriptSegments.jobId} = ${currentTranscriptJobIdSubquery(meetings.id)}
       )`,
+      recordedDurationMs: latestRecordingDurationMsSubquery(meetings.id),
+      recordedStartedAt: latestRecordingStartedAtSubquery(meetings.id),
+      recordedEndedAt: latestRecordingEndedAtSubquery(meetings.id),
     })
     .from(meetings)
     .leftJoin(calendarEvents, eq(calendarEvents.id, meetings.calendarEventId))
@@ -303,9 +308,16 @@ export async function listMeetingLibraryPageForWorkspace(
         status: meeting.status,
         transcriptJobStatus: meeting.transcriptJobStatus,
         hasRecallBot: Boolean(meeting.recallBotId),
-        startedAt: (meeting.startedAt ?? meeting.createdAt).toISOString(),
-        endedAt: meeting.endedAt?.toISOString() ?? null,
-        durationMs: getTranscriptDurationMs(meeting.transcriptDurationMs),
+        startedAt: (
+          meeting.recordedStartedAt ?? meeting.startedAt ?? meeting.createdAt
+        ).toISOString(),
+        endedAt:
+          meeting.recordedEndedAt?.toISOString() ??
+          meeting.endedAt?.toISOString() ??
+          null,
+        durationMs:
+          getTranscriptDurationMs(meeting.recordedDurationMs) ??
+          getTranscriptDurationMs(meeting.transcriptDurationMs),
         participantCount: getMeetingParticipantCount({
           attendeeEmails: meeting.calendarAttendeeEmails,
           recognizedSpeakerCount: meeting.recognizedSpeakerCount,
@@ -917,6 +929,37 @@ function getTranscriptDurationMs(durationMs?: number | null) {
     : undefined;
 }
 
+function latestRecordingDurationMsSubquery(meetingId: typeof meetings.id) {
+  return sql<number | null>`(
+    select ${recordings.durationMs}
+    from ${recordings}
+    where ${recordings.meetingId} = ${meetingId}
+      and ${recordings.durationMs} > 0
+    order by ${recordings.createdAt} desc
+    limit 1
+  )`;
+}
+
+function latestRecordingStartedAtSubquery(meetingId: typeof meetings.id) {
+  return sql<Date | null>`(
+    select ${recordings.startedAt}
+    from ${recordings}
+    where ${recordings.meetingId} = ${meetingId}
+    order by ${recordings.createdAt} desc
+    limit 1
+  )`;
+}
+
+function latestRecordingEndedAtSubquery(meetingId: typeof meetings.id) {
+  return sql<Date | null>`(
+    select ${recordings.endedAt}
+    from ${recordings}
+    where ${recordings.meetingId} = ${meetingId}
+    order by ${recordings.createdAt} desc
+    limit 1
+  )`;
+}
+
 function getAttendeeCount(attendeeEmails: unknown) {
   if (!Array.isArray(attendeeEmails)) {
     return undefined;
@@ -986,6 +1029,9 @@ export async function getMeetingDashboardSummaryForWorkspace(
         startedAt: meetings.startedAt,
         endedAt: meetings.endedAt,
         createdAt: meetings.createdAt,
+        recordedDurationMs: latestRecordingDurationMsSubquery(meetings.id),
+        recordedStartedAt: latestRecordingStartedAtSubquery(meetings.id),
+        recordedEndedAt: latestRecordingEndedAtSubquery(meetings.id),
       })
       .from(meetings)
       .where(
@@ -1040,8 +1086,14 @@ export async function getMeetingDashboardSummaryForWorkspace(
       status: meeting.status,
       transcriptJobStatus: meeting.transcriptJobStatus,
       hasRecallBot: Boolean(meeting.recallBotId),
-      startedAt: (meeting.startedAt ?? meeting.createdAt).toISOString(),
-      endedAt: meeting.endedAt?.toISOString() ?? null,
+      startedAt: (
+        meeting.recordedStartedAt ?? meeting.startedAt ?? meeting.createdAt
+      ).toISOString(),
+      endedAt:
+        meeting.recordedEndedAt?.toISOString() ??
+        meeting.endedAt?.toISOString() ??
+        null,
+      durationMs: getTranscriptDurationMs(meeting.recordedDurationMs),
       segments: segmentsByMeetingId.get(meeting.id) ?? [],
     })),
     now,
@@ -1083,6 +1135,7 @@ export async function getMeetingTranscriptForWorkspace(
       startedAt: meetings.startedAt,
       endedAt: meetings.endedAt,
       createdAt: meetings.createdAt,
+      updatedAt: meetings.updatedAt,
       transcriptDurationMs: sql<number | null>`(
         select max(greatest(
           ${transcriptSegments.startMs},
@@ -1092,6 +1145,9 @@ export async function getMeetingTranscriptForWorkspace(
         where ${transcriptSegments.meetingId} = ${meetings.id}
           and ${transcriptSegments.jobId} = ${currentTranscriptJobIdSubquery(meetings.id)}
       )`,
+      recordedDurationMs: latestRecordingDurationMsSubquery(meetings.id),
+      recordedStartedAt: latestRecordingStartedAtSubquery(meetings.id),
+      recordedEndedAt: latestRecordingEndedAtSubquery(meetings.id),
       transcriptJobStatus: sql<TranscriptJobStatus | null>`(
         select ${transcriptJobs.status}
         from ${transcriptJobs}
@@ -1100,7 +1156,7 @@ export async function getMeetingTranscriptForWorkspace(
         limit 1
       )`,
       audioObjectKey: mediaAssets.objectKey,
-      calendarAttendeeEmails: calendarEvents.attendeeEmails,
+      calendarAttendeeEmails: getMeetingAttendeeEmailsSnapshot(),
       recallRecordingId: meetings.recallRecordingId,
       translationErrorMessage: meetings.translationErrorMessage,
       translationLanguage: meetings.translationLanguage,
@@ -1220,9 +1276,25 @@ export async function getMeetingTranscriptForWorkspace(
     meetingUrl: meeting.meetingUrl,
     status: meeting.status,
     startedAt:
-      (meeting.startedAt ?? meeting.createdAt)?.toISOString() ?? null,
-    endedAt: meeting.endedAt?.toISOString() ?? null,
-    durationMs: getTranscriptDurationMs(meeting.transcriptDurationMs) ?? null,
+      (
+        meeting.recordedStartedAt ??
+        meeting.startedAt ??
+        meeting.createdAt
+      )?.toISOString() ?? null,
+    endedAt:
+      meeting.recordedEndedAt?.toISOString() ??
+      meeting.endedAt?.toISOString() ??
+      null,
+    updatedAt: (
+      meeting.updatedAt ??
+      meeting.createdAt ??
+      meeting.startedAt ??
+      new Date(0)
+    ).toISOString(),
+    durationMs:
+      getTranscriptDurationMs(meeting.recordedDurationMs) ??
+      getTranscriptDurationMs(meeting.transcriptDurationMs) ??
+      null,
     transcriptJobStatus: meeting.transcriptJobStatus,
     translationLanguage: normalizeTranslationLanguage(
       meeting.translationLanguage,
@@ -1274,7 +1346,8 @@ export async function listMeetingDetailRelatedMeetingsForWorkspace(
       title: meetings.title,
       startedAt: meetings.startedAt,
       createdAt: meetings.createdAt,
-      calendarAttendeeEmails: calendarEvents.attendeeEmails,
+      recordedStartedAt: latestRecordingStartedAtSubquery(meetings.id),
+      calendarAttendeeEmails: getMeetingAttendeeEmailsSnapshot(),
     })
     .from(meetings)
     .leftJoin(calendarEvents, eq(calendarEvents.id, meetings.calendarEventId))
@@ -1293,7 +1366,11 @@ export async function listMeetingDetailRelatedMeetingsForWorkspace(
       workspaceDomain: workspace.domain,
       workspaceName: workspace.teamName,
     }),
-    startedAt: (meeting.startedAt ?? meeting.createdAt).toISOString(),
+    startedAt: (
+      meeting.recordedStartedAt ??
+      meeting.startedAt ??
+      meeting.createdAt
+    ).toISOString(),
     externalParticipantKeys: getExternalParticipantKeys(
       meeting.calendarAttendeeEmails,
       workspace.domain,
@@ -1542,6 +1619,18 @@ async function listMeetingSpeakerSuggestions(
           fallbackName,
       };
     });
+}
+
+function getMeetingAttendeeEmailsSnapshot() {
+  return sql<string[]>`coalesce(
+    (
+      select jsonb_agg(${meetingAttendees.email} order by ${meetingAttendees.email})
+      from ${meetingAttendees}
+      where ${meetingAttendees.meetingId} = ${meetings.id}
+    ),
+    ${calendarEvents.attendeeEmails},
+    '[]'::jsonb
+  )`;
 }
 
 async function listMeetingAccessPeople(

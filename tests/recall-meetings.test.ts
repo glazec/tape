@@ -299,7 +299,9 @@ describe("applyRecallMeetingEvent", () => {
     retrieveRecallBot.mockResolvedValue({
       recordings: [
         {
+          completed_at: "2026-06-23T12:45:00.000Z",
           id: "recording_123",
+          started_at: "2026-06-23T12:00:00.000Z",
           media_shortcuts: {
             speaker_timeline: {
               data: {
@@ -337,7 +339,10 @@ describe("applyRecallMeetingEvent", () => {
 
     expect(retrieveRecallBot).toHaveBeenCalledWith("bot_123");
     expect(createRecallRecordingTranscription).toHaveBeenCalledWith({
+      durationMs: 45 * 60 * 1000,
+      endedAt: new Date("2026-06-23T12:45:00.000Z"),
       meetingId: "11111111-1111-4111-8111-111111111111",
+      startedAt: new Date("2026-06-23T12:00:00.000Z"),
     });
     expect(fetchAndPersistRecallParticipantTimeline).toHaveBeenCalledWith({
       meetingId: "11111111-1111-4111-8111-111111111111",

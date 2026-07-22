@@ -45,6 +45,7 @@ describe("share links", () => {
       {
         title: "Weekly review",
         startedAt: new Date("2026-07-20T09:30:00.000Z"),
+        recordedStartedAt: new Date("2026-07-20T09:35:00.000Z"),
         sharedByEmail: "alice@example.com",
         sharedByName: "Alice",
         segmentId: "segment_1",
@@ -57,6 +58,7 @@ describe("share links", () => {
       {
         title: "Weekly review",
         startedAt: new Date("2026-07-20T09:30:00.000Z"),
+        recordedStartedAt: new Date("2026-07-20T09:35:00.000Z"),
         sharedByEmail: "alice@example.com",
         sharedByName: "Alice",
         segmentId: null,
@@ -71,7 +73,7 @@ describe("share links", () => {
 
     await expect(getSharedTranscriptByToken("valid")).resolves.toEqual({
       sharedBy: "Alice",
-      startedAt: "2026-07-20T09:30:00.000Z",
+      startedAt: "2026-07-20T09:35:00.000Z",
       title: "Weekly review",
       segments: [
         {
