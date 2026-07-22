@@ -1,9 +1,7 @@
 import { z } from "zod";
 
-import {
-  DEFAULT_RECALL_BOT_NAME,
-  sendRecallChatMessage,
-} from "@/lib/vendors/recall";
+import { DEFAULT_MEETING_BOT_NAME } from "@/lib/meeting-bot-constants";
+import { sendRecallChatMessage } from "@/lib/vendors/recall";
 import { generateOpenRouterChatReply } from "@/lib/vendors/openrouter";
 
 const recallMetadataSchema = z.record(z.string(), z.unknown());
@@ -89,6 +87,7 @@ export async function answerRecallChatMessage(event: RecallChatMessage) {
   }
 
   const reply = await generateOpenRouterChatReply({
+    botName: getEventBotName(event),
     question: decision.question,
     participantName: event.participant.name,
   });
@@ -110,7 +109,7 @@ function getEventBotName(event: RecallChatMessage) {
 
   return typeof metadataName === "string" && metadataName.trim()
     ? metadataName.trim()
-    : DEFAULT_RECALL_BOT_NAME;
+    : DEFAULT_MEETING_BOT_NAME;
 }
 
 function includesBotMention(text: string, botName: string) {

@@ -6,11 +6,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ShareDialog } from "@/components/share-dialog";
 
 const props = {
+  customAudience: {
+    memberCount: 2,
+    name: "Investment committee",
+  },
   initialAccessPeople: [{ email: "participant@example.com", name: "Participant" }],
   initialShares: [],
   instanceId: "interaction",
   meetingId: "meeting/one",
-  showIcTeamAudience: true,
   teamMembers: [{ email: "teammate@example.com", name: "Team Mate" }],
 };
 
@@ -73,7 +76,7 @@ describe("ShareDialog interactions", () => {
 
     vi.mocked(fetch).mockReset().mockResolvedValueOnce(response({ error: "Audience unavailable" }, 503));
     render(<ShareDialog {...props} />);
-    changeRecipient("IC team");
+    changeRecipient("Investment committee");
     fireEvent.click(screen.getByRole("button", { name: "Share meeting" }));
     expect((await screen.findByRole("alert")).textContent).toContain("Audience unavailable");
   });

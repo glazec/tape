@@ -1,8 +1,8 @@
 import { getStringFormValue } from "@/lib/form-data";
 import {
-  MeetingBotProfileInputError,
-  upsertMeetingBotProfile,
-} from "@/lib/meeting-bot-profile";
+  TeamConfigurationInputError,
+  updateTeamConfiguration,
+} from "@/lib/team-configuration";
 import { getAdminTeamSettingsWorkspace } from "@/lib/team-settings-access";
 
 export const runtime = "nodejs";
@@ -15,23 +15,21 @@ export async function POST(request: Request) {
   }
 
   const formData = await request.formData().catch(() => null);
-  const botName = getStringFormValue(formData, "botName");
-  const avatar = formData?.get("avatar");
 
   try {
-    await upsertMeetingBotProfile({
+    await updateTeamConfiguration({
+      name: getStringFormValue(formData, "teamName"),
+      shareAudienceEmails: getStringFormValue(formData, "shareAudienceEmails"),
+      shareAudienceName: getStringFormValue(formData, "shareAudienceName"),
       teamId: workspace.teamId,
-      botName,
-      avatarFile: avatar instanceof File ? avatar : null,
-      resetAvatar: formData?.get("resetAvatar") === "on",
     });
   } catch (error) {
-    if (error instanceof MeetingBotProfileInputError) {
+    if (error instanceof TeamConfigurationInputError) {
       return Response.json({ error: error.message }, { status: 400 });
     }
 
     return Response.json(
-      { error: "Bot profile could not be saved" },
+      { error: "Team configuration could not be saved" },
       { status: 500 },
     );
   }

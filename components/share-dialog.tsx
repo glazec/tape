@@ -22,7 +22,6 @@ import {
   ComboboxList,
 } from "@/components/ui/combobox";
 import { Label } from "@/components/ui/label";
-import { icTeamMembers } from "@/lib/meeting-share-audiences";
 import type {
   MeetingAccessPerson,
   ShareRecipient,
@@ -31,13 +30,17 @@ import type {
   ActiveMeetingShare,
   MeetingShareScope,
 } from "@/lib/meeting-share-service";
+type ShareAudienceOption = {
+  memberCount: number;
+  name: string;
+};
 
 type ShareDialogProps = {
+  customAudience?: ShareAudienceOption | null;
   initialAccessPeople?: MeetingAccessPerson[];
   initialShares?: ActiveMeetingShare[];
   instanceId: string;
   meetingId: string;
-  showIcTeamAudience?: boolean;
   teamMembers: ShareRecipient[];
 };
 
@@ -51,17 +54,17 @@ type SharePreview = {
 
 type ShareRecipientOption = {
   description: string;
-  kind: "organization" | "ic_team" | "person";
+  kind: "organization" | "person" | "team_group";
   label: string;
   value: string;
 };
 
 export function ShareDialog({
+  customAudience = null,
   initialAccessPeople = [],
   instanceId,
   initialShares = [],
   meetingId,
-  showIcTeamAudience = false,
   teamMembers,
 }: ShareDialogProps) {
   const [accessPeople, setAccessPeople] = useState(initialAccessPeople);
@@ -89,7 +92,7 @@ export function ShareDialog({
   async function submitShare(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
-    const audience = getSelectedAudience(email, showIcTeamAudience);
+    const audience = getSelectedAudience(email, customAudience);
 
     if (audience) {
       await requestAudience(audience);
@@ -188,7 +191,7 @@ export function ShareDialog({
     await loadShares();
   }
 
-  async function requestAudience(audience: "organization" | "ic_team") {
+  async function requestAudience(audience: "organization" | "team_group") {
     setState("loading");
     setMessage(null);
 
@@ -214,7 +217,7 @@ export function ShareDialog({
     setMessage(
       audience === "organization"
         ? `Shared with ${body?.recipientCount ?? 0} organization members.`
-        : `Shared with ${body?.recipientCount ?? icTeamMembers.length} IC team members.`,
+        : `Shared with ${body?.recipientCount ?? customAudience?.memberCount ?? 0} ${customAudience?.name ?? "group"} members.`,
     );
     await loadShares();
   }
@@ -224,10 +227,10 @@ export function ShareDialog({
     shares,
     teamMembers,
   });
-  const selectedAudience = getSelectedAudience(email, showIcTeamAudience);
+  const selectedAudience = getSelectedAudience(email, customAudience);
   const recipientOptions = buildRecipientOptions(
     teamMembers,
-    showIcTeamAudience,
+    customAudience,
   );
   const selectedRecipient =
     recipientOptions.find(
@@ -286,8 +289,8 @@ export function ShareDialog({
                   id={emailId}
                   name="email"
                   placeholder={
-                    showIcTeamAudience
-                      ? "Email, whole organization, or IC team"
+                    customAudience
+                      ? `Email, whole organization, or ${customAudience.name}`
                       : "Email or whole organization"
                   }
                   required
@@ -413,7 +416,7 @@ function buildPeopleWithAccess({
     { detail: string; email: string; name: string | null }
   >();
   const knownPeople = new Map(
-    [...teamMembers, ...icTeamMembers].map((person) => [person.email, person]),
+    teamMembers.map((person) => [person.email, person]),
   );
 
   for (const person of accessPeople) {
@@ -441,8 +444,8 @@ function buildPeopleWithAccess({
 
 function getSelectedAudience(
   value: string,
-  showIcTeamAudience: boolean,
-): "organization" | "ic_team" | null {
+  customAudience: ShareAudienceOption | null,
+): "organization" | "team_group" | null {
   const normalizedValue = value.trim().toLowerCase();
 
   if (
@@ -452,8 +455,11 @@ function getSelectedAudience(
     return "organization";
   }
 
-  if (showIcTeamAudience && normalizedValue === "ic team") {
-    return "ic_team";
+  if (
+    customAudience &&
+    normalizedValue === customAudience.name.trim().toLowerCase()
+  ) {
+    return "team_group";
   }
 
   return null;
@@ -461,7 +467,7 @@ function getSelectedAudience(
 
 function buildRecipientOptions(
   teamMembers: ShareRecipient[],
-  showIcTeamAudience: boolean,
+  customAudience: ShareAudienceOption | null,
 ): ShareRecipientOption[] {
   return [
     {
@@ -470,13 +476,13 @@ function buildRecipientOptions(
       label: "Whole organization",
       value: "Whole organization",
     },
-    ...(showIcTeamAudience
+    ...(customAudience
       ? [
           {
-            description: "Jocy, Yiping, Frank, Mario, Jeffrey, and Turbo",
-            kind: "ic_team" as const,
-            label: "IC team",
-            value: "IC team",
+            description: `${customAudience.memberCount} configured members`,
+            kind: "team_group" as const,
+            label: customAudience.name,
+            value: customAudience.name,
           },
         ]
       : []),
@@ -500,7 +506,7 @@ function RecipientOptionIcon({
     return <Building2 className={className} />;
   }
 
-  if (kind === "ic_team") {
+  if (kind === "team_group") {
     return <Users className={className} />;
   }
 

@@ -8,6 +8,7 @@ const {
   getWorkspaceAccessSummary,
   getDefaultMeetingBotAvatarJpegBase64,
   getMeetingBotProfile,
+  getTeamConfiguration,
   listTeamVocabularyTerms,
   listWorkspaceMembers,
   redirect,
@@ -18,6 +19,7 @@ const {
   getWorkspaceAccessSummary: vi.fn(),
   getDefaultMeetingBotAvatarJpegBase64: vi.fn(),
   getMeetingBotProfile: vi.fn(),
+  getTeamConfiguration: vi.fn(),
   listTeamVocabularyTerms: vi.fn(),
   listWorkspaceMembers: vi.fn(),
   redirect: vi.fn((url: string) => {
@@ -54,6 +56,8 @@ vi.mock("@/lib/meeting-bot-profile", () => ({
   getMeetingBotProfile,
 }));
 
+vi.mock("@/lib/team-configuration", () => ({ getTeamConfiguration }));
+
 describe("TeamSettingsPage", () => {
   afterEach(() => {
     getWorkspace.mockReset();
@@ -61,6 +65,7 @@ describe("TeamSettingsPage", () => {
     getWorkspaceAccessSummary.mockReset();
     getDefaultMeetingBotAvatarJpegBase64.mockReset();
     getMeetingBotProfile.mockReset();
+    getTeamConfiguration.mockReset();
     listTeamVocabularyTerms.mockReset();
     listWorkspaceMembers.mockReset();
     redirect.mockClear();
@@ -144,6 +149,13 @@ describe("TeamSettingsPage", () => {
       botName: "Deal Scribe",
       avatarJpegBase64: "custom-avatar",
     });
+    getTeamConfiguration.mockResolvedValue({
+      name: "Example Capital",
+      shareAudience: {
+        emails: ["partner@example.com", "principal@example.com"],
+        name: "Investment committee",
+      },
+    });
 
     const { default: TeamSettingsPage } = await import(
       "@/app/settings/team/page"
@@ -151,6 +163,10 @@ describe("TeamSettingsPage", () => {
     const html = renderToStaticMarkup(await TeamSettingsPage());
 
     expect(html).toContain("Team vocabulary");
+    expect(html).toContain("Team identity and sharing");
+    expect(html).toContain("Example Capital");
+    expect(html).toContain("Investment committee");
+    expect(html).toContain("2 members");
     expect(html).toContain("TCG platform");
     expect(html).toContain("Before transcription");
     expect(html).toContain("Team meeting bot");
@@ -198,6 +214,10 @@ describe("TeamSettingsPage", () => {
     getMeetingBotProfile.mockResolvedValue({
       botName: "IOSG Old Friends",
       avatarJpegBase64: null,
+    });
+    getTeamConfiguration.mockResolvedValue({
+      name: "Example Capital",
+      shareAudience: null,
     });
     getDefaultMeetingBotAvatarJpegBase64.mockReturnValue("default-avatar");
 

@@ -36,4 +36,17 @@ describe("MeetingActions", () => {
     expect(html).not.toContain("中文");
     expect(html).not.toContain("language=");
   });
+
+  it("shows only delete when the meeting has no content", () => {
+    const html = renderToStaticMarkup(
+      <MeetingActions
+        meetingId="11111111-1111-4111-8111-111111111111"
+        showContentActions={false}
+      />,
+    );
+
+    expect(html).not.toContain("Export");
+    expect(html).not.toContain("Copy");
+    expect(html).toContain("Delete");
+  });
 });

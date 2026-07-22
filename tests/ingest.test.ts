@@ -1078,7 +1078,7 @@ describe("vendor job creation", () => {
 
     expect(body).toMatchObject({
       meeting_url: "https://meet.google.com/abc-defg-hij",
-      bot_name: "IOSG Old Friend",
+      bot_name: "Tape Notetaker",
       automatic_leave: {
         waiting_room_timeout: 3600,
       },

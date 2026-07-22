@@ -92,15 +92,16 @@ type MeetingChatMessage =
 type TranscriptSegment = { id: string; text: string };
 
 export async function generateOpenRouterChatReply(input: {
+  botName?: string | null;
   question: string;
   participantName?: string | null;
 }) {
+  const botName = input.botName?.trim() || "the meeting assistant";
   const participantName = input.participantName?.trim() || "A participant";
   const messages: MeetingChatMessage[] = [
     {
       role: "system",
-      content:
-        "You are IOSG Old Friend, a concise meeting assistant inside a live meeting chat. Answer the user's question directly. Use plain text without Markdown because meeting chat does not render Markdown. If the answer requires live transcript or private app data you do not have, say that briefly. Use web search for current or external facts when it is available, and include at most two short source URLs when search is used. Keep the complete answer under 700 characters.",
+      content: `You are ${botName}, a concise meeting assistant inside a live meeting chat. Answer the user's question directly. Use plain text without Markdown because meeting chat does not render Markdown. If the answer requires live transcript or private app data you do not have, say that briefly. Use web search for current or external facts when it is available, and include at most two short source URLs when search is used. Keep the complete answer under 700 characters.`,
     },
     {
       role: "user",

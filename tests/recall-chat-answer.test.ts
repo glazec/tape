@@ -12,7 +12,6 @@ vi.mock("@/lib/vendors/openrouter", () => ({
 }));
 
 vi.mock("@/lib/vendors/recall", () => ({
-  DEFAULT_RECALL_BOT_NAME: "IOSG Old Friend",
   sendRecallChatMessage,
 }));
 
@@ -58,6 +57,11 @@ describe("answerRecallChatMessage", () => {
 
     await expect(answerRecallChatMessage(event)).resolves.toMatchObject({
       action: "replied",
+    });
+    expect(generateOpenRouterChatReply).toHaveBeenCalledWith({
+      botName: "Tape Notetaker",
+      participantName: "Alice",
+      question: "What is the latest market data?",
     });
     expect(sendRecallChatMessage).toHaveBeenCalledWith({
       botId: "bot_123",

@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const {
   createMeetingSharePolicy,
   getCurrentUser,
+  getTeamConfiguration,
   getWorkspace,
   listActiveMeetingShares,
   listWorkspaceShareRecipients,
@@ -13,6 +14,7 @@ const {
 } = vi.hoisted(() => ({
   createMeetingSharePolicy: vi.fn(),
   getCurrentUser: vi.fn(),
+  getTeamConfiguration: vi.fn(),
   getWorkspace: vi.fn(),
   listActiveMeetingShares: vi.fn(),
   listWorkspaceShareRecipients: vi.fn(),
@@ -26,6 +28,7 @@ vi.mock("@/lib/auth", () => ({ getCurrentUser }));
 vi.mock("@/lib/workspace", () => ({
   getOrCreateWorkspaceForSessionUser: getWorkspace,
 }));
+vi.mock("@/lib/team-configuration", () => ({ getTeamConfiguration }));
 vi.mock("@/lib/meeting-share-service", () => ({
   createMeetingSharePolicy,
   listActiveMeetingShares,
@@ -115,6 +118,17 @@ function mockCandidateRows(rows: unknown[]) {
 
 describe("POST /api/meetings/[meetingId]/share", () => {
   beforeEach(() => {
+    getTeamConfiguration.mockResolvedValue({
+      name: "Example Capital",
+      shareAudience: {
+        emails: [
+          "partner@example.com",
+          "principal@example.com",
+          "owner@example.com",
+        ],
+        name: "Investment committee",
+      },
+    });
     listActiveMeetingShares.mockResolvedValue([]);
     listWorkspaceShareRecipients.mockResolvedValue([]);
     meetingSharePolicyAppliesToMeeting.mockResolvedValue(true);
@@ -334,9 +348,9 @@ describe("POST /api/meetings/[meetingId]/share", () => {
     ).toEqual(["alice@example.com", "bob@example.com"]);
   });
 
-  it("shares with every named IC member except the current user", async () => {
+  it("shares with every configured group member except the current user", async () => {
     getCurrentUser.mockResolvedValue({
-      email: "yiping@iosg.vc",
+      email: "owner@example.com",
       id: "auth_owner",
       name: "YiPing Lu",
     });
@@ -355,24 +369,18 @@ describe("POST /api/meetings/[meetingId]/share", () => {
     ]);
     createMeetingSharePolicy.mockResolvedValue({ pending: true });
 
-    const response = await shareMeetingRequest({ audience: "ic_team" });
+    const response = await shareMeetingRequest({ audience: "team_group" });
 
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toMatchObject({
-      audience: "ic_team",
-      recipientCount: 5,
+      audience: "team_group",
+      recipientCount: 2,
       shared: true,
     });
-    expect(createMeetingSharePolicy).toHaveBeenCalledTimes(5);
+    expect(createMeetingSharePolicy).toHaveBeenCalledTimes(2);
     expect(
       createMeetingSharePolicy.mock.calls.map(([input]) => input.recipientEmail),
-    ).toEqual([
-      "jocy@iosg.vc",
-      "frank@iosg.vc",
-      "mario@iosg.vc",
-      "jeffrey@iosg.vc",
-      "turbo@iosg.vc",
-    ]);
+    ).toEqual(["partner@example.com", "principal@example.com"]);
     expect(createMeetingSharePolicy).toHaveBeenCalledWith(
       expect.objectContaining({
         meetingIds: [meetingId],
@@ -382,7 +390,7 @@ describe("POST /api/meetings/[meetingId]/share", () => {
     );
   });
 
-  it("does not expose the IOSG IC audience in another organization", async () => {
+  it("rejects a team group when none is configured", async () => {
     getCurrentUser.mockResolvedValue({
       email: "owner@example.com",
       id: "auth_owner",
@@ -402,7 +410,12 @@ describe("POST /api/meetings/[meetingId]/share", () => {
       },
     ]);
 
-    const response = await shareMeetingRequest({ audience: "ic_team" });
+    getTeamConfiguration.mockResolvedValue({
+      name: "Example Capital",
+      shareAudience: null,
+    });
+
+    const response = await shareMeetingRequest({ audience: "team_group" });
 
     expect(response.status).toBe(400);
     expect(createMeetingSharePolicy).not.toHaveBeenCalled();

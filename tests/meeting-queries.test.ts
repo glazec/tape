@@ -31,6 +31,13 @@ function expectUsesCurrentTranscriptJob(condition: SQL) {
   expect(query.sql).toContain('"transcript_jobs"."status" = \'completed\'');
 }
 
+function expectScopesDashboardToUser(condition: SQL, userId: string) {
+  const query = toQuery(condition);
+
+  expect(query.sql).toContain('"meetings"."owner_user_id" =');
+  expect(query.params).toContain(userId);
+}
+
 describe("getWorkspaceMeetingTranscript", () => {
   afterEach(() => {
     getWorkspace.mockReset();
@@ -1943,59 +1950,60 @@ describe("getMeetingDashboardSummaryForWorkspace", () => {
     vi.resetModules();
   });
 
-  it("builds global dashboard counts from Neon rows instead of the visible table", async () => {
+  it("builds dashboard counts for the effective user instead of the visible table", async () => {
+    const meetingWhere = vi.fn().mockResolvedValue([
+      {
+        id: "11111111-1111-4111-8111-111111111111",
+        title: "Founder intro",
+        status: "scheduled",
+        transcriptJobStatus: null,
+        recallBotId: "bot_123",
+        startedAt: new Date("2999-01-01T14:00:00.000Z"),
+        createdAt: new Date("2026-06-27T10:00:00.000Z"),
+      },
+      {
+        id: "22222222-2222-4222-8222-222222222222",
+        title: "Uncovered partner sync",
+        status: "scheduled",
+        transcriptJobStatus: null,
+        recallBotId: null,
+        startedAt: new Date("2999-01-01T15:00:00.000Z"),
+        createdAt: new Date("2026-06-27T10:00:00.000Z"),
+      },
+      {
+        id: "33333333-3333-4333-8333-333333333333",
+        title: "Ready transcript",
+        status: "ready",
+        transcriptJobStatus: null,
+        recallBotId: "bot_456",
+        startedAt: new Date("2026-06-27T10:00:00.000Z"),
+        createdAt: new Date("2026-06-27T10:00:00.000Z"),
+      },
+      {
+        id: "44444444-4444-4444-8444-444444444444",
+        title: "Failed recording",
+        status: "failed",
+        transcriptJobStatus: null,
+        recallBotId: "bot_789",
+        startedAt: new Date("2026-06-27T09:00:00.000Z"),
+        createdAt: new Date("2026-06-27T09:00:00.000Z"),
+      },
+      {
+        id: "55555555-5555-4555-8555-555555555555",
+        title: "Cancelled partner sync",
+        status: "cancelled",
+        transcriptJobStatus: null,
+        recallBotId: null,
+        startedAt: new Date("2026-06-27T08:00:00.000Z"),
+        createdAt: new Date("2026-06-27T08:00:00.000Z"),
+      },
+    ]);
     const segmentWhere = vi.fn().mockResolvedValue([]);
 
     select
       .mockReturnValueOnce({
         from: () => ({
-          where: vi.fn().mockResolvedValue([
-          {
-            id: "11111111-1111-4111-8111-111111111111",
-            title: "Founder intro",
-            status: "scheduled",
-            transcriptJobStatus: null,
-            recallBotId: "bot_123",
-            startedAt: new Date("2999-01-01T14:00:00.000Z"),
-            createdAt: new Date("2026-06-27T10:00:00.000Z"),
-          },
-          {
-            id: "22222222-2222-4222-8222-222222222222",
-            title: "Uncovered partner sync",
-            status: "scheduled",
-            transcriptJobStatus: null,
-            recallBotId: null,
-            startedAt: new Date("2999-01-01T15:00:00.000Z"),
-            createdAt: new Date("2026-06-27T10:00:00.000Z"),
-          },
-          {
-            id: "33333333-3333-4333-8333-333333333333",
-            title: "Ready transcript",
-            status: "ready",
-            transcriptJobStatus: null,
-            recallBotId: "bot_456",
-            startedAt: new Date("2026-06-27T10:00:00.000Z"),
-            createdAt: new Date("2026-06-27T10:00:00.000Z"),
-          },
-          {
-            id: "44444444-4444-4444-8444-444444444444",
-            title: "Failed recording",
-            status: "failed",
-            transcriptJobStatus: null,
-            recallBotId: "bot_789",
-            startedAt: new Date("2026-06-27T09:00:00.000Z"),
-            createdAt: new Date("2026-06-27T09:00:00.000Z"),
-          },
-          {
-            id: "55555555-5555-4555-8555-555555555555",
-            title: "Cancelled partner sync",
-            status: "cancelled",
-            transcriptJobStatus: null,
-            recallBotId: null,
-            startedAt: new Date("2026-06-27T08:00:00.000Z"),
-            createdAt: new Date("2026-06-27T08:00:00.000Z"),
-          },
-          ]),
+          where: meetingWhere,
         }),
       })
       .mockReturnValueOnce({
@@ -2028,6 +2036,14 @@ describe("getMeetingDashboardSummaryForWorkspace", () => {
     });
 
     expectUsesCurrentTranscriptJob(segmentWhere.mock.calls[0][0]);
+    expectScopesDashboardToUser(
+      meetingWhere.mock.calls[0][0],
+      "11111111-1111-4111-8111-111111111111",
+    );
+    expectScopesDashboardToUser(
+      segmentWhere.mock.calls[0][0],
+      "11111111-1111-4111-8111-111111111111",
+    );
   });
 
   it("builds user stats from transcript segments", async () => {

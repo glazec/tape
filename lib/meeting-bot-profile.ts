@@ -4,7 +4,7 @@ import { eq } from "drizzle-orm";
 
 import { db } from "@/db/client";
 import { teamMeetingBotProfiles } from "@/db/schema";
-import { DEFAULT_RECALL_BOT_NAME } from "@/lib/vendors/recall";
+import { DEFAULT_MEETING_BOT_NAME } from "@/lib/meeting-bot-constants";
 
 export type MeetingBotProfile = {
   botName: string;
@@ -53,7 +53,7 @@ export async function getMeetingBotProfile(
     .limit(1);
 
   return {
-    botName: normalizeBotName(profile?.botName) ?? DEFAULT_RECALL_BOT_NAME,
+    botName: normalizeBotName(profile?.botName) ?? DEFAULT_MEETING_BOT_NAME,
     avatarJpegBase64: profile?.avatarJpegBase64 ?? null,
   };
 }
@@ -115,7 +115,7 @@ export function getMeetingBotRecallCreateInput(profile: MeetingBotProfile) {
 
 export function getMeetingBotRecallUpdateInput(profile: MeetingBotProfile) {
   return {
-    ...(profile.botName !== DEFAULT_RECALL_BOT_NAME
+    ...(profile.botName !== DEFAULT_MEETING_BOT_NAME
       ? { botName: profile.botName }
       : {}),
     ...(profile.avatarJpegBase64
@@ -127,7 +127,7 @@ export function getMeetingBotRecallUpdateInput(profile: MeetingBotProfile) {
 export function getMeetingBotMetadata(
   profile: MeetingBotProfile,
 ): Record<string, string> {
-  return profile.botName === DEFAULT_RECALL_BOT_NAME
+  return profile.botName === DEFAULT_MEETING_BOT_NAME
     ? {}
     : { botName: profile.botName };
 }

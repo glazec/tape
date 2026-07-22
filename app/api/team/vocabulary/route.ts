@@ -1,32 +1,23 @@
 import { db } from "@/db/client";
 import { teamVocabularyTerms } from "@/db/schema";
-import { getCurrentUser } from "@/lib/auth";
-import {
-  canManageTeamSettings,
-  getOrCreateWorkspaceForSessionUser,
-} from "@/lib/workspace";
+import { getNormalizedStringFormValue } from "@/lib/form-data";
+import { getAdminTeamSettingsWorkspace } from "@/lib/team-settings-access";
 
 export const runtime = "nodejs";
 
 export async function POST(request: Request) {
-  const user = await getCurrentUser();
+  const workspace = await getAdminTeamSettingsWorkspace();
 
-  if (!user) {
-    return Response.json({ error: "Unauthorized" }, { status: 401 });
+  if (workspace instanceof Response) {
+    return workspace;
   }
 
   const formData = await request.formData().catch(() => null);
-  const term = normalizeFormValue(formData?.get("term"));
-  const hint = normalizeFormValue(formData?.get("hint"));
+  const term = getNormalizedStringFormValue(formData, "term");
+  const hint = getNormalizedStringFormValue(formData, "hint");
 
   if (!term) {
     return Response.json({ error: "Term is required" }, { status: 400 });
-  }
-
-  const workspace = await getOrCreateWorkspaceForSessionUser(user);
-
-  if (!(await canManageTeamSettings(workspace))) {
-    return Response.json({ error: "Forbidden" }, { status: 403 });
   }
 
   await db
@@ -47,10 +38,4 @@ export async function POST(request: Request) {
     });
 
   return Response.redirect(new URL("/settings/team", request.url), 303);
-}
-
-function normalizeFormValue(value: FormDataEntryValue | null | undefined) {
-  return typeof value === "string"
-    ? value.replace(/\s+/g, " ").trim() || null
-    : null;
 }

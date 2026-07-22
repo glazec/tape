@@ -6,10 +6,6 @@ import { calendarEvents, meetings, users } from "@/db/schema";
 import { normalizeEmail } from "@/lib/access";
 import { getCurrentUser } from "@/lib/auth";
 import {
-  icTeamMembers,
-  isIosgIcTeamAvailable,
-} from "@/lib/meeting-share-audiences";
-import {
   createMeetingSharePolicy,
   listActiveMeetingShares,
   meetingSharePolicyAppliesToMeeting,
@@ -22,6 +18,7 @@ import {
   hasReliableMeetingShareMatchKeys,
   meetingsShareReliableMatch,
 } from "@/lib/meeting-sharing";
+import { getTeamConfiguration } from "@/lib/team-configuration";
 import { getManageableMeetingCondition } from "@/lib/meeting-write-policy";
 import { getOrCreateWorkspaceForSessionUser } from "@/lib/workspace";
 
@@ -40,7 +37,7 @@ const emailShareRequestSchema = z.strictObject({
   preview: z.boolean().optional().default(false),
 });
 const audienceShareRequestSchema = z.strictObject({
-  audience: z.enum(["organization", "ic_team"]),
+  audience: z.enum(["organization", "team_group"]),
 });
 const shareRequestSchema = z.union([
   emailShareRequestSchema,
@@ -318,24 +315,28 @@ type ManageableMeetingAccess = Exclude<
 >;
 
 async function shareWithAudience(
-  audience: "organization" | "ic_team",
+  audience: "organization" | "team_group",
   access: ManageableMeetingAccess,
 ) {
-  if (
-    audience === "ic_team" &&
-    !isIosgIcTeamAvailable(access.workspace.domain)
-  ) {
+  const currentUserEmail = normalizeEmail(access.user.email);
+  const teamConfiguration =
+    audience === "team_group"
+      ? await getTeamConfiguration(access.workspace.teamId)
+      : null;
+
+  if (audience === "team_group" && !teamConfiguration?.shareAudience) {
     return Response.json(
-      { error: "The IC team audience is not available in this organization" },
+      { error: "No team sharing group is configured" },
       { status: 400 },
     );
   }
 
-  const currentUserEmail = normalizeEmail(access.user.email);
-  const audienceMembers =
-    audience === "organization"
-      ? await listWorkspaceShareRecipients(access.workspace)
-      : icTeamMembers;
+  const audienceMembers = audience === "organization"
+    ? await listWorkspaceShareRecipients(access.workspace)
+    : (teamConfiguration?.shareAudience?.emails.map((email) => ({
+        email,
+        name: null,
+      })) ?? []);
   const recipients = audienceMembers.filter(
     ({ email }) =>
       email !== currentUserEmail && email !== access.meeting.ownerEmail,

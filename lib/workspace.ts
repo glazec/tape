@@ -12,11 +12,13 @@ import {
 import { SharedOnlyAccessError } from "@/lib/access-errors";
 import type { SessionUser } from "@/lib/auth";
 import { normalizeEmail, normalizeEmailDomain } from "@/lib/access";
+import { getWorkspaceDisplayName } from "@/lib/team-name";
 
 export type WorkspaceContext = {
   userId: string;
   teamId: string;
   domain: string;
+  teamName?: string;
   canCreateMeetings?: boolean;
 };
 
@@ -42,7 +44,14 @@ export async function getOrCreateWorkspaceForSessionUser(
   const [userId, existingDomain] = await Promise.all([
     getOrCreateUserId(sessionUser, email),
     db
-      .select({ teamId: allowedDomains.teamId })
+      .select({
+        teamId: allowedDomains.teamId,
+        teamName: sql<string>`(
+          select ${teams.name}
+          from ${teams}
+          where ${teams.id} = ${allowedDomains.teamId}
+        )`,
+      })
       .from(allowedDomains)
       .where(eq(allowedDomains.domain, domain))
       .limit(1),
@@ -64,12 +73,23 @@ export async function getOrCreateWorkspaceForSessionUser(
       canCreateMeetings: true,
       domain,
       teamId: existingDomain[0].teamId,
+      ...(existingDomain[0].teamName
+        ? { teamName: existingDomain[0].teamName }
+        : {}),
       userId,
     };
   }
 
   const existingMembership = await db
-    .select({ role: teamMemberships.role, teamId: teamMemberships.teamId })
+    .select({
+      role: teamMemberships.role,
+      teamId: teamMemberships.teamId,
+      teamName: sql<string>`(
+        select ${teams.name}
+        from ${teams}
+        where ${teams.id} = ${teamMemberships.teamId}
+      )`,
+    })
     .from(teamMemberships)
     .where(eq(teamMemberships.userId, userId))
     .limit(1);
@@ -79,6 +99,9 @@ export async function getOrCreateWorkspaceForSessionUser(
       canCreateMeetings: existingMembership[0].role !== "external",
       domain,
       teamId: existingMembership[0].teamId,
+      ...(existingMembership[0].teamName
+        ? { teamName: existingMembership[0].teamName }
+        : {}),
       userId,
     };
   }
@@ -88,13 +111,12 @@ export async function getOrCreateWorkspaceForSessionUser(
     .from(allowedDomains)
     .limit(1);
   const shouldBootstrapInternalWorkspace = existingAllowedDomain.length === 0;
+  const teamName = shouldBootstrapInternalWorkspace
+    ? getWorkspaceDisplayName(domain)
+    : `${getWorkspaceDisplayName(domain)} guest workspace`;
   const [team] = await db
     .insert(teams)
-    .values({
-      name: shouldBootstrapInternalWorkspace
-        ? `${domain} workspace`
-        : `${domain} guest workspace`,
-    })
+    .values({ name: teamName })
     .returning({ id: teams.id });
 
   if (shouldBootstrapInternalWorkspace) {
@@ -116,6 +138,7 @@ export async function getOrCreateWorkspaceForSessionUser(
     canCreateMeetings: shouldBootstrapInternalWorkspace,
     domain,
     teamId: team.id,
+    teamName,
     userId,
   };
 }

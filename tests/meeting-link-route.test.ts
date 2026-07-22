@@ -13,7 +13,6 @@ vi.mock("@/lib/auth", () => ({
 }));
 
 vi.mock("@/lib/vendors/recall", () => ({
-  DEFAULT_RECALL_BOT_NAME: "IOSG Old Friend",
   scheduleRecallBot,
 }));
 

@@ -207,4 +207,18 @@ describe("database migrations", () => {
     expect(sql).toContain('meeting."organization_access_enabled" = true');
     expect(sql).toContain("membership.\"role\" <> 'external'");
   });
+
+  it("moves the legacy IOSG audience into editable team configuration", () => {
+    const sql = readFileSync(
+      "db/migrations/0029_team_configuration.sql",
+      "utf8",
+    ).replace(/\s+/g, " ");
+
+    expect(sql).toContain('ADD COLUMN "share_audience_name" text');
+    expect(sql).toContain('ADD COLUMN "share_audience_emails" jsonb');
+    expect(sql).toContain('"allowed_domains"."domain" = \'iosg.vc\'');
+    expect(sql).toContain("THEN 'IOSG'");
+    expect(sql).toContain("SET DEFAULT 'Tape Notetaker'");
+    expect(sql).toContain('ON CONFLICT ("team_id") DO NOTHING');
+  });
 });

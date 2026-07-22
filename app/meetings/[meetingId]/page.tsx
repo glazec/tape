@@ -12,13 +12,13 @@ import { ShareDialog } from "@/components/share-dialog";
 import { TranscriptViewer } from "@/components/transcript-viewer";
 import { requireCurrentUser } from "@/lib/auth-guards";
 import { getMeetingDisplayStatus } from "@/lib/meeting-display-status";
-import { isIosgIcTeamAvailable } from "@/lib/meeting-share-audiences";
 import { listActiveMeetingShares } from "@/lib/meeting-share-service";
 import {
   getMeetingTranscriptForWorkspace,
   listMeetingDetailRelatedMeetingsForWorkspace,
   listWorkspaceShareRecipients,
 } from "@/lib/meeting-queries";
+import { getTeamConfiguration } from "@/lib/team-configuration";
 import { getOrCreateWorkspaceForSessionUser } from "@/lib/workspace";
 
 export const dynamic = "force-dynamic";
@@ -43,16 +43,27 @@ export default async function MeetingPage({
   }
 
   const canManage = meeting.canManage;
-  const [shareRecipients, activeShares] = canManage
+  const [shareRecipients, activeShares, teamConfiguration] = canManage
     ? await Promise.all([
         listWorkspaceShareRecipients(workspace),
         listActiveMeetingShares(meetingId),
+        getTeamConfiguration(workspace.teamId),
       ])
-    : [[], []];
+    : [[], [], null];
   const displayStatus = getMeetingDisplayStatus({
     meetingStatus: meeting.status,
     transcriptJobStatus: meeting.transcriptJobStatus,
   });
+  const canAddMeetingSource =
+    displayStatus === "failed" ||
+    displayStatus === "missed" ||
+    (meeting.platform === "in_person" && displayStatus === "scheduled");
+  const hasMeetingContent =
+    Boolean(meeting.audioUrl) ||
+    meeting.segments.length > 0 ||
+    meeting.visualAssets.length > 0;
+  const shouldCenterMeetingSource =
+    canAddMeetingSource && meeting.segments.length === 0;
   return (
     <AppShell
       activeHref="/dashboard"
@@ -76,6 +87,7 @@ export default async function MeetingPage({
                 imageCount={meeting.visualAssets.length}
                 instanceId="header"
                 meetingId={meetingId}
+                showContentActions={hasMeetingContent}
               />
             ) : null}
           </div>
@@ -100,6 +112,40 @@ export default async function MeetingPage({
           />
         </section>
 
+        <section className="min-w-0 lg:col-start-1 lg:row-start-2">
+          <div>
+            <MeetingEntityLinks entities={meeting.entities} />
+            <div className={meeting.entities.length > 0 ? "mt-8" : undefined}>
+              {shouldCenterMeetingSource ? (
+                <div className="mx-auto w-full max-w-2xl py-2 sm:py-6">
+                  <MeetingRecoveryUploadPanel meetingId={meetingId} />
+                </div>
+              ) : (
+                <TranscriptViewer
+                  audioUrl={meeting.audioUrl}
+                  key={getTranscriptViewerRenderKey({
+                    displayStatus,
+                    meetingId,
+                    polishedSegments: meeting.segments.filter((segment) =>
+                      Boolean(segment.polishedText?.trim()),
+                    ).length,
+                    segmentCount: meeting.segments.length,
+                    translatedSegments:
+                      meeting.translationSummary.translatedSegments,
+                    translationStatus: meeting.translationSummary.status,
+                  })}
+                  meetingId={canManage ? meetingId : null}
+                  segments={meeting.segments}
+                  speakerAliases={meeting.speakerAliases}
+                  speakerSuggestions={meeting.speakerSuggestions}
+                  translationSummary={meeting.translationSummary}
+                  visualAssets={meeting.visualAssets}
+                />
+              )}
+            </div>
+          </div>
+        </section>
+
         <aside
           className={`min-w-0 lg:col-start-2 lg:row-span-2 lg:row-start-1 ${
             canManage ? "lg:pt-8" : "lg:pt-24"
@@ -109,15 +155,23 @@ export default async function MeetingPage({
             <>
               <div>
                 <ShareDialog
+                  customAudience={
+                    teamConfiguration?.shareAudience
+                      ? {
+                          memberCount:
+                            teamConfiguration.shareAudience.emails.length,
+                          name: teamConfiguration.shareAudience.name,
+                        }
+                      : null
+                  }
                   initialAccessPeople={meeting.accessPeople}
                   initialShares={activeShares}
                   instanceId="meeting-sharing"
                   meetingId={meetingId}
-                  showIcTeamAudience={isIosgIcTeamAvailable(workspace.domain)}
                   teamMembers={shareRecipients}
                 />
               </div>
-              {displayStatus === "failed" ? (
+              {canAddMeetingSource && !shouldCenterMeetingSource ? (
                 <div className="mt-6">
                   <MeetingRecoveryUploadPanel meetingId={meetingId} />
                 </div>
@@ -141,34 +195,6 @@ export default async function MeetingPage({
             </>
           )}
         </aside>
-
-        <section className="min-w-0 lg:col-start-1 lg:row-start-2">
-          <div>
-            <MeetingEntityLinks entities={meeting.entities} />
-            <div className={meeting.entities.length > 0 ? "mt-8" : undefined}>
-              <TranscriptViewer
-                audioUrl={meeting.audioUrl}
-                key={getTranscriptViewerRenderKey({
-                  displayStatus,
-                  meetingId,
-                  polishedSegments: meeting.segments.filter((segment) =>
-                    Boolean(segment.polishedText?.trim()),
-                  ).length,
-                  segmentCount: meeting.segments.length,
-                  translatedSegments:
-                    meeting.translationSummary.translatedSegments,
-                  translationStatus: meeting.translationSummary.status,
-                })}
-                meetingId={canManage ? meetingId : null}
-                segments={meeting.segments}
-                speakerAliases={meeting.speakerAliases}
-                speakerSuggestions={meeting.speakerSuggestions}
-                translationSummary={meeting.translationSummary}
-                visualAssets={meeting.visualAssets}
-              />
-            </div>
-          </div>
-        </section>
 
         <aside className="min-w-0 lg:hidden">
           <RelatedMeetingsCard meetings={relatedMeetings} />

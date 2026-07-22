@@ -12,6 +12,8 @@ import {
   uuid,
 } from "drizzle-orm/pg-core";
 
+import { DEFAULT_MEETING_BOT_NAME } from "@/lib/meeting-bot-constants";
+
 const timestamps = {
   createdAt: timestamp("created_at", { withTimezone: true })
     .defaultNow()
@@ -67,6 +69,11 @@ export const jobStatus = pgEnum("job_status", [
 export const teams = pgTable("teams", {
   id: uuid("id").primaryKey().defaultRandom(),
   name: text("name").notNull(),
+  shareAudienceName: text("share_audience_name"),
+  shareAudienceEmails: jsonb("share_audience_emails")
+    .$type<string[]>()
+    .notNull()
+    .default(sql`'[]'::jsonb`),
   ...timestamps,
 });
 
@@ -140,7 +147,7 @@ export const teamMeetingBotProfiles = pgTable(
     teamId: uuid("team_id")
       .notNull()
       .references(() => teams.id, { onDelete: "cascade" }),
-    botName: text("bot_name").notNull().default("IOSG Old Friend"),
+    botName: text("bot_name").notNull().default(DEFAULT_MEETING_BOT_NAME),
     avatarJpegBase64: text("avatar_jpeg_base64"),
     ...timestamps,
   },

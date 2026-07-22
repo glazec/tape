@@ -1,6 +1,6 @@
 "use client";
 
-import { ChangeEvent, FormEvent, useState } from "react";
+import { ChangeEvent, FormEvent, useId, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { AlertCircle, CheckCircle2, FileText, UploadCloud } from "lucide-react";
 
@@ -20,6 +20,7 @@ import {
   getUploadMediaFromFile,
   isUploadMediaSizeAllowed,
 } from "@/lib/upload-media";
+import { cn } from "@/lib/utils";
 
 const transcriptAccept = ".txt,.srt,.vtt,text/plain,text/vtt";
 
@@ -34,13 +35,18 @@ type RecoveryQueuedResponse = {
   redirectTo?: string;
 };
 
+type MeetingContentSource = "audio" | "transcript";
+
 export function MeetingRecoveryUploadPanel({
   meetingId,
 }: {
   meetingId: string;
 }) {
   const router = useRouter();
+  const titleId = useId();
+  const transcriptFileInputRef = useRef<HTMLInputElement>(null);
   const [state, setState] = useState<RecoveryState>("idle");
+  const [source, setSource] = useState<MeetingContentSource | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [signInRequired, setSignInRequired] = useState(false);
   const [audioFile, setAudioFile] = useState<File | null>(null);
@@ -59,7 +65,25 @@ export function MeetingRecoveryUploadPanel({
   }
 
   function handleTranscriptFileChange(event: ChangeEvent<HTMLInputElement>) {
-    setTranscriptFile(event.currentTarget.files?.[0] ?? null);
+    const file = event.currentTarget.files?.[0] ?? null;
+
+    setTranscriptFile(file);
+    if (file) {
+      setTranscriptText("");
+    }
+    resetMessage();
+  }
+
+  function handleTranscriptTextChange(event: ChangeEvent<HTMLTextAreaElement>) {
+    const text = event.currentTarget.value;
+
+    setTranscriptText(text);
+    if (text && transcriptFile) {
+      setTranscriptFile(null);
+      if (transcriptFileInputRef.current) {
+        transcriptFileInputRef.current.value = "";
+      }
+    }
     resetMessage();
   }
 
@@ -82,7 +106,7 @@ export function MeetingRecoveryUploadPanel({
     const uploadMedia = getUploadMediaFromFile(audioFile);
 
     if (!uploadMedia || uploadMedia.kind !== "audio") {
-      showError("Only MP3 and M4A files are supported");
+      showError("Only MP3, M4A, and WebM files are supported");
       return;
     }
 
@@ -163,14 +187,17 @@ export function MeetingRecoveryUploadPanel({
 
   const audioUploading = state === "uploading-audio";
   const transcriptUploading = state === "uploading-transcript";
+  const isBusy = audioUploading || transcriptUploading;
 
   return (
-    <Card size="sm">
+    <Card aria-labelledby={titleId} role="region" size="sm">
       <CardHeader className="border-b bg-muted/35">
         <div className="flex items-start justify-between gap-3">
           <div>
-            <CardTitle>Recover meeting</CardTitle>
-            <CardDescription>Attach an audio recording or transcript.</CardDescription>
+            <CardTitle id={titleId}>Add meeting content</CardTitle>
+            <CardDescription>
+              Choose the source you already have.
+            </CardDescription>
           </div>
           <span
             aria-hidden="true"
@@ -180,81 +207,138 @@ export function MeetingRecoveryUploadPanel({
           </span>
         </div>
       </CardHeader>
-      <CardContent className="space-y-5">
-        <form onSubmit={handleAudioSubmit} className="space-y-3">
-          <div className="flex flex-col gap-2">
-            <Label htmlFor="meeting-recovery-audio">Audio recording</Label>
-            <Input
-              id="meeting-recovery-audio"
-              name="meeting-recovery-audio"
-              type="file"
-              accept={audioUploadMediaAccept}
-              onChange={handleAudioChange}
-              className="bg-background"
-            />
-            <p className="text-xs text-muted-foreground">1 GB maximum.</p>
-          </div>
-          {audioFile ? (
-            <p className="break-all text-xs text-muted-foreground">
-              {audioFile.name}
-            </p>
-          ) : null}
-          <Button type="submit" disabled={audioUploading} size="sm">
-            <UploadCloud data-icon="inline-start" />
-            {audioUploading ? "Uploading..." : "Upload audio"}
-          </Button>
-        </form>
-
-        <form
-          onSubmit={handleTranscriptSubmit}
-          className="space-y-3 border-t pt-5"
+      <CardContent className="space-y-4">
+        <div
+          aria-label="Meeting content source"
+          className="grid grid-cols-2 gap-3"
+          role="group"
         >
-          <div className="flex flex-col gap-2">
-            <Label htmlFor="meeting-recovery-transcript">
-              Transcript text
-            </Label>
-            <textarea
-              id="meeting-recovery-transcript"
-              name="transcriptText"
-              rows={5}
-              value={transcriptText}
-              onChange={(event) => {
-                setTranscriptText(event.currentTarget.value);
-                resetMessage();
-              }}
-              placeholder="Paste transcript text"
-              className="min-h-28 w-full resize-y rounded-lg border border-input bg-background px-2.5 py-2 text-sm outline-none transition-colors placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
-            />
-          </div>
-          <div className="flex flex-col gap-2">
-            <Label htmlFor="meeting-recovery-transcript-file">
-              Transcript file
-            </Label>
-            <Input
-              id="meeting-recovery-transcript-file"
-              name="transcript-file"
-              type="file"
-              accept={transcriptAccept}
-              onChange={handleTranscriptFileChange}
-              className="bg-background"
-            />
-          </div>
-          {transcriptFile ? (
-            <p className="break-all text-xs text-muted-foreground">
-              {transcriptFile.name}
-            </p>
-          ) : null}
-          <Button type="submit" disabled={transcriptUploading} size="sm">
-            <FileText data-icon="inline-start" />
-            {transcriptUploading ? "Uploading..." : "Add transcript"}
-          </Button>
-        </form>
+          <button
+            aria-label="Audio recording"
+            aria-pressed={source === "audio"}
+            className={cn(
+              "rounded-lg border bg-background p-3 text-left outline-none transition-colors hover:border-primary/50 focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:pointer-events-none disabled:opacity-50",
+              source === "audio" && "border-primary bg-primary/5",
+            )}
+            disabled={isBusy}
+            onClick={() => {
+              setSource("audio");
+              resetMessage();
+            }}
+            type="button"
+          >
+            <UploadCloud className="size-4 text-primary" />
+            <span className="mt-2 block text-sm font-semibold">
+              Audio recording
+            </span>
+            <span className="mt-1 block text-xs leading-5 text-muted-foreground">
+              Upload and transcribe automatically
+            </span>
+          </button>
+          <button
+            aria-label="Transcript"
+            aria-pressed={source === "transcript"}
+            className={cn(
+              "rounded-lg border bg-background p-3 text-left outline-none transition-colors hover:border-primary/50 focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:pointer-events-none disabled:opacity-50",
+              source === "transcript" && "border-primary bg-primary/5",
+            )}
+            disabled={isBusy}
+            onClick={() => {
+              setSource("transcript");
+              resetMessage();
+            }}
+            type="button"
+          >
+            <FileText className="size-4 text-primary" />
+            <span className="mt-2 block text-sm font-semibold">Transcript</span>
+            <span className="mt-1 block text-xs leading-5 text-muted-foreground">
+              Paste text or upload a file
+            </span>
+          </button>
+        </div>
+
+        {source === "audio" ? (
+          <form
+            className="space-y-4 rounded-lg border bg-muted/20 p-4"
+            onSubmit={handleAudioSubmit}
+          >
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="meeting-recovery-audio">Audio file</Label>
+              <Input
+                accept={audioUploadMediaAccept}
+                className="bg-background"
+                disabled={isBusy}
+                id="meeting-recovery-audio"
+                name="meeting-recovery-audio"
+                onChange={handleAudioChange}
+                type="file"
+              />
+              <p className="text-xs text-muted-foreground">
+                MP3, M4A, or WebM · 1 GB maximum
+              </p>
+            </div>
+            <Button type="submit" disabled={isBusy} size="sm">
+              <UploadCloud data-icon="inline-start" />
+              {audioUploading ? "Uploading..." : "Upload audio"}
+            </Button>
+          </form>
+        ) : null}
+
+        {source === "transcript" ? (
+          <form
+            className="space-y-4 rounded-lg border bg-muted/20 p-4"
+            onSubmit={handleTranscriptSubmit}
+          >
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="meeting-recovery-transcript">
+                Paste transcript
+              </Label>
+              <textarea
+                className="min-h-28 w-full resize-y rounded-lg border border-input bg-background px-2.5 py-2 text-sm outline-none transition-colors placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:pointer-events-none disabled:opacity-50"
+                disabled={isBusy}
+                id="meeting-recovery-transcript"
+                name="transcriptText"
+                onChange={handleTranscriptTextChange}
+                placeholder="Paste transcript text"
+                rows={5}
+                value={transcriptText}
+              />
+            </div>
+            <div className="flex items-center gap-3" aria-hidden="true">
+              <span className="h-px flex-1 bg-border" />
+              <span className="text-xs text-muted-foreground">or</span>
+              <span className="h-px flex-1 bg-border" />
+            </div>
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="meeting-recovery-transcript-file">
+                Transcript file
+              </Label>
+              <Input
+                accept={transcriptAccept}
+                className="bg-background"
+                disabled={isBusy}
+                id="meeting-recovery-transcript-file"
+                name="transcript-file"
+                onChange={handleTranscriptFileChange}
+                ref={transcriptFileInputRef}
+                type="file"
+              />
+              <p className="text-xs text-muted-foreground">
+                TXT, SRT, or VTT
+              </p>
+            </div>
+            <Button type="submit" disabled={isBusy} size="sm">
+              <FileText data-icon="inline-start" />
+              {transcriptUploading ? "Uploading..." : "Add transcript"}
+            </Button>
+          </form>
+        ) : null}
 
         {message ? (
           <Alert variant={state === "error" ? "destructive" : "default"}>
             {state === "error" ? <AlertCircle /> : <CheckCircle2 />}
             <AlertTitle>
-              {state === "error" ? "Recovery failed" : "Recovery started"}
+              {state === "error" ? "Could not add content" : "Content added"}
             </AlertTitle>
             <AlertDescription>
               {message}

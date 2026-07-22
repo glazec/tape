@@ -5,6 +5,10 @@ import {
   normalizeEmailAddress,
 } from "@/lib/email-domains";
 import { formatNameFromEmail } from "@/lib/speaker-labels";
+import {
+  formatOrganizationName,
+  getWorkspaceDisplayName,
+} from "@/lib/team-name";
 
 type VocabularyTerm = {
   term: string;
@@ -92,8 +96,6 @@ const genericMeetingGroupingTitles = new Set([
   "uploaded audio",
 ]);
 
-const knownProductEntities = ["SAFE", "Solana", "TCG"];
-const knownOrganizationEntities = ["IOSG", "Nascent"];
 const hardSignals = [
   "blocked",
   "concern",
@@ -146,14 +148,24 @@ export function buildSmartMeetingTitle(input: {
   eventTitle: string;
   attendeeEmails: string[];
   workspaceDomain: string;
+  workspaceName?: string | null;
 }) {
   const eventTitle = input.eventTitle.replace(/\s+/g, " ").trim();
-  const workspaceName = formatOrganizationName(input.workspaceDomain);
+  const workspaceName = getWorkspaceDisplayName(
+    input.workspaceDomain,
+    input.workspaceName,
+  );
+  const domainWorkspaceName = getWorkspaceDisplayName(input.workspaceDomain);
   const normalizedEventTitle = normalizeEntityValue(eventTitle);
   const normalizedWorkspaceName = normalizeEntityValue(workspaceName);
+  const normalizedDomainWorkspaceName = normalizeEntityValue(
+    domainWorkspaceName,
+  );
   const isWorkspaceDefaultTitle =
     normalizedEventTitle === normalizedWorkspaceName ||
-    normalizedEventTitle === `meeting with ${normalizedWorkspaceName}`;
+    normalizedEventTitle === `meeting with ${normalizedWorkspaceName}` ||
+    normalizedEventTitle === normalizedDomainWorkspaceName ||
+    normalizedEventTitle === `meeting with ${normalizedDomainWorkspaceName}`;
 
   if (
     eventTitle &&
@@ -181,40 +193,6 @@ export function extractMeetingEntities(
 ): ExtractedMeetingEntity[] {
   const entities: ExtractedMeetingEntity[] = [];
   const workspaceEntity = getWorkspaceOrganizationEntity(context.workspaceDomain);
-
-  segments.forEach((segment) => {
-    for (const value of knownOrganizationEntities) {
-      if (isWorkspaceOrganizationEntity(value, workspaceEntity)) {
-        continue;
-      }
-
-      if (new RegExp(`\\b${escapeRegExp(value)}\\b`, "i").test(segment.text)) {
-        addOrMergeEntity({
-          aliases: getOrganizationDomainAliases(
-            value,
-            context.organizationDomains,
-          ),
-          entities,
-          segmentId: segment.id,
-          source: "transcript",
-          type: "organization",
-          value,
-        });
-      }
-    }
-
-    for (const value of knownProductEntities) {
-      if (new RegExp(`\\b${escapeRegExp(value)}\\b`, "i").test(segment.text)) {
-        addOrMergeEntity({
-          entities,
-          segmentId: segment.id,
-          source: "transcript",
-          type: "product",
-          value,
-        });
-      }
-    }
-  });
 
   for (const entity of context.transcriptEntities ?? []) {
     if (!isSupportedEntityType(entity.type)) {
@@ -467,18 +445,7 @@ function isOrganizationDomainMatch(value: string, company: OrganizationDomain) {
 }
 
 function canonicalizeOrganizationName(value: string) {
-  const trimmed = value.trim();
-  const known = knownOrganizationEntities.find(
-    (entity) =>
-      normalizeEntityValue(entity) === normalizeEntityValue(trimmed) ||
-      normalizeEntityValue(entity) === normalizeEntityValue(trimmed.split(".")[0] ?? ""),
-  );
-
-  if (known) {
-    return known;
-  }
-
-  return formatOrganizationName(trimmed);
+  return formatOrganizationName(value.trim());
 }
 
 function mergeAliases(left: string[], right: string[]) {
@@ -678,28 +645,6 @@ function isWorkspaceOrganizationEntity(
     Boolean(workspaceEntity) &&
     normalizeEntityValue(canonicalizeOrganizationName(value)) === workspaceEntity
   );
-}
-
-function formatOrganizationName(domainOrName: string) {
-  const root = domainOrName
-    .split("@")
-    .pop()
-    ?.split(".")[0]
-    ?.replace(/[^a-zA-Z0-9]+/g, " ")
-    .trim();
-
-  if (!root) {
-    return domainOrName;
-  }
-
-  if (root.toLowerCase() === "iosg") {
-    return "IOSG";
-  }
-
-  return root
-    .split(/\s+/)
-    .map((word) => `${word.charAt(0).toUpperCase()}${word.slice(1)}`)
-    .join(" ");
 }
 
 function countSignals(text: string, signals: string[]) {

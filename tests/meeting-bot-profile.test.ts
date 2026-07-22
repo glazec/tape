@@ -102,7 +102,7 @@ describe("meeting bot profile", () => {
     });
     expect(getMeetingBotRecallUpdateInput({
       avatarJpegBase64: null,
-      botName: "IOSG Old Friend",
+      botName: "Tape Notetaker",
     })).toEqual({});
   });
 

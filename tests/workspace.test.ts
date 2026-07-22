@@ -79,7 +79,9 @@ describe("getOrCreateWorkspaceForSessionUser", () => {
     update.mockReturnValueOnce({ set });
     set.mockReturnValueOnce({ where });
     where.mockResolvedValueOnce(undefined);
-    mockLimitedSelect([{ teamId: "team_123" }]);
+    mockLimitedSelect([
+      { teamId: "team_123", teamName: "Example Capital" },
+    ]);
     execute.mockResolvedValueOnce(undefined);
     insert.mockReturnValueOnce({ values });
     values.mockReturnValueOnce({ onConflictDoNothing });
@@ -99,6 +101,7 @@ describe("getOrCreateWorkspaceForSessionUser", () => {
       canCreateMeetings: true,
       domain: "vendor.com",
       teamId: "team_123",
+      teamName: "Example Capital",
       userId: "user_123",
     });
     expect(execute).toHaveBeenCalledTimes(1);
@@ -136,6 +139,7 @@ describe("getOrCreateWorkspaceForSessionUser", () => {
       canCreateMeetings: false,
       domain: "vendor.com",
       teamId: "guest_team_123",
+      teamName: "Vendor guest workspace",
       userId: "user_456",
     });
     expect(values).toHaveBeenLastCalledWith({

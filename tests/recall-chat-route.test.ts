@@ -143,7 +143,7 @@ const chatPayload = {
         relative: 12.5,
       },
       data: {
-        text: "@IOSG Old Friend what did we decide?",
+        text: "@Tape Notetaker what did we decide?",
         to: "everyone",
       },
     },
@@ -209,7 +209,7 @@ describe("POST /api/recall/chat/webhook", () => {
     expect(answerRecallChatMessage).toHaveBeenCalledWith(
       expect.objectContaining({
         botId: "bot_123",
-        text: "@IOSG Old Friend what did we decide?",
+        text: "@Tape Notetaker what did we decide?",
       }),
     );
     expect(markVendorWebhookEventProcessed).toHaveBeenCalledWith({

@@ -22,7 +22,7 @@ const chatPayload = {
         relative: 12.5,
       },
       data: {
-        text: "@IOSG Old Friend what did we decide?",
+        text: "@Tape Notetaker what did we decide?",
         to: "everyone",
       },
     },
@@ -48,7 +48,7 @@ describe("Recall chat messages", () => {
         name: "Alice",
         email: "alice@example.com",
       },
-      text: "@IOSG Old Friend what did we decide?",
+      text: "@Tape Notetaker what did we decide?",
       to: "everyone",
       timestamp: "2026-06-27T16:00:00.000Z",
     });

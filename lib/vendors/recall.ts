@@ -2,6 +2,8 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { z } from "zod";
 
+import { DEFAULT_MEETING_BOT_NAME } from "@/lib/meeting-bot-constants";
+
 import { createRecallDesktopRealtimeWebhookToken } from "@/lib/webhook-signatures";
 
 const oldRecallWebhookSchema = z.object({
@@ -61,7 +63,6 @@ const recallSdkUploadWebhookSchema = z.object({
   }),
 });
 
-export const DEFAULT_RECALL_BOT_NAME = "IOSG Old Friend";
 const DEFAULT_RECALL_WAITING_ROOM_TIMEOUT_SECONDS = 60 * 60;
 
 type RecallVideoOutput = {
@@ -105,7 +106,7 @@ function getRecallBotVideoOutput(input?: string | null) {
 
 const recallBotInputSchema = z.object({
   meetingUrl: z.url(),
-  botName: z.string().trim().min(1).max(100).default(DEFAULT_RECALL_BOT_NAME),
+  botName: z.string().trim().min(1).max(100).default(DEFAULT_MEETING_BOT_NAME),
   avatarJpegBase64: z.string().trim().min(1).optional(),
   startAt: z.iso.datetime().optional(),
   webhookUrl: z.url(),
@@ -164,7 +165,7 @@ const recallCalendarEventListInputSchema = z.object({
 const recallCalendarEventBotInputSchema = z.object({
   calendarEventId: z.string().trim().min(1),
   deduplicationKey: z.string().trim().min(1).max(2000),
-  botName: z.string().trim().min(1).max(100).default(DEFAULT_RECALL_BOT_NAME),
+  botName: z.string().trim().min(1).max(100).default(DEFAULT_MEETING_BOT_NAME),
   avatarJpegBase64: z.string().trim().min(1).optional(),
   joinAt: z.iso.datetime().optional(),
   metadata: z.record(z.string(), z.string()).optional(),

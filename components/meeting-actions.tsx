@@ -16,6 +16,7 @@ type MeetingActionsProps = {
   meetingId: string;
   imageCount?: number;
   instanceId?: string;
+  showContentActions?: boolean;
 };
 
 type ExportFormat = "transcript" | "mp3" | "images";
@@ -24,6 +25,7 @@ export function MeetingActions({
   meetingId,
   imageCount = 0,
   instanceId = "default",
+  showContentActions = true,
 }: MeetingActionsProps) {
   const router = useRouter();
   const exportMenuRef = useRef<HTMLDivElement>(null);
@@ -159,81 +161,83 @@ export function MeetingActions({
 
   return (
     <div className="flex min-w-0 flex-wrap items-center gap-2">
-      <div className="relative" ref={exportMenuRef}>
+      {showContentActions ? (
+        <div className="relative" ref={exportMenuRef}>
+          <Button
+            aria-controls={isExportMenuOpen ? exportMenuId : undefined}
+            aria-expanded={isExportMenuOpen}
+            aria-haspopup="menu"
+            onClick={() => setIsExportMenuOpen((current) => !current)}
+            type="button"
+            variant="outline"
+          >
+            <Download data-icon="inline-start" />
+            Export
+            <ChevronDown data-icon="inline-end" />
+          </Button>
+          <div
+            aria-label="Export options"
+            className="absolute right-0 z-20 mt-2 w-56 rounded-lg border bg-popover p-2 text-sm text-popover-foreground shadow-lg"
+            hidden={!isExportMenuOpen}
+            id={exportMenuId}
+            role="menu"
+          >
+            <label className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-2 hover:bg-muted">
+              <input
+                checked={selectedExportFormats.transcript}
+                className="size-4 rounded border-input accent-primary"
+                onChange={() => toggleExportFormat("transcript")}
+                type="checkbox"
+              />
+              <span className="font-medium">Transcript</span>
+            </label>
+            <label className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-2 hover:bg-muted">
+              <input
+                checked={selectedExportFormats.mp3}
+                className="size-4 rounded border-input accent-primary"
+                onChange={() => toggleExportFormat("mp3")}
+                type="checkbox"
+              />
+              <span className="font-medium">MP3</span>
+            </label>
+            {imageCount > 0 ? (
+              <label className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-2 hover:bg-muted">
+                <input
+                  checked={selectedExportFormats.images}
+                  className="size-4 rounded border-input accent-primary"
+                  onChange={() => toggleExportFormat("images")}
+                  type="checkbox"
+                />
+                <span className="font-medium">Images ({imageCount})</span>
+              </label>
+            ) : null}
+            <Button
+              className="mt-2 w-full"
+              disabled={!hasSelectedExport}
+              onClick={exportSelected}
+              type="button"
+            >
+              <Download data-icon="inline-start" />
+              Download selected
+            </Button>
+          </div>
+        </div>
+      ) : null}
+      {showContentActions ? (
         <Button
-          aria-controls={isExportMenuOpen ? exportMenuId : undefined}
-          aria-expanded={isExportMenuOpen}
-          aria-haspopup="menu"
-          onClick={() => setIsExportMenuOpen((current) => !current)}
+          disabled={isCopying}
+          onClick={copyTranscript}
           type="button"
           variant="outline"
         >
-          <Download data-icon="inline-start" />
-          Export
-          <ChevronDown data-icon="inline-end" />
+          {copyStatus === "copied" ? (
+            <Check data-icon="inline-start" />
+          ) : (
+            <Copy data-icon="inline-start" />
+          )}
+          {copyStatus === "copied" ? "Copied" : "Copy"}
         </Button>
-        <div
-          aria-label="Export options"
-          className="absolute right-0 z-20 mt-2 w-56 rounded-lg border bg-popover p-2 text-sm text-popover-foreground shadow-lg"
-          hidden={!isExportMenuOpen}
-          id={exportMenuId}
-          role="menu"
-        >
-          <label className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-2 hover:bg-muted">
-            <input
-              checked={selectedExportFormats.transcript}
-              className="size-4 rounded border-input accent-primary"
-              onChange={() => toggleExportFormat("transcript")}
-              type="checkbox"
-            />
-            <span className="font-medium">Transcript</span>
-          </label>
-          <label className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-2 hover:bg-muted">
-            <input
-              checked={selectedExportFormats.mp3}
-              className="size-4 rounded border-input accent-primary"
-              onChange={() => toggleExportFormat("mp3")}
-              type="checkbox"
-            />
-            <span className="font-medium">MP3</span>
-          </label>
-          {imageCount > 0 ? (
-            <label className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-2 hover:bg-muted">
-              <input
-                checked={selectedExportFormats.images}
-                className="size-4 rounded border-input accent-primary"
-                onChange={() => toggleExportFormat("images")}
-                type="checkbox"
-              />
-              <span className="font-medium">
-                Images ({imageCount})
-              </span>
-            </label>
-          ) : null}
-          <Button
-            className="mt-2 w-full"
-            disabled={!hasSelectedExport}
-            onClick={exportSelected}
-            type="button"
-          >
-            <Download data-icon="inline-start" />
-            Download selected
-          </Button>
-        </div>
-      </div>
-      <Button
-        disabled={isCopying}
-        onClick={copyTranscript}
-        type="button"
-        variant="outline"
-      >
-        {copyStatus === "copied" ? (
-          <Check data-icon="inline-start" />
-        ) : (
-          <Copy data-icon="inline-start" />
-        )}
-        {copyStatus === "copied" ? "Copied" : "Copy"}
-      </Button>
+      ) : null}
       <Button
         disabled={isDeleting}
         onClick={deleteMeeting}

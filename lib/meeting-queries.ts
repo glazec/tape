@@ -103,7 +103,6 @@ const genericMeetingGroupTitles = new Set([
   "zoom meeting",
   "zoom recording",
 ]);
-const nonInformativePrimaryEntities = new Set(["iosg"]);
 
 export type MeetingTranscript = {
   id: string;
@@ -278,6 +277,7 @@ export async function listMeetingLibraryPageForWorkspace(
 
   const primaryEntityByMeetingId = await getPrimaryEntitiesForMeetings(
     rows.map((meeting) => meeting.id),
+    workspace.domain,
   );
   const items: Array<MeetingListItem & { primaryEntity: string | null }> =
     rows.map((meeting) => {
@@ -291,6 +291,7 @@ export async function listMeetingLibraryPageForWorkspace(
           title: meeting.title,
           attendeeEmails: meeting.calendarAttendeeEmails,
           workspaceDomain: workspace.domain,
+          workspaceName: workspace.teamName,
         }),
         platform: meeting.platform,
         status: meeting.status,
@@ -940,6 +941,7 @@ function getMeetingDisplayTitle(input: {
   title: string;
   attendeeEmails: unknown;
   workspaceDomain?: string | null;
+  workspaceName?: string | null;
 }) {
   if (!input.workspaceDomain) {
     return input.title;
@@ -949,6 +951,7 @@ function getMeetingDisplayTitle(input: {
     eventTitle: input.title,
     attendeeEmails: getStringAttendeeEmails(input.attendeeEmails),
     workspaceDomain: input.workspaceDomain,
+    workspaceName: input.workspaceName,
   });
 }
 
@@ -993,7 +996,11 @@ export async function getMeetingDashboardSummaryForWorkspace(
       })
       .from(meetings)
       .where(
-        and(eq(meetings.teamId, workspace.teamId), ne(meetings.status, "cancelled")),
+        and(
+          eq(meetings.teamId, workspace.teamId),
+          eq(meetings.ownerUserId, workspace.userId),
+          ne(meetings.status, "cancelled"),
+        ),
       ),
     db
       .select({
@@ -1009,6 +1016,7 @@ export async function getMeetingDashboardSummaryForWorkspace(
       .where(
         and(
           eq(meetings.teamId, workspace.teamId),
+          eq(meetings.ownerUserId, workspace.userId),
           ne(meetings.status, "cancelled"),
           eq(
             transcriptSegments.jobId,
@@ -1211,6 +1219,7 @@ export async function getMeetingTranscriptForWorkspace(
       title: meeting.title,
       attendeeEmails: meeting.calendarAttendeeEmails,
       workspaceDomain: workspace.domain,
+      workspaceName: workspace.teamName,
     }),
     platform: meeting.platform,
     status: meeting.status,
@@ -1283,6 +1292,7 @@ export async function listMeetingDetailRelatedMeetingsForWorkspace(
       title: meeting.title,
       attendeeEmails: meeting.calendarAttendeeEmails,
       workspaceDomain: workspace.domain,
+      workspaceName: workspace.teamName,
     }),
     startedAt: (meeting.startedAt ?? meeting.createdAt).toISOString(),
     externalParticipantKeys: getExternalParticipantKeys(
@@ -1431,8 +1441,15 @@ function isDashboardPrimaryEntityType(type: string) {
   return type === "organization";
 }
 
-async function getPrimaryEntitiesForMeetings(meetingIds: string[]) {
+async function getPrimaryEntitiesForMeetings(
+  meetingIds: string[],
+  workspaceDomain: string,
+) {
   const primaryEntityByMeetingId = new Map<string, string>();
+  const workspaceEntity = workspaceDomain
+    .trim()
+    .toLowerCase()
+    .split(".")[0];
 
   if (meetingIds.length === 0) {
     return primaryEntityByMeetingId;
@@ -1456,7 +1473,7 @@ async function getPrimaryEntitiesForMeetings(meetingIds: string[]) {
       !primaryEntityByMeetingId.has(row.meetingId) &&
       normalizedValue &&
       isDashboardPrimaryEntityType(type) &&
-      !nonInformativePrimaryEntities.has(normalizedValue)
+      normalizedValue !== workspaceEntity
     ) {
       primaryEntityByMeetingId.set(row.meetingId, normalizedValue);
     }

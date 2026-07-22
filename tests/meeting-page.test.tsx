@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   getMeeting: vi.fn(),
+  getTeamConfiguration: vi.fn(),
   getWorkspace: vi.fn(),
   listRelated: vi.fn(),
   listRecipients: vi.fn(),
@@ -21,10 +22,10 @@ vi.mock("@/lib/meeting-queries", () => ({
 }));
 vi.mock("@/lib/meeting-share-service", () => ({ listActiveMeetingShares: mocks.listShares }));
 vi.mock("@/lib/meeting-display-status", () => ({ getMeetingDisplayStatus: ({ meetingStatus }: { meetingStatus: string }) => meetingStatus }));
-vi.mock("@/lib/meeting-share-audiences", () => ({ isIosgIcTeamAvailable: () => true }));
+vi.mock("@/lib/team-configuration", () => ({ getTeamConfiguration: mocks.getTeamConfiguration }));
 vi.mock("@/components/app-shell", () => ({ AppShell: ({ children }: { children: React.ReactNode }) => <main>{children}</main> }));
 vi.mock("@/components/meeting-auto-refresh", () => ({ MeetingAutoRefresh: () => <span>auto refresh</span> }));
-vi.mock("@/components/meeting-actions", () => ({ MeetingActions: () => <span>meeting actions</span> }));
+vi.mock("@/components/meeting-actions", () => ({ MeetingActions: ({ showContentActions = true }: { showContentActions?: boolean }) => <span>meeting actions:{showContentActions ? "content" : "delete only"}</span> }));
 vi.mock("@/components/meeting-entity-links", () => ({ MeetingEntityLinks: () => <span>entity links</span> }));
 vi.mock("@/components/meeting-header-metadata", () => ({ MeetingHeaderMetadata: (props: { platform: string; status: string }) => <span>{props.platform}:{props.status}</span> }));
 vi.mock("@/components/meeting-recovery-upload-panel", () => ({ MeetingRecoveryUploadPanel: () => <span>recovery panel</span> }));
@@ -43,6 +44,7 @@ describe("meeting page", () => {
     mocks.listRelated.mockResolvedValue([]);
     mocks.listRecipients.mockResolvedValue([]);
     mocks.listShares.mockResolvedValue([]);
+    mocks.getTeamConfiguration.mockResolvedValue({ name: "Example Capital", shareAudience: null });
     mocks.getMeeting.mockResolvedValue(meeting());
   });
 
@@ -56,6 +58,68 @@ describe("meeting page", () => {
     expect(mocks.listRecipients).toHaveBeenCalled();
   });
 
+  it("offers uploads for scheduled in person meetings", async () => {
+    mocks.getMeeting.mockResolvedValue(
+      meeting({ platform: "in_person", status: "scheduled" }),
+    );
+
+    const html = renderToStaticMarkup(
+      await MeetingPage({
+        params: Promise.resolve({ meetingId: "in_person_meeting" }),
+      }),
+    );
+
+    expect(html).toContain("recovery panel");
+  });
+
+  it("offers uploads when a manageable meeting has no recording", async () => {
+    mocks.getMeeting.mockResolvedValue(
+      meeting({
+        audioUrl: null,
+        segments: [],
+        status: "missed",
+        visualAssets: [],
+      }),
+    );
+
+    const html = renderToStaticMarkup(
+      await MeetingPage({
+        params: Promise.resolve({ meetingId: "missed_meeting" }),
+      }),
+    );
+
+    expect(html).toContain("recovery panel");
+    expect(html).not.toContain("transcript:missed_meeting");
+    expect(html).toContain("meeting actions:delete only");
+    expect(html.indexOf("recovery panel")).toBeLessThan(
+      html.indexOf("share dialog"),
+    );
+  });
+
+  it("does not offer recovery uploads for ready meetings", async () => {
+    mocks.getMeeting.mockResolvedValue(meeting({ status: "ready" }));
+
+    const html = renderToStaticMarkup(
+      await MeetingPage({
+        params: Promise.resolve({ meetingId: "ready_meeting" }),
+      }),
+    );
+
+    expect(html).not.toContain("recovery panel");
+  });
+
+  it("keeps an existing transcript visible during failed recovery", async () => {
+    const html = renderToStaticMarkup(
+      await MeetingPage({
+        params: Promise.resolve({ meetingId: "failed_with_transcript" }),
+      }),
+    );
+
+    expect(html).toContain("transcript:failed_with_transcript");
+    expect(html).toContain("recovery panel");
+    expect(html).toContain("meeting actions:content");
+  });
+
   it("renders shared meetings without owner controls", async () => {
     mocks.getMeeting.mockResolvedValue(meeting({ canManage: false, platform: "in_person", status: "missed" }));
     const html = renderToStaticMarkup(await MeetingPage({ params: Promise.resolve({ meetingId: "meeting_2" }) }));
@@ -63,6 +127,7 @@ describe("meeting page", () => {
     expect(html).toContain("In person:No recording");
     expect(html).toContain("transcript:readonly");
     expect(html).not.toContain("meeting actions");
+    expect(html).not.toContain("recovery panel");
     expect(mocks.listRecipients).not.toHaveBeenCalled();
   });
 

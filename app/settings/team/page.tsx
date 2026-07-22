@@ -15,6 +15,7 @@ import {
   getDefaultMeetingBotAvatarJpegBase64,
   getMeetingBotProfile,
 } from "@/lib/meeting-bot-profile";
+import { getTeamConfiguration } from "@/lib/team-configuration";
 import { listTeamVocabularyTerms } from "@/lib/team-vocabulary";
 import {
   canManageTeamSettings,
@@ -29,25 +30,26 @@ export default async function TeamSettingsPage() {
   const user = await requireCurrentUser();
   const workspace = await getOrCreateWorkspaceForSessionUser(user);
   const accessSummary = await getWorkspaceAccessSummary(workspace);
-  const canEditTeamSettings = accessSummary.canCreateMeetings
-    ? await canManageTeamSettings(workspace)
-    : false;
-  const vocabularyTerms = accessSummary.canCreateMeetings
-    ? await listTeamVocabularyTerms(workspace.teamId)
-    : [];
-  const botProfile = accessSummary.canCreateMeetings
-    ? await getMeetingBotProfile(workspace.teamId)
-    : null;
-  const botAvatarJpegBase64 = botProfile
-    ? (botProfile.avatarJpegBase64 ?? getDefaultMeetingBotAvatarJpegBase64())
-    : null;
-  const teamMembers = accessSummary.canCreateMeetings
-    ? await listWorkspaceMembers(workspace)
-    : [];
 
   if (!accessSummary.canCreateMeetings) {
     redirect("/dashboard");
   }
+
+  const [
+    canEditTeamSettings,
+    vocabularyTerms,
+    botProfile,
+    teamConfiguration,
+    teamMembers,
+  ] = await Promise.all([
+    canManageTeamSettings(workspace),
+    listTeamVocabularyTerms(workspace.teamId),
+    getMeetingBotProfile(workspace.teamId),
+    getTeamConfiguration(workspace.teamId),
+    listWorkspaceMembers(workspace),
+  ]);
+  const botAvatarJpegBase64 =
+    botProfile.avatarJpegBase64 ?? getDefaultMeetingBotAvatarJpegBase64();
 
   return (
     <AppShell
@@ -60,11 +62,103 @@ export default async function TeamSettingsPage() {
           <p className="text-sm font-medium uppercase tracking-normal text-primary">
             Team settings
           </p>
-          <h1 className="mt-3 text-3xl font-semibold">Access rules</h1>
+          <h1 className="mt-3 text-3xl font-semibold">
+            {teamConfiguration.name}
+          </h1>
           <p className="mt-4 text-base leading-7 text-muted-foreground">
-            Signed in as {user?.email ?? "unknown user"}.
+            Signed in as {user.email}.
           </p>
         </div>
+        <Card>
+          <CardHeader>
+            <CardTitle>Team identity and sharing</CardTitle>
+            <CardDescription>
+              Set the team name and an optional group that appears in meeting
+              sharing.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            {canEditTeamSettings ? (
+              <form
+                action="/api/team/configuration"
+                className="flex flex-col gap-4"
+                method="post"
+              >
+                <div className="grid gap-2">
+                  <label
+                    className="text-sm leading-none font-medium"
+                    htmlFor="teamName"
+                  >
+                    Team name
+                  </label>
+                  <Input
+                    defaultValue={teamConfiguration.name}
+                    id="teamName"
+                    maxLength={100}
+                    name="teamName"
+                    required
+                  />
+                </div>
+                <div className="grid gap-2">
+                  <label
+                    className="text-sm leading-none font-medium"
+                    htmlFor="shareAudienceName"
+                  >
+                    Sharing group name
+                  </label>
+                  <Input
+                    defaultValue={teamConfiguration.shareAudience?.name ?? ""}
+                    id="shareAudienceName"
+                    maxLength={100}
+                    name="shareAudienceName"
+                    placeholder="Investment committee"
+                  />
+                </div>
+                <div className="grid gap-2">
+                  <label
+                    className="text-sm leading-none font-medium"
+                    htmlFor="shareAudienceEmails"
+                  >
+                    Sharing group member emails
+                  </label>
+                  <textarea
+                    className="border-input bg-background min-h-28 w-full rounded-md border px-3 py-2 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px]"
+                    defaultValue={
+                      teamConfiguration.shareAudience?.emails.join("\n") ?? ""
+                    }
+                    id="shareAudienceEmails"
+                    name="shareAudienceEmails"
+                    placeholder={"person@example.com\ncolleague@example.com"}
+                  />
+                  <p className="text-xs leading-5 text-muted-foreground">
+                    Add one email per line. Leave both sharing group fields
+                    empty to hide the group.
+                  </p>
+                </div>
+                <Button className="self-start" type="submit">
+                  Save team settings
+                </Button>
+              </form>
+            ) : (
+              <div className="flex flex-col gap-2 text-sm">
+                <p className="font-medium">{teamConfiguration.name}</p>
+                {teamConfiguration.shareAudience ? (
+                  <p className="text-muted-foreground">
+                    {teamConfiguration.shareAudience.name} ·{" "}
+                    {teamConfiguration.shareAudience.emails.length} members
+                  </p>
+                ) : (
+                  <p className="text-muted-foreground">
+                    No team sharing group configured.
+                  </p>
+                )}
+                <p className="text-muted-foreground">
+                  Only team administrators can edit these settings.
+                </p>
+              </div>
+            )}
+          </CardContent>
+        </Card>
         <Card>
           <CardHeader>
             <CardTitle>Internal domains</CardTitle>
@@ -119,23 +213,22 @@ export default async function TeamSettingsPage() {
             )}
           </CardContent>
         </Card>
-        {botProfile ? (
-          <Card>
-            <CardHeader>
-              <CardTitle>Team meeting bot</CardTitle>
-              <CardDescription>
-                Set the team bot name and JPG avatar people see when it joins
-                calls.
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              {canEditTeamSettings ? (
-                <form
-                  action="/api/team/bot-profile"
-                  className="flex flex-col gap-4"
-                  encType="multipart/form-data"
-                  method="post"
-                >
+        <Card>
+          <CardHeader>
+            <CardTitle>Team meeting bot</CardTitle>
+            <CardDescription>
+              Set the team bot name and JPG avatar people see when it joins
+              calls.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            {canEditTeamSettings ? (
+              <form
+                action="/api/team/bot-profile"
+                className="flex flex-col gap-4"
+                encType="multipart/form-data"
+                method="post"
+              >
                 <div className="grid gap-2">
                   <label
                     className="text-sm leading-none font-medium"
@@ -200,38 +293,37 @@ export default async function TeamSettingsPage() {
                 <Button className="self-start" type="submit">
                   Save team bot profile
                 </Button>
-                </form>
-              ) : (
-                <div className="flex flex-col gap-3">
-                  <p className="text-sm text-muted-foreground">
-                    Only team administrators can edit these settings.
-                  </p>
-                  <p className="text-sm font-medium">{botProfile.botName}</p>
-                  <p className="text-xs text-muted-foreground">
-                    Team meeting bot avatar
-                  </p>
-                  <div
-                    aria-label="Current team meeting bot avatar"
-                    className="size-16 rounded-lg border bg-muted bg-cover bg-center"
-                    role="img"
-                    style={
-                      botAvatarJpegBase64
-                        ? {
-                            backgroundImage: `url(data:image/jpeg;base64,${botAvatarJpegBase64})`,
-                          }
-                        : undefined
-                    }
-                  />
-                  <p className="text-xs text-muted-foreground">
-                    {botProfile.avatarJpegBase64
-                      ? "Custom avatar saved"
-                      : "Default avatar"}
-                  </p>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        ) : null}
+              </form>
+            ) : (
+              <div className="flex flex-col gap-3">
+                <p className="text-sm text-muted-foreground">
+                  Only team administrators can edit these settings.
+                </p>
+                <p className="text-sm font-medium">{botProfile.botName}</p>
+                <p className="text-xs text-muted-foreground">
+                  Team meeting bot avatar
+                </p>
+                <div
+                  aria-label="Current team meeting bot avatar"
+                  className="size-16 rounded-lg border bg-muted bg-cover bg-center"
+                  role="img"
+                  style={
+                    botAvatarJpegBase64
+                      ? {
+                          backgroundImage: `url(data:image/jpeg;base64,${botAvatarJpegBase64})`,
+                        }
+                      : undefined
+                  }
+                />
+                <p className="text-xs text-muted-foreground">
+                  {botProfile.avatarJpegBase64
+                    ? "Custom avatar saved"
+                    : "Default avatar"}
+                </p>
+              </div>
+            )}
+          </CardContent>
+        </Card>
         <Card>
           <CardHeader>
             <CardTitle>Team vocabulary</CardTitle>
@@ -247,7 +339,11 @@ export default async function TeamSettingsPage() {
                 className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]"
                 method="post"
               >
-                <Input aria-label="Vocabulary term" name="term" placeholder="Term" />
+                <Input
+                  aria-label="Vocabulary term"
+                  name="term"
+                  placeholder="Term"
+                />
                 <Input
                   aria-label="Vocabulary hint"
                   name="hint"

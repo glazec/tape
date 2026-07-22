@@ -86,14 +86,34 @@ describe("meeting intelligence helpers", () => {
     ).toBe("IOSG <> Jane Doe");
   });
 
+  it("uses the configured team name for generated meeting titles", () => {
+    expect(
+      buildSmartMeetingTitle({
+        eventTitle: "meeting with IOSG",
+        attendeeEmails: ["alice@iosg.vc", "founder@nascent.xyz"],
+        workspaceDomain: "iosg.vc",
+        workspaceName: "IOSG Ventures",
+      }),
+    ).toBe("IOSG Ventures <> Nascent");
+  });
+
   it("extracts normalized organization and product entities", () => {
     expect(
-      extractMeetingEntities([
+      extractMeetingEntities(
+        [
+          {
+            id: "segment_1",
+            text: "Nascent asked about Solana liquidity and the TCG platform.",
+          },
+        ],
         {
-          id: "segment_1",
-          text: "Nascent asked about Solana liquidity and the TCG platform.",
+          transcriptEntities: [
+            { source: "transcript", type: "organization", value: "Nascent" },
+            { source: "transcript", type: "product", value: "Solana" },
+            { source: "transcript", type: "product", value: "TCG" },
+          ],
         },
-      ]),
+      ),
     ).toEqual([
       {
         aliases: [],
@@ -131,7 +151,14 @@ describe("meeting intelligence helpers", () => {
             text: "IOSG and Nascent talked through the Solana follow up.",
           },
         ],
-        { workspaceDomain: "iosg.vc" },
+        {
+          transcriptEntities: [
+            { source: "transcript", type: "organization", value: "IOSG" },
+            { source: "transcript", type: "organization", value: "Nascent" },
+            { source: "transcript", type: "product", value: "Solana" },
+          ],
+          workspaceDomain: "iosg.vc",
+        },
       ),
     ).toEqual([
       {
@@ -170,6 +197,11 @@ describe("meeting intelligence helpers", () => {
               source: "elevenlabs",
               type: "organization",
               value: "Nascent.xyz",
+            },
+            {
+              source: "transcript",
+              type: "product",
+              value: "SAFE",
             },
           ],
           workspaceDomain: "iosg.vc",

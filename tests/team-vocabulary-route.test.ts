@@ -4,13 +4,11 @@ const {
   canManageTeamSettings,
   getCurrentUser,
   getWorkspace,
-  getWorkspaceAccessSummary,
   insert,
 } = vi.hoisted(() => ({
   canManageTeamSettings: vi.fn(),
   getCurrentUser: vi.fn(),
   getWorkspace: vi.fn(),
-  getWorkspaceAccessSummary: vi.fn(),
   insert: vi.fn(),
 }));
 
@@ -25,7 +23,6 @@ vi.mock("@/lib/auth", () => ({
 vi.mock("@/lib/workspace", () => ({
   canManageTeamSettings,
   getOrCreateWorkspaceForSessionUser: getWorkspace,
-  getWorkspaceAccessSummary,
 }));
 
 describe("POST /api/team/vocabulary", () => {
@@ -33,7 +30,6 @@ describe("POST /api/team/vocabulary", () => {
     getCurrentUser.mockReset();
     canManageTeamSettings.mockReset();
     getWorkspace.mockReset();
-    getWorkspaceAccessSummary.mockReset();
     insert.mockReset();
     vi.resetModules();
   });
@@ -49,12 +45,6 @@ describe("POST /api/team/vocabulary", () => {
       teamId: "team_123",
       domain: "iosg.vc",
       canCreateMeetings: true,
-    });
-    getWorkspaceAccessSummary.mockResolvedValue({
-      canCreateMeetings: true,
-      hasExternalShares: false,
-      hasWorkspaceMeetings: true,
-      isSharedOnly: false,
     });
     canManageTeamSettings.mockResolvedValue(false);
     const onConflictDoUpdate = vi.fn().mockResolvedValue(undefined);
@@ -86,12 +76,6 @@ describe("POST /api/team/vocabulary", () => {
       teamId: "team_123",
       domain: "iosg.vc",
       canCreateMeetings: true,
-    });
-    getWorkspaceAccessSummary.mockResolvedValue({
-      canCreateMeetings: true,
-      hasExternalShares: false,
-      hasWorkspaceMeetings: true,
-      isSharedOnly: false,
     });
     canManageTeamSettings.mockResolvedValue(true);
     const onConflictDoUpdate = vi.fn().mockResolvedValue(undefined);

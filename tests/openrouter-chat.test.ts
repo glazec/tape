@@ -126,6 +126,7 @@ describe("OpenRouter meeting chat", () => {
 
     await expect(
       generateOpenRouterChatReply({
+        botName: "Example Notetaker",
         question: "Were leveraged binary options ever popular in TradFi?",
         participantName: "Alice",
       }),
@@ -138,6 +139,9 @@ describe("OpenRouter meeting chat", () => {
     ]);
 
     const firstBody = JSON.parse(String(fetchMock.mock.calls[0][1]?.body));
+    expect(firstBody.messages[0].content).toContain(
+      "You are Example Notetaker",
+    );
     expect(firstBody).toMatchObject({
       tool_choice: "auto",
       parallel_tool_calls: false,

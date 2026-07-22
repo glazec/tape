@@ -26,13 +26,18 @@ describe("MeetingRecoveryUploadPanel", () => {
   it("validates missing and unsupported recovery files", async () => {
     render(<MeetingRecoveryUploadPanel meetingId="meeting_123" />);
 
+    expect(screen.queryByLabelText("Audio file")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Audio recording" }));
     fireEvent.click(screen.getByRole("button", { name: "Upload audio" }));
     expect(await screen.findByText("Select a recording file first")).toBeTruthy();
 
     chooseFile("meeting-recovery-audio", new File(["bad"], "notes.txt"));
     fireEvent.click(screen.getByRole("button", { name: "Upload audio" }));
-    expect(await screen.findByText("Only MP3 and M4A files are supported")).toBeTruthy();
+    expect(
+      await screen.findByText("Only MP3, M4A, and WebM files are supported"),
+    ).toBeTruthy();
 
+    fireEvent.click(screen.getByRole("button", { name: "Transcript" }));
     fireEvent.click(screen.getByRole("button", { name: "Add transcript" }));
     expect(
       await screen.findByText("Add transcript text or choose a transcript file"),
@@ -46,6 +51,7 @@ describe("MeetingRecoveryUploadPanel", () => {
       .mockResolvedValueOnce(response({ redirectTo: "/meetings/meeting_123?queued=1" }));
 
     render(<MeetingRecoveryUploadPanel meetingId="meeting_123" />);
+    fireEvent.click(screen.getByRole("button", { name: "Audio recording" }));
     chooseFile(
       "meeting-recovery-audio",
       new File(["audio"], "meeting.mp3", { type: "audio/mpeg" }),
@@ -64,6 +70,7 @@ describe("MeetingRecoveryUploadPanel", () => {
       .mockResolvedValueOnce(response({}));
 
     render(<MeetingRecoveryUploadPanel meetingId="meeting_123" />);
+    fireEvent.click(screen.getByRole("button", { name: "Audio recording" }));
     chooseFile(
       "meeting-recovery-audio",
       new File(["audio"], "meeting.m4a", { type: "audio/mp4" }),
@@ -82,6 +89,7 @@ describe("MeetingRecoveryUploadPanel", () => {
     vi.mocked(fetch).mockResolvedValue(response({}, 401));
     render(<MeetingRecoveryUploadPanel meetingId="meeting_123" />);
 
+    fireEvent.click(screen.getByRole("button", { name: "Audio recording" }));
     chooseFile(
       "meeting-recovery-audio",
       new File(["audio"], "meeting.mp3", { type: "audio/mpeg" }),
@@ -89,7 +97,8 @@ describe("MeetingRecoveryUploadPanel", () => {
     fireEvent.click(screen.getByRole("button", { name: "Upload audio" }));
     expect(await screen.findByRole("link", { name: "Sign in" })).toBeTruthy();
 
-    fireEvent.change(screen.getByLabelText("Transcript text"), {
+    fireEvent.click(screen.getByRole("button", { name: "Transcript" }));
+    fireEvent.change(screen.getByLabelText("Paste transcript"), {
       target: { value: "  Speaker: hello  " },
     });
     fireEvent.click(screen.getByRole("button", { name: "Add transcript" }));
@@ -101,7 +110,8 @@ describe("MeetingRecoveryUploadPanel", () => {
     vi.mocked(fetch).mockResolvedValueOnce(response({}));
     render(<MeetingRecoveryUploadPanel meetingId="meeting_123" />);
 
-    fireEvent.change(screen.getByLabelText("Transcript text"), {
+    fireEvent.click(screen.getByRole("button", { name: "Transcript" }));
+    fireEvent.change(screen.getByLabelText("Paste transcript"), {
       target: { value: "  Speaker: hello  " },
     });
     fireEvent.click(screen.getByRole("button", { name: "Add transcript" }));
