@@ -8,6 +8,10 @@ import {
 } from "@/lib/meeting-bot-records";
 import { joinScheduledMeetingBotNow } from "@/lib/meeting-bot-join";
 import {
+  findMeetingBotRecoveryCandidate,
+  prepareMeetingBotRecovery,
+} from "@/lib/meeting-bot-recovery";
+import {
   buildAppUrl,
   detectMeetingPlatform,
   resolveMeetingJoinUrl,
@@ -23,7 +27,9 @@ import { SharedOnlyAccessError } from "@/lib/access-errors";
 export const runtime = "nodejs";
 
 const requestSchema = z.strictObject({
+  createSeparateMeeting: z.boolean().optional(),
   meetingUrl: z.url(),
+  recoveryMeetingId: z.uuid().optional(),
 });
 
 type RecallBotResponse = {
@@ -54,6 +60,7 @@ export async function POST(request: Request) {
   }
 
   const meetingUrl = await resolveMeetingJoinUrl(result.data.meetingUrl);
+  const isRecovery = Boolean(result.data.recoveryMeetingId);
   let scheduledMeeting: {
     meetingId: string;
     teamId: string;
@@ -62,11 +69,34 @@ export async function POST(request: Request) {
   };
 
   try {
-    scheduledMeeting = await createScheduledMeetingBot({
-      sessionUser: user,
-      meetingUrl,
-      platform,
-    });
+    if (!isRecovery && !result.data.createSeparateMeeting) {
+      const recoveryMeeting = await findMeetingBotRecoveryCandidate({
+        sessionUser: user,
+      });
+
+      if (recoveryMeeting) {
+        return Response.json(
+          {
+            code: "meeting_recovery_available",
+            recoveryMeeting,
+          },
+          { status: 409 },
+        );
+      }
+    }
+
+    scheduledMeeting = result.data.recoveryMeetingId
+      ? await prepareMeetingBotRecovery({
+          meetingId: result.data.recoveryMeetingId,
+          meetingUrl,
+          platform,
+          sessionUser: user,
+        })
+      : await createScheduledMeetingBot({
+          sessionUser: user,
+          meetingUrl,
+          platform,
+        });
   } catch (error) {
     console.error("meeting_link_scheduling_failure", {
       errorMessage: getErrorMessage(error),
@@ -140,9 +170,16 @@ export async function POST(request: Request) {
       meetingId: scheduledMeeting.meetingId,
       meetingUrl,
       platform,
-      status: "scheduled",
+      status: isRecovery ? "joining" : "scheduled",
     });
-  } catch {
+  } catch (error) {
+    console.error("meeting_link_scheduling_failure", {
+      errorMessage: getErrorMessage(error),
+      meetingId: scheduledMeeting.meetingId,
+      phase: "schedule_recall_bot",
+      platform,
+      userId: user.id,
+    });
     await markMeetingBotFailed({ meetingId: scheduledMeeting.meetingId });
 
     return Response.json({ error: "Meeting bot unavailable" }, { status: 502 });

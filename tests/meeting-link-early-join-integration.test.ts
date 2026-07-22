@@ -1,8 +1,9 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const {
   assertCanCreateMeetings,
   createScheduledMeetingBot,
+  findMeetingBotRecoveryCandidate,
   getCurrentUser,
   getMeetingBotProfile,
   getOrCreateWorkspaceForSessionUser,
@@ -12,6 +13,7 @@ const {
 } = vi.hoisted(() => ({
   assertCanCreateMeetings: vi.fn(),
   createScheduledMeetingBot: vi.fn(),
+  findMeetingBotRecoveryCandidate: vi.fn(),
   getCurrentUser: vi.fn(),
   getMeetingBotProfile: vi.fn(),
   getOrCreateWorkspaceForSessionUser: vi.fn(),
@@ -33,6 +35,11 @@ vi.mock("@/lib/meeting-bot-records", () => ({
   createScheduledMeetingBot,
   markMeetingBotFailed,
   markMeetingBotScheduled,
+}));
+
+vi.mock("@/lib/meeting-bot-recovery", () => ({
+  findMeetingBotRecoveryCandidate,
+  prepareMeetingBotRecovery: vi.fn(),
 }));
 
 vi.mock("@/lib/meeting-bot-profile", () => ({
@@ -95,9 +102,14 @@ function mockDirectScheduledMeeting() {
 }
 
 describe("New Meeting existing URL early join", () => {
+  beforeEach(() => {
+    findMeetingBotRecoveryCandidate.mockResolvedValue(null);
+  });
+
   afterEach(() => {
     assertCanCreateMeetings.mockReset();
     createScheduledMeetingBot.mockReset();
+    findMeetingBotRecoveryCandidate.mockReset();
     getCurrentUser.mockReset();
     getMeetingBotProfile.mockReset();
     getOrCreateWorkspaceForSessionUser.mockReset();

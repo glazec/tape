@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const { refresh, replace } = vi.hoisted(() => ({ refresh: vi.fn(), replace: vi.fn() }));
@@ -30,6 +30,84 @@ describe("meeting form interactions", () => {
     fireEvent.change(screen.getByLabelText("Meeting link"), { target: { value: "https://meet.google.com/abc" } });
     fireEvent.click(screen.getByRole("button", { name: "Add meeting bot" }));
     expect(await screen.findByText("The bot should appear within about 30 seconds.")).toBeTruthy();
+  });
+
+  it("asks before attaching a replacement link to the current meeting", async () => {
+    vi.mocked(fetch)
+      .mockResolvedValueOnce(
+        json(
+          {
+            code: "meeting_recovery_available",
+            recoveryMeeting: {
+              id: "11111111-1111-4111-8111-111111111111",
+              startedAt: "2026-07-22T12:00:00.000Z",
+              title: "Founder call",
+            },
+          },
+          409,
+        ),
+      )
+      .mockResolvedValueOnce(json({ status: "joining" }));
+
+    render(<MeetingLinkForm />);
+    fillLink();
+    fireEvent.click(screen.getByRole("button", { name: "Add meeting bot" }));
+
+    expect(
+      await screen.findByRole("dialog", {
+        name: "Send bot to Founder call?",
+      }),
+    ).toBeTruthy();
+    expect(screen.getByText(/Started/)).toBeTruthy();
+    fireEvent.click(
+      screen.getByRole("button", { name: "Send bot to this meeting" }),
+    );
+
+    expect(
+      await screen.findByText("The bot should appear within about 30 seconds."),
+    ).toBeTruthy();
+    expect(fetch).toHaveBeenNthCalledWith(
+      2,
+      "/api/meetings/link",
+      expect.objectContaining({
+        body: JSON.stringify({
+          meetingUrl: "https://meet.google.com/abc",
+          recoveryMeetingId: "11111111-1111-4111-8111-111111111111",
+        }),
+      }),
+    );
+  });
+
+  it("closes the recovery choice with Escape and restores focus", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(
+      json(
+        {
+          code: "meeting_recovery_available",
+          recoveryMeeting: {
+            id: "11111111-1111-4111-8111-111111111111",
+            startedAt: "2026-07-22T12:00:00.000Z",
+            title: "Founder call",
+          },
+        },
+        409,
+      ),
+    );
+
+    render(<MeetingLinkForm />);
+    fillLink();
+    const submitButton = screen.getByRole("button", {
+      name: "Add meeting bot",
+    });
+    submitButton.focus();
+    fireEvent.click(submitButton);
+    await screen.findByRole("dialog", { name: "Send bot to Founder call?" });
+
+    fireEvent.keyDown(document, { key: "Escape" });
+
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog")).toBeNull(),
+    );
+    expect(document.activeElement).toBe(submitButton);
   });
 
   it("shows authorization, join, and network errors for meeting links", async () => {

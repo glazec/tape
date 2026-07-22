@@ -1,10 +1,10 @@
 "use client";
 
-import { FormEvent, useState } from "react";
+import { FormEvent, useRef, useState } from "react";
 import { AlertCircle, CalendarPlus, CheckCircle2 } from "lucide-react";
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import {
   Card,
   CardContent,
@@ -14,20 +14,32 @@ import {
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogTitle,
+} from "@/components/ui/dialog";
 
 type FormState = "idle" | "saving" | "scheduled" | "joining" | "error";
+type RecoveryCandidate = {
+  id: string;
+  startedAt: string;
+  title: string;
+};
 
 export function MeetingLinkForm() {
   const [state, setState] = useState<FormState>("idle");
   const [message, setMessage] = useState<string | null>(null);
   const [signInRequired, setSignInRequired] = useState(false);
+  const [pendingMeetingUrl, setPendingMeetingUrl] = useState("");
+  const [recoveryCandidate, setRecoveryCandidate] =
+    useState<RecoveryCandidate | null>(null);
+  const recoveryReturnFocusRef = useRef<HTMLElement | null>(null);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    setState("saving");
-    setMessage(null);
-    setSignInRequired(false);
-
     const formData = new FormData(event.currentTarget);
     const meetingUrl = String(formData.get("meeting-link") ?? "").trim();
 
@@ -37,11 +49,23 @@ export function MeetingLinkForm() {
       return;
     }
 
+    await scheduleMeeting(meetingUrl);
+  }
+
+  async function scheduleMeeting(
+    meetingUrl: string,
+    choice: { createSeparateMeeting?: boolean; recoveryMeetingId?: string } = {},
+  ) {
+    setState("saving");
+    setMessage(null);
+    setSignInRequired(false);
+    setRecoveryCandidate(null);
+
     try {
       const response = await fetch("/api/meetings/link", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ meetingUrl }),
+        body: JSON.stringify({ meetingUrl, ...choice }),
       });
 
       if (response.status === 401) {
@@ -52,9 +76,28 @@ export function MeetingLinkForm() {
       }
 
       const responseBody = (await response.json().catch(() => null)) as {
+        code?: unknown;
         error?: unknown;
+        recoveryMeeting?: unknown;
         status?: unknown;
       } | null;
+
+      const candidate = parseRecoveryCandidate(responseBody?.recoveryMeeting);
+
+      if (
+        response.status === 409 &&
+        responseBody?.code === "meeting_recovery_available" &&
+        candidate
+      ) {
+        recoveryReturnFocusRef.current =
+          document.activeElement instanceof HTMLElement
+            ? document.activeElement
+            : null;
+        setPendingMeetingUrl(meetingUrl);
+        setRecoveryCandidate(candidate);
+        setState("idle");
+        return;
+      }
 
       if (!response.ok) {
         if (
@@ -149,6 +192,85 @@ export function MeetingLinkForm() {
           ) : null}
         </form>
       </CardContent>
+      <Dialog
+        onOpenChange={(open) => {
+          if (!open) {
+            setRecoveryCandidate(null);
+          }
+        }}
+        open={Boolean(recoveryCandidate)}
+      >
+        {recoveryCandidate ? (
+          <DialogContent finalFocus={recoveryReturnFocusRef}>
+            <DialogTitle>
+              Send bot to {recoveryCandidate.title}?
+            </DialogTitle>
+            <DialogDescription className="mt-2">
+              Started {formatRecoveryStart(recoveryCandidate.startedAt)}. This
+              meeting has no usable notes. Keep the next call under the same
+              meeting record?
+            </DialogDescription>
+            <div className="mt-5 flex flex-wrap gap-2">
+              <Button
+                onClick={() =>
+                  void scheduleMeeting(pendingMeetingUrl, {
+                    recoveryMeetingId: recoveryCandidate.id,
+                  })
+                }
+                type="button"
+              >
+                Send bot to this meeting
+              </Button>
+              <Button
+                onClick={() =>
+                  void scheduleMeeting(pendingMeetingUrl, {
+                    createSeparateMeeting: true,
+                  })
+                }
+                type="button"
+                variant="outline"
+              >
+                Create separate meeting
+              </Button>
+              <DialogClose
+                className={buttonVariants({ variant: "ghost" })}
+                type="button"
+              >
+                Cancel
+              </DialogClose>
+            </div>
+          </DialogContent>
+        ) : null}
+      </Dialog>
     </Card>
   );
+}
+
+function formatRecoveryStart(value: string) {
+  const date = new Date(value);
+
+  return Number.isNaN(date.getTime())
+    ? "recently"
+    : new Intl.DateTimeFormat(undefined, {
+        dateStyle: "medium",
+        timeStyle: "short",
+      }).format(date);
+}
+
+function parseRecoveryCandidate(value: unknown): RecoveryCandidate | null {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+
+  const candidate = value as Record<string, unknown>;
+
+  return typeof candidate.id === "string" &&
+    typeof candidate.startedAt === "string" &&
+    typeof candidate.title === "string"
+    ? {
+        id: candidate.id,
+        startedAt: candidate.startedAt,
+        title: candidate.title,
+      }
+    : null;
 }

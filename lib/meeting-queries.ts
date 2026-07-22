@@ -112,6 +112,7 @@ export type MeetingTranscript = {
   id: string;
   title: string;
   platform: MeetingListItem["platform"];
+  meetingUrl: string | null;
   status: MeetingListItem["status"];
   startedAt: string | null;
   endedAt: string | null;
@@ -1077,6 +1078,7 @@ export async function getMeetingTranscriptForWorkspace(
       teamId: meetings.teamId,
       title: meetings.title,
       platform: meetings.platform,
+      meetingUrl: meetings.meetingUrl,
       status: meetings.status,
       startedAt: meetings.startedAt,
       endedAt: meetings.endedAt,
@@ -1215,6 +1217,7 @@ export async function getMeetingTranscriptForWorkspace(
       workspaceName: workspace.teamName,
     }),
     platform: meeting.platform,
+    meetingUrl: meeting.meetingUrl,
     status: meeting.status,
     startedAt:
       (meeting.startedAt ?? meeting.createdAt)?.toISOString() ?? null,

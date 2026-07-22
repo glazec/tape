@@ -29,6 +29,7 @@ vi.mock("@/components/meeting-actions", () => ({ MeetingActions: ({ hasAudio = t
 vi.mock("@/components/meeting-entity-links", () => ({ MeetingEntityLinks: () => <span>entity links</span> }));
 vi.mock("@/components/meeting-header-metadata", () => ({ MeetingHeaderMetadata: (props: { platform: string; status: string }) => <span>{props.platform}:{props.status}</span> }));
 vi.mock("@/components/meeting-recovery-upload-panel", () => ({ MeetingRecoveryUploadPanel: () => <span>recovery panel</span> }));
+vi.mock("@/components/meeting-bot-recovery-panel", () => ({ MeetingBotRecoveryPanel: () => <span>bot recovery panel</span> }));
 vi.mock("@/components/meeting-title-editor", () => ({ MeetingTitleEditor: ({ meetingTitle }: { meetingTitle: string }) => <h1>{meetingTitle}</h1> }));
 vi.mock("@/components/related-meetings-card", () => ({ RelatedMeetingsCard: () => <span>related meetings</span> }));
 vi.mock("@/components/share-dialog", () => ({ ShareDialog: () => <span>share dialog</span> }));
@@ -135,6 +136,31 @@ describe("meeting page", () => {
     expect(html).not.toContain("lg:grid-cols-[1fr_20rem]");
   });
 
+  it("offers bot recovery and keeps existing content uploads available", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-07-20T10:08:00Z"));
+    mocks.getMeeting.mockResolvedValue(
+      meeting({
+        audioUrl: null,
+        meetingUrl: "https://meet.google.com/abc-defg-hij",
+        segments: [],
+        status: "missed",
+        visualAssets: [],
+      }),
+    );
+
+    const html = renderToStaticMarkup(
+      await MeetingPage({
+        params: Promise.resolve({ meetingId: "missed_meeting" }),
+      }),
+    );
+
+    expect(html).toContain("bot recovery panel");
+    expect(html).toContain("<span>recovery panel</span>");
+    expect(html).toContain("Already have a recording or transcript?");
+    vi.useRealTimers();
+  });
+
   it("does not offer recovery uploads for ready meetings", async () => {
     mocks.getMeeting.mockResolvedValue(meeting({ status: "ready" }));
 
@@ -225,6 +251,7 @@ function meeting(overrides: Record<string, unknown> = {}) {
     endedAt: new Date("2026-07-20T10:01:00Z"),
     entities: [],
     platform: "google_meet",
+    meetingUrl: "https://meet.google.com/abc-defg-hij",
     segments: [{ id: "seg", speaker: "Alice", startMs: 0, endMs: 1000, text: "Hello", polishedText: "Hello" }],
     speakerAliases: [],
     speakerSuggestions: [],

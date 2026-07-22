@@ -7,6 +7,8 @@ const createScheduledMeetingBot = vi.fn();
 const joinScheduledMeetingBotNow = vi.fn();
 const markMeetingBotFailed = vi.fn();
 const markMeetingBotScheduled = vi.fn();
+const findMeetingBotRecoveryCandidate = vi.fn();
+const prepareMeetingBotRecovery = vi.fn();
 
 vi.mock("@/lib/auth", () => ({
   getCurrentUser,
@@ -43,6 +45,11 @@ vi.mock("@/lib/meeting-bot-join", () => ({
   joinScheduledMeetingBotNow,
 }));
 
+vi.mock("@/lib/meeting-bot-recovery", () => ({
+  findMeetingBotRecoveryCandidate,
+  prepareMeetingBotRecovery,
+}));
+
 async function postMeetingLink(body: unknown) {
   const { POST } = await import("@/app/api/meetings/link/route");
 
@@ -59,6 +66,7 @@ async function postMeetingLink(body: unknown) {
 
 describe("POST /api/meetings/link", () => {
   beforeEach(() => {
+    findMeetingBotRecoveryCandidate.mockResolvedValue(null);
     getMeetingBotProfile.mockResolvedValue({
       botName: "IOSG Old Friend",
       avatarJpegBase64: null,
@@ -73,6 +81,8 @@ describe("POST /api/meetings/link", () => {
     joinScheduledMeetingBotNow.mockReset();
     markMeetingBotFailed.mockReset();
     markMeetingBotScheduled.mockReset();
+    findMeetingBotRecoveryCandidate.mockReset();
+    prepareMeetingBotRecovery.mockReset();
     vi.unstubAllGlobals();
     vi.unstubAllEnvs();
     vi.resetModules();
@@ -178,6 +188,70 @@ describe("POST /api/meetings/link", () => {
       meetingId: "11111111-1111-4111-8111-111111111111",
       recallBotId: "bot_123",
     });
+  });
+
+  it("asks whether a replacement link belongs to a recent empty meeting", async () => {
+    getCurrentUser.mockResolvedValue({
+      id: "user_123",
+      email: "user@example.com",
+      name: null,
+    });
+    findMeetingBotRecoveryCandidate.mockResolvedValue({
+      id: "11111111-1111-4111-8111-111111111111",
+      startedAt: "2026-07-22T12:00:00.000Z",
+      title: "Founder call",
+    });
+
+    const response = await postMeetingLink({
+      meetingUrl: "https://meet.google.com/new-call",
+    });
+
+    expect(response.status).toBe(409);
+    await expect(response.json()).resolves.toEqual({
+      code: "meeting_recovery_available",
+      recoveryMeeting: {
+        id: "11111111-1111-4111-8111-111111111111",
+        startedAt: "2026-07-22T12:00:00.000Z",
+        title: "Founder call",
+      },
+    });
+    expect(createScheduledMeetingBot).not.toHaveBeenCalled();
+  });
+
+  it("records a confirmed replacement link under the current meeting", async () => {
+    vi.stubEnv("NEXT_PUBLIC_APP_URL", "https://app.example.com");
+    getCurrentUser.mockResolvedValue({
+      id: "user_123",
+      email: "user@example.com",
+      name: null,
+    });
+    prepareMeetingBotRecovery.mockResolvedValue({
+      meetingId: "11111111-1111-4111-8111-111111111111",
+      teamId: "22222222-2222-4222-8222-222222222222",
+    });
+    scheduleRecallBot.mockResolvedValue({ id: "replacement_bot" });
+
+    const response = await postMeetingLink({
+      meetingUrl: "https://meet.google.com/new-call",
+      recoveryMeetingId: "11111111-1111-4111-8111-111111111111",
+    });
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      meetingId: "11111111-1111-4111-8111-111111111111",
+      status: "joining",
+    });
+    expect(prepareMeetingBotRecovery).toHaveBeenCalledWith({
+      meetingId: "11111111-1111-4111-8111-111111111111",
+      meetingUrl: "https://meet.google.com/new-call",
+      platform: "google_meet",
+      sessionUser: {
+        id: "user_123",
+        email: "user@example.com",
+        name: null,
+      },
+    });
+    expect(createScheduledMeetingBot).not.toHaveBeenCalled();
   });
 
   it("schedules a Recall bot for Zoom links", async () => {
