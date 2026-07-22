@@ -1052,13 +1052,24 @@ public struct LocalRecordingUploadQueue: Sendable {
             at: directoryURL,
             includingPropertiesForKeys: nil
         )
-        let payloads = try itemURLs
+        let payloads = itemURLs
             .filter { $0.pathExtension == "json" }
-            .map { url in
-                try JSONDecoder.localRecorder.decode(
-                    LocalRecordingUploadPayload.self,
-                    from: Data(contentsOf: url)
-                )
+            .compactMap { url in
+                do {
+                    return try JSONDecoder.localRecorder.decode(
+                        LocalRecordingUploadPayload.self,
+                        from: Data(contentsOf: url)
+                    )
+                } catch {
+                    let quarantinedURL = url.appendingPathExtension(
+                        "invalid-\(UUID().uuidString)"
+                    )
+                    try? FileManager.default.moveItem(
+                        at: url,
+                        to: quarantinedURL
+                    )
+                    return nil
+                }
             }
 
         return payloads.sorted {

@@ -780,6 +780,41 @@ import Testing
     #expect(try queue.load().map(\.clientRecordingId) == ["recording_new"])
 }
 
+@Test func uploadQueueQuarantinesCorruptItemsAndLoadsValidRecordings() throws {
+    let temporaryDirectory = FileManager.default.temporaryDirectory
+        .appending(path: UUID().uuidString, directoryHint: .isDirectory)
+    let queueDirectory = temporaryDirectory.appending(path: "queue", directoryHint: .isDirectory)
+    try FileManager.default.createDirectory(
+        at: temporaryDirectory,
+        withIntermediateDirectories: true
+    )
+    defer {
+        try? FileManager.default.removeItem(at: temporaryDirectory)
+    }
+
+    let queue = LocalRecordingUploadQueue(directoryURL: queueDirectory)
+    let payload = makeUploadPayload(
+        clientRecordingId: "recording_valid",
+        recordingStartedAt: Date(timeIntervalSince1970: 10),
+        directoryURL: temporaryDirectory.appending(path: "valid", directoryHint: .isDirectory)
+    )
+    try queue.save(payload)
+    let corruptURL = queueDirectory.appending(path: "corrupt.json")
+    try Data("not-json".utf8).write(to: corruptURL)
+
+    #expect(try queue.load().map(\.clientRecordingId) == ["recording_valid"])
+    #expect(!FileManager.default.fileExists(atPath: corruptURL.path))
+    let quarantinedItems = try FileManager.default.contentsOfDirectory(
+        at: queueDirectory,
+        includingPropertiesForKeys: nil
+    )
+    #expect(
+        quarantinedItems.contains {
+            $0.lastPathComponent.hasPrefix("corrupt.json.invalid-")
+        }
+    )
+}
+
 private func makeUploadPayload(
     clientRecordingId: String,
     recordingStartedAt: Date,
