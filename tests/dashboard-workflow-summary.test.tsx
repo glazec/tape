@@ -114,12 +114,33 @@ describe("DashboardWorkflowSummary", () => {
       last7DaysMeetings: 2,
       previous7DaysMeetings: 1,
       meetingChangePercent: 100,
-      meetingHours: 2,
+      meetingHours: 0,
       spokenWords: 4,
       talkSharePercent: 33,
       dominantEmotion: "hard",
       dominantEmotionPercent: 67,
     });
+  });
+
+  it("uses transcript elapsed time instead of scheduled calendar time", () => {
+    const summary = getDashboardWorkflowSummary(
+      [
+        meeting({
+          startedAt: "2026-06-27T10:00:00.000Z",
+          endedAt: "2026-06-27T11:00:00.000Z",
+          segments: [segment({ startMs: 0, endMs: 12 * 60 * 1000 })],
+        }),
+        meeting({
+          startedAt: "2026-06-26T10:00:00.000Z",
+          endedAt: "2026-06-26T11:00:00.000Z",
+          status: "missed",
+          segments: [],
+        }),
+      ],
+      new Date("2026-06-28T12:00:00.000Z"),
+    );
+
+    expect(summary.userStats.meetingHours).toBe(0.2);
   });
 
   it("ignores cancelled meetings in workflow counts and user stats", () => {
@@ -230,7 +251,7 @@ describe("DashboardWorkflowSummary", () => {
     expect(html).toContain("Meetings");
     expect(html).toContain("Meeting time");
     expect(html).toContain("+100% vs last week");
-    expect(html).toContain("2h");
+    expect(html).toContain("0h");
     expect(html).toContain("Words");
     expect(html).not.toContain("talk share");
     expect(html).not.toContain("Tone");

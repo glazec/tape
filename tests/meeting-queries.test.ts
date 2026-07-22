@@ -1817,6 +1817,7 @@ describe("buildMeetingLibraryPage", () => {
           platform: "zoom",
           startedAt: "2026-06-27T10:00:00.000Z",
           endedAt: "2026-06-27T10:20:00.000Z",
+          durationMs: 10 * 60 * 1000,
         }),
         libraryMeeting({
           id: "22222222-2222-4222-8222-222222222222",
@@ -1824,6 +1825,7 @@ describe("buildMeetingLibraryPage", () => {
           platform: "google_meet",
           startedAt: "2026-06-27T09:00:00.000Z",
           endedAt: "2026-06-27T10:30:00.000Z",
+          durationMs: 5 * 60 * 1000,
         }),
         libraryMeeting({
           id: "33333333-3333-4333-8333-333333333333",
@@ -1841,8 +1843,8 @@ describe("buildMeetingLibraryPage", () => {
 
     expect(page.meetings.map((meeting) => meeting.title)).toEqual([
       "Transcript only upload",
-      "Deep diligence",
       "Short sync",
+      "Deep diligence",
     ]);
   });
 

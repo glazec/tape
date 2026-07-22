@@ -14,6 +14,7 @@ describe("MeetingList", () => {
             platform: "google_meet",
             startedAt: "2026-01-01T12:00:00.000Z",
             endedAt: "2026-01-01T13:30:00.000Z",
+            durationMs: 12 * 60 * 1000,
             participantCount: 3,
             status: "ready",
           },
@@ -25,9 +26,29 @@ describe("MeetingList", () => {
     expect(html).toContain("Participants");
     expect(html).toContain("Duration");
     expect(html).toContain("3 people");
-    expect(html).toContain("1h 30m");
+    expect(html).toContain("12m");
+    expect(html).not.toContain("1h 30m");
     expect(html).toContain("pl-8");
     expect(html).toContain("w-28 text-center");
+  });
+
+  it("uses planned duration only for an upcoming scheduled meeting", () => {
+    const html = renderToStaticMarkup(
+      <MeetingList
+        meetings={[
+          {
+            id: "11111111-1111-4111-8111-111111111111",
+            title: "Upcoming sync",
+            platform: "zoom",
+            startedAt: "2999-01-01T12:00:00.000Z",
+            endedAt: "2999-01-01T13:30:00.000Z",
+            status: "scheduled",
+          },
+        ]}
+      />,
+    );
+
+    expect(html).toContain("1h 30m");
   });
 
   it("uses transcript timing when a meeting end time is missing", () => {

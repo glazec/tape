@@ -290,6 +290,7 @@ function MeetingTableRow({
           durationMs: meeting.durationMs,
           endedAt: meeting.endedAt,
           startedAt: meeting.startedAt,
+          status: meeting.status,
         })}
       </TableCell>
       <TableCell className="hidden text-muted-foreground md:table-cell">
@@ -680,8 +681,17 @@ function formatMeetingDuration(input: {
   durationMs?: number | null;
   endedAt?: string | null;
   startedAt: string;
+  status: MeetingRecordStatus;
 }) {
-  if (input.endedAt) {
+  if (typeof input.durationMs === "number" && input.durationMs > 0) {
+    return formatDurationMs(input.durationMs);
+  }
+
+  if (
+    input.status === "scheduled" &&
+    new Date(input.startedAt).getTime() > Date.now() &&
+    input.endedAt
+  ) {
     const startedTime = new Date(input.startedAt).getTime();
     const endedTime = new Date(input.endedAt).getTime();
     const durationMs = endedTime - startedTime;
@@ -689,10 +699,6 @@ function formatMeetingDuration(input: {
     if (Number.isFinite(durationMs) && durationMs > 0) {
       return formatDurationMs(durationMs);
     }
-  }
-
-  if (typeof input.durationMs === "number" && input.durationMs > 0) {
-    return formatDurationMs(input.durationMs);
   }
 
   return "Unknown";

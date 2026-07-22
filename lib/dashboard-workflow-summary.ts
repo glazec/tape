@@ -240,13 +240,6 @@ function getMeetingChangePercent(current: number, previous: number) {
 }
 
 function getMeetingDurationMs(meeting: DashboardWorkflowMeeting) {
-  const startedAt = new Date(meeting.startedAt).getTime();
-  const endedAt = meeting.endedAt ? new Date(meeting.endedAt).getTime() : NaN;
-
-  if (Number.isFinite(startedAt) && Number.isFinite(endedAt) && endedAt > startedAt) {
-    return endedAt - startedAt;
-  }
-
   const segmentDurations = meeting.segments
     ?.map((segment) => segment.endMs ?? 0)
     .filter((endMs) => endMs > 0);

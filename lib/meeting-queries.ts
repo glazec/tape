@@ -705,19 +705,6 @@ function compareNumbers(
 }
 
 function getMeetingDurationMs(meeting: MeetingListItem) {
-  if (meeting.endedAt) {
-    const startedAt = new Date(meeting.startedAt).getTime();
-    const endedAt = new Date(meeting.endedAt).getTime();
-
-    if (Number.isFinite(startedAt) && Number.isFinite(endedAt)) {
-      const durationMs = endedAt - startedAt;
-
-      if (durationMs > 0) {
-        return durationMs;
-      }
-    }
-  }
-
   return getTranscriptDurationMs(meeting.durationMs) ?? null;
 }
 
