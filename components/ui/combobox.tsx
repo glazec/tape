@@ -16,7 +16,7 @@ function ComboboxInput({
     <ComboboxPrimitive.InputGroup
       data-slot="combobox-input-group"
       className={cn(
-        "group/combobox-input relative flex h-8 w-full min-w-0 items-center rounded-lg border border-input bg-transparent transition-colors outline-none focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/50 dark:bg-input/30",
+        "group/combobox-input relative flex h-11 w-full min-w-0 items-center rounded-lg border border-input bg-transparent transition-colors outline-none focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/50 sm:h-8 dark:bg-input/30",
         className,
       )}
     >
@@ -28,7 +28,7 @@ function ComboboxInput({
       <ComboboxPrimitive.Trigger
         aria-label="Show suggestions"
         data-slot="combobox-trigger"
-        className="mr-1 flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground outline-none transition-colors hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50"
+        className="flex size-11 shrink-0 items-center justify-center rounded-md text-muted-foreground outline-none transition-colors hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 sm:mr-1 sm:size-7"
       >
         <ChevronDownIcon className="size-4 transition-transform group-data-[popup-open]/combobox-input:rotate-180" />
       </ComboboxPrimitive.Trigger>
@@ -93,7 +93,7 @@ function ComboboxItem({
     <ComboboxPrimitive.Item
       data-slot="combobox-item"
       className={cn(
-        "relative flex w-full cursor-default items-start gap-2 rounded-md px-2 py-2 pr-8 text-sm outline-none select-none data-highlighted:bg-accent data-highlighted:text-accent-foreground data-disabled:pointer-events-none data-disabled:opacity-50",
+        "relative flex min-h-11 w-full cursor-default items-start gap-2 rounded-md px-2 py-2 pr-8 text-sm outline-none select-none data-highlighted:bg-accent data-highlighted:text-accent-foreground data-disabled:pointer-events-none data-disabled:opacity-50 sm:min-h-0",
         className,
       )}
       {...props}
