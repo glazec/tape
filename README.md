@@ -124,7 +124,7 @@ npm run setup:check
 
 The web application deploys to Vercel. Its production build validates required configuration and migration lineage, applies pending migrations, and then builds the application. Preview builds do not mutate the production database.
 
-The optional image worker deploys separately to Railway. It accepts Inngest requests at `/api/inngest` and exposes `/health` for service health checks.
+The MCP and optional image worker run as separate services in one Railway project named `tape`. The image worker accepts Inngest requests at `/api/inngest` and exposes `/health` for service health checks.
 
 ```bash
 npm run build:image-worker

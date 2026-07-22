@@ -172,7 +172,7 @@ After the first successful deployment:
 
 ## Deploy the image worker
 
-Screen share extraction runs as a separate optional Railway service. The Vercel application emits an Inngest event after Recall recording completion. The worker downloads fresh Recall artifacts, runs ffmpeg and ffprobe, stores stable screen share frames in R2, and writes their metadata to Neon.
+Screen share extraction runs as an optional service in the same Railway project as the Tape MCP. Name the Railway project `tape` and keep the MCP and image worker as separate services so each runtime retains its own build, variables, health checks, and scaling. The Vercel application emits an Inngest event after Recall recording completion. The worker downloads fresh Recall artifacts, runs ffmpeg and ffprobe, stores stable screen share frames in R2, and writes their metadata to Neon.
 
 Configure these variables on the Railway service:
 
