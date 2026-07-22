@@ -5,15 +5,15 @@ test("shows the Tape landing page", async ({ page }) => {
 
   await expect(
     page.getByRole("heading", {
-      name: "Every meeting, unrolled into insight.",
+      name: "Every conversation, on the record.",
     }),
   ).toBeVisible();
   await expect(
-    page.getByRole("link", { name: "Start free" }),
+    page.getByRole("link", { name: "Start recording" }).first(),
   ).toHaveAttribute("href", "/auth/sign-in");
-  await expect(page.getByText("Layer 01 · Recording").first()).toBeVisible();
-  await expect(page.getByText("What did we decide?")).toBeVisible();
-  await expect(page.getByText("IOSG Ventures")).toBeVisible();
+  await expect(page.getByText("01 · Your archive")).toBeVisible();
+  await expect(page.getByText("Google Meet", { exact: true })).toBeVisible();
+  await expect(page.getByText("Multi-tenant workspaces")).toBeVisible();
 });
 
 test("opens the sign in page from the landing call to action", async ({
@@ -21,7 +21,7 @@ test("opens the sign in page from the landing call to action", async ({
 }) => {
   await page.goto("/");
 
-  await page.getByRole("link", { name: "Get started free" }).click();
+  await page.getByRole("link", { name: "Get started" }).click();
 
   await expect(page).toHaveURL("/auth/sign-in");
   await expect(
