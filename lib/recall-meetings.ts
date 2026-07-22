@@ -16,6 +16,16 @@ import {
 
 type RecallWebhookEvent = ReturnType<typeof normalizeRecallWebhook>;
 
+const terminalRecallStatusCodes = new Set([
+  "failed",
+  "fatal",
+  "error",
+  "cancel",
+  "canceled",
+  "cancelled",
+]);
+const completedRecallStatusCodes = new Set(["done", "complete", "completed"]);
+
 type RecallMeetingUpdate =
   | {
       action: "update";
@@ -233,6 +243,10 @@ function hasTerminalRecallMediaFailure(
   recallArtifact: unknown,
   recordingId: string | null,
 ) {
+  if (!recordingId) {
+    return false;
+  }
+
   const recording = findRecallRecordingRecord(recallArtifact, recordingId);
 
   if (!recording) {
@@ -241,18 +255,18 @@ function hasTerminalRecallMediaFailure(
 
   const recordingStatus = getRecallStatusCode(recording.status);
 
-  if (/(fail|error|cancel)/.test(recordingStatus)) {
+  if (terminalRecallStatusCodes.has(recordingStatus)) {
     return true;
   }
 
-  if (!/(done|complete)/.test(recordingStatus)) {
+  if (!completedRecallStatusCodes.has(recordingStatus)) {
     return false;
   }
 
   const mediaShortcuts = getUnknownRecord(recording.media_shortcuts);
 
   return ["audio_mixed", "video_mixed"].some((shortcut) =>
-    /(fail|error|cancel)/.test(
+    terminalRecallStatusCodes.has(
       getRecallStatusCode(getUnknownRecord(mediaShortcuts?.[shortcut])?.status),
     ),
   );
@@ -260,7 +274,7 @@ function hasTerminalRecallMediaFailure(
 
 function findRecallRecordingRecord(
   recallArtifact: unknown,
-  recordingId: string | null,
+  recordingId: string,
 ) {
   const artifact = getUnknownRecord(recallArtifact);
 
@@ -268,24 +282,16 @@ function findRecallRecordingRecord(
     return null;
   }
 
-  if (recordingId && artifact.id === recordingId) {
+  if (artifact.id === recordingId) {
     return artifact;
   }
 
   const recordings = Array.isArray(artifact.recordings)
     ? artifact.recordings
     : [];
-  const recordingRecords = recordings.map(getUnknownRecord);
-
-  if (!recordingId) {
-    return artifact.media_shortcuts
-      ? artifact
-      : recordingRecords.find(Boolean) ?? artifact;
-  }
-
-  return (
-    recordingRecords.find((recording) => recording?.id === recordingId) ?? null
-  );
+  return recordings
+    .map(getUnknownRecord)
+    .find((recording) => recording?.id === recordingId) ?? null;
 }
 
 function getRecallStatusCode(value: unknown) {

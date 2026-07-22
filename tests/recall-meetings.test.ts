@@ -547,12 +547,9 @@ describe("applyRecallMeetingEvent", () => {
     expect(send).not.toHaveBeenCalled();
   });
 
-  it("fails terminal bot media when a recording id is absent from the webhook", async () => {
-    const initialSet = vi.fn().mockReturnValue({ where });
-    const failureSet = vi.fn().mockReturnValue({ where });
-    update
-      .mockReturnValueOnce({ set: initialSet })
-      .mockReturnValueOnce({ set: failureSet });
+  it("does not guess which bot recording failed when the webhook omits its id", async () => {
+    const setSpy = vi.fn().mockReturnValue({ where });
+    update.mockReturnValue({ set: setSpy });
     select.mockReturnValue({ from: selectFrom });
     selectFrom.mockReturnValue({ where: selectWhere });
     selectWhere.mockReturnValue({ limit: selectLimit });
@@ -588,8 +585,9 @@ describe("applyRecallMeetingEvent", () => {
       },
     });
 
-    expect(failureSet).toHaveBeenCalledWith(
-      expect.objectContaining({ status: "failed" }),
+    expect(setSpy).toHaveBeenCalledTimes(1);
+    expect(setSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ status: "processing" }),
     );
     expect(createRecallRecordingTranscription).not.toHaveBeenCalled();
     expect(send).not.toHaveBeenCalled();
