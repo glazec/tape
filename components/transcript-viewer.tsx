@@ -524,7 +524,6 @@ export function TranscriptViewer({
     setCurrentTime(audio.currentTime);
 
     try {
-      setFailedPlaybackAudioUrl(null);
       await audio.play();
       setIsPlaying(true);
     } catch {
@@ -825,7 +824,6 @@ export function TranscriptViewer({
     setCurrentTime(audio.currentTime);
 
     try {
-      setFailedPlaybackAudioUrl(null);
       await audio.play();
       setIsPlaying(true);
     } catch {
@@ -2079,7 +2077,6 @@ function TranscriptAudioPlayer({
 
     if (audio.paused) {
       try {
-        onPlaybackReady();
         await audio.play();
         setIsPlaying(true);
       } catch {

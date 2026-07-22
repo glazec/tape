@@ -318,6 +318,9 @@ describe("TranscriptViewer interactions", () => {
       "Recording could not be played. Reload and try again.",
     );
 
+    fireEvent.click(screen.getByRole("button", { name: "Play audio" }));
+    expect(screen.getByRole("alert")).toBeTruthy();
+
     fireEvent.canPlay(audio);
     expect(screen.queryByRole("alert")).toBeNull();
   });
