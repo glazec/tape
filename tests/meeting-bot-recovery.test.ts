@@ -76,6 +76,21 @@ describe("meeting bot recovery policy", () => {
       }),
     ).toBe(true);
   });
+
+  it("keeps recovery open when a meeting runs past its scheduled end", () => {
+    expect(
+      isMeetingBotRecoveryEligible({
+        canManage: true,
+        endedAt: "2026-07-22T11:55:00.000Z",
+        now,
+        platform: "zoom",
+        segmentCount: 0,
+        startedAt: "2026-07-22T11:25:00.000Z",
+        status: "missed",
+        updatedAt: "2026-07-22T12:08:00.000Z",
+      }),
+    ).toBe(true);
+  });
 });
 
 describe("meeting bot recovery records", () => {
@@ -100,6 +115,8 @@ describe("meeting bot recovery records", () => {
         sessionUser: sessionUser(),
       }),
     ).resolves.toEqual({
+      calendarEventId: null,
+      endedAt: null,
       id: "11111111-1111-4111-8111-111111111111",
       startedAt: "2026-07-22T12:00:00.000Z",
       title: "Founder call",
@@ -111,6 +128,51 @@ describe("meeting bot recovery records", () => {
         userId: "33333333-3333-4333-8333-333333333333",
       }),
     );
+  });
+
+  it("lists recent meetings so the user can choose the correct call", async () => {
+    mockWorkspace();
+    mockRecoverableMeetings([
+      {
+        calendarEventId: null,
+        endedAt: null,
+        id: "11111111-1111-4111-8111-111111111111",
+        startedAt: new Date("2026-07-22T15:00:00.000Z"),
+        title: "IOSG <> Greenfield Capital",
+      },
+      {
+        calendarEventId: null,
+        endedAt: null,
+        id: "44444444-4444-4444-8444-444444444444",
+        startedAt: new Date("2026-07-22T14:55:00.000Z"),
+        title: "Partner call",
+      },
+    ]);
+    const { findMeetingBotRecoveryCandidates } = await import(
+      "@/lib/meeting-bot-recovery"
+    );
+
+    await expect(
+      findMeetingBotRecoveryCandidates({
+        now: new Date("2026-07-22T15:04:00.000Z"),
+        sessionUser: sessionUser(),
+      }),
+    ).resolves.toEqual([
+      {
+        calendarEventId: null,
+        endedAt: null,
+        id: "11111111-1111-4111-8111-111111111111",
+        startedAt: "2026-07-22T15:00:00.000Z",
+        title: "IOSG <> Greenfield Capital",
+      },
+      {
+        calendarEventId: null,
+        endedAt: null,
+        id: "44444444-4444-4444-8444-444444444444",
+        startedAt: "2026-07-22T14:55:00.000Z",
+        title: "Partner call",
+      },
+    ]);
   });
 
   it("updates the existing meeting before scheduling its replacement bot", async () => {
@@ -156,13 +218,27 @@ function mockWorkspace() {
 }
 
 function mockRecoverableMeeting() {
-  const limit = vi.fn().mockResolvedValue([
+  mockRecoverableMeetings([
     {
       id: "11111111-1111-4111-8111-111111111111",
       startedAt: new Date("2026-07-22T12:00:00.000Z"),
       title: "Founder call",
     },
   ]);
+}
+
+function mockRecoverableMeetings(
+  meetings: Array<{
+    calendarEventId?: string | null;
+    endedAt?: Date | null;
+    id: string;
+    startedAt: Date;
+    title: string;
+  }>,
+) {
+  const limit = vi.fn().mockResolvedValue(
+    meetings.map((meeting) => ({ calendarEventId: null, ...meeting })),
+  );
   select.mockReturnValue({
     from: () => ({
       where: () => ({

@@ -3,7 +3,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const {
   assertCanCreateMeetings,
   createScheduledMeetingBot,
-  findMeetingBotRecoveryCandidate,
+  findMeetingBotRecoveryCandidates,
+  findScheduledMeetingBotCalendarCandidates,
   getCurrentUser,
   getMeetingBotProfile,
   getOrCreateWorkspaceForSessionUser,
@@ -13,7 +14,8 @@ const {
 } = vi.hoisted(() => ({
   assertCanCreateMeetings: vi.fn(),
   createScheduledMeetingBot: vi.fn(),
-  findMeetingBotRecoveryCandidate: vi.fn(),
+  findMeetingBotRecoveryCandidates: vi.fn(),
+  findScheduledMeetingBotCalendarCandidates: vi.fn(),
   getCurrentUser: vi.fn(),
   getMeetingBotProfile: vi.fn(),
   getOrCreateWorkspaceForSessionUser: vi.fn(),
@@ -33,12 +35,13 @@ vi.mock("@/lib/workspace", () => ({
 
 vi.mock("@/lib/meeting-bot-records", () => ({
   createScheduledMeetingBot,
+  findScheduledMeetingBotCalendarCandidates,
   markMeetingBotFailed,
   markMeetingBotScheduled,
 }));
 
 vi.mock("@/lib/meeting-bot-recovery", () => ({
-  findMeetingBotRecoveryCandidate,
+  findMeetingBotRecoveryCandidates,
   prepareMeetingBotRecovery: vi.fn(),
 }));
 
@@ -103,13 +106,15 @@ function mockDirectScheduledMeeting() {
 
 describe("New Meeting existing URL early join", () => {
   beforeEach(() => {
-    findMeetingBotRecoveryCandidate.mockResolvedValue(null);
+    findMeetingBotRecoveryCandidates.mockResolvedValue([]);
+    findScheduledMeetingBotCalendarCandidates.mockResolvedValue([]);
   });
 
   afterEach(() => {
     assertCanCreateMeetings.mockReset();
     createScheduledMeetingBot.mockReset();
-    findMeetingBotRecoveryCandidate.mockReset();
+    findMeetingBotRecoveryCandidates.mockReset();
+    findScheduledMeetingBotCalendarCandidates.mockReset();
     getCurrentUser.mockReset();
     getMeetingBotProfile.mockReset();
     getOrCreateWorkspaceForSessionUser.mockReset();
@@ -178,6 +183,7 @@ describe("New Meeting existing URL early join", () => {
     const response = await POST(
       new Request("https://app.example.com/api/meetings/link", {
         body: JSON.stringify({
+          calendarEventId: "33333333-3333-4333-8333-333333333333",
           meetingUrl: "https://meet.google.com/abc-defg-hij",
         }),
         headers: { "content-type": "application/json" },
@@ -256,6 +262,7 @@ describe("New Meeting existing URL early join", () => {
     const response = await POST(
       new Request("https://app.example.com/api/meetings/link", {
         body: JSON.stringify({
+          calendarEventId: "33333333-3333-4333-8333-333333333333",
           meetingUrl: "https://meet.google.com/abc-defg-hij",
         }),
         headers: { "content-type": "application/json" },

@@ -348,6 +348,9 @@ describe("processRecallCalendarWebhook", () => {
     expect(repairSql).toContain(
       "meeting.started_at is distinct from event.starts_at",
     );
+    expect(repairSql).toContain("meeting.recall_recording_id is not null");
+    expect(repairSql).toContain("event.ends_at");
+    expect(repairSql).toContain("event.starts_at + interval '1 hour'");
     expect(autoJoinCalendarEvent).not.toHaveBeenCalled();
   });
 

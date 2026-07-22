@@ -241,7 +241,7 @@ export async function autoJoinCalendarEvent(input: AutoJoinInput) {
     };
   }
 
-  let existingMeeting = await findExistingMeeting({
+  let existingMeeting: ExistingMeeting | null = await findExistingMeeting({
     teamId: input.connection.teamId,
     calendarEventId: calendarEvent.id,
     teamMeetingKey: activeTeamMeetingKey,
@@ -250,6 +250,22 @@ export async function autoJoinCalendarEvent(input: AutoJoinInput) {
   let shareRulesApplied = false;
   const isPastRepairEvent =
     input.repairMode && isPastCalendarEvent({ startsAt, endsAt });
+  const hasSchedulableNextOccurrence = Boolean(
+    (meetingUrl && platform) ||
+      (location && !input.event.isDeleted && !declinedByExternalAttendees),
+  );
+
+  if (
+    existingMeeting &&
+    hasSchedulableNextOccurrence &&
+    shouldCreateNewRecordedMeetingOccurrence({
+      meeting: existingMeeting,
+      startsAt,
+      endsAt,
+    })
+  ) {
+    existingMeeting = null;
+  }
 
   if (
     existingMeeting &&
@@ -1060,9 +1076,31 @@ async function findExistingMeeting(input: {
             eq(meetings.calendarEventId, input.calendarEventId),
           ),
     )
-    .limit(1);
+    .limit(25);
 
-  return existing[0] ?? null;
+  return selectCurrentMeetingOccurrence(existing, input.teamMeetingKey);
+}
+
+function selectCurrentMeetingOccurrence(
+  existing: ExistingMeeting[],
+  teamMeetingKey?: string | null,
+) {
+  return (
+    existing.slice().sort((left, right) => {
+      const exactKeyDifference =
+        Number(right.teamMeetingKey === teamMeetingKey) -
+        Number(left.teamMeetingKey === teamMeetingKey);
+
+      if (teamMeetingKey && exactKeyDifference !== 0) {
+        return exactKeyDifference;
+      }
+
+      return (
+        (right.startedAt?.getTime() ?? Number.NEGATIVE_INFINITY) -
+        (left.startedAt?.getTime() ?? Number.NEGATIVE_INFINITY)
+      );
+    })[0] ?? null
+  );
 }
 
 async function findCalendarEvent(input: {
@@ -1521,6 +1559,7 @@ function needsUnchangedCalendarEventRepair(input: {
   if (input.meetingUrl && input.platform) {
     if (
       shouldRecoverCalendarMeeting({
+        endsAt: input.endsAt,
         meeting: input.existingMeeting,
         meetingUrl: input.meetingUrl,
         startsAt: input.startsAt,
@@ -1606,11 +1645,12 @@ function hasCalendarMeetingRecordChange(
 }
 
 function shouldRecoverCalendarMeeting(input: {
+  endsAt: Date | null;
   meeting: ExistingMeeting;
   meetingUrl: string;
   startsAt: Date;
 }) {
-  if (input.startsAt.getTime() <= Date.now()) {
+  if (!isCalendarOccurrenceActiveOrUpcoming(input.startsAt, input.endsAt)) {
     return false;
   }
 
@@ -1625,6 +1665,33 @@ function shouldRecoverCalendarMeeting(input: {
       startsAt: input.startsAt,
     })
   );
+}
+
+function shouldCreateNewRecordedMeetingOccurrence(input: {
+  meeting: ExistingMeeting;
+  startsAt: Date;
+  endsAt: Date | null;
+}) {
+  const previousStart = input.meeting.startedAt?.getTime();
+  const nextStart = input.startsAt.getTime();
+  const now = Date.now();
+
+  return Boolean(
+    input.meeting.recallRecordingId &&
+      previousStart !== undefined &&
+      previousStart <= now &&
+      isCalendarOccurrenceActiveOrUpcoming(input.startsAt, input.endsAt) &&
+      previousStart !== nextStart,
+  );
+}
+
+function isCalendarOccurrenceActiveOrUpcoming(
+  startsAt: Date,
+  endsAt: Date | null,
+) {
+  const endTime = endsAt?.getTime() ?? startsAt.getTime() + 60 * 60 * 1000;
+
+  return endTime > Date.now();
 }
 
 function getConferenceEntryPointUris(event: SyncedCalendarEvent) {

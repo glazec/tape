@@ -3,12 +3,13 @@ import { z } from "zod";
 import { getCurrentUser } from "@/lib/auth";
 import {
   createScheduledMeetingBot,
+  findScheduledMeetingBotCalendarCandidates,
   markMeetingBotFailed,
   markMeetingBotScheduled,
 } from "@/lib/meeting-bot-records";
 import { joinScheduledMeetingBotNow } from "@/lib/meeting-bot-join";
 import {
-  findMeetingBotRecoveryCandidate,
+  findMeetingBotRecoveryCandidates,
   prepareMeetingBotRecovery,
 } from "@/lib/meeting-bot-recovery";
 import {
@@ -27,10 +28,19 @@ import { SharedOnlyAccessError } from "@/lib/access-errors";
 export const runtime = "nodejs";
 
 const requestSchema = z.strictObject({
+  calendarEventId: z.uuid().optional(),
   createSeparateMeeting: z.boolean().optional(),
   meetingUrl: z.url(),
   recoveryMeetingId: z.uuid().optional(),
-});
+}).refine(
+  (value) =>
+    [
+      Boolean(value.calendarEventId),
+      value.createSeparateMeeting === true,
+      Boolean(value.recoveryMeetingId),
+    ].filter(Boolean).length <= 1,
+  { message: "Choose one meeting destination" },
+);
 
 type RecallBotResponse = {
   id?: unknown;
@@ -61,24 +71,65 @@ export async function POST(request: Request) {
 
   const meetingUrl = await resolveMeetingJoinUrl(result.data.meetingUrl);
   const isRecovery = Boolean(result.data.recoveryMeetingId);
+  const hasMeetingChoice = Boolean(
+    result.data.calendarEventId ||
+      result.data.createSeparateMeeting ||
+      result.data.recoveryMeetingId,
+  );
   let scheduledMeeting: {
     meetingId: string;
     teamId: string;
     startAt?: string;
     recallBotId?: string;
   };
+  let skipUnconfirmedCalendarMatch = false;
 
   try {
-    if (!isRecovery && !result.data.createSeparateMeeting) {
-      const recoveryMeeting = await findMeetingBotRecoveryCandidate({
-        sessionUser: user,
-      });
+    if (!hasMeetingChoice) {
+      const now = new Date();
+      const [calendarMeetings, recentMeetings] = await Promise.all([
+        findScheduledMeetingBotCalendarCandidates({
+          now,
+          sessionUser: user,
+        }),
+        findMeetingBotRecoveryCandidates({ now, sessionUser: user }),
+      ]);
+      const recentCalendarEventIds = new Set(
+        recentMeetings.flatMap((meeting) =>
+          meeting.calendarEventId ? [meeting.calendarEventId] : [],
+        ),
+      );
+      const potentialMeetings = [
+        ...recentMeetings.map((meeting) => ({
+          action: "join" as const,
+          endedAt: meeting.endedAt,
+          id: meeting.id,
+          kind: "recent" as const,
+          startedAt: meeting.startedAt,
+          title: meeting.title,
+        })),
+        ...calendarMeetings
+          .filter(
+            (meeting) =>
+              !recentCalendarEventIds.has(meeting.calendarEventId),
+          )
+          .map((meeting) => ({
+            action: meeting.action,
+            endedAt: meeting.endedAt,
+            id: meeting.calendarEventId,
+            kind: "calendar" as const,
+            startedAt: meeting.startedAt,
+            title: meeting.title,
+          })),
+      ];
+      const nearbyMeetings = selectBackToBackMeetings(potentialMeetings, now);
+      skipUnconfirmedCalendarMatch = potentialMeetings.length > 0;
 
-      if (recoveryMeeting) {
+      if (nearbyMeetings.length > 0) {
         return Response.json(
           {
-            code: "meeting_recovery_available",
-            recoveryMeeting,
+            code: "potential_meetings_detected",
+            potentialMeetings: nearbyMeetings,
           },
           { status: 409 },
         );
@@ -93,9 +144,16 @@ export async function POST(request: Request) {
           sessionUser: user,
         })
       : await createScheduledMeetingBot({
+          ...(result.data.calendarEventId
+            ? { calendarEventId: result.data.calendarEventId }
+            : {}),
           sessionUser: user,
           meetingUrl,
           platform,
+          ...(result.data.createSeparateMeeting ||
+          skipUnconfirmedCalendarMatch
+            ? { skipCalendarMatch: true }
+            : {}),
         });
   } catch (error) {
     console.error("meeting_link_scheduling_failure", {
@@ -184,6 +242,66 @@ export async function POST(request: Request) {
 
     return Response.json({ error: "Meeting bot unavailable" }, { status: 502 });
   }
+}
+
+type PotentialMeeting = {
+  action: "join" | "schedule";
+  endedAt: string | null;
+  id: string;
+  kind: "calendar" | "recent";
+  startedAt: string;
+  title: string;
+};
+
+function selectBackToBackMeetings(
+  meetings: PotentialMeeting[],
+  now: Date,
+) {
+  const nowMs = now.getTime();
+  const candidates = meetings.flatMap((meeting) => {
+    const startedAt = new Date(meeting.startedAt).getTime();
+    const endedAt = meeting.endedAt
+      ? new Date(meeting.endedAt).getTime()
+      : startedAt + 60 * 60 * 1_000;
+
+    return Number.isFinite(startedAt) && Number.isFinite(endedAt)
+      ? [{ ...meeting, endedAtMs: endedAt, startedAtMs: startedAt }]
+      : [];
+  });
+  const previous = candidates
+    .filter((meeting) => meeting.endedAtMs < nowMs)
+    .sort((left, right) => right.endedAtMs - left.endedAtMs)[0];
+  const current = candidates
+    .filter(
+      (meeting) =>
+        meeting.startedAtMs <= nowMs && meeting.endedAtMs >= nowMs,
+    )
+    .sort((left, right) => right.startedAtMs - left.startedAtMs)[0];
+  const next = candidates
+    .filter((meeting) => meeting.startedAtMs > nowMs)
+    .sort((left, right) => left.startedAtMs - right.startedAtMs)[0];
+  const seen = new Set<string>();
+
+  return [
+    previous ? { ...previous, timing: "past" as const } : null,
+    current ? { ...current, timing: "current" as const } : null,
+    next ? { ...next, timing: "future" as const } : null,
+  ].flatMap((meeting) => {
+    if (!meeting || seen.has(`${meeting.kind}:${meeting.id}`)) {
+      return [];
+    }
+
+    seen.add(`${meeting.kind}:${meeting.id}`);
+    return [{
+      action: meeting.action,
+      endedAt: meeting.endedAt,
+      id: meeting.id,
+      kind: meeting.kind,
+      startedAt: meeting.startedAt,
+      timing: meeting.timing,
+      title: meeting.title,
+    }];
+  });
 }
 
 function handleMeetingLinkError(error: unknown) {

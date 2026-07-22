@@ -60,7 +60,177 @@ describe("meeting bot records", () => {
     vi.resetModules();
   });
 
-  it("links a manual meeting URL to an upcoming calendar event", async () => {
+  it("previews a calendar match without changing meeting records", async () => {
+    getOrCreateWorkspaceForSessionUser.mockResolvedValue({
+      teamId: "22222222-2222-4222-8222-222222222222",
+      userId: "55555555-5555-4555-8555-555555555555",
+      domain: "iosg.vc",
+      canCreateMeetings: true,
+    });
+    assertCanCreateMeetings.mockResolvedValue(undefined);
+    const limit = vi.fn().mockResolvedValue([
+      {
+        id: "33333333-3333-4333-8333-333333333333",
+        title: "IOSG <> Faves",
+        meetingUrl: "https://zoom.us/j/8436420171",
+        startsAt: new Date("2026-07-22T15:30:00.000Z"),
+        endsAt: new Date("2026-07-22T16:15:00.000Z"),
+      },
+    ]);
+    select
+      .mockReturnValueOnce({
+        from: () => ({
+          where: () => ({ orderBy: () => ({ limit }) }),
+        }),
+      })
+      .mockReturnValueOnce({
+        from: () => ({
+          where: () => ({
+            limit: vi.fn().mockResolvedValue([
+              {
+                id: "44444444-4444-4444-8444-444444444444",
+                recallBotId: "existing_bot",
+                status: "scheduled",
+              },
+            ]),
+          }),
+        }),
+      });
+    const { findScheduledMeetingBotCalendarCandidates } = await import(
+      "@/lib/meeting-bot-records"
+    );
+
+    await expect(
+      findScheduledMeetingBotCalendarCandidates({
+        now: new Date("2026-07-22T15:04:00.000Z"),
+        sessionUser: {
+          id: "user_123",
+          email: "test@iosg.vc",
+          name: null,
+        },
+      }),
+    ).resolves.toEqual([
+      {
+        action: "join",
+        calendarEventId: "33333333-3333-4333-8333-333333333333",
+        endedAt: "2026-07-22T16:15:00.000Z",
+        startedAt: "2026-07-22T15:30:00.000Z",
+        title: "IOSG <> Faves",
+      },
+    ]);
+    expect(insert).not.toHaveBeenCalled();
+    expect(update).not.toHaveBeenCalled();
+  });
+
+  it("includes a meeting running late but excludes a distant meeting", async () => {
+    getOrCreateWorkspaceForSessionUser.mockResolvedValue({
+      teamId: "22222222-2222-4222-8222-222222222222",
+      userId: "55555555-5555-4555-8555-555555555555",
+      domain: "iosg.vc",
+      canCreateMeetings: true,
+    });
+    assertCanCreateMeetings.mockResolvedValue(undefined);
+    const limit = vi.fn().mockResolvedValue([
+      {
+        id: "33333333-3333-4333-8333-333333333333",
+        title: "Meeting running late",
+        teamMeetingKey: "late-meeting",
+        meetingUrl: "https://zoom.us/j/8436420171",
+        startsAt: new Date("2026-07-22T14:00:00.000Z"),
+        endsAt: new Date("2026-07-22T15:00:00.000Z"),
+      },
+      {
+        id: "66666666-6666-4666-8666-666666666666",
+        title: "Later meeting",
+        teamMeetingKey: "later-meeting",
+        meetingUrl: "https://zoom.us/j/8436420172",
+        startsAt: new Date("2026-07-22T16:00:00.000Z"),
+        endsAt: new Date("2026-07-22T16:30:00.000Z"),
+      },
+    ]);
+    select
+      .mockReturnValueOnce({
+        from: () => ({
+          where: () => ({ orderBy: () => ({ limit }) }),
+        }),
+      })
+      .mockReturnValueOnce({
+        from: () => ({
+          where: () => ({
+            limit: vi.fn().mockResolvedValue([
+              {
+                id: "44444444-4444-4444-8444-444444444444",
+                recallBotId: "existing_bot",
+                status: "scheduled",
+              },
+            ]),
+          }),
+        }),
+      });
+    const { findScheduledMeetingBotCalendarCandidates } = await import(
+      "@/lib/meeting-bot-records"
+    );
+
+    await expect(
+      findScheduledMeetingBotCalendarCandidates({
+        now: new Date("2026-07-22T15:10:00.000Z"),
+        sessionUser: {
+          id: "user_123",
+          email: "test@iosg.vc",
+          name: null,
+        },
+      }),
+    ).resolves.toEqual([
+      {
+        action: "join",
+        calendarEventId: "33333333-3333-4333-8333-333333333333",
+        endedAt: "2026-07-22T15:00:00.000Z",
+        startedAt: "2026-07-22T14:00:00.000Z",
+        title: "Meeting running late",
+      },
+    ]);
+  });
+
+  it("creates a separate meeting without applying a calendar match", async () => {
+    getOrCreateWorkspaceForSessionUser.mockResolvedValue({
+      teamId: "22222222-2222-4222-8222-222222222222",
+      userId: "55555555-5555-4555-8555-555555555555",
+      domain: "iosg.vc",
+      canCreateMeetings: true,
+    });
+    assertCanCreateMeetings.mockResolvedValue(undefined);
+    const returning = vi
+      .fn()
+      .mockResolvedValue([{ id: "44444444-4444-4444-8444-444444444444" }]);
+    const values = vi.fn().mockReturnValue({ returning });
+    insert.mockReturnValue({ values });
+    const { createScheduledMeetingBot } = await import(
+      "@/lib/meeting-bot-records"
+    );
+
+    await createScheduledMeetingBot({
+      meetingUrl: "https://zoom.us/j/8436420171",
+      platform: "zoom",
+      sessionUser: {
+        id: "user_123",
+        email: "test@iosg.vc",
+        name: null,
+      },
+      skipCalendarMatch: true,
+    });
+
+    expect(select).not.toHaveBeenCalled();
+    expect(values).toHaveBeenCalledWith({
+      meetingUrl: "https://zoom.us/j/8436420171",
+      ownerUserId: "55555555-5555-4555-8555-555555555555",
+      platform: "zoom",
+      status: "scheduled",
+      teamId: "22222222-2222-4222-8222-222222222222",
+      title: "Zoom recording",
+    });
+  });
+
+  it("links a replacement URL to a confirmed nearby calendar event", async () => {
     const workspace = {
       teamId: "22222222-2222-4222-8222-222222222222",
       userId: "55555555-5555-4555-8555-555555555555",
@@ -108,12 +278,14 @@ describe("meeting bot records", () => {
 
     await expect(
       createScheduledMeetingBot({
+        calendarEventId: "33333333-3333-4333-8333-333333333333",
         sessionUser: {
           id: "user_123",
           email: "test@iosg.vc",
           name: null,
         },
-        meetingUrl: "https://zoom.us/j/8851797582",
+        meetingUrl: "https://zoom.us/j/9999999999",
+        now: new Date("2026-07-02T01:45:00.000Z"),
         platform: "zoom",
       }),
     ).resolves.toEqual({
@@ -132,7 +304,7 @@ describe("meeting bot records", () => {
       title: "AI Training",
       platform: "zoom",
       status: "scheduled",
-      meetingUrl: "https://zoom.us/j/8851797582",
+      meetingUrl: "https://zoom.us/j/9999999999",
       startedAt: new Date("2026-07-02T02:00:00.000Z"),
       endedAt: new Date("2026-07-02T03:00:00.000Z"),
     });

@@ -13,6 +13,8 @@ import {
 } from "@/lib/workspace";
 
 export type MeetingBotRecoveryCandidate = {
+  calendarEventId: string | null;
+  endedAt: string | null;
   id: string;
   startedAt: string;
   title: string;
@@ -22,20 +24,29 @@ export async function findMeetingBotRecoveryCandidate(input: {
   sessionUser: SessionUser;
   now?: Date;
 }): Promise<MeetingBotRecoveryCandidate | null> {
+  const meetings = await findMeetingBotRecoveryCandidates(input);
+
+  return meetings[0] ?? null;
+}
+
+export async function findMeetingBotRecoveryCandidates(input: {
+  sessionUser: SessionUser;
+  now?: Date;
+}): Promise<MeetingBotRecoveryCandidate[]> {
   const workspace = await getOrCreateWorkspaceForSessionUser(input.sessionUser);
   await assertCanCreateMeetings(workspace);
-  const meeting = await findRecoverableMeeting({
+  const meetings = await findRecoverableMeetings({
     now: input.now ?? new Date(),
     workspace,
   });
 
-  return meeting
-    ? {
-        id: meeting.id,
-        startedAt: meeting.startedAt.toISOString(),
-        title: meeting.title,
-      }
-    : null;
+  return meetings.map((meeting) => ({
+    calendarEventId: meeting.calendarEventId,
+    endedAt: meeting.endedAt?.toISOString() ?? null,
+    id: meeting.id,
+    startedAt: meeting.startedAt.toISOString(),
+    title: meeting.title,
+  }));
 }
 
 export async function prepareMeetingBotRecovery(input: {
@@ -47,7 +58,7 @@ export async function prepareMeetingBotRecovery(input: {
 }) {
   const workspace = await getOrCreateWorkspaceForSessionUser(input.sessionUser);
   await assertCanCreateMeetings(workspace);
-  const meeting = await findRecoverableMeeting({
+  const [meeting] = await findRecoverableMeetings({
     meetingId: input.meetingId,
     now: input.now ?? new Date(),
     workspace,
@@ -71,7 +82,7 @@ export async function prepareMeetingBotRecovery(input: {
   return { meetingId: meeting.id, teamId: workspace.teamId };
 }
 
-async function findRecoverableMeeting(input: {
+async function findRecoverableMeetings(input: {
   meetingId?: string;
   now: Date;
   workspace: WorkspaceContext;
@@ -79,13 +90,19 @@ async function findRecoverableMeeting(input: {
   const windowStart = new Date(
     input.now.getTime() - MEETING_BOT_RECOVERY_WINDOW_MS,
   );
+  const recoveryAnchor = sql`greatest(
+    coalesce(${meetings.endedAt}, ${meetings.startedAt}),
+    ${meetings.updatedAt}
+  )`;
   const conditions = [
     eq(meetings.teamId, input.workspace.teamId),
     getMeetingManagerCondition(input.workspace),
     inArray(meetings.status, ["failed", "missed"]),
     inArray(meetings.platform, ["google_meet", "zoom"]),
-    sql`coalesce(${meetings.endedAt}, ${meetings.startedAt}) >= ${windowStart}`,
-    sql`coalesce(${meetings.endedAt}, ${meetings.startedAt}) <= ${input.now}`,
+    sql`${meetings.startedAt} is not null`,
+    sql`${meetings.startedAt} <= ${input.now}`,
+    sql`${recoveryAnchor} >= ${windowStart}`,
+    sql`${recoveryAnchor} <= ${input.now}`,
     sql`not exists (
       select 1 from ${transcriptSegments}
       where ${transcriptSegments.meetingId} = ${meetings.id}
@@ -98,19 +115,18 @@ async function findRecoverableMeeting(input: {
 
   const rows = await db
     .select({
+      calendarEventId: meetings.calendarEventId,
+      endedAt: meetings.endedAt,
       id: meetings.id,
       startedAt: meetings.startedAt,
       title: meetings.title,
     })
     .from(meetings)
     .where(and(...conditions))
-    .orderBy(desc(meetings.startedAt))
-    .limit(1);
-  const meeting = rows[0];
+    .orderBy(desc(recoveryAnchor))
+    .limit(input.meetingId ? 1 : 5);
 
-  if (!meeting?.startedAt) {
-    return null;
-  }
-
-  return { ...meeting, startedAt: meeting.startedAt };
+  return rows.flatMap((meeting) =>
+    meeting.startedAt ? [{ ...meeting, startedAt: meeting.startedAt }] : [],
+  );
 }

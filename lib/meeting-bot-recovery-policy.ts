@@ -8,6 +8,7 @@ export function isMeetingBotRecoveryEligible(input: {
   segmentCount: number;
   startedAt: string | null;
   status: string;
+  updatedAt?: string | null;
 }) {
   if (
     !input.canManage ||
@@ -19,9 +20,16 @@ export function isMeetingBotRecoveryEligible(input: {
     return false;
   }
 
-  const recoveryStartedAt = new Date(
+  const scheduledEnd = new Date(
     input.endedAt ?? input.startedAt ?? "",
   ).getTime();
+  const statusUpdatedAt = input.updatedAt
+    ? new Date(input.updatedAt).getTime()
+    : Number.NaN;
+  const recoveryStartedAt = Math.max(
+    scheduledEnd,
+    Number.isFinite(statusUpdatedAt) ? statusUpdatedAt : scheduledEnd,
+  );
   const now = (input.now ?? new Date()).getTime();
 
   return (

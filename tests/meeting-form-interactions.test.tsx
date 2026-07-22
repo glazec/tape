@@ -32,17 +32,41 @@ describe("meeting form interactions", () => {
     expect(await screen.findByText("The bot should appear within about 30 seconds.")).toBeTruthy();
   });
 
-  it("asks before attaching a replacement link to the current meeting", async () => {
+  it("shows the previous, current, and next meetings", async () => {
     vi.mocked(fetch)
       .mockResolvedValueOnce(
         json(
           {
-            code: "meeting_recovery_available",
-            recoveryMeeting: {
-              id: "11111111-1111-4111-8111-111111111111",
-              startedAt: "2026-07-22T12:00:00.000Z",
-              title: "Founder call",
-            },
+            code: "potential_meetings_detected",
+            potentialMeetings: [
+              {
+                action: "join",
+                endedAt: "2026-07-22T15:00:00.000Z",
+                id: "11111111-1111-4111-8111-111111111111",
+                kind: "recent",
+                startedAt: "2026-07-22T14:30:00.000Z",
+                timing: "past",
+                title: "IOSG <> Greenfield Capital",
+              },
+              {
+                action: "join",
+                endedAt: "2026-07-22T15:30:00.000Z",
+                id: "22222222-2222-4222-8222-222222222222",
+                kind: "calendar",
+                startedAt: "2026-07-22T15:00:00.000Z",
+                timing: "current",
+                title: "IOSG <> Faves",
+              },
+              {
+                action: "schedule",
+                endedAt: "2026-07-22T16:00:00.000Z",
+                id: "33333333-3333-4333-8333-333333333333",
+                kind: "calendar",
+                startedAt: "2026-07-22T15:30:00.000Z",
+                timing: "future",
+                title: "Partner call",
+              },
+            ],
           },
           409,
         ),
@@ -55,12 +79,19 @@ describe("meeting form interactions", () => {
 
     expect(
       await screen.findByRole("dialog", {
-        name: "Send bot to Founder call?",
+        name: "Which meeting uses this link?",
       }),
     ).toBeTruthy();
-    expect(screen.getByText(/Started/)).toBeTruthy();
+    expect(screen.getByText("IOSG <> Greenfield Capital")).toBeTruthy();
+    expect(screen.getByText("IOSG <> Faves")).toBeTruthy();
+    expect(screen.getByText("Partner call")).toBeTruthy();
+    expect(screen.getByText("Previous")).toBeTruthy();
+    expect(screen.getByText("Happening now")).toBeTruthy();
+    expect(screen.getByText("Next")).toBeTruthy();
     fireEvent.click(
-      screen.getByRole("button", { name: "Send bot to this meeting" }),
+      screen.getByRole("button", {
+        name: "Merge with IOSG <> Greenfield Capital, Previous",
+      }),
     );
 
     expect(
@@ -78,16 +109,100 @@ describe("meeting form interactions", () => {
     );
   });
 
+  it("can create a new meeting without applying the calendar match", async () => {
+    vi.mocked(fetch)
+      .mockResolvedValueOnce(
+        json(
+          {
+            code: "potential_meetings_detected",
+            potentialMeetings: [{
+              action: "schedule",
+              endedAt: "2026-07-22T16:00:00.000Z",
+              id: "22222222-2222-4222-8222-222222222222",
+              kind: "calendar",
+              startedAt: "2026-07-22T15:30:00.000Z",
+              timing: "future",
+              title: "IOSG <> Faves",
+            }],
+          },
+          409,
+        ),
+      )
+      .mockResolvedValueOnce(json({ status: "joining" }));
+
+    render(<MeetingLinkForm />);
+    fillLink();
+    fireEvent.click(screen.getByRole("button", { name: "Add meeting bot" }));
+    await screen.findByRole("dialog", {
+      name: "Which meeting uses this link?",
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Keep separate" }));
+
+    expect(fetch).toHaveBeenNthCalledWith(
+      2,
+      "/api/meetings/link",
+      expect.objectContaining({
+        body: JSON.stringify({
+          meetingUrl: "https://meet.google.com/abc",
+          createSeparateMeeting: true,
+        }),
+      }),
+    );
+  });
+
+  it("keeps session recovery inside the meeting choice dialog", async () => {
+    vi.mocked(fetch)
+      .mockResolvedValueOnce(
+        json(
+          {
+            code: "potential_meetings_detected",
+            potentialMeetings: [{
+              action: "join",
+              endedAt: "2026-07-22T15:30:00.000Z",
+              id: "11111111-1111-4111-8111-111111111111",
+              kind: "recent",
+              startedAt: "2026-07-22T15:00:00.000Z",
+              timing: "current",
+              title: "IOSG <> Greenfield Capital",
+            }],
+          },
+          409,
+        ),
+      )
+      .mockResolvedValueOnce(json({}, 401));
+
+    render(<MeetingLinkForm />);
+    fillLink();
+    fireEvent.click(screen.getByRole("button", { name: "Add meeting bot" }));
+    await screen.findByRole("dialog", {
+      name: "Which meeting uses this link?",
+    });
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: "Merge with IOSG <> Greenfield Capital, Happening now",
+      }),
+    );
+
+    expect(await screen.findByRole("link", { name: "Sign in" })).toBeTruthy();
+    expect(
+      screen.getByRole("dialog", { name: "Which meeting uses this link?" }),
+    ).toBeTruthy();
+  });
+
   it("closes the recovery choice with Escape and restores focus", async () => {
     vi.mocked(fetch).mockResolvedValueOnce(
       json(
         {
-          code: "meeting_recovery_available",
-          recoveryMeeting: {
+          code: "potential_meetings_detected",
+          potentialMeetings: [{
+            action: "join",
+            endedAt: "2026-07-22T12:30:00.000Z",
             id: "11111111-1111-4111-8111-111111111111",
+            kind: "recent",
             startedAt: "2026-07-22T12:00:00.000Z",
+            timing: "current",
             title: "Founder call",
-          },
+          }],
         },
         409,
       ),
@@ -100,7 +215,9 @@ describe("meeting form interactions", () => {
     });
     submitButton.focus();
     fireEvent.click(submitButton);
-    await screen.findByRole("dialog", { name: "Send bot to Founder call?" });
+    await screen.findByRole("dialog", {
+      name: "Which meeting uses this link?",
+    });
 
     fireEvent.keyDown(document, { key: "Escape" });
 

@@ -406,12 +406,27 @@ async function listRecallCalendarRepairEventIds(input: {
             or event.meeting_url ~* '^https?://([a-z0-9-]+[.])*zoom[.]us/(j|my)/'
           )
           and (
-            (meeting.status = 'failed' and event.starts_at > ${input.now})
+            (
+              meeting.status = 'failed'
+              and coalesce(
+                event.ends_at,
+                event.starts_at + interval '1 hour'
+              ) > ${input.now}
+            )
             or (
               meeting.status = 'scheduled'
               and meeting.recall_bot_id is null
             )
           )
+        )
+        or (
+          meeting.recall_recording_id is not null
+          and meeting.started_at <= ${input.now}
+          and coalesce(
+            event.ends_at,
+            event.starts_at + interval '1 hour'
+          ) > ${input.now}
+          and meeting.started_at is distinct from event.starts_at
         )
       )
   `;
