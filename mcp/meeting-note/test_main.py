@@ -81,5 +81,39 @@ class MeetingImagesPayloadTests(unittest.TestCase):
         self.assertEqual(payload["images"], [])
 
 
+class MeetingAccessConditionTests(unittest.TestCase):
+    def test_member_reads_only_owned_or_actively_shared_meetings(self):
+        workspace = main.Workspace(
+            email="member@example.com",
+            user_id="11111111-1111-4111-8111-111111111111",
+            team_id="22222222-2222-4222-8222-222222222222",
+            can_create_meetings=True,
+            can_manage_team_meetings=False,
+        )
+        params = {}
+
+        condition = main._access_condition(workspace, params)
+
+        self.assertIn("m.owner_user_id", condition)
+        self.assertIn("access_ma.revoked_at is null", condition)
+        self.assertNotIn("m.team_id", condition)
+        self.assertNotIn("access_team_id", params)
+
+    def test_manager_can_read_team_meetings(self):
+        workspace = main.Workspace(
+            email="admin@example.com",
+            user_id="11111111-1111-4111-8111-111111111111",
+            team_id="22222222-2222-4222-8222-222222222222",
+            can_create_meetings=True,
+            can_manage_team_meetings=True,
+        )
+        params = {}
+
+        condition = main._access_condition(workspace, params)
+
+        self.assertIn("m.team_id", condition)
+        self.assertEqual(params["access_team_id"], workspace.team_id)
+
+
 if __name__ == "__main__":
     unittest.main()

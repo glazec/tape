@@ -393,6 +393,7 @@ class Workspace:
     user_id: str
     team_id: str | None
     can_create_meetings: bool
+    can_manage_team_meetings: bool
 
 
 class MeetingAccessError(Exception):
@@ -832,6 +833,7 @@ async def _workspace_for_auth_user(auth_user_id: str, token_email: str) -> Works
             user_id=user_id,
             team_id=str(matching_domains[0]["team_id"]),
             can_create_meetings=True,
+            can_manage_team_meetings=False,
         )
 
     membership = await _fetch_existing_membership(user_id)
@@ -843,6 +845,7 @@ async def _workspace_for_auth_user(auth_user_id: str, token_email: str) -> Works
         user_id=user_id,
         team_id=None,
         can_create_meetings=False,
+        can_manage_team_meetings=False,
     )
 
 
@@ -864,11 +867,13 @@ def _workspace_from_membership(
     user_id: str,
     membership: dict[str, Any],
 ) -> Workspace:
+    role = str(membership["role"])
     return Workspace(
         email=user_email,
         user_id=user_id,
         team_id=str(membership["team_id"]),
-        can_create_meetings=str(membership["role"]) != "external",
+        can_create_meetings=role != "external",
+        can_manage_team_meetings=role in {"admin", "owner"},
     )
 
 
@@ -880,13 +885,15 @@ def _access_condition(
 ) -> str:
     conditions: list[str] = []
 
-    if workspace.can_create_meetings and workspace.team_id:
+    user_key = f"{param_prefix}_user_id"
+    params[user_key] = workspace.user_id
+    conditions.append(f"{meeting_alias}.owner_user_id = %({user_key})s::uuid")
+
+    if workspace.can_manage_team_meetings and workspace.team_id:
         team_key = f"{param_prefix}_team_id"
         params[team_key] = workspace.team_id
         conditions.append(f"{meeting_alias}.team_id = %({team_key})s::uuid")
 
-    user_key = f"{param_prefix}_user_id"
-    params[user_key] = workspace.user_id
     conditions.append(
         f"""
         exists (
@@ -894,6 +901,7 @@ def _access_condition(
             from meeting_access access_ma
             where access_ma.meeting_id = {meeting_alias}.id
               and access_ma.user_id = %({user_key})s::uuid
+              and access_ma.revoked_at is null
         )
         """,
     )
@@ -1107,12 +1115,15 @@ def _access_scope_expression(
     meeting_alias: str,
     param_prefix: str,
 ) -> str:
-    if workspace.can_create_meetings and workspace.team_id:
+    user_key = f"{param_prefix}_user_id"
+    owner_condition = f"{meeting_alias}.owner_user_id = %({user_key})s::uuid"
+    if workspace.can_manage_team_meetings and workspace.team_id:
         return (
-            f"case when {meeting_alias}.team_id = %({param_prefix}_team_id)s::uuid "
+            f"case when {owner_condition} "
+            f"or {meeting_alias}.team_id = %({param_prefix}_team_id)s::uuid "
             "then 'workspace' else 'shared' end"
         )
-    return "'shared'"
+    return f"case when {owner_condition} then 'workspace' else 'shared' end"
 
 
 def _build_sql_tool_query(user_sql: str, access_sql: str, access_scope_sql: str) -> str:
@@ -1222,11 +1233,11 @@ def _build_sql_tool_query(user_sql: str, access_sql: str, access_scope_sql: str)
 
 
 def _meeting_access_scope(row: dict[str, Any], workspace: Workspace) -> str:
-    if (
-        workspace.can_create_meetings
-        and workspace.team_id
-        and str(row.get("team_id")) == workspace.team_id
-    ):
+    if str(row.get("owner_user_id")) == workspace.user_id:
+        return "workspace"
+    if workspace.can_manage_team_meetings and workspace.team_id and str(
+        row.get("team_id"),
+    ) == workspace.team_id:
         return "workspace"
     return "shared"
 
@@ -1263,6 +1274,7 @@ async def _get_accessible_meeting(
         select
             m.id,
             m.team_id,
+            m.owner_user_id,
             m.title,
             m.platform::text as platform,
             m.status::text as status,
