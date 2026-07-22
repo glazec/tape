@@ -4,7 +4,7 @@ import { FormEvent, useRef, useState } from "react";
 import { AlertCircle, CalendarPlus, CheckCircle2 } from "lucide-react";
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import {
   Card,
   CardContent,
@@ -268,7 +268,7 @@ export function MeetingLinkForm() {
 
                 return (
                   <button
-                    aria-label={`Merge with ${meeting.title}, ${getMeetingTimingLabel(meeting.timing)}`}
+                    aria-label={`${getMeetingActionLabel(meeting.action)} for ${meeting.title}, ${getMeetingTimingLabel(meeting.timing)}, ${formatMeetingTimeRange(meeting)}`}
                     className="group flex min-h-16 w-full items-center gap-3 rounded-lg border bg-background px-3 py-2.5 text-left outline-none transition-colors hover:border-primary/45 hover:bg-primary/5 focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:pointer-events-none disabled:opacity-60"
                     disabled={state === "saving"}
                     key={value}
@@ -315,15 +315,15 @@ export function MeetingLinkForm() {
             ) : null}
 
             <div className="flex flex-col-reverse gap-2 px-5 py-4 sm:flex-row sm:justify-end">
-              <DialogClose asChild>
-                <Button
-                  className="min-h-11"
-                  disabled={state === "saving"}
-                  variant="ghost"
-                  type="button"
-                >
-                  Cancel
-                </Button>
+              <DialogClose
+                className={buttonVariants({
+                  className: "min-h-11",
+                  variant: "ghost",
+                })}
+                disabled={state === "saving"}
+                type="button"
+              >
+                Cancel
               </DialogClose>
               <Button
                 className="min-h-11"
