@@ -1,5 +1,7 @@
 # Otter Alternative Implementation Plan
 
+> Historical implementation record from June 23, 2026. The baseline was implemented and later evolved. Do not execute this task list against the current repository. Use the [README](../../../README.md), [setup guide](../../setup.md), and [testing architecture](../../testing.md) for current paths and commands.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Build the first usable team meeting transcript product from the approved design.

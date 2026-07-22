@@ -8,7 +8,7 @@ This guide covers the web application, provider callbacks, and the optional macO
 
 ## Requirements
 
-1. Node.js 20.9 or newer
+1. Node.js 24
 2. npm
 3. A Postgres database and Neon Auth project
 4. Cloudflare R2 object storage
@@ -40,7 +40,6 @@ Fill these values in `.env.local` for the complete application:
 | Recall.ai | `RECALL_API_KEY`, `RECALL_API_BASE_URL`, `RECALL_WEBHOOK_SECRET` |
 | ElevenLabs | `ELEVENLABS_API_KEY`, `ELEVENLABS_WEBHOOK_SECRET` |
 | OpenRouter | `OPENROUTER_API_KEY`, `OPENROUTER_MODEL` |
-| Exa web search | `EXA_API_KEY` |
 | Inngest | `INNGEST_EVENT_KEY`, `INNGEST_SIGNING_KEY` |
 | Application | `NEXT_PUBLIC_APP_URL` |
 
@@ -70,6 +69,7 @@ REST API key are configured.
 | Explicit Neon Auth base URL | `NEON_AUTH_BASE_URL` |
 | Public R2 media URL | `R2_PUBLIC_BASE_URL` |
 | Admin access | `APP_ADMIN_EMAILS` |
+| Exa web search for live answers | `EXA_API_KEY` |
 | OneSignal reminders | `NEXT_PUBLIC_ONESIGNAL_APP_ID`, `NEXT_PUBLIC_ONESIGNAL_ALLOWED_ORIGINS`, `ONESIGNAL_REST_API_KEY` |
 | Twenty CRM vocabulary | `TWENTY_API_BASE_URL`, `TWENTY_API_KEY` |
 | PostHog events | `POSTHOG_API_KEY`, `POSTHOG_HOST` |
@@ -120,7 +120,27 @@ Update `NEXT_PUBLIC_APP_URL` to that HTTPS origin and restart the development se
 npm run inngest:sync
 ```
 
-The R2 bucket must allow browser `PUT` requests from the application origin. The complete CORS example is in the root README.
+The R2 bucket must allow browser `PUT` requests from each application origin. Use only the production origin and the local origins that are actively needed:
+
+```json
+{
+  "rules": [
+    {
+      "id": "tape-browser-uploads",
+      "allowed": {
+        "origins": [
+          "https://your-app.example",
+          "http://localhost:3000"
+        ],
+        "methods": ["PUT"],
+        "headers": ["Content-Type", "content-type"]
+      },
+      "exposeHeaders": ["ETag"],
+      "maxAgeSeconds": 3600
+    }
+  ]
+}
+```
 
 ## Deploy the web application
 
@@ -147,12 +167,44 @@ After the first successful deployment:
 3. Configure the Google OAuth callback if calendar connection is enabled.
 4. Run `npm run inngest:sync` with the production environment loaded.
 5. Open `/settings/team` as the first administrator and set the team name,
-   meeting bot identity, optional sharing group, and transcription vocabulary.
+   translation language, meeting bot identity, optional sharing group, and transcription vocabulary.
 6. Verify `/api/health/dashboard` before inviting the team.
 
-The screen share image worker is a separate optional Railway deployment. Follow
-the Image Worker section in the root README only when screen share extraction
-is needed.
+## Deploy the image worker
+
+Screen share extraction runs as a separate optional Railway service. The Vercel application emits an Inngest event after Recall recording completion. The worker downloads fresh Recall artifacts, runs ffmpeg and ffprobe, stores stable screen share frames in R2, and writes their metadata to Neon.
+
+Configure these variables on the Railway service:
+
+```text
+DATABASE_URL
+FFMPEG_PATH=/usr/bin/ffmpeg
+FFPROBE_PATH=/usr/bin/ffprobe
+INNGEST_EVENT_KEY
+INNGEST_SIGNING_KEY
+R2_ACCESS_KEY_ID
+R2_ACCOUNT_ID
+R2_BUCKET
+R2_SECRET_ACCESS_KEY
+RECALL_API_BASE_URL
+RECALL_API_KEY
+```
+
+Build and check the worker locally:
+
+```bash
+npm run build:image-worker
+PORT=3001 npm run start:image-worker
+curl --fail http://127.0.0.1:3001/health
+```
+
+Railway uses `Dockerfile.image-worker` and `railway.json`. After assigning the service a public HTTPS origin, register its Inngest endpoint:
+
+```bash
+IMAGE_WORKER_URL=https://your-worker.example npm run inngest:sync:image-worker
+```
+
+Do not route the Next.js application to this service. The worker serves only `/api/inngest` and `/health`.
 
 ## macOS local recorder
 
@@ -169,25 +221,28 @@ The signing certificate step is needed once for stable microphone and screen rec
 
 ## Verification
 
-Run these checks before submitting or deploying a change:
+Run the portable verification gate before submitting or deploying a change:
 
 ```bash
-npm run lint
-npm run test
-npm run build
-npx playwright test
-cd mac/LocalRecorder && swift test
+npm run verify
 ```
 
-The Playwright suite requires a configured local application and any provider state used by the selected tests.
+On macOS, run the complete release gate:
+
+```bash
+npm run verify:all
+```
+
+See [testing architecture](testing.md) for the individual suites, coverage thresholds, and live calendar probe.
 
 ## Production checklist
 
 1. Use production credentials and a production `NEXT_PUBLIC_APP_URL`.
-2. Apply database migrations.
+2. Confirm the production build passed its migration lineage check and applied pending migrations.
 3. Register every callback route with its provider.
 4. Configure the R2 CORS origin.
 5. Run `npm run inngest:sync` after deployment.
 6. Restrict OneSignal allowed origins to the deployed application.
 7. Confirm Recall.ai and ElevenLabs webhook signature verification with real test deliveries.
 8. Keep `.env.local`, provider exports, meeting media, and logs outside Git.
+9. If the image worker is enabled, verify its `/health` route and Inngest registration separately from the web application.

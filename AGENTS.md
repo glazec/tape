@@ -1,10 +1,20 @@
 ## Product Direction
 
-This app is designed for internal colleagues. Keep the UI easy to use, group similar functions together, and hide technical details or low value metadata that colleagues do not need for daily work.
+Tape is an internal meeting workspace for capture, review, search, sharing, correction, and follow up.
 
-Use Claude as a complementary layer, not as an excuse to expose complexity. The product should handle obvious organization, matching, summaries, suggestions, and defaults before asking the user to decide.
+Prioritize the colleague's task over system details. Use plain language, sensible defaults, progressive disclosure, and truthful status. Keep meeting identifiers, provider metadata, and operational controls hidden unless they help the user complete the current task.
 
-When designing meeting workflows, optimize for fast review, search, sharing, correction, and follow up. Prefer progressive disclosure over dense controls. Avoid showing implementation identifiers such as meeting ids unless they directly help the user complete a task.
+Use Claude as a complementary layer for organization, matching, summaries, suggestions, and defaults. Generated intelligence supports the meeting record and must not obscure the transcript, media, access boundary, or failure state.
+
+## Documentation Contract
+
+Keep `README.md`, `PRODUCT.md`, `DESIGN.md`, `docs/setup.md`, `docs/testing.md`, the MCP documentation, and recorder documentation aligned with verified code behavior.
+
+Treat dated specifications and plans under `docs/superpowers` as historical records. Add current status context when needed instead of rewriting past decisions.
+
+Verify commands, routes, environment variables, providers, permissions, UI labels, and deployment claims from the repository before documenting them. Use `docs/setup.md` as the canonical environment and deployment guide and `docs/testing.md` as the canonical verification guide.
+
+When helping a user configure providers, explain and collect one provider at a time. Finish the provider decisions before editing configuration or adapters. Never print secrets back to the user.
 
 <!-- BEGIN:nextjs-agent-rules -->
 # This is NOT the Next.js you know

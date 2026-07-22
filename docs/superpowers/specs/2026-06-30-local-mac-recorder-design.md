@@ -1,5 +1,7 @@
 # Local Mac Recorder Design
 
+> Historical design record from June 30, 2026. The recorder is implemented and has evolved beyond this proposal. Use the [setup guide](../../setup.md), [testing architecture](../../testing.md), and [release guide](../../../mac/LocalRecorder/RELEASING.md) for current operation.
+
 ## Goal
 
 Build a macOS fallback recorder for [meeting-note](/Users/glaze/developer/meeting-note) so a meeting can still be captured when the [Recall.ai](https://www.recall.ai/) bot does not join.

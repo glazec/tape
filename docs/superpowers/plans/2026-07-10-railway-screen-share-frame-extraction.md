@@ -1,5 +1,7 @@
 # Railway Screen Share Frame Extraction Implementation Plan
 
+> Historical implementation record from July 10, 2026. The worker was implemented and the original task list is no longer executable guidance. Use the [setup guide](../../setup.md) and [testing architecture](../../testing.md) for current deployment and verification.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Capture every unique stable screen shared state from Recall recordings as source resolution JPEG assets using a dedicated Railway ffmpeg worker.

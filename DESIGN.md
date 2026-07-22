@@ -1,5 +1,9 @@
 # Tape Design Guide
 
+## Document role
+
+This is the current interface and content contract. `PRODUCT.md` defines product scope, while dated specifications and plans under `docs/superpowers` preserve historical decisions and are not current UI requirements.
+
 ## Product promise
 
 Tape turns meetings into a reliable team memory. It should help colleagues capture a meeting, find what was said, correct the record, share it, and follow up without learning how the system works.
@@ -163,11 +167,11 @@ Keep public and shared pages quieter than the owner workspace, but retain enough
 
 ### Dashboard
 
-The meeting library and search are the dashboard’s primary job. A compact greeting and visible weekly stats belong at the top for full workspace users, with the archive kept reasonably close on desktop and mobile.
+The meeting library and search are the dashboard's primary job. Full workspace users also see a compact greeting, last seven days activity, and calendar automation. Shared only users go directly to the transcripts granted to them.
 
-Summaries must lead to a clear next step. If a card says that meetings need attention, it should identify or link to those meetings. Avoid non actionable metrics whose meaning is unclear, such as an unexplained tone score.
+Activity summaries must use understandable measures and a declared time range. Operational warnings must lead to the affected meetings or a direct repair action. Avoid ambiguous scores and healthy looking status when capture or transcription failed.
 
-Start with search and one useful status filter. Put search scope, sort, long meeting presets, participant presets, and saved view management behind secondary disclosure unless usage proves they belong in the default view.
+Keep search, status, scope, and sort easy to scan. Saved view management and older history controls stay secondary. Preserve the active filters and related meeting history when the user paginates or opens a related group.
 
 ## Responsive behavior
 
@@ -224,3 +228,4 @@ The design review should identify concrete issues with route, state, evidence, u
 6. Mobile order matches task priority
 7. Keyboard navigation, focus, labels, contrast, and live status are verified
 8. A design subagent reviewed the final state against this guide
+9. Product claims, UI labels, and affected documentation match the shipped behavior

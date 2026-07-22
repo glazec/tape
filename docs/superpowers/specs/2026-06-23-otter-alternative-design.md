@@ -1,5 +1,7 @@
 # Otter Alternative Design
 
+> Historical record from June 23, 2026. This document describes the initial product boundary and is not the current Tape contract. Use the [product](../../../PRODUCT.md), [design guide](../../../DESIGN.md), [README](../../../README.md), and [setup guide](../../setup.md) for current behavior.
+
 ## Goal
 
 Build a team meeting transcript product. The product records meetings, captures meeting media, transcribes audio, stores everything in cloud services, and lets internal team members search and share transcripts.

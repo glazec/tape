@@ -1,5 +1,7 @@
 # Railway Screen Share Frame Extraction Design
 
+> Historical design record from July 10, 2026. The Railway image worker is implemented. Use the [README](../../../README.md), [setup guide](../../setup.md), and [testing architecture](../../testing.md) for current architecture and commands.
+
 ## Goal
 
 Automatically capture every distinct, stable screen shared visual from completed [Recall.ai](https://www.recall.ai/) meeting recordings. Do not capture gallery views or participant camera views. Preserve enough source detail for colleagues to read presentation text.

@@ -10,7 +10,7 @@ This MCP exposes Tape as a read only tool surface for authenticated colleagues. 
 
 SQL is the primary retrieval surface. One off tools like `search_meetings`, `get_meeting_transcript`, `get_meeting_entities`, `find_related_meetings`, and `get_person_speaking_timeline` are no longer exposed because `execute_meeting_sql` can express those queries more flexibly.
 
-The only non SQL retrieval tool kept is `get_meeting_audio`, because audio access should stay behind the app's authenticated audio route instead of exposing storage or Recall URLs from MCP.
+Media retrieval remains in dedicated tools because audio and image access must stay behind authenticated application routes instead of exposing storage or Recall URLs from MCP.
 
 Visible tools:
 
@@ -21,6 +21,7 @@ Visible tools:
 5. `list_common_meeting_queries`
 6. `execute_meeting_sql`
 7. `get_meeting_audio`
+8. `get_meeting_images`
 
 ## Access Model
 
@@ -52,6 +53,14 @@ The server rejects mutation keywords, semicolons, physical app table names, Post
 Transcript segment tables use the latest completed transcript job, ordered by `updated_at` then `created_at`, matching the app transcript reader.
 
 ## Tools
+
+### get_user_info
+
+Return the verified MCP identity, authentication source, and whether development authentication is disabled.
+
+### get_version
+
+Return the MCP server version.
 
 ### list_meeting_sql_schema
 
@@ -118,6 +127,19 @@ Behavior:
 3. Do not sign R2 URLs or return Recall media URLs from MCP.
 
 The tool returns a URL, not bytes. The URL is still protected by the app session because the app route owns storage and Recall retrieval.
+
+### get_meeting_images
+
+Return captured screenshots and extracted video frames for one accessible meeting.
+
+Behavior:
+
+1. Check the same MCP meeting read policy used by SQL.
+2. Return image metadata, transcript timestamps, and `${APP_BASE_URL}/api/meetings/{meetingId}/images/{imageId}` URLs.
+3. Include screenshots and extracted `video_frame` assets in timestamp order.
+4. Do not sign R2 URLs or return image bytes from MCP.
+
+The returned URLs require an authenticated application session.
 
 ## Safe Tables
 
