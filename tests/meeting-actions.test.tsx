@@ -73,4 +73,17 @@ describe("MeetingActions", () => {
     expect(transcriptOnly).toContain("Copy");
     expect(transcriptOnly).not.toContain("MP3");
   });
+
+  it("labels multipart audio exports truthfully", () => {
+    const html = renderToStaticMarkup(
+      <MeetingActions
+        audioPartCount={2}
+        audioExportUrls={["/part-1?download=1", "/part-2?download=1"]}
+        hasAudio
+        meetingId="11111111-1111-4111-8111-111111111111"
+      />,
+    );
+
+    expect(html).toContain("MP3 (2 parts)");
+  });
 });

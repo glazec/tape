@@ -14,6 +14,8 @@ import {
 import { Button, buttonVariants } from "@/components/ui/button";
 
 type MeetingActionsProps = {
+  audioExportUrls?: string[];
+  audioPartCount?: number;
   hasAudio?: boolean;
   hasTranscript?: boolean;
   meetingId: string;
@@ -24,6 +26,8 @@ type MeetingActionsProps = {
 type ExportFormat = "transcript" | "mp3" | "images";
 
 export function MeetingActions({
+  audioExportUrls,
+  audioPartCount = 1,
   hasAudio = true,
   hasTranscript = true,
   meetingId,
@@ -48,6 +52,10 @@ export function MeetingActions({
   const exportMenuId = `meeting-export-menu-${instanceId}-${meetingId}`;
   const textExportUrl = `/api/meetings/${encodedMeetingId}/export?format=text`;
   const mp3ExportUrl = `/api/meetings/${encodedMeetingId}/export?format=mp3`;
+  const mp3ExportUrls =
+    audioExportUrls && audioExportUrls.length > 0
+      ? audioExportUrls
+      : [mp3ExportUrl];
   const imagesExportUrl = `/api/meetings/${encodedMeetingId}/export?format=images`;
   const includeImages = imageCount > 0 && selectedExportFormats.images;
   const hasSelectedExport =
@@ -107,10 +115,12 @@ export function MeetingActions({
     }
 
     const urls = [
-      hasTranscript && selectedExportFormats.transcript ? textExportUrl : null,
-      hasAudio && selectedExportFormats.mp3 ? mp3ExportUrl : null,
-      includeImages ? imagesExportUrl : null,
-    ].filter((url): url is string => Boolean(url));
+      ...(hasTranscript && selectedExportFormats.transcript
+        ? [textExportUrl]
+        : []),
+      ...(hasAudio && selectedExportFormats.mp3 ? mp3ExportUrls : []),
+      ...(includeImages ? [imagesExportUrl] : []),
+    ];
 
     urls.forEach((url, index) => {
       window.setTimeout(() => downloadFile(url), index * 100);
@@ -205,7 +215,10 @@ export function MeetingActions({
                   onChange={() => toggleExportFormat("mp3")}
                   type="checkbox"
                 />
-                <span className="font-medium">MP3</span>
+                <span className="font-medium">
+                  MP3
+                  {audioPartCount > 1 ? ` (${audioPartCount} parts)` : ""}
+                </span>
               </label>
             ) : null}
             {imageCount > 0 ? (

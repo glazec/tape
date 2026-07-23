@@ -5,6 +5,20 @@ import { describe, expect, it } from "vitest";
 
 import { MeetingRecordingParts } from "@/components/meeting-recording-parts";
 
+function PartContent({
+  audioUrl,
+  label,
+}: {
+  audioUrl?: string | null;
+  label: string;
+}) {
+  return (
+    <span>
+      {label}:{audioUrl ?? "no audio"}
+    </span>
+  );
+}
+
 describe("MeetingRecordingParts", () => {
   it("switches between resumed recording parts", () => {
     render(
@@ -25,17 +39,23 @@ describe("MeetingRecordingParts", () => {
             startedAt: "2026-07-22T17:20:00.000Z",
           },
         ]}
-      />,
+      >
+        <PartContent label="Transcript for part 1" />
+        <PartContent label="Transcript for part 2" />
+      </MeetingRecordingParts>,
     );
 
     expect(screen.getByText("Recording continued in 2 parts")).toBeTruthy();
-    const audio = document.querySelector("audio");
-    expect(audio?.getAttribute("src")).toBe("/audio?recording=part-1");
+    expect(
+      screen.getByText("Transcript for part 1:/audio?recording=part-1"),
+    ).toBeTruthy();
+    expect(screen.getByText("Transcript for part 2:no audio")).toBeTruthy();
 
     fireEvent.click(screen.getByRole("button", { name: "Part 2" }));
 
-    expect(document.querySelector("audio")?.getAttribute("src")).toBe(
-      "/audio?recording=part-2",
-    );
+    expect(screen.getByText("Transcript for part 1:no audio")).toBeTruthy();
+    expect(
+      screen.getByText("Transcript for part 2:/audio?recording=part-2"),
+    ).toBeTruthy();
   });
 });

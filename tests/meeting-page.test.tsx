@@ -8,7 +8,9 @@ const mocks = vi.hoisted(() => ({
   listRelated: vi.fn(),
   listRecipients: vi.fn(),
   listShares: vi.fn(),
-  notFound: vi.fn(() => { throw new Error("NOT_FOUND"); }),
+  notFound: vi.fn(() => {
+    throw new Error("NOT_FOUND");
+  }),
   requireUser: vi.fn(),
 }));
 
@@ -17,49 +19,113 @@ vi.mock("next/navigation", () => ({
   useRouter: () => ({ refresh: vi.fn() }),
 }));
 vi.mock("@/lib/auth-guards", () => ({ requireCurrentUser: mocks.requireUser }));
-vi.mock("@/lib/workspace", () => ({ getOrCreateWorkspaceForSessionUser: mocks.getWorkspace }));
+vi.mock("@/lib/workspace", () => ({
+  getOrCreateWorkspaceForSessionUser: mocks.getWorkspace,
+}));
 vi.mock("@/lib/meeting-queries", () => ({
   getMeetingTranscriptForWorkspace: mocks.getMeeting,
   listMeetingDetailRelatedMeetingsForWorkspace: mocks.listRelated,
   listWorkspaceShareRecipients: mocks.listRecipients,
 }));
-vi.mock("@/lib/meeting-share-service", () => ({ listActiveMeetingShares: mocks.listShares }));
-vi.mock("@/lib/meeting-display-status", () => ({ getMeetingDisplayStatus: ({ meetingStatus }: { meetingStatus: string }) => meetingStatus }));
-vi.mock("@/lib/team-configuration", () => ({ getTeamConfiguration: mocks.getTeamConfiguration }));
-vi.mock("@/components/app-shell", () => ({ AppShell: ({ children }: { children: React.ReactNode }) => <main>{children}</main> }));
-vi.mock("@/components/meeting-auto-refresh", () => ({ MeetingAutoRefresh: () => <span>auto refresh</span> }));
-vi.mock("@/components/meeting-actions", () => ({ MeetingActions: ({ hasAudio = true, hasTranscript = true, imageCount = 0 }: { hasAudio?: boolean; hasTranscript?: boolean; imageCount?: number }) => <span>meeting actions:{hasAudio || hasTranscript || imageCount > 0 ? "content" : "delete only"}</span> }));
-vi.mock("@/components/meeting-entity-links", () => ({ MeetingEntityLinks: () => <span>entity links</span> }));
-vi.mock("@/components/meeting-header-metadata", () => ({ MeetingHeaderMetadata: (props: { platform: string; status: string }) => <span>{props.platform}:{props.status}</span> }));
-vi.mock("@/components/meeting-recovery-upload-panel", () => ({ MeetingRecoveryUploadPanel: () => <span>recovery panel</span> }));
-vi.mock("@/components/meeting-bot-recovery-panel", () => ({ MeetingBotRecoveryPanel: () => <span>bot recovery panel</span> }));
-vi.mock("@/components/meeting-title-editor", () => ({ MeetingTitleEditor: ({ meetingTitle }: { meetingTitle: string }) => <h1>{meetingTitle}</h1> }));
-vi.mock("@/components/related-meetings-card", () => ({ RelatedMeetingsCard: () => <span>related meetings</span> }));
-vi.mock("@/components/share-dialog", () => ({ ShareDialog: () => <span>share dialog</span> }));
+vi.mock("@/lib/meeting-share-service", () => ({
+  listActiveMeetingShares: mocks.listShares,
+}));
+vi.mock("@/lib/meeting-display-status", () => ({
+  getMeetingDisplayStatus: ({ meetingStatus }: { meetingStatus: string }) =>
+    meetingStatus,
+}));
+vi.mock("@/lib/team-configuration", () => ({
+  getTeamConfiguration: mocks.getTeamConfiguration,
+}));
+vi.mock("@/components/app-shell", () => ({
+  AppShell: ({ children }: { children: React.ReactNode }) => (
+    <main>{children}</main>
+  ),
+}));
+vi.mock("@/components/meeting-auto-refresh", () => ({
+  MeetingAutoRefresh: () => <span>auto refresh</span>,
+}));
+vi.mock("@/components/meeting-actions", () => ({
+  MeetingActions: ({
+    audioPartCount = 0,
+    hasAudio = true,
+    hasTranscript = true,
+    imageCount = 0,
+  }: {
+    audioPartCount?: number;
+    hasAudio?: boolean;
+    hasTranscript?: boolean;
+    imageCount?: number;
+  }) => (
+    <span>
+      meeting actions:
+      {hasAudio || hasTranscript || imageCount > 0 ? "content" : "delete only"}
+      :audio parts:{audioPartCount}
+    </span>
+  ),
+}));
+vi.mock("@/components/meeting-entity-links", () => ({
+  MeetingEntityLinks: () => <span>entity links</span>,
+}));
+vi.mock("@/components/meeting-header-metadata", () => ({
+  MeetingHeaderMetadata: (props: { platform: string; status: string }) => (
+    <span>
+      {props.platform}:{props.status}
+    </span>
+  ),
+}));
+vi.mock("@/components/meeting-recovery-upload-panel", () => ({
+  MeetingRecoveryUploadPanel: () => <span>recovery panel</span>,
+}));
+vi.mock("@/components/meeting-bot-recovery-panel", () => ({
+  MeetingBotRecoveryPanel: () => <span>bot recovery panel</span>,
+}));
+vi.mock("@/components/meeting-title-editor", () => ({
+  MeetingTitleEditor: ({ meetingTitle }: { meetingTitle: string }) => (
+    <h1>{meetingTitle}</h1>
+  ),
+}));
+vi.mock("@/components/related-meetings-card", () => ({
+  RelatedMeetingsCard: () => <span>related meetings</span>,
+}));
+vi.mock("@/components/share-dialog", () => ({
+  ShareDialog: () => <span>share dialog</span>,
+}));
 vi.mock("@/components/transcript-viewer", () => ({
   TranscriptViewer: ({
+    audioUrl,
     meetingId,
     preferredTranslationLanguage,
+    segments,
     translationLanguage,
   }: {
+    audioUrl?: string | null;
     meetingId: string | null;
     preferredTranslationLanguage: string;
+    segments: Array<{ startMs: number }>;
     translationLanguage: string;
   }) => (
     <span>
       transcript:{meetingId ?? "readonly"}:languages:{translationLanguage}:
-      {preferredTranslationLanguage}
+      {preferredTranslationLanguage}:audio:{audioUrl ?? "none"}:starts:
+      {segments.map((segment) => segment.startMs).join(",")}
     </span>
   ),
 }));
 
-import MeetingPage, { getTranscriptViewerRenderKey } from "@/app/meetings/[meetingId]/page";
+import MeetingPage, {
+  getTranscriptViewerRenderKey,
+} from "@/app/meetings/[meetingId]/page";
 
 describe("meeting page", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.requireUser.mockResolvedValue({ id: "user" });
-    mocks.getWorkspace.mockResolvedValue({ canCreateMeetings: true, domain: "iosg.vc", userId: "user" });
+    mocks.getWorkspace.mockResolvedValue({
+      canCreateMeetings: true,
+      domain: "iosg.vc",
+      userId: "user",
+    });
     mocks.listRelated.mockResolvedValue([]);
     mocks.listRecipients.mockResolvedValue([]);
     mocks.listShares.mockResolvedValue([]);
@@ -72,7 +138,11 @@ describe("meeting page", () => {
   });
 
   it("renders management, sharing, and failed meeting recovery", async () => {
-    const html = renderToStaticMarkup(await MeetingPage({ params: Promise.resolve({ meetingId: "meeting_1" }) }));
+    const html = renderToStaticMarkup(
+      await MeetingPage({
+        params: Promise.resolve({ meetingId: "meeting_1" }),
+      }),
+    );
     expect(html).toContain("meeting actions");
     expect(html).toContain("share dialog");
     expect(html).toContain("recovery panel");
@@ -207,6 +277,58 @@ describe("meeting page", () => {
     vi.useRealTimers();
   });
 
+  it("pairs each resumed recording with its local transcript timeline and export", async () => {
+    mocks.getMeeting.mockResolvedValue(
+      meeting({
+        audioUrl: null,
+        recordingParts: [
+          {
+            audioUrl: "/audio?recording=part-1",
+            durationMs: 420_000,
+            endedAt: "2026-07-22T17:07:00.000Z",
+            id: "part-1",
+            startedAt: "2026-07-22T17:00:00.000Z",
+          },
+          {
+            audioUrl: "/audio?recording=part-2",
+            durationMs: 900_000,
+            endedAt: "2026-07-22T17:35:00.000Z",
+            id: "part-2",
+            startedAt: "2026-07-22T17:20:00.000Z",
+          },
+        ],
+        segments: [
+          {
+            endMs: 1_000,
+            id: "seg-1",
+            polishedText: "Part one",
+            speaker: "Alice",
+            startMs: 0,
+            text: "Part one",
+          },
+          {
+            endMs: 1_201_000,
+            id: "seg-2",
+            polishedText: "Part two",
+            speaker: "Alice",
+            startMs: 1_200_000,
+            text: "Part two",
+          },
+        ],
+      }),
+    );
+
+    const html = renderToStaticMarkup(
+      await MeetingPage({
+        params: Promise.resolve({ meetingId: "resumed_meeting" }),
+      }),
+    );
+
+    expect(html).toContain("Recording continued in 2 parts");
+    expect(html).toContain("audio:/audio?recording=part-1:starts:0");
+    expect(html).toContain("meeting actions:content:audio parts:2");
+  });
+
   it("keeps an existing transcript visible during failed recovery", async () => {
     const html = renderToStaticMarkup(
       await MeetingPage({
@@ -220,8 +342,14 @@ describe("meeting page", () => {
   });
 
   it("renders shared meetings without owner controls", async () => {
-    mocks.getMeeting.mockResolvedValue(meeting({ canManage: false, platform: "in_person", status: "missed" }));
-    const html = renderToStaticMarkup(await MeetingPage({ params: Promise.resolve({ meetingId: "meeting_2" }) }));
+    mocks.getMeeting.mockResolvedValue(
+      meeting({ canManage: false, platform: "in_person", status: "missed" }),
+    );
+    const html = renderToStaticMarkup(
+      await MeetingPage({
+        params: Promise.resolve({ meetingId: "meeting_2" }),
+      }),
+    );
     expect(html).toContain("Shared transcript");
     expect(html).toContain("In person:No recording");
     expect(html).toContain("transcript:readonly");
@@ -252,27 +380,43 @@ describe("meeting page", () => {
   });
 
   it("formats Zoom and uploaded meetings", async () => {
-    mocks.getMeeting.mockResolvedValue(meeting({ platform: "zoom", status: "completed" }));
-    expect(renderToStaticMarkup(await MeetingPage({ params: Promise.resolve({ meetingId: "zoom" }) }))).toContain("Zoom:Completed");
-    mocks.getMeeting.mockResolvedValue(meeting({ platform: "other", status: "processing" }));
-    expect(renderToStaticMarkup(await MeetingPage({ params: Promise.resolve({ meetingId: "upload" }) }))).toContain("Upload:Processing");
+    mocks.getMeeting.mockResolvedValue(
+      meeting({ platform: "zoom", status: "completed" }),
+    );
+    expect(
+      renderToStaticMarkup(
+        await MeetingPage({ params: Promise.resolve({ meetingId: "zoom" }) }),
+      ),
+    ).toContain("Zoom:Completed");
+    mocks.getMeeting.mockResolvedValue(
+      meeting({ platform: "other", status: "processing" }),
+    );
+    expect(
+      renderToStaticMarkup(
+        await MeetingPage({ params: Promise.resolve({ meetingId: "upload" }) }),
+      ),
+    ).toContain("Upload:Processing");
   });
 
   it("delegates missing meetings to notFound", async () => {
     mocks.getMeeting.mockResolvedValue(null);
-    await expect(MeetingPage({ params: Promise.resolve({ meetingId: "missing" }) })).rejects.toThrow("NOT_FOUND");
+    await expect(
+      MeetingPage({ params: Promise.resolve({ meetingId: "missing" }) }),
+    ).rejects.toThrow("NOT_FOUND");
     expect(mocks.notFound).toHaveBeenCalled();
   });
 
   it("builds a render key from all transcript changing fields", () => {
-    expect(getTranscriptViewerRenderKey({
-      displayStatus: "completed",
-      meetingId: "meeting",
-      polishedSegments: 2,
-      segmentCount: 3,
-      translatedSegments: 1,
-      translationStatus: null,
-    })).toBe("meeting:completed:3:2:unknown:1");
+    expect(
+      getTranscriptViewerRenderKey({
+        displayStatus: "completed",
+        meetingId: "meeting",
+        polishedSegments: 2,
+        segmentCount: 3,
+        translatedSegments: 1,
+        translationStatus: null,
+      }),
+    ).toBe("meeting:completed:3:2:unknown:1");
   });
 });
 
@@ -289,16 +433,32 @@ function meeting(overrides: Record<string, unknown> = {}) {
     scheduledEndedAt: null,
     scheduledStartedAt: null,
     meetingUrl: "https://meet.google.com/abc-defg-hij",
-    segments: [{ id: "seg", speaker: "Alice", startMs: 0, endMs: 1000, text: "Hello", polishedText: "Hello" }],
+    segments: [
+      {
+        id: "seg",
+        speaker: "Alice",
+        startMs: 0,
+        endMs: 1000,
+        text: "Hello",
+        polishedText: "Hello",
+      },
+    ],
     speakerAliases: [],
     speakerSuggestions: [],
     startedAt: new Date("2026-07-20T10:00:00Z"),
     status: "failed",
     title: "Weekly meeting",
     transcriptJobStatus: "failed",
-    translationSummary: { hasTranslations: false, status: "not_started", totalSegments: 1, translatedSegments: 0 },
+    translationSummary: {
+      hasTranslations: false,
+      status: "not_started",
+      totalSegments: 1,
+      translatedSegments: 0,
+    },
     translationLanguage: "zh-CN",
-    visualAssets: [{ id: "img", capturedAt: null, timestampMs: 0, url: "/img" }],
+    visualAssets: [
+      { id: "img", capturedAt: null, timestampMs: 0, url: "/img" },
+    ],
     ...overrides,
   };
 }
