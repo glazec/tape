@@ -228,6 +228,33 @@ describe("TranscriptViewer interactions", () => {
     fireEvent.pointerLeave(trend);
   });
 
+  it("fills the listened portion of the recording waveform in green", () => {
+    render(<TranscriptViewer audioUrl="/audio.mp3" segments={segments} />);
+    const audio = document.querySelector("audio") as HTMLAudioElement;
+    Object.defineProperty(audio, "duration", { configurable: true, value: 60 });
+    Object.defineProperty(audio, "currentTime", {
+      configurable: true,
+      value: 30,
+      writable: true,
+    });
+    fireEvent.durationChange(audio);
+    fireEvent.timeUpdate(audio);
+
+    const waveform = screen.getByRole("button", { name: /Audio waveform/ });
+    const bars = [...waveform.querySelectorAll(".flex-1")];
+    expect(bars).toHaveLength(120);
+    expect(
+      bars
+        .slice(0, 60)
+        .every((bar) => bar.classList.contains("bg-emerald-600")),
+    ).toBe(true);
+    expect(
+      bars
+        .slice(60)
+        .every((bar) => bar.classList.contains("bg-muted-foreground/80")),
+    ).toBe(true);
+  });
+
   it("decodes a short audio file into a waveform during idle time", async () => {
     const close = vi.fn().mockResolvedValue(undefined);
     const decodeAudioData = vi.fn().mockResolvedValue({

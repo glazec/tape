@@ -2354,7 +2354,7 @@ function TranscriptAudioPlayer({
                     "min-w-0 flex-1 rounded-[2px] transition-colors",
                     isResolvingAudioWaveform &&
                       "animate-pulse motion-reduce:animate-none",
-                    isPast ? "bg-primary" : "bg-muted-foreground/40",
+                    isPast ? "bg-emerald-600" : "bg-muted-foreground/80",
                   )}
                   key={index}
                   style={{
