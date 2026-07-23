@@ -68,8 +68,29 @@ describe("MeetingList", () => {
       />,
     );
 
-    expect(html).toContain("25m");
+    expect(html).toContain("24m");
     expect(html).not.toContain("Unknown");
+  });
+
+  it("shows completed minutes for the recovered 42 minute meeting", () => {
+    const html = renderToStaticMarkup(
+      <MeetingList
+        meetings={[
+          {
+            id: "11111111-1111-4111-8111-111111111111",
+            title: "Finance discussion",
+            platform: "zoom",
+            startedAt: "2026-07-22T17:21:27.499Z",
+            endedAt: "2026-07-22T18:04:18.857Z",
+            durationMs: 2_571_358,
+            status: "ready",
+          },
+        ]}
+      />,
+    );
+
+    expect(html).toContain("42m");
+    expect(html).not.toContain("43m");
   });
 
   it("shows participant names from the people value", () => {

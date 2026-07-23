@@ -25,6 +25,16 @@ describe("meeting header metadata", () => {
     ).toBe("42 minutes");
   });
 
+  it("shows completed minutes for the recovered 42 minute meeting", () => {
+    expect(
+      formatMeetingHeaderDuration({
+        durationMs: 2_571_358,
+        endedAt: "2026-07-22T18:04:18.857Z",
+        startedAt: "2026-07-22T17:21:27.499Z",
+      }),
+    ).toBe("42 minutes");
+  });
+
   it("prefers recorded duration over the scheduled calendar interval", () => {
     expect(
       formatMeetingHeaderDuration({

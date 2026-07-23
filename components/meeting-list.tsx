@@ -705,7 +705,7 @@ function formatMeetingDuration(input: {
 }
 
 function formatDurationMs(durationMs: number) {
-  const totalMinutes = Math.max(1, Math.round(durationMs / 60000));
+  const totalMinutes = Math.max(1, Math.floor(durationMs / 60000));
   const hours = Math.floor(totalMinutes / 60);
   const minutes = totalMinutes % 60;
 

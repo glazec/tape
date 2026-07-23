@@ -132,7 +132,7 @@ export function formatMeetingHeaderDuration({
     return null;
   }
 
-  const totalMinutes = Math.max(1, Math.round(resolvedDurationMs / 60_000));
+  const totalMinutes = Math.max(1, Math.floor(resolvedDurationMs / 60_000));
   const hours = Math.floor(totalMinutes / 60);
   const minutes = totalMinutes % 60;
 
