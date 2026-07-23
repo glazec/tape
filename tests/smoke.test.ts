@@ -41,6 +41,10 @@ describe("landing page smoke test", () => {
     expect(html).toContain("ElevenLabs");
     expect(html).toContain("Multi-tenant workspaces");
     expect(html).toContain('href="/auth/sign-in"');
+    expect(html).toContain(
+      'href="https://github.com/glazec/tape/releases/download/mac-v0.2.0/MeetingNoteLocalRecorder-0.2.0.zip"',
+    );
+    expect(html).toContain('href="https://github.com/glazec/tape"');
   });
 
   it("redirects signed in users to the dashboard", async () => {

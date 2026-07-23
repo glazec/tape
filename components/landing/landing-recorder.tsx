@@ -59,6 +59,22 @@ export function LandingRecorder() {
               </div>
             ))}
           </div>
+          <div className="mt-10 flex flex-wrap items-center gap-6">
+            <a
+              href="https://github.com/glazec/tape/releases/download/mac-v0.2.0/MeetingNoteLocalRecorder-0.2.0.zip"
+              className="inline-flex min-h-11 items-center rounded-full bg-ink px-6 text-[14px] font-medium text-paper transition-colors hover:bg-graphite focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-4"
+            >
+              Download for macOS
+            </a>
+            <a
+              href="https://github.com/glazec/tape"
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex min-h-11 items-center border-b border-ink/25 text-[14px] text-ink/70 transition-colors hover:border-ink hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-4"
+            >
+              View on GitHub
+            </a>
+          </div>
         </FadeIn>
       </div>
     </section>
