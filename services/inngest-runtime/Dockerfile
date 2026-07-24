@@ -4,4 +4,4 @@ EXPOSE 8288
 EXPOSE 8289
 
 ENTRYPOINT ["inngest"]
-CMD ["start", "--host", "0.0.0.0", "--port", "8288", "--connect-gateway-port", "8289", "--no-ui"]
+CMD ["start", "--host", "0.0.0.0", "--port", "8288", "--connect-gateway-port", "8289"]

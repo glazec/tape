@@ -224,15 +224,31 @@ INNGEST_POSTGRES_URI
 INNGEST_REDIS_URI
 ```
 
-Use private Railway URLs for PostgreSQL and Redis. Keep the generated public
-Inngest domain on port `8288`. The runtime disables its unauthenticated
-dashboard and GraphQL UI. Port `8289` is only needed if a future service uses
-Inngest Connect.
+Use private Railway URLs for PostgreSQL and Redis. Do not assign the engine a
+public domain. Its dashboard and GraphQL API are enabled, so all public traffic
+must pass through the gateway in `services/inngest-gateway`.
+
+Deploy the gateway as a separate Railway service and configure:
+
+```text
+PORT=8080
+INNGEST_UPSTREAM=http://inngest.railway.internal:8288
+DASHBOARD_USERNAME
+DASHBOARD_PASSWORD_HASH
+```
+
+Generate `DASHBOARD_PASSWORD_HASH` with `htpasswd -niB USERNAME`, then keep the
+plaintext password in a password manager. Assign the generated public Railway
+domain to the gateway on port `8080`. The gateway leaves health, event, function
+registration, and signed SDK API routes available while requiring HTTP Basic
+authentication for the dashboard and GraphQL API.
+
+Port `8289` is only needed if a future service uses Inngest Connect.
 
 Set the same values on the Vercel application and image worker:
 
 ```text
-INNGEST_BASE_URL=https://your-inngest-service.example
+INNGEST_BASE_URL=https://your-inngest-gateway.example
 INNGEST_EVENT_KEY
 INNGEST_SIGNING_KEY
 ```

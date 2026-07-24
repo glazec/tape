@@ -1,0 +1,25 @@
+:{$PORT:8080} {
+	@machine {
+		path /health
+		path /e/*
+		path /fn/*
+		path /v1/*
+		path /api/v2/*
+		path /v2/*
+		path /v0/runs/*
+		path /v0/connect/*
+		path /v0/telemetry
+	}
+
+	handle @machine {
+		reverse_proxy {$INNGEST_UPSTREAM}
+	}
+
+	handle {
+		basic_auth {
+			{$DASHBOARD_USERNAME} {$DASHBOARD_PASSWORD_HASH}
+		}
+
+		reverse_proxy {$INNGEST_UPSTREAM}
+	}
+}

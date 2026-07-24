@@ -131,7 +131,7 @@ npm run setup:check
 
 The web application deploys to Vercel. Its production build validates required configuration and migration lineage, applies pending migrations, and then builds the application. Preview builds do not mutate the production database.
 
-The Inngest engine, MCP, and optional image worker run as separate services in one Railway project named `tape`. Inngest uses dedicated PostgreSQL and Redis services. The image worker accepts Inngest requests at `/api/inngest` and exposes `/health` for service health checks.
+The Inngest engine, its authenticated gateway, MCP, and optional image worker run as separate services in one Railway project named `tape`. Inngest uses dedicated PostgreSQL and Redis services. The gateway keeps the engine private, exposes machine endpoints to the SDK, and protects the dashboard with HTTP Basic authentication. The image worker accepts Inngest requests at `/api/inngest` and exposes `/health` for service health checks.
 
 ```bash
 npm run build:image-worker
