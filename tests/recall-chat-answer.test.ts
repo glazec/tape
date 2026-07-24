@@ -1,16 +1,23 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const {
+  assertMeetingHasProviderCredit,
   generateOpenRouterChatReply,
   listRecentRecallChatWebhookPayloads,
   sendRecallChatMessage,
 } = vi.hoisted(
   () => ({
+    assertMeetingHasProviderCredit: vi.fn(),
     generateOpenRouterChatReply: vi.fn(),
     listRecentRecallChatWebhookPayloads: vi.fn(),
     sendRecallChatMessage: vi.fn(),
   }),
 );
+
+vi.mock("@/lib/provider-credit", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/provider-credit")>()),
+  assertMeetingHasProviderCredit,
+}));
 
 vi.mock("@/lib/vendors/openrouter", () => ({
   generateOpenRouterChatReply,
@@ -48,19 +55,23 @@ const directMessagePayload = {
     },
     bot: {
       id: "bot_123",
-      metadata: {},
+      metadata: {
+        meetingId: "11111111-1111-4111-8111-111111111111",
+      },
     },
   },
 };
 
 describe("answerRecallChatMessage", () => {
   beforeEach(() => {
+    assertMeetingHasProviderCredit.mockReset();
     generateOpenRouterChatReply.mockReset();
     listRecentRecallChatWebhookPayloads.mockReset();
     sendRecallChatMessage.mockReset();
     generateOpenRouterChatReply.mockResolvedValue("Here is the answer.");
     listRecentRecallChatWebhookPayloads.mockResolvedValue([]);
     sendRecallChatMessage.mockResolvedValue({});
+    assertMeetingHasProviderCredit.mockResolvedValue(undefined);
   });
 
   it("sends a direct answer only to the participant who messaged the bot", async () => {
@@ -77,6 +88,7 @@ describe("answerRecallChatMessage", () => {
     });
     expect(generateOpenRouterChatReply).toHaveBeenCalledWith({
       botName: "Tape Notetaker",
+      meetingId: "11111111-1111-4111-8111-111111111111",
       participantName: "Alice",
       question: "What is the latest market data?",
       recentMessages: [],
@@ -84,6 +96,30 @@ describe("answerRecallChatMessage", () => {
     expect(sendRecallChatMessage).toHaveBeenCalledWith({
       botId: "bot_123",
       message: "Here is the answer.",
+      to: "16778240",
+    });
+  });
+
+  it("does not call OpenRouter after the workspace credit is used", async () => {
+    const { ProviderCreditExhaustedError } = await import(
+      "@/lib/provider-credit"
+    );
+    assertMeetingHasProviderCredit.mockRejectedValue(
+      new ProviderCreditExhaustedError(),
+    );
+    const event = normalizeRecallChatWebhook(directMessagePayload);
+
+    await expect(
+      answerRecallChatMessage(event, { idempotencyKey: "msg_current" }),
+    ).resolves.toEqual({
+      action: "skipped",
+      reason: "credit_exhausted",
+    });
+    expect(generateOpenRouterChatReply).not.toHaveBeenCalled();
+    expect(sendRecallChatMessage).toHaveBeenCalledWith({
+      botId: "bot_123",
+      message:
+        "Tape’s included credit has been used. Existing meetings remain available in the workspace.",
       to: "16778240",
     });
   });

@@ -28,6 +28,10 @@ import {
   getSupportedUploadMedia,
   isUploadMediaSizeAllowed,
 } from "@/lib/upload-media";
+import {
+  assertWorkspaceHasProviderCredit,
+  providerCreditErrorResponse,
+} from "@/lib/provider-credit";
 
 export const runtime = "nodejs";
 
@@ -66,6 +70,7 @@ export async function POST(request: Request) {
   try {
     const workspace = await getOrCreateWorkspaceForSessionUser(user);
     await assertCanCreateMeetings(workspace);
+    await assertWorkspaceHasProviderCredit(workspace);
 
     const key = buildPendingUploadObjectKey({
       userId: user.id,
@@ -167,6 +172,12 @@ export async function POST(request: Request) {
       { status: 202 },
     );
   } catch (error) {
+    const creditResponse = providerCreditErrorResponse(error);
+
+    if (creditResponse) {
+      return creditResponse;
+    }
+
     if (error instanceof UnsafeObjectKeySegmentError) {
       return Response.json(
         { error: "Invalid upload completion request" },

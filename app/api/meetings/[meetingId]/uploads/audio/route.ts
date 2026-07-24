@@ -18,6 +18,10 @@ import {
 } from "@/lib/upload-media";
 import { getOrCreateWorkspaceForSessionUser } from "@/lib/workspace";
 import { normalizeRecordingDurationMs } from "@/lib/recording-duration";
+import {
+  assertWorkspaceHasProviderCredit,
+  providerCreditErrorResponse,
+} from "@/lib/provider-credit";
 
 export const runtime = "nodejs";
 
@@ -35,6 +39,7 @@ export async function POST(
     const { meetingId } = await context.params;
     const workspace = await getOrCreateWorkspaceForSessionUser(user);
     await assertCanManageMeeting(workspace, meetingId);
+    await assertWorkspaceHasProviderCredit(workspace);
     const formData = await request.formData().catch(() => null);
     const file = formData?.get("meeting-audio");
     const durationMs = normalizeRecordingDurationMs(
@@ -110,6 +115,12 @@ export async function POST(
       { status: 202 },
     );
   } catch (error) {
+    const creditResponse = providerCreditErrorResponse(error);
+
+    if (creditResponse) {
+      return creditResponse;
+    }
+
     if (error instanceof UnsafeObjectKeySegmentError) {
       return Response.json(
         { error: "Invalid audio upload request" },

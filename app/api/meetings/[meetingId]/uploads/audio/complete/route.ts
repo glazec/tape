@@ -20,6 +20,10 @@ import {
 } from "@/lib/upload-media";
 import { getOrCreateWorkspaceForSessionUser } from "@/lib/workspace";
 import { MAX_RECORDING_DURATION_MS } from "@/lib/recording-duration";
+import {
+  assertWorkspaceHasProviderCredit,
+  providerCreditErrorResponse,
+} from "@/lib/provider-credit";
 
 export const runtime = "nodejs";
 
@@ -61,6 +65,7 @@ export async function POST(
 
   try {
     const workspace = await getOrCreateWorkspaceForSessionUser(user);
+    await assertWorkspaceHasProviderCredit(workspace);
     const objectKey = buildPendingUploadObjectKey({
       userId: user.id,
       uploadId: result.data.uploadId,
@@ -116,6 +121,12 @@ export async function POST(
       { status: 202 },
     );
   } catch (error) {
+    const creditResponse = providerCreditErrorResponse(error);
+
+    if (creditResponse) {
+      return creditResponse;
+    }
+
     if (error instanceof UnsafeObjectKeySegmentError) {
       return Response.json(
         { error: "Invalid audio upload completion request" },

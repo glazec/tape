@@ -32,6 +32,29 @@ describe("meeting form interactions", () => {
     expect(await screen.findByText("The bot should appear within about 30 seconds.")).toBeTruthy();
   });
 
+  it("shows exhausted credit without replacing it with a generic error", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(
+      json(
+        {
+          code: "credit_exhausted",
+          error:
+            "Your Tape credit has been used. You can still review existing meetings.",
+        },
+        402,
+      ),
+    );
+
+    render(<MeetingLinkForm />);
+    fillLink();
+    fireEvent.click(screen.getByRole("button", { name: "Add meeting bot" }));
+
+    expect(
+      await screen.findByText(
+        "Your Tape credit has been used. You can still review existing meetings.",
+      ),
+    ).toBeTruthy();
+  });
+
   it("shows the previous, current, and next meetings", async () => {
     vi.mocked(fetch)
       .mockResolvedValueOnce(

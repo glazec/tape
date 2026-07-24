@@ -41,14 +41,6 @@ function mockLimitedSelect(rows: unknown[]) {
   });
 }
 
-function mockSelectLimit(rows: unknown[]) {
-  select.mockReturnValueOnce({
-    from: () => ({
-      limit: vi.fn().mockResolvedValue(rows),
-    }),
-  });
-}
-
 describe("getOrCreateWorkspaceForSessionUser", () => {
   afterEach(() => {
     execute.mockReset();
@@ -80,7 +72,11 @@ describe("getOrCreateWorkspaceForSessionUser", () => {
     set.mockReturnValueOnce({ where });
     where.mockResolvedValueOnce(undefined);
     mockLimitedSelect([
-      { teamId: "team_123", teamName: "Example Capital" },
+      {
+        creditLimitUsdMicros: null,
+        teamId: "team_123",
+        teamName: "Example Capital",
+      },
     ]);
     execute.mockResolvedValueOnce(undefined);
     insert.mockReturnValueOnce({ values });
@@ -99,6 +95,7 @@ describe("getOrCreateWorkspaceForSessionUser", () => {
       }),
     ).resolves.toEqual({
       canCreateMeetings: true,
+      creditLimitUsdMicros: null,
       domain: "vendor.com",
       teamId: "team_123",
       teamName: "Example Capital",
@@ -107,7 +104,7 @@ describe("getOrCreateWorkspaceForSessionUser", () => {
     expect(execute).toHaveBeenCalledTimes(1);
   });
 
-  it("creates a read only guest workspace for unknown outside domains after bootstrap", async () => {
+  it("creates a five dollar personal workspace for unknown outside domains", async () => {
     mockLimitedSelect([{ id: "user_456" }]);
     update.mockReturnValueOnce({ set });
     set.mockReturnValueOnce({ where });
@@ -115,7 +112,6 @@ describe("getOrCreateWorkspaceForSessionUser", () => {
     mockLimitedSelect([]);
     execute.mockResolvedValueOnce(undefined);
     mockLimitedSelect([]);
-    mockSelectLimit([{ id: "allowed_domain_123" }]);
     insert.mockReturnValueOnce({
       values: vi.fn().mockReturnValue({
         returning: vi.fn().mockResolvedValue([{ id: "guest_team_123" }]),
@@ -136,14 +132,15 @@ describe("getOrCreateWorkspaceForSessionUser", () => {
         name: "Guest",
       }),
     ).resolves.toEqual({
-      canCreateMeetings: false,
+      canCreateMeetings: true,
+      creditLimitUsdMicros: 5_000_000,
       domain: "vendor.com",
       teamId: "guest_team_123",
-      teamName: "Vendor guest workspace",
+      teamName: "Vendor workspace",
       userId: "user_456",
     });
     expect(values).toHaveBeenLastCalledWith({
-      role: "external",
+      role: "owner",
       teamId: "guest_team_123",
       userId: "user_456",
     });
@@ -247,24 +244,63 @@ describe("getOrCreateWorkspaceForSessionUser", () => {
     await expect(canManageTeamSettings({ domain: "iosg.vc", teamId: "team", userId: "user" })).resolves.toBe(false);
   });
 
-  it("keeps an existing external membership read only", async () => {
+  it("promotes an existing personal guest workspace", async () => {
     mockLimitedSelect([{ id: "user_1" }]);
     update.mockReturnValueOnce({ set });
     set.mockReturnValueOnce({ where });
     where.mockResolvedValueOnce(undefined);
     mockLimitedSelect([]);
     execute.mockResolvedValueOnce(undefined);
-    mockLimitedSelect([{ role: "external", teamId: "guest_team" }]);
+    mockLimitedSelect([
+      {
+        hasAllowedDomain: false,
+        role: "external",
+        teamId: "guest_team",
+      },
+    ]);
     const { getOrCreateWorkspaceForSessionUser } = await import("@/lib/workspace");
     await expect(getOrCreateWorkspaceForSessionUser({
       email: "guest@vendor.com",
       id: "auth_1",
       name: "Guest",
     })).resolves.toEqual({
-      canCreateMeetings: false,
+      canCreateMeetings: true,
+      creditLimitUsdMicros: 5_000_000,
       domain: "vendor.com",
       teamId: "guest_team",
       userId: "user_1",
     });
+    expect(execute).toHaveBeenCalledTimes(2);
+  });
+
+  it("keeps an external membership on an internal workspace read only", async () => {
+    mockLimitedSelect([{ id: "user_1" }]);
+    update.mockReturnValueOnce({ set });
+    set.mockReturnValueOnce({ where });
+    where.mockResolvedValueOnce(undefined);
+    mockLimitedSelect([]);
+    execute.mockResolvedValueOnce(undefined);
+    mockLimitedSelect([
+      {
+        creditLimitUsdMicros: null,
+        hasAllowedDomain: true,
+        role: "external",
+        teamId: "internal_team",
+      },
+    ]);
+    const { getOrCreateWorkspaceForSessionUser } = await import("@/lib/workspace");
+
+    await expect(getOrCreateWorkspaceForSessionUser({
+      email: "guest@vendor.com",
+      id: "auth_1",
+      name: "Guest",
+    })).resolves.toEqual({
+      canCreateMeetings: false,
+      creditLimitUsdMicros: null,
+      domain: "vendor.com",
+      teamId: "internal_team",
+      userId: "user_1",
+    });
+    expect(execute).toHaveBeenCalledTimes(1);
   });
 });

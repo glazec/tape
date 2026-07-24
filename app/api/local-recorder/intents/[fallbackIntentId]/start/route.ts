@@ -1,5 +1,9 @@
 import { getLocalRecorderDeviceRequestContext } from "@/lib/local-recorder-auth";
 import { claimLocalRecorderIntent } from "@/lib/local-recorder-records";
+import {
+  assertWorkspaceHasProviderCredit,
+  providerCreditErrorResponse,
+} from "@/lib/provider-credit";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -24,13 +28,24 @@ export async function POST(
     typeof (body as { explicit?: unknown }).explicit === "boolean"
       ? (body as { explicit: boolean }).explicit
       : undefined;
-  const result = await claimLocalRecorderIntent({
-    deviceId: deviceContext.deviceId,
-    explicit,
-    fallbackIntentId,
-    now: new Date(),
-    workspace: deviceContext.workspace,
-  });
+  try {
+    await assertWorkspaceHasProviderCredit(deviceContext.workspace);
+    const result = await claimLocalRecorderIntent({
+      deviceId: deviceContext.deviceId,
+      explicit,
+      fallbackIntentId,
+      now: new Date(),
+      workspace: deviceContext.workspace,
+    });
 
-  return Response.json(result, { status: result.claimed ? 200 : 409 });
+    return Response.json(result, { status: result.claimed ? 200 : 409 });
+  } catch (error) {
+    const creditResponse = providerCreditErrorResponse(error);
+
+    if (creditResponse) {
+      return creditResponse;
+    }
+
+    throw error;
+  }
 }

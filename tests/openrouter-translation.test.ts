@@ -1,5 +1,9 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+vi.mock("@/lib/provider-usage", () => ({
+  recordOpenRouterCompletionUsage: vi.fn(),
+}));
+
 describe("OpenRouter translation", () => {
   afterEach(() => {
     vi.unstubAllEnvs();

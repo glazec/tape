@@ -24,6 +24,7 @@ import {
   type TranscriptDetectedEntity,
 } from "@/lib/meeting-intelligence";
 import { getPreferredParticipantSpeakerName } from "@/lib/speaker-labels";
+import { recordElevenLabsTranscriptUsage } from "@/lib/provider-usage";
 import {
   getTwentyCrmCompanyDomains,
   type TwentyCrmCompanyDomain,
@@ -253,6 +254,10 @@ export async function applyElevenLabsTranscriptEvent(
         );
     }
 
+    await recordElevenLabsTranscriptUsage({
+      transcriptJobId: persistence.transcriptJobId,
+    });
+
     return persistence;
   }
 
@@ -356,6 +361,11 @@ export async function applyElevenLabsTranscriptEvent(
       updatedAt: now,
     })
     .where(eq(transcriptJobs.id, persistence.transcriptJobId));
+
+  await recordElevenLabsTranscriptUsage({
+    fallbackDurationMs: transcriptDurationMs,
+    transcriptJobId: persistence.transcriptJobId,
+  });
 
   return persistence;
 }

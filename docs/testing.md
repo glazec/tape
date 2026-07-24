@@ -59,7 +59,7 @@ The probe fails when its target email or required credentials are missing. It re
 
 Pull requests and pushes to `main` run four jobs in `.github/workflows/test.yml`:
 
-1. `migration-integrity` checks migration lineage, detects schema drift, and replays every migration on an empty PostgreSQL database.
+1. `migration-integrity` checks migration lineage, detects schema drift, replays every migration on an empty PostgreSQL database, and verifies the billing ledger queries.
 2. `web` runs `npm run verify` and Playwright on Node.js 24 with ffmpeg.
 3. `mac-recorder` runs the sidecar and Swift suites on macOS 15.
 4. `mcp` runs the Python suite with local development authentication.

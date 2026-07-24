@@ -173,6 +173,16 @@ Activity summaries must use understandable measures and a declared time range. O
 
 Keep search, status, scope, and sort easy to scan. Saved view management and older history controls stay secondary. Preserve the active filters and related meeting history when the user paginates or opens a related group.
 
+### Billing and credits
+
+Keep billing inside Team settings instead of primary navigation. The Team settings card shows remaining workspace credit, current month workspace consumption, current month personal consumption, and a clear link to billing details.
+
+The detail page supports current month, previous month, trailing 90 day, and all time consumption. Show personal and organization provider costs as compact USD totals. Organization detail is aggregate only. Recent activity shows only meetings owned by the signed in user.
+
+Label exact provider reported charges separately from published rate estimates. Keep pricing sources and assumptions behind disclosure. Clearly identify historical estimates and explain unavailable cost history.
+
+For limited personal workspaces, lead with credit remaining, the original allowance, and a clear exhausted state. Explain that existing meetings remain available when new provider work is paused. Internal workspaces with no configured limit should say “No limit” rather than inventing a balance.
+
 ## Responsive behavior
 
 Design mobile order in the document structure, not only through visual CSS placement.

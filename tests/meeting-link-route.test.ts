@@ -141,6 +141,32 @@ describe("POST /api/meetings/link", () => {
     consoleError.mockRestore();
   });
 
+  it("returns the credit limit when a public workspace is exhausted", async () => {
+    const { ProviderCreditExhaustedError } = await import(
+      "@/lib/provider-credit"
+    );
+    getCurrentUser.mockResolvedValue({
+      id: "user_123",
+      email: "user@example.com",
+      name: null,
+    });
+    createScheduledMeetingBot.mockRejectedValue(
+      new ProviderCreditExhaustedError(),
+    );
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+    const response = await postMeetingLink({
+      meetingUrl: "https://meet.google.com/abc-defg-hij",
+    });
+
+    expect(response.status).toBe(402);
+    await expect(response.json()).resolves.toMatchObject({
+      code: "credit_exhausted",
+      creditLimitUsdMicros: 5_000_000,
+    });
+    expect(scheduleRecallBot).not.toHaveBeenCalled();
+  });
+
   it("schedules a Recall bot for Google Meet links", async () => {
     vi.stubEnv("NEXT_PUBLIC_APP_URL", "https://app.example.com\n");
     getCurrentUser.mockResolvedValue({

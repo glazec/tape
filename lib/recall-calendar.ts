@@ -36,6 +36,7 @@ type RecallCalendarConnection = {
   teamId: string;
   userId: string;
   autoJoinEnabled: boolean;
+  creditLimitUsdMicros?: number | null;
   recallCalendarId?: string | null;
   recallCalendarLastSyncedAt?: Date | null;
   recallCalendarStatus?: string | null;
@@ -130,6 +131,7 @@ export async function ensureRecallManagedCalendarConnectionForWorkspace(
     return {
       ...existingRecallConnection,
       autoJoinEnabled: true,
+      creditLimitUsdMicros: workspace.creditLimitUsdMicros,
       teamId: workspace.teamId,
       userId: workspace.userId,
       workspaceDomain: workspace.domain,
@@ -154,6 +156,7 @@ export async function ensureRecallManagedCalendarConnectionForWorkspace(
     return {
       ...existing,
       autoJoinEnabled: true,
+      creditLimitUsdMicros: workspace.creditLimitUsdMicros,
       recallCalendarId: calendar.id,
       recallCalendarStatus: calendar.status,
     };
@@ -183,6 +186,7 @@ export async function ensureRecallManagedCalendarConnectionForWorkspace(
 
   return {
     ...connection,
+    creditLimitUsdMicros: workspace.creditLimitUsdMicros,
     workspaceDomain: workspace.domain,
     workspaceName: workspace.teamName,
   };
@@ -259,6 +263,7 @@ export async function syncRecallCalendarEventsForWorkspace(input: {
     teamId: connection.teamId,
     userId: connection.userId,
     autoJoinEnabled: input.autoJoinEnabled,
+    creditLimitUsdMicros: input.workspace.creditLimitUsdMicros,
     workspaceDomain: input.workspace.domain,
     workspaceName: input.workspace.teamName,
   };
@@ -554,6 +559,11 @@ async function findConnectionByRecallCalendarId(calendarId: string) {
       teamId: calendarConnections.teamId,
       userId: calendarConnections.userId,
       userEmail: users.email,
+      creditLimitUsdMicros: sql<number | null>`(
+        select ${teams.creditLimitUsdMicros}
+        from ${teams}
+        where ${teams.id} = ${calendarConnections.teamId}
+      )`,
       teamName: sql<string>`(
         select ${teams.name}
         from ${teams}
@@ -576,6 +586,7 @@ async function findConnectionByRecallCalendarId(calendarId: string) {
         teamId: connection.teamId,
         userId: connection.userId,
         autoJoinEnabled: connection.autoJoinEnabled,
+        creditLimitUsdMicros: connection.creditLimitUsdMicros,
         recallCalendarId: connection.recallCalendarId,
         recallCalendarLastSyncedAt: connection.recallCalendarLastSyncedAt,
         recallCalendarStatus: connection.recallCalendarStatus,
@@ -614,6 +625,7 @@ async function findConnectionByWorkspace(workspace: WorkspaceContext) {
   return connection
     ? {
         ...connection,
+        creditLimitUsdMicros: workspace.creditLimitUsdMicros,
         workspaceDomain: workspace.domain,
         workspaceName: workspace.teamName,
       }

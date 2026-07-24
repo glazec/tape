@@ -29,12 +29,14 @@ import {
   scheduleRecallBot,
   updateScheduledRecallBot,
 } from "@/lib/vendors/recall";
+import { assertWorkspaceHasProviderCredit } from "@/lib/provider-credit";
 
 type CalendarConnection = {
   id: string;
   teamId: string;
   userId: string;
   autoJoinEnabled: boolean;
+  creditLimitUsdMicros?: number | null;
   workspaceDomain?: string | null;
   workspaceName?: string | null;
 };
@@ -507,6 +509,7 @@ export async function autoJoinCalendarEvent(input: AutoJoinInput) {
       startsAt,
       endsAt,
       teamId: input.connection.teamId,
+      creditLimitUsdMicros: input.connection.creditLimitUsdMicros,
       teamMeetingKey: activeTeamMeetingKey,
       forceScheduleBot: input.forceBotConfigRefresh,
     });
@@ -564,6 +567,7 @@ export async function autoJoinCalendarEvent(input: AutoJoinInput) {
       startsAt,
       endsAt,
       teamId: input.connection.teamId,
+      creditLimitUsdMicros: input.connection.creditLimitUsdMicros,
       teamMeetingKey: activeTeamMeetingKey,
       forceScheduleBot: true,
     });
@@ -598,6 +602,7 @@ export async function autoJoinCalendarEvent(input: AutoJoinInput) {
 
   try {
     const bot = await scheduleBotForCalendarEvent({
+      creditLimitUsdMicros: input.connection.creditLimitUsdMicros,
       event: input.event,
       meetingUrl,
       startsAt,
@@ -823,6 +828,7 @@ async function syncExistingCalendarMeeting(input: {
   startsAt: Date;
   endsAt: Date | null;
   teamId: string;
+  creditLimitUsdMicros?: number | null;
   teamMeetingKey?: string | null;
   forceScheduleBot?: boolean;
 }) {
@@ -873,6 +879,7 @@ async function syncExistingCalendarMeeting(input: {
   try {
     if (shouldScheduleBot) {
       const bot = await scheduleBotForCalendarEvent({
+        creditLimitUsdMicros: input.creditLimitUsdMicros,
         event: input.event,
         meetingUrl: input.meetingUrl,
         startsAt: input.startsAt,
@@ -1342,6 +1349,7 @@ async function cancelScheduledMeetingBotFromCalendar(input: {
 }
 
 async function scheduleBotForCalendarEvent(input: {
+  creditLimitUsdMicros?: number | null;
   event: SyncedCalendarEvent;
   meetingUrl: string;
   startsAt: Date;
@@ -1351,6 +1359,7 @@ async function scheduleBotForCalendarEvent(input: {
   teamId: string;
   existingBotId?: string;
 }) {
+  await assertWorkspaceHasProviderCredit(input);
   const botProfile = await getMeetingBotProfile(input.teamId);
   const metadata = {
     ...getMeetingBotMetadata(botProfile),

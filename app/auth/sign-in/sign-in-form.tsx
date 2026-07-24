@@ -54,7 +54,7 @@ export function SignInForm({ callbackUrl }: { callbackUrl?: string }) {
         {isPending ? "Opening Google…" : "Continue with Google"}
       </button>
       <p className="text-center font-mono text-[10px] uppercase tracking-[0.2em] text-ink/45">
-        Company accounts only · SSO via Google
+        Any Google account · $5 included credit
       </p>
       {error ? (
         <div

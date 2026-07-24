@@ -37,6 +37,7 @@ describe("syncRecallCalendarEventsForAllConnectedUsers", () => {
     mockConnectedCalendarRows([
       {
         connectionId: "connection_1",
+        creditLimitUsdMicros: null,
         teamId: "team_1",
         userId: "user_1",
         userEmail: "Alice@IOSG.VC",
@@ -44,6 +45,7 @@ describe("syncRecallCalendarEventsForAllConnectedUsers", () => {
       },
       {
         connectionId: "connection_2",
+        creditLimitUsdMicros: 5_000_000,
         teamId: "team_2",
         userId: "user_2",
         userEmail: "bob@example.com",
@@ -69,6 +71,7 @@ describe("syncRecallCalendarEventsForAllConnectedUsers", () => {
     });
     expect(syncRecallCalendarEventsForWorkspace).toHaveBeenNthCalledWith(1, {
       workspace: {
+        creditLimitUsdMicros: null,
         domain: "iosg.vc",
         teamId: "team_1",
         userId: "user_1",
@@ -78,6 +81,7 @@ describe("syncRecallCalendarEventsForAllConnectedUsers", () => {
     });
     expect(syncRecallCalendarEventsForWorkspace).toHaveBeenNthCalledWith(2, {
       workspace: {
+        creditLimitUsdMicros: 5_000_000,
         domain: "example.com",
         teamId: "team_2",
         userId: "user_2",
@@ -91,6 +95,7 @@ describe("syncRecallCalendarEventsForAllConnectedUsers", () => {
     mockConnectedCalendarRows([
       {
         connectionId: "connection_1",
+        creditLimitUsdMicros: null,
         teamId: "team_1",
         userId: "user_1",
         userEmail: "alice@iosg.vc",
@@ -98,6 +103,7 @@ describe("syncRecallCalendarEventsForAllConnectedUsers", () => {
       },
       {
         connectionId: "connection_2",
+        creditLimitUsdMicros: 5_000_000,
         teamId: "team_2",
         userId: "user_2",
         userEmail: "bob@example.com",

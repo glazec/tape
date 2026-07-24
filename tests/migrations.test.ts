@@ -238,4 +238,45 @@ describe("database migrations", () => {
     expect(sql).toContain("meetings_translation_language_check");
     expect(sql).toContain("in ('zh-CN', 'en')");
   });
+
+  it("adds an idempotent provider cost ledger with historical estimates", () => {
+    const sql = readFileSync(
+      "db/migrations/0033_robust_ego.sql",
+      "utf8",
+    ).replace(/\s+/g, " ");
+
+    expect(sql).toContain('CREATE TABLE "provider_usage_events"');
+    expect(sql).toContain(
+      'CREATE UNIQUE INDEX "provider_usage_events_idempotency_unique"',
+    );
+    expect(sql).toContain(
+      'ADD COLUMN "billing_keyterms_used" boolean DEFAULT false NOT NULL',
+    );
+    expect(sql).toContain('\'recall:recording:\' || "recordings"."id"');
+    expect(sql).toContain(
+      '\'elevenlabs:transcription:\' || "elevenlabs_usage"."id"',
+    );
+    expect(
+      sql.match(/ON CONFLICT \("idempotency_key"\) DO NOTHING/g),
+    ).toHaveLength(2);
+  });
+
+  it("adds workspace credits and fills missing historical Recall usage", () => {
+    const sql = readFileSync(
+      "db/migrations/0034_kind_randall.sql",
+      "utf8",
+    ).replace(/\s+/g, " ");
+
+    expect(sql).toContain('ADD COLUMN "credit_limit_usd_micros" bigint');
+    expect(sql).toContain("teams_credit_limit_nonnegative");
+    expect(sql).toContain('"credit_limit_usd_micros" = 5000000');
+    expect(sql).toContain('"team_memberships"."role" = \'external\'');
+    expect(sql).toContain('SET "role" = \'owner\'');
+    expect(sql).toContain('FROM "allowed_domains"');
+    expect(sql).toContain(
+      '\'recall:legacy-meeting:\' || "legacy_recall_usage"."meeting_id"',
+    );
+    expect(sql).toContain("'historicalEstimate', true");
+    expect(sql).toContain('ON CONFLICT ("idempotency_key") DO NOTHING');
+  });
 });

@@ -9,6 +9,7 @@ import {
   TranslationResponseError,
 } from "@/lib/meeting-translation";
 import type { TranslationLanguage } from "@/lib/meeting-translation-language";
+import type { ProviderUsageCategory } from "@/lib/provider-usage";
 import { searchWebWithExa } from "@/lib/vendors/exa";
 
 const optionalUrl = z.preprocess(
@@ -33,6 +34,8 @@ const openRouterToolCallSchema = z.object({
 });
 
 const openRouterResponseSchema = z.object({
+  id: z.string().optional().nullable(),
+  model: z.string().optional().nullable(),
   choices: z.array(
     z.object({
       finish_reason: z.string().optional().nullable(),
@@ -45,6 +48,15 @@ const openRouterResponseSchema = z.object({
         .nullable(),
     }),
   ),
+  usage: z
+    .object({
+      completion_tokens: z.number().int().nonnegative().optional(),
+      cost: z.number().nonnegative().optional(),
+      prompt_tokens: z.number().int().nonnegative().optional(),
+      total_tokens: z.number().int().nonnegative().optional(),
+    })
+    .optional()
+    .nullable(),
 });
 export const TRANSLATION_BATCH_SIZE = 10;
 const TRANSLATION_BATCH_CHARACTER_LIMIT = 1800;
@@ -94,6 +106,7 @@ type TranscriptSegment = { id: string; text: string };
 
 export async function generateOpenRouterChatReply(input: {
   botName?: string | null;
+  meetingId?: string | null;
   question: string;
   participantName?: string | null;
   recentMessages?: Array<{
@@ -121,6 +134,10 @@ export async function generateOpenRouterChatReply(input: {
   const firstChoice = await createMeetingChatCompletion({
     messages,
     searchToolChoice: searchEnabled ? "auto" : null,
+    usageContext: {
+      category: "assistant",
+      meetingId: input.meetingId,
+    },
   });
   const toolCall = firstChoice.message?.tool_calls?.[0];
 
@@ -144,6 +161,10 @@ export async function generateOpenRouterChatReply(input: {
   const finalChoice = await createMeetingChatCompletion({
     messages,
     searchToolChoice: "none",
+    usageContext: {
+      category: "assistant",
+      meetingId: input.meetingId,
+    },
   });
 
   return getMeetingChatContent(finalChoice);
@@ -168,6 +189,7 @@ async function runMeetingChatTool(toolCall: OpenRouterToolCall) {
 async function createMeetingChatCompletion(input: {
   messages: MeetingChatMessage[];
   searchToolChoice: "auto" | "none" | null;
+  usageContext?: OpenRouterUsageContext;
 }) {
   const env = openRouterEnvSchema.parse(process.env);
 
@@ -210,7 +232,10 @@ async function createMeetingChatCompletion(input: {
       );
     }
 
-    const parsed = openRouterResponseSchema.parse(await response.json());
+    const parsed = await parseOpenRouterResponse(
+      await response.json(),
+      input.usageContext,
+    );
     const choice = parsed.choices[0];
 
     if (!choice) {
@@ -243,6 +268,7 @@ export async function translateTranscriptSegments(
   segments: TranscriptSegment[],
   options: {
     batchSize?: number;
+    meetingId?: string;
     onTranslated?: (
       translations: Array<{ id: string; text: string }>,
     ) => Promise<void> | void;
@@ -268,6 +294,7 @@ export async function translateTranscriptSegments(
         batch,
         options.targetLanguage,
         options.onTranslated,
+        options.meetingId,
       )),
     );
   }
@@ -281,6 +308,7 @@ async function translateBatchWithRecovery(
   onTranslated?: (
     translations: Array<{ id: string; text: string }>,
   ) => Promise<void> | void,
+  meetingId?: string,
 ): Promise<Array<{ id: string; text: string }>> {
   let lastError: unknown;
 
@@ -294,6 +322,10 @@ async function translateBatchWithRecovery(
         provider: { require_parameters: true },
         responseFormat: buildTranslationJsonSchema(batch.length),
         temperature: 0,
+        usageContext: {
+          category: "translation",
+          meetingId,
+        },
       });
       const translatedRows = parseTranslationResponse({
         content,
@@ -323,6 +355,7 @@ async function translateBatchWithRecovery(
         missingSegments,
         targetLanguage,
         onTranslated,
+        meetingId,
       );
       const recoveredById = new Map(
         recoveredRows.map((row) => [row.id, row.text]),
@@ -336,13 +369,18 @@ async function translateBatchWithRecovery(
       lastError = error;
 
       if (error instanceof TranslationResponseError && batch.length > 1) {
-        return translateSplitBatch(batch, targetLanguage, onTranslated);
+        return translateSplitBatch(
+          batch,
+          targetLanguage,
+          onTranslated,
+          meetingId,
+        );
       }
     }
   }
 
   if (batch.length > 1) {
-    return translateSplitBatch(batch, targetLanguage, onTranslated);
+    return translateSplitBatch(batch, targetLanguage, onTranslated, meetingId);
   }
 
   const message =
@@ -361,17 +399,20 @@ async function translateSplitBatch(
   onTranslated?: (
     translations: Array<{ id: string; text: string }>,
   ) => Promise<void> | void,
+  meetingId?: string,
 ) {
   const middle = Math.ceil(batch.length / 2);
   const firstHalf = await translateBatchWithRecovery(
     batch.slice(0, middle),
     targetLanguage,
     onTranslated,
+    meetingId,
   );
   const secondHalf = await translateBatchWithRecovery(
     batch.slice(middle),
     targetLanguage,
     onTranslated,
+    meetingId,
   );
 
   return [...firstHalf, ...secondHalf];
@@ -394,7 +435,7 @@ export function translateTranscriptSegmentsToChinese(
 
 export async function polishTranscriptSegmentsInOriginalLanguage(
   segments: Array<{ id: string; text: string }>,
-  options: { batchSize?: number } = {},
+  options: { batchSize?: number; meetingId?: string } = {},
 ) {
   if (segments.length === 0) {
     return [];
@@ -414,6 +455,10 @@ export async function polishTranscriptSegmentsInOriginalLanguage(
       messages: buildOriginalTranscriptPolishMessages(batch),
       maxTokens: 3000,
       temperature: 0.1,
+      usageContext: {
+        category: "transcript_polish",
+        meetingId: options.meetingId,
+      },
     });
 
     const polishedTextById = new Map(
@@ -474,40 +519,40 @@ async function createOpenRouterChatCompletion(input: {
   provider?: { require_parameters: boolean };
   responseFormat?: Record<string, unknown>;
   temperature: number;
+  usageContext?: OpenRouterUsageContext;
 }) {
   const env = openRouterEnvSchema.parse(process.env);
   const attempts = input.attempts ?? OPENROUTER_COMPLETION_ATTEMPTS;
   let lastError: unknown;
 
-  for (
-    let attempt = 1;
-    attempt <= attempts;
-    attempt += 1
-  ) {
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
     try {
-      const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-        method: "POST",
-        signal: AbortSignal.timeout(60_000),
-        headers: {
-          Authorization: `Bearer ${env.OPENROUTER_API_KEY}`,
-          "Content-Type": "application/json",
-          Accept: "application/json",
-          ...(env.NEXT_PUBLIC_APP_URL
-            ? { "HTTP-Referer": env.NEXT_PUBLIC_APP_URL }
-            : {}),
-          "X-Title": "Meeting Note",
+      const response = await fetch(
+        "https://openrouter.ai/api/v1/chat/completions",
+        {
+          method: "POST",
+          signal: AbortSignal.timeout(60_000),
+          headers: {
+            Authorization: `Bearer ${env.OPENROUTER_API_KEY}`,
+            "Content-Type": "application/json",
+            Accept: "application/json",
+            ...(env.NEXT_PUBLIC_APP_URL
+              ? { "HTTP-Referer": env.NEXT_PUBLIC_APP_URL }
+              : {}),
+            "X-Title": "Meeting Note",
+          },
+          body: JSON.stringify({
+            model: env.OPENROUTER_MODEL,
+            messages: input.messages,
+            temperature: input.temperature,
+            max_tokens: input.maxTokens,
+            reasoning: { effort: "none" },
+            response_format: input.responseFormat ?? { type: "json_object" },
+            ...(input.plugins ? { plugins: input.plugins } : {}),
+            ...(input.provider ? { provider: input.provider } : {}),
+          }),
         },
-        body: JSON.stringify({
-          model: env.OPENROUTER_MODEL,
-          messages: input.messages,
-          temperature: input.temperature,
-          max_tokens: input.maxTokens,
-          reasoning: { effort: "none" },
-          response_format: input.responseFormat ?? { type: "json_object" },
-          ...(input.plugins ? { plugins: input.plugins } : {}),
-          ...(input.provider ? { provider: input.provider } : {}),
-        }),
-      });
+      );
 
       if (!response.ok) {
         throw new Error(
@@ -515,7 +560,10 @@ async function createOpenRouterChatCompletion(input: {
         );
       }
 
-      const parsed = openRouterResponseSchema.parse(await response.json());
+      const parsed = await parseOpenRouterResponse(
+        await response.json(),
+        input.usageContext,
+      );
       const choice = parsed.choices[0];
       const content = choice?.message?.content?.trim();
 
@@ -541,4 +589,51 @@ async function createOpenRouterChatCompletion(input: {
     `OpenRouter model ${env.OPENROUTER_MODEL} failed after ${attempts} attempts${detail}`,
     { cause: lastError },
   );
+}
+
+type OpenRouterUsageContext = {
+  category: Extract<
+    ProviderUsageCategory,
+    "assistant" | "transcript_polish" | "translation"
+  >;
+  meetingId?: string | null;
+};
+
+async function parseOpenRouterResponse(
+  value: unknown,
+  usageContext?: OpenRouterUsageContext,
+) {
+  const parsed = openRouterResponseSchema.parse(value);
+
+  if (
+    usageContext?.meetingId &&
+    parsed.id &&
+    parsed.usage?.cost &&
+    parsed.usage.cost > 0
+  ) {
+    const { recordOpenRouterCompletionUsage } =
+      await import("@/lib/provider-usage");
+
+    try {
+      await recordOpenRouterCompletionUsage({
+        category: usageContext.category,
+        generationId: parsed.id,
+        meetingId: usageContext.meetingId,
+        model: parsed.model,
+        usage: {
+          completionTokens: parsed.usage.completion_tokens,
+          costUsd: parsed.usage.cost,
+          promptTokens: parsed.usage.prompt_tokens,
+          totalTokens: parsed.usage.total_tokens,
+        },
+      });
+    } catch (error) {
+      console.error("Could not record OpenRouter provider usage", {
+        error,
+        generationId: parsed.id,
+      });
+    }
+  }
+
+  return parsed;
 }

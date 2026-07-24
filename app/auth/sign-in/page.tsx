@@ -83,15 +83,15 @@ export default async function SignInPage({
               Sign in to Tape.
             </h1>
             <p className="mt-5 text-base leading-7 text-ash">
-              Use your company Google account to open your team&apos;s meeting
-              workspace and review recordings, transcripts, and shared meetings.
+              Use any Google account to create your meeting workspace or open
+              meetings shared with you.
             </p>
             <div className="mt-10">
               <SignInForm callbackUrl={signInCallbackUrl} />
             </div>
             <p className="mt-10 border-t border-ink/10 pt-6 text-sm leading-6 text-ash">
-              Access follows your workspace membership and meetings shared with
-              your account.
+              New personal workspaces include $5 of provider credit. Existing
+              organization workspaces keep their current access.
             </p>
           </div>
         </div>

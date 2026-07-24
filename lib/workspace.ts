@@ -12,6 +12,7 @@ import {
 import { SharedOnlyAccessError } from "@/lib/access-errors";
 import type { SessionUser } from "@/lib/auth";
 import { normalizeEmail, normalizeEmailDomain } from "@/lib/access";
+import { PUBLIC_WORKSPACE_CREDIT_USD_MICROS } from "@/lib/provider-credit";
 import { getWorkspaceDisplayName } from "@/lib/team-name";
 
 export type WorkspaceContext = {
@@ -20,6 +21,7 @@ export type WorkspaceContext = {
   domain: string;
   teamName?: string;
   canCreateMeetings?: boolean;
+  creditLimitUsdMicros?: number | null;
 };
 
 export type WorkspaceMember = {
@@ -45,6 +47,11 @@ export async function getOrCreateWorkspaceForSessionUser(
     getOrCreateUserId(sessionUser, email),
     db
       .select({
+        creditLimitUsdMicros: sql<number | null>`(
+          select ${teams.creditLimitUsdMicros}
+          from ${teams}
+          where ${teams.id} = ${allowedDomains.teamId}
+        )`,
         teamId: allowedDomains.teamId,
         teamName: sql<string>`(
           select ${teams.name}
@@ -71,6 +78,7 @@ export async function getOrCreateWorkspaceForSessionUser(
 
     return {
       canCreateMeetings: true,
+      creditLimitUsdMicros: existingDomain[0].creditLimitUsdMicros,
       domain,
       teamId: existingDomain[0].teamId,
       ...(existingDomain[0].teamName
@@ -82,6 +90,16 @@ export async function getOrCreateWorkspaceForSessionUser(
 
   const existingMembership = await db
     .select({
+      creditLimitUsdMicros: sql<number | null>`(
+        select ${teams.creditLimitUsdMicros}
+        from ${teams}
+        where ${teams.id} = ${teamMemberships.teamId}
+      )`,
+      hasAllowedDomain: sql<boolean>`exists (
+        select 1
+        from ${allowedDomains}
+        where ${allowedDomains.teamId} = ${teamMemberships.teamId}
+      )`,
       role: teamMemberships.role,
       teamId: teamMemberships.teamId,
       teamName: sql<string>`(
@@ -95,8 +113,23 @@ export async function getOrCreateWorkspaceForSessionUser(
     .limit(1);
 
   if (existingMembership[0]) {
+    const isPublicWorkspace =
+      existingMembership[0].role === "external" &&
+      !existingMembership[0].hasAllowedDomain;
+
+    if (isPublicWorkspace) {
+      await promotePublicWorkspaceMembership({
+        teamId: existingMembership[0].teamId,
+        userId,
+      });
+    }
+
     return {
-      canCreateMeetings: existingMembership[0].role !== "external",
+      canCreateMeetings:
+        existingMembership[0].role !== "external" || isPublicWorkspace,
+      creditLimitUsdMicros: isPublicWorkspace
+        ? PUBLIC_WORKSPACE_CREDIT_USD_MICROS
+        : existingMembership[0].creditLimitUsdMicros,
       domain,
       teamId: existingMembership[0].teamId,
       ...(existingMembership[0].teamName
@@ -106,41 +139,63 @@ export async function getOrCreateWorkspaceForSessionUser(
     };
   }
 
-  const existingAllowedDomain = await db
-    .select({ id: allowedDomains.id })
-    .from(allowedDomains)
-    .limit(1);
-  const shouldBootstrapInternalWorkspace = existingAllowedDomain.length === 0;
-  const teamName = shouldBootstrapInternalWorkspace
-    ? getWorkspaceDisplayName(domain)
-    : `${getWorkspaceDisplayName(domain)} guest workspace`;
+  const teamName = `${getWorkspaceDisplayName(domain)} workspace`;
   const [team] = await db
     .insert(teams)
-    .values({ name: teamName })
+    .values({
+      creditLimitUsdMicros: PUBLIC_WORKSPACE_CREDIT_USD_MICROS,
+      name: teamName,
+    })
     .returning({ id: teams.id });
-
-  if (shouldBootstrapInternalWorkspace) {
-    await db.insert(allowedDomains).values({ teamId: team.id, domain });
-  }
 
   await db
     .insert(teamMemberships)
     .values({
       teamId: team.id,
       userId,
-      role: shouldBootstrapInternalWorkspace ? "admin" : "external",
+      role: "owner",
     })
     .onConflictDoNothing({
       target: [teamMemberships.teamId, teamMemberships.userId],
     });
 
   return {
-    canCreateMeetings: shouldBootstrapInternalWorkspace,
+    canCreateMeetings: true,
+    creditLimitUsdMicros: PUBLIC_WORKSPACE_CREDIT_USD_MICROS,
     domain,
     teamId: team.id,
     teamName,
     userId,
   };
+}
+
+async function promotePublicWorkspaceMembership(input: {
+  teamId: string;
+  userId: string;
+}) {
+  await db.execute(sql`
+    with promoted as (
+      update team_memberships
+      set role = 'owner', updated_at = now()
+      where team_id = ${input.teamId}::uuid
+        and user_id = ${input.userId}::uuid
+        and role = 'external'
+      returning team_id
+    )
+    update teams
+    set
+      credit_limit_usd_micros = coalesce(
+        credit_limit_usd_micros,
+        ${PUBLIC_WORKSPACE_CREDIT_USD_MICROS}
+      ),
+      updated_at = now()
+    where id in (select team_id from promoted)
+      and not exists (
+        select 1
+        from allowed_domains
+        where allowed_domains.team_id = teams.id
+      )
+  `);
 }
 
 export async function getWorkspaceAccessSummary(workspace: WorkspaceContext) {

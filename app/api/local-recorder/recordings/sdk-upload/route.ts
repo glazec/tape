@@ -5,6 +5,10 @@ import {
   createRecallDesktopSdkUploadForLocalRecorder,
   LocalRecorderUploadError,
 } from "@/lib/local-recorder-records";
+import {
+  assertWorkspaceHasProviderCredit,
+  providerCreditErrorResponse,
+} from "@/lib/provider-credit";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -35,6 +39,7 @@ export async function POST(request: Request) {
   }
 
   try {
+    await assertWorkspaceHasProviderCredit(deviceContext.workspace);
     const result = await createRecallDesktopSdkUploadForLocalRecorder({
       ...parsed.data,
       deviceId: deviceContext.deviceId,
@@ -44,6 +49,12 @@ export async function POST(request: Request) {
 
     return Response.json(result);
   } catch (error) {
+    const creditResponse = providerCreditErrorResponse(error);
+
+    if (creditResponse) {
+      return creditResponse;
+    }
+
     if (error instanceof LocalRecorderUploadError) {
       return Response.json({ error: error.message }, { status: 409 });
     }

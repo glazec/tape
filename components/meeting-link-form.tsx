@@ -121,6 +121,19 @@ export function MeetingLinkForm() {
 
       if (!response.ok) {
         if (
+          response.status === 402 &&
+          typeof responseBody?.error === "string"
+        ) {
+          setState("error");
+          setMessage(responseBody.error);
+          if (isConfirmingChoice) {
+            setChoiceError(responseBody.error);
+            setState("idle");
+          }
+          return;
+        }
+
+        if (
           typeof responseBody?.error === "string" &&
           responseBody.error.toLowerCase().includes("join")
         ) {

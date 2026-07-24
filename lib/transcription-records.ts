@@ -4,6 +4,7 @@ import { db } from "@/db/client";
 import { mediaAssets, meetings, recordings, transcriptJobs } from "@/db/schema";
 import type { SessionUser } from "@/lib/auth";
 import { reconcileMeetingSharingForMeeting } from "@/lib/meeting-share-rules";
+import { recordRecallRecordingUsage } from "@/lib/provider-usage";
 import { buildMeetingObjectKey, getObjectMetadata, parseR2Env } from "@/lib/r2";
 import {
   assertCanCreateMeetings,
@@ -270,6 +271,13 @@ export async function createRecallRecordingTranscription(input: {
   if (!recording) {
     throw new Error("Recall recording could not be created");
   }
+
+  await recordRecallRecordingUsage({
+    durationMs: input.durationMs,
+    meetingId: input.meetingId,
+    recordingId: recording.id,
+  });
+
   const [existingJob] = await db
     .select({ id: transcriptJobs.id })
     .from(transcriptJobs)

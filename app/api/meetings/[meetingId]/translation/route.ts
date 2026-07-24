@@ -9,6 +9,10 @@ import { currentTranscriptJobIdsSubquery } from "@/lib/current-transcript-job";
 import { getManageableMeetingCondition } from "@/lib/meeting-write-policy";
 import { markMeetingTranslationQueued } from "@/lib/meeting-translation-jobs";
 import { getTeamConfiguration } from "@/lib/team-configuration";
+import {
+  assertWorkspaceHasProviderCredit,
+  providerCreditErrorResponse,
+} from "@/lib/provider-credit";
 import { getOrCreateWorkspaceForSessionUser } from "@/lib/workspace";
 
 export const runtime = "nodejs";
@@ -62,6 +66,18 @@ export async function POST(
       { error: "Transcript is not ready yet" },
       { status: 409 },
     );
+  }
+
+  try {
+    await assertWorkspaceHasProviderCredit(workspace);
+  } catch (error) {
+    const creditResponse = providerCreditErrorResponse(error);
+
+    if (creditResponse) {
+      return creditResponse;
+    }
+
+    throw error;
   }
 
   const { translationLanguage } = await getTeamConfiguration(workspace.teamId);

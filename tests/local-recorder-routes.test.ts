@@ -1,5 +1,10 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+vi.mock("@/lib/provider-credit", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/provider-credit")>()),
+  assertWorkspaceHasProviderCredit: vi.fn(),
+}));
+
 const createLocalRecorderDeviceSession = vi.fn();
 const getLocalRecorderDeviceRequestContext = vi.fn();
 const listMissedLocalRecorderMeetings = vi.fn();

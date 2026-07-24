@@ -36,6 +36,7 @@ class RecallCalendarBulkSyncError extends Error {
 
 type ConnectedCalendarConnection = {
   connectionId: string;
+  creditLimitUsdMicros: number | null;
   teamId: string;
   userId: string;
   userEmail: string;
@@ -58,6 +59,7 @@ export async function syncRecallCalendarEventsForAllConnectedUsers(
           teamId: connection.teamId,
           userId: connection.userId,
           domain: normalizeEmailDomain(connection.userEmail),
+          creditLimitUsdMicros: connection.creditLimitUsdMicros,
           ...(connection.teamName ? { teamName: connection.teamName } : {}),
         },
         autoJoinEnabled: connection.autoJoinEnabled,
@@ -95,6 +97,11 @@ async function listConnectedRecallCalendarConnections(): Promise<
   return db
     .select({
       connectionId: calendarConnections.id,
+      creditLimitUsdMicros: sql<number | null>`(
+        select ${teams.creditLimitUsdMicros}
+        from ${teams}
+        where ${teams.id} = ${calendarConnections.teamId}
+      )`,
       teamId: calendarConnections.teamId,
       userId: calendarConnections.userId,
       userEmail: users.email,

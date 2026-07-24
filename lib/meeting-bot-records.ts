@@ -6,6 +6,7 @@ import type { SessionUser } from "@/lib/auth";
 import type { SupportedMeetingPlatform } from "@/lib/meeting-links";
 import { reconcileMeetingSharingForMeeting } from "@/lib/meeting-share-rules";
 import { getMeetingManagerCondition } from "@/lib/meeting-write-policy";
+import { assertWorkspaceHasProviderCredit } from "@/lib/provider-credit";
 import {
   assertCanCreateMeetings,
   getOrCreateWorkspaceForSessionUser,
@@ -47,6 +48,7 @@ export async function createScheduledMeetingBot(
 ) {
   const workspace = await getOrCreateWorkspaceForSessionUser(input.sessionUser);
   await assertCanCreateMeetings(workspace);
+  await assertWorkspaceHasProviderCredit(workspace);
   const now = input.now ?? new Date();
   const calendarEvent = input.calendarEventId
     ? (

@@ -143,6 +143,7 @@ export const transcribeAudio = inngest.createFunction(
         await db
           .update(transcriptJobs)
           .set({
+            billingKeytermsUsed: keyterms.length > 0,
             providerJobId,
             status: providerJobId ? "running" : "queued",
             updatedAt: new Date(),
@@ -286,6 +287,7 @@ export const enrichTranscript = inngest.createFunction(
           );
           const translations = await translateTranscriptSegments(batch, {
             batchSize: TRANSLATION_BATCH_SIZE,
+            meetingId: data.meetingId,
             onTranslated: async (translatedRows) => {
               for (const translation of translatedRows) {
                 await db
@@ -339,6 +341,7 @@ export const enrichTranscript = inngest.createFunction(
         const polishedSegments =
           await polishTranscriptSegmentsInOriginalLanguage(batch, {
             batchSize: TRANSLATION_BATCH_SIZE,
+            meetingId: data.meetingId,
           });
 
         for (const polishedSegment of polishedSegments) {

@@ -23,6 +23,10 @@ import {
   getUploadMediaFromFile,
   isUploadMediaSizeAllowed,
 } from "@/lib/upload-media";
+import {
+  assertWorkspaceHasProviderCredit,
+  providerCreditErrorResponse,
+} from "@/lib/provider-credit";
 
 export const runtime = "nodejs";
 
@@ -65,6 +69,7 @@ export async function POST(request: Request) {
   try {
     const workspace = await getOrCreateWorkspaceForSessionUser(user);
     await assertCanCreateMeetings(workspace);
+    await assertWorkspaceHasProviderCredit(workspace);
 
     const uploadId = crypto.randomUUID();
     const key = buildPendingUploadObjectKey({
@@ -144,6 +149,12 @@ export async function POST(request: Request) {
       { status: 202 },
     );
   } catch (error) {
+    const creditResponse = providerCreditErrorResponse(error);
+
+    if (creditResponse) {
+      return creditResponse;
+    }
+
     if (error instanceof UnsafeObjectKeySegmentError) {
       return Response.json(
         { error: "Invalid audio upload request" },

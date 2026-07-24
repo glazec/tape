@@ -24,6 +24,7 @@ import {
 } from "@/lib/meeting-bot-profile";
 import { scheduleRecallBot } from "@/lib/vendors/recall";
 import { SharedOnlyAccessError } from "@/lib/access-errors";
+import { providerCreditErrorResponse } from "@/lib/provider-credit";
 
 export const runtime = "nodejs";
 
@@ -310,6 +311,12 @@ function selectBackToBackMeetings(meetings: PotentialMeeting[], now: Date) {
 }
 
 function handleMeetingLinkError(error: unknown) {
+  const creditResponse = providerCreditErrorResponse(error);
+
+  if (creditResponse) {
+    return creditResponse;
+  }
+
   if (error instanceof SharedOnlyAccessError) {
     return Response.json(
       { error: "Shared users cannot add meetings" },

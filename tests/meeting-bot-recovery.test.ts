@@ -1,5 +1,9 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+vi.mock("@/lib/provider-credit", () => ({
+  assertWorkspaceHasProviderCredit: vi.fn(),
+}));
+
 const {
   assertCanCreateMeetings,
   getMeetingManagerCondition,

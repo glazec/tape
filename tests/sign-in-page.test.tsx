@@ -20,7 +20,8 @@ describe("sign in page", () => {
     const page = await SignInPage({ searchParams: Promise.resolve({ callbackUrl: ["/meetings/one", "/ignored"] }) });
     render(page);
     expect(screen.getByRole("heading", { name: "Sign in to Tape." })).toBeTruthy();
-    expect(screen.getByText(/Use your company Google account/)).toBeTruthy();
+    expect(screen.getByText(/Use any Google account/)).toBeTruthy();
+    expect(screen.getByText(/include \$5 of provider credit/)).toBeTruthy();
     expect(screen.getAllByRole("link", { name: /Tape home|Back to site/ })).toHaveLength(2);
   });
 

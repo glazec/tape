@@ -45,6 +45,10 @@ vi.mock("@/lib/meeting-share-rules", () => ({
   reconcileMeetingSharingForMeeting,
 }));
 
+vi.mock("@/lib/provider-usage", () => ({
+  recordRecallRecordingUsage: vi.fn(),
+}));
+
 describe("createUploadedAudioTranscription", () => {
   afterEach(() => {
     assertCanCreateMeetings.mockReset();

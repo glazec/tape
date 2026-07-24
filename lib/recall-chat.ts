@@ -1,6 +1,10 @@
 import { z } from "zod";
 
 import { DEFAULT_MEETING_BOT_NAME } from "@/lib/meeting-bot-constants";
+import {
+  assertMeetingHasProviderCredit,
+  ProviderCreditExhaustedError,
+} from "@/lib/provider-credit";
 import { sendRecallChatMessage } from "@/lib/vendors/recall";
 import { generateOpenRouterChatReply } from "@/lib/vendors/openrouter";
 
@@ -89,6 +93,35 @@ export async function answerRecallChatMessage(
     return { action: "skipped" as const, reason: decision.reason };
   }
 
+  const meetingId = getEventMeetingId(event);
+
+  if (meetingId) {
+    try {
+      await assertMeetingHasProviderCredit(meetingId);
+    } catch (error) {
+      if (!(error instanceof ProviderCreditExhaustedError)) {
+        throw error;
+      }
+
+      const reply =
+        "Tape’s included credit has been used. Existing meetings remain available in the workspace.";
+
+      await sendRecallChatMessage({
+        botId: event.botId,
+        message: reply,
+        to:
+          event.to === "only_bot"
+            ? String(event.participant.id)
+            : "everyone",
+      });
+
+      return {
+        action: "skipped" as const,
+        reason: "credit_exhausted" as const,
+      };
+    }
+  }
+
   const recentMessages = await getRecentRecallChatMessages({
     botId: event.botId,
     directMessageParticipantId:
@@ -97,6 +130,7 @@ export async function answerRecallChatMessage(
   });
   const reply = await generateOpenRouterChatReply({
     botName: getEventBotName(event),
+    meetingId,
     question: decision.question,
     participantName: event.participant.name,
     recentMessages,
@@ -151,6 +185,14 @@ function getEventBotName(event: RecallChatMessage) {
   return typeof metadataName === "string" && metadataName.trim()
     ? metadataName.trim()
     : DEFAULT_MEETING_BOT_NAME;
+}
+
+function getEventMeetingId(event: RecallChatMessage) {
+  const meetingId = event.metadata.meetingId;
+
+  return typeof meetingId === "string" && meetingId.trim()
+    ? meetingId.trim()
+    : null;
 }
 
 function includesBotMention(text: string, botName: string) {

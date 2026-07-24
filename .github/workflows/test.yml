@@ -46,6 +46,25 @@ jobs:
           for migration in db/migrations/*.sql; do
             psql "$DATABASE_URL" --set ON_ERROR_STOP=1 --file "$migration"
           done
+      - name: Check Usage page schema queries
+        shell: bash
+        run: |
+          set -euo pipefail
+          psql "$DATABASE_URL" --set ON_ERROR_STOP=1 <<'SQL'
+          select category, sum(cost_usd_micros)
+          from provider_usage_events
+          where team_id = '00000000-0000-4000-8000-000000000001'::uuid
+            and occurred_at >= date_trunc('month', now())
+          group by category;
+
+          select billing_keyterms_used
+          from transcript_jobs
+          limit 0;
+
+          select credit_limit_usd_micros
+          from teams
+          limit 0;
+          SQL
 
   web:
     runs-on: ubuntu-latest

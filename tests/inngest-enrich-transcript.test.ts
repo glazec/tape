@@ -118,6 +118,7 @@ describe("enrich transcript", () => {
         [{ id: "segment_1", text: "Um, hello team." }],
         {
           batchSize: 10,
+          meetingId,
           onTranslated: expect.any(Function),
           targetLanguage: "zh-CN",
         },

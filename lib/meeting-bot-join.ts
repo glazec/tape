@@ -17,6 +17,7 @@ import {
   scheduleRecallBot,
   scheduleRecallCalendarEventBot,
 } from "@/lib/vendors/recall";
+import { assertWorkspaceHasProviderCredit } from "@/lib/provider-credit";
 import {
   assertCanCreateMeetings,
   getOrCreateWorkspaceForSessionUser,
@@ -38,6 +39,7 @@ export async function joinScheduledMeetingBotNow(input: {
 }) {
   const workspace = await getOrCreateWorkspaceForSessionUser(input.sessionUser);
   await assertCanCreateMeetings(workspace);
+  await assertWorkspaceHasProviderCredit(workspace);
 
   const [meeting] = await db
     .select({

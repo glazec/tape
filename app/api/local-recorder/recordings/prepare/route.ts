@@ -4,6 +4,10 @@ import {
   prepareLocalRecorderRecordingUpload,
 } from "@/lib/local-recorder-records";
 import { parseLocalRecorderUploadPrepareRequest } from "@/lib/local-recorder-upload-request";
+import {
+  assertWorkspaceHasProviderCredit,
+  providerCreditErrorResponse,
+} from "@/lib/provider-credit";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -29,6 +33,7 @@ export async function POST(request: Request) {
   }
 
   try {
+    await assertWorkspaceHasProviderCredit(deviceContext.workspace);
     const result = await prepareLocalRecorderRecordingUpload({
       ...parsed.value,
       deviceId: deviceContext.deviceId,
@@ -37,6 +42,12 @@ export async function POST(request: Request) {
 
     return Response.json(result);
   } catch (error) {
+    const creditResponse = providerCreditErrorResponse(error);
+
+    if (creditResponse) {
+      return creditResponse;
+    }
+
     if (error instanceof LocalRecorderUploadError) {
       return Response.json({ error: error.message }, { status: 409 });
     }

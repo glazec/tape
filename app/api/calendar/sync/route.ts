@@ -6,6 +6,7 @@ import {
   syncRecallCalendarEventsForWorkspace,
 } from "@/lib/recall-calendar";
 import { SharedOnlyAccessError } from "@/lib/access-errors";
+import { providerCreditErrorResponse } from "@/lib/provider-credit";
 import {
   assertCanCreateMeetings,
   getOrCreateWorkspaceForSessionUser,
@@ -45,6 +46,12 @@ export async function POST(request: Request) {
 
     return Response.json(syncResult, { status: 202 });
   } catch (error) {
+    const creditResponse = providerCreditErrorResponse(error);
+
+    if (creditResponse) {
+      return creditResponse;
+    }
+
     if (error instanceof RecallCalendarConnectionError) {
       return Response.json(
         { error: "Calendar is not connected", reconnect: true },

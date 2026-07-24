@@ -6,6 +6,7 @@ import {
   joinScheduledMeetingBotNow,
   MeetingBotJoinUnavailableError,
 } from "@/lib/meeting-bot-join";
+import { providerCreditErrorResponse } from "@/lib/provider-credit";
 
 export const runtime = "nodejs";
 
@@ -34,6 +35,12 @@ export async function POST(
       sessionUser: user,
     });
   } catch (error) {
+    const creditResponse = providerCreditErrorResponse(error);
+
+    if (creditResponse) {
+      return creditResponse;
+    }
+
     if (error instanceof MeetingBotJoinUnavailableError) {
       return Response.json({ error: error.message }, { status: 409 });
     }

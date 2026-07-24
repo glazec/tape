@@ -9,6 +9,7 @@ import {
   MEETING_RECORDING_RESUME_MIN_REMAINING_MS,
 } from "@/lib/meeting-bot-recovery-policy";
 import { getMeetingManagerCondition } from "@/lib/meeting-write-policy";
+import { assertWorkspaceHasProviderCredit } from "@/lib/provider-credit";
 import {
   assertCanCreateMeetings,
   getOrCreateWorkspaceForSessionUser,
@@ -39,6 +40,7 @@ export async function findMeetingBotRecoveryCandidates(input: {
 }): Promise<MeetingBotRecoveryCandidate[]> {
   const workspace = await getOrCreateWorkspaceForSessionUser(input.sessionUser);
   await assertCanCreateMeetings(workspace);
+  await assertWorkspaceHasProviderCredit(workspace);
   const now = input.now ?? new Date();
   const [resumableMeetings, recoverableMeetings] = await Promise.all([
     findResumableMeetings({ now, workspace }),
@@ -67,6 +69,7 @@ export async function prepareMeetingBotRecovery(input: {
 }) {
   const workspace = await getOrCreateWorkspaceForSessionUser(input.sessionUser);
   await assertCanCreateMeetings(workspace);
+  await assertWorkspaceHasProviderCredit(workspace);
   const now = input.now ?? new Date();
   const [resumableMeeting] = await findResumableMeetings({
     meetingId: input.meetingId,

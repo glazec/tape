@@ -4,6 +4,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 
 const {
   canManageTeamSettings,
+  getProviderBillingOverview,
   getWorkspace,
   getWorkspaceAccessSummary,
   getDefaultMeetingBotAvatarJpegBase64,
@@ -15,6 +16,7 @@ const {
   requireCurrentUser,
 } = vi.hoisted(() => ({
   canManageTeamSettings: vi.fn(),
+  getProviderBillingOverview: vi.fn(),
   getWorkspace: vi.fn(),
   getWorkspaceAccessSummary: vi.fn(),
   getDefaultMeetingBotAvatarJpegBase64: vi.fn(),
@@ -58,10 +60,16 @@ vi.mock("@/lib/meeting-bot-profile", () => ({
 
 vi.mock("@/lib/team-configuration", () => ({ getTeamConfiguration }));
 
+vi.mock("@/lib/provider-usage-queries", () => ({
+  formatUsdMicros: (value: number) => `$${(value / 1_000_000).toFixed(2)}`,
+  getProviderBillingOverview,
+}));
+
 describe("TeamSettingsPage", () => {
   afterEach(() => {
     getWorkspace.mockReset();
     canManageTeamSettings.mockReset();
+    getProviderBillingOverview.mockReset();
     getWorkspaceAccessSummary.mockReset();
     getDefaultMeetingBotAvatarJpegBase64.mockReset();
     getMeetingBotProfile.mockReset();
@@ -93,11 +101,12 @@ describe("TeamSettingsPage", () => {
     });
     canManageTeamSettings.mockResolvedValue(false);
 
-    const { default: TeamSettingsPage } = await import(
-      "@/app/settings/team/page"
-    );
+    const { default: TeamSettingsPage } =
+      await import("@/app/settings/team/page");
 
-    await expect(TeamSettingsPage()).rejects.toThrow("NEXT_REDIRECT:/dashboard");
+    await expect(TeamSettingsPage()).rejects.toThrow(
+      "NEXT_REDIRECT:/dashboard",
+    );
     expect(redirect).toHaveBeenCalledWith("/dashboard");
   });
 
@@ -157,10 +166,16 @@ describe("TeamSettingsPage", () => {
       },
       translationLanguage: "en",
     });
+    getProviderBillingOverview.mockResolvedValue({
+      creditLimitUsdMicros: 20_000_000,
+      creditRemainingUsdMicros: 12_000_000,
+      isCreditExhausted: false,
+      organizationMonthUsdMicros: 5_000_000,
+      personalMonthUsdMicros: 1_250_000,
+    });
 
-    const { default: TeamSettingsPage } = await import(
-      "@/app/settings/team/page"
-    );
+    const { default: TeamSettingsPage } =
+      await import("@/app/settings/team/page");
     const html = renderToStaticMarkup(await TeamSettingsPage());
 
     expect(html).toContain("Transcription vocabulary");
@@ -182,6 +197,12 @@ describe("TeamSettingsPage", () => {
     expect(html).toContain("alice@iosg.vc");
     expect(html).toContain("You");
     expect(html).toContain("Only team administrators can edit these settings");
+    expect(html).toContain("Billing &amp; credits");
+    expect(html).toContain("Credit remaining");
+    expect(html).toContain("$12.00");
+    expect(html).toContain("$5.00");
+    expect(html).toContain("$1.25");
+    expect(html).toContain('href="/usage"');
     expect(
       html.match(/Only team administrators can edit these settings/g),
     ).toHaveLength(1);
@@ -225,11 +246,17 @@ describe("TeamSettingsPage", () => {
       shareAudience: null,
       translationLanguage: "zh-CN",
     });
+    getProviderBillingOverview.mockResolvedValue({
+      creditLimitUsdMicros: null,
+      creditRemainingUsdMicros: null,
+      isCreditExhausted: false,
+      organizationMonthUsdMicros: 0,
+      personalMonthUsdMicros: 0,
+    });
     getDefaultMeetingBotAvatarJpegBase64.mockReturnValue("default-avatar");
 
-    const { default: TeamSettingsPage } = await import(
-      "@/app/settings/team/page"
-    );
+    const { default: TeamSettingsPage } =
+      await import("@/app/settings/team/page");
     const html = renderToStaticMarkup(await TeamSettingsPage());
 
     expect(html).toContain("Default avatar");
@@ -237,5 +264,6 @@ describe("TeamSettingsPage", () => {
     expect(html).toContain("Translate transcripts to");
     expect(html).toContain("Simplified Chinese");
     expect(html).toContain('name="translationLanguage"');
+    expect(html).toContain("No limit");
   });
 });

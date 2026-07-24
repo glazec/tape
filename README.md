@@ -65,6 +65,12 @@ Workspace members can open workspace meetings. Named users outside the workspace
 
 Legacy `/share/[token]` links remain supported, require sign in, and resolve only active, unexpired grants.
 
+### Review billing and credits
+
+Anyone with a Google account can sign in. An email domain already present in `allowed_domains` joins its existing organization workspace. Every other account receives a separate personal workspace with $5 of one time provider credit, so unrelated users on public email domains never share a workspace.
+
+Team settings shows remaining workspace credit plus current month personal and organization consumption. Billing details supports current month, previous month, trailing 90 day, and all time views. Recall.ai and ElevenLabs activity uses published duration based rates, while OpenRouter records the exact cost reported for each model response. New provider work stops when a limited workspace has consumed its credit. Work already in progress may finish, so recorded cost can slightly exceed the allowance. Organization detail stays aggregate and recent meeting activity is limited to meetings owned by the signed in user.
+
 ## Architecture
 
 | Area | Current implementation |
@@ -76,6 +82,7 @@ Legacy `/share/[token]` links remain supported, require sign in, and resolve onl
 | Cloud meeting capture | Recall.ai bots and Calendar V2 |
 | Transcription | ElevenLabs Speech to Text using `scribe_v2` |
 | Translation and live answers | OpenRouter, with optional Exa web search for live answers |
+| Provider usage accounting | Idempotent per meeting cost events with personal and organization summaries |
 | Background work | Self hosted Inngest on Railway for transcription, scheduling, translation, reminders, and repair |
 | Screen share extraction | A Railway Node worker using ffmpeg and ffprobe |
 | Notifications | Optional OneSignal browser and mobile push |

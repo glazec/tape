@@ -232,6 +232,20 @@
       "when": 1785400000000,
       "tag": "0032_tiresome_hardball",
       "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1785500000000,
+      "tag": "0033_robust_ego",
+      "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1785600000000,
+      "tag": "0034_kind_randall",
+      "breakpoints": true
     }
   ]
 }

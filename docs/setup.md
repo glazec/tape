@@ -93,7 +93,9 @@ Run migrations before deploying code that depends on new tables, columns, indexe
 npm run dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000). Google sign in must already be configured in Neon Auth.
+Open [http://localhost:3000](http://localhost:3000). Google sign in must already be configured in Neon Auth. To accept public registrations, configure the Google provider to allow accounts outside the organization.
+
+Domains already present in `allowed_domains` join their existing organization workspace and have no Tape credit ceiling. Unknown accounts receive isolated personal workspaces with $5 of provider credit. Do not rely on the first sign in to bootstrap an organization domain; insert the intended domain and team association explicitly before inviting organization members.
 
 ## Public callbacks
 

@@ -24,6 +24,8 @@ Turn meetings into dependable team memory. Success means colleagues can understa
 6. Review synchronized audio, transcript, speakers, translation, and captured screen share images.
 7. Export transcript text, audio, and meeting images.
 8. Share a transcript with workspace members or named external colleagues.
+9. Review remaining workspace credit and personal or organization provider consumption across useful time periods from Team settings.
+10. Start a personal workspace with any Google account and use up to $5 of included provider credit.
 
 ## Brand Personality
 
@@ -51,6 +53,8 @@ Dense administration panels, exposed implementation identifiers, decorative anal
 4. Search, sharing, correction, and export work without exposing provider details.
 5. Shared only users see only explicitly granted content and no owner actions.
 6. Automated tests cover the web app, browser flows, macOS recorder, sidecar, and MCP server.
+7. Cost summaries separate exact provider charges from published rate estimates without exposing another member's meeting details.
+8. Public accounts receive isolated personal workspaces, while configured organization domains keep their shared workspace and unlimited credit.
 
 ## Not Product Goals
 

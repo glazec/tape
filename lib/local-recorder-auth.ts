@@ -1,7 +1,11 @@
-import { and, eq, gt, isNull } from "drizzle-orm";
+import { and, eq, gt, isNull, sql } from "drizzle-orm";
 
 import { db } from "@/db/client";
-import { localRecorderDeviceSessions, teamMemberships } from "@/db/schema";
+import {
+  localRecorderDeviceSessions,
+  teamMemberships,
+  teams,
+} from "@/db/schema";
 import { SharedOnlyAccessError } from "@/lib/access-errors";
 import { getCurrentUser } from "@/lib/auth";
 import {
@@ -25,6 +29,11 @@ export async function getLocalRecorderWorkspace(
   const tokenHash = await hashLocalRecorderSecret(bearerToken);
   const [session] = await db
     .select({
+      creditLimitUsdMicros: sql<number | null>`(
+        select ${teams.creditLimitUsdMicros}
+        from ${teams}
+        where ${teams.id} = ${localRecorderDeviceSessions.teamId}
+      )`,
       role: teamMemberships.role,
       teamId: localRecorderDeviceSessions.teamId,
       userId: localRecorderDeviceSessions.userId,
@@ -47,8 +56,9 @@ export async function getLocalRecorderWorkspace(
     .limit(1);
 
   return session && session.role !== "external"
-    ? {
+      ? {
         canCreateMeetings: true,
+        creditLimitUsdMicros: session.creditLimitUsdMicros,
         domain: "",
         teamId: session.teamId,
         userId: session.userId,

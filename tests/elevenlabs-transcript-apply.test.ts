@@ -26,6 +26,10 @@ vi.mock("@/lib/vendors/twenty", () => ({
   getTwentyCrmCompanyDomains: vi.fn().mockResolvedValue([]),
 }));
 
+vi.mock("@/lib/provider-usage", () => ({
+  recordElevenLabsTranscriptUsage: vi.fn(),
+}));
+
 describe("applyElevenLabsTranscriptEvent", () => {
   afterEach(() => {
     select.mockReset();

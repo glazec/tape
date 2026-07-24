@@ -1,6 +1,8 @@
+import Link from "next/link";
 import { redirect } from "next/navigation";
 
 import { AppShell } from "@/components/app-shell";
+import { Button, buttonVariants } from "@/components/ui/button";
 import {
   Card,
   CardContent,
@@ -9,7 +11,6 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { Button } from "@/components/ui/button";
 import {
   Select,
   SelectContent,
@@ -26,8 +27,13 @@ import {
   getDefaultMeetingBotAvatarJpegBase64,
   getMeetingBotProfile,
 } from "@/lib/meeting-bot-profile";
+import {
+  formatUsdMicros,
+  getProviderBillingOverview,
+} from "@/lib/provider-usage-queries";
 import { getTeamConfiguration } from "@/lib/team-configuration";
 import { listTeamVocabularyTerms } from "@/lib/team-vocabulary";
+import { cn } from "@/lib/utils";
 import {
   canManageTeamSettings,
   getOrCreateWorkspaceForSessionUser,
@@ -52,12 +58,14 @@ export default async function TeamSettingsPage() {
     botProfile,
     teamConfiguration,
     teamMembers,
+    billingOverview,
   ] = await Promise.all([
     canManageTeamSettings(workspace),
     listTeamVocabularyTerms(workspace.teamId),
     getMeetingBotProfile(workspace.teamId),
     getTeamConfiguration(workspace.teamId),
     listWorkspaceMembers(workspace),
+    getProviderBillingOverview(workspace),
   ]);
   const botAvatarJpegBase64 =
     botProfile.avatarJpegBase64 ?? getDefaultMeetingBotAvatarJpegBase64();
@@ -82,6 +90,57 @@ export default async function TeamSettingsPage() {
             </p>
           ) : null}
         </div>
+        <Card className="overflow-hidden">
+          <CardHeader className="gap-4 sm:flex-row sm:items-start sm:justify-between">
+            <div>
+              <CardTitle>Billing &amp; credits</CardTitle>
+              <CardDescription className="mt-1">
+                Workspace credit and provider consumption for the current month.
+              </CardDescription>
+            </div>
+            <Link
+              className={cn(
+                buttonVariants({ variant: "outline" }),
+                "min-h-11 self-start sm:min-h-8",
+              )}
+              href="/usage"
+            >
+              View billing details
+            </Link>
+          </CardHeader>
+          <CardContent>
+            <dl className="grid overflow-hidden rounded-lg border sm:grid-cols-3">
+              <BillingSettingMetric
+                label="Credit remaining"
+                value={
+                  billingOverview.creditLimitUsdMicros === null
+                    ? "No limit"
+                    : formatUsdMicros(
+                        billingOverview.creditRemainingUsdMicros ?? 0,
+                      )
+                }
+              />
+              <BillingSettingMetric
+                className="border-t sm:border-t-0 sm:border-l"
+                label="Workspace this month"
+                value={formatUsdMicros(
+                  billingOverview.organizationMonthUsdMicros,
+                )}
+              />
+              <BillingSettingMetric
+                className="border-t sm:border-t-0 sm:border-l"
+                label="You this month"
+                value={formatUsdMicros(billingOverview.personalMonthUsdMicros)}
+              />
+            </dl>
+            {billingOverview.isCreditExhausted ? (
+              <p className="mt-3 text-sm text-destructive">
+                New provider work is paused because the workspace has used its
+                credit.
+              </p>
+            ) : null}
+          </CardContent>
+        </Card>
         <Card>
           <CardHeader>
             <CardTitle>Workspace defaults</CardTitle>
@@ -404,5 +463,24 @@ export default async function TeamSettingsPage() {
         </details>
       </section>
     </AppShell>
+  );
+}
+
+function BillingSettingMetric({
+  className,
+  label,
+  value,
+}: {
+  className?: string;
+  label: string;
+  value: string;
+}) {
+  return (
+    <div className={cn("p-4", className)}>
+      <dt className="text-xs text-muted-foreground">{label}</dt>
+      <dd className="mt-2 font-mono text-lg font-semibold tabular-nums">
+        {value}
+      </dd>
+    </div>
   );
 }

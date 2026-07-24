@@ -1,5 +1,6 @@
 import { sql } from "drizzle-orm";
 import {
+  bigint,
   boolean,
   check,
   index,
@@ -74,6 +75,9 @@ export const teams = pgTable(
   {
     id: uuid("id").primaryKey().defaultRandom(),
     name: text("name").notNull(),
+    creditLimitUsdMicros: bigint("credit_limit_usd_micros", {
+      mode: "number",
+    }),
     translationLanguage: text("translation_language")
       .$type<"zh-CN" | "en">()
       .notNull()
@@ -86,6 +90,10 @@ export const teams = pgTable(
     ...timestamps,
   },
   (table) => [
+    check(
+      "teams_credit_limit_nonnegative",
+      sql`${table.creditLimitUsdMicros} is null or ${table.creditLimitUsdMicros} >= 0`,
+    ),
     check(
       "teams_translation_language_check",
       sql`${table.translationLanguage} in ('zh-CN', 'en')`,
@@ -807,6 +815,9 @@ export const transcriptJobs = pgTable(
     provider: text("provider").notNull().default("elevenlabs"),
     mode: transcriptMode("mode").notNull().default("replace"),
     providerJobId: text("provider_job_id"),
+    billingKeytermsUsed: boolean("billing_keyterms_used")
+      .notNull()
+      .default(false),
     status: jobStatus("status").notNull().default("queued"),
     errorMessage: text("error_message"),
     ...timestamps,
@@ -825,6 +836,61 @@ export const transcriptJobs = pgTable(
     index("transcript_jobs_meeting_created_index").on(
       table.meetingId,
       table.createdAt,
+    ),
+  ],
+);
+
+export const providerUsageEvents = pgTable(
+  "provider_usage_events",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    teamId: uuid("team_id")
+      .notNull()
+      .references(() => teams.id, { onDelete: "cascade" }),
+    userId: uuid("user_id").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    meetingId: uuid("meeting_id").references(() => meetings.id, {
+      onDelete: "set null",
+    }),
+    provider: text("provider").notNull(),
+    category: text("category").notNull(),
+    operation: text("operation").notNull(),
+    idempotencyKey: text("idempotency_key").notNull(),
+    quantity: integer("quantity").notNull(),
+    unit: text("unit").notNull(),
+    costUsdMicros: bigint("cost_usd_micros", { mode: "number" }).notNull(),
+    costSource: text("cost_source").notNull(),
+    model: text("model"),
+    metadata: jsonb("metadata")
+      .$type<Record<string, unknown>>()
+      .notNull()
+      .default({}),
+    occurredAt: timestamp("occurred_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    ...timestamps,
+  },
+  (table) => [
+    uniqueIndex("provider_usage_events_idempotency_unique").on(
+      table.idempotencyKey,
+    ),
+    index("provider_usage_events_team_occurred_index").on(
+      table.teamId,
+      table.occurredAt,
+    ),
+    index("provider_usage_events_user_occurred_index").on(
+      table.userId,
+      table.occurredAt,
+    ),
+    index("provider_usage_events_meeting_index").on(table.meetingId),
+    check(
+      "provider_usage_events_quantity_nonnegative",
+      sql`${table.quantity} >= 0`,
+    ),
+    check(
+      "provider_usage_events_cost_nonnegative",
+      sql`${table.costUsdMicros} >= 0`,
     ),
   ],
 );
