@@ -16,6 +16,8 @@ Tape tests each runtime at the boundary where its behavior can regress. Provider
 
 Playwright starts an isolated Next.js development server on port 3100 unless `PLAYWRIGHT_BASE_URL` points to an existing deployment.
 
+The page load smoke suite discovers every `app/**/page.tsx` route, including Billing and credits, and rejects server errors. Billing and credits also has a direct authenticated rendering test, while the migration integrity job executes its required ledger queries after replaying all migrations.
+
 ## Release Gates
 
 The portable gate runs lint, Vitest coverage, the production build, sidecar tests, and MCP tests:
