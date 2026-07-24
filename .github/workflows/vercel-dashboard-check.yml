@@ -4,6 +4,7 @@ on:
   repository_dispatch:
     types:
       - vercel.deployment.ready
+      - vercel.deployment.promoted
 
 permissions:
   contents: read
@@ -12,6 +13,7 @@ permissions:
 jobs:
   dashboard:
     name: Dashboard readiness
+    if: github.event.action == 'vercel.deployment.ready'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -22,16 +24,6 @@ jobs:
           curl --fail --show-error --silent
           --retry 5 --retry-all-errors --retry-delay 5
           "${DEPLOYMENT_URL%/}/api/health/dashboard"
-
-      - name: Sync self hosted Inngest functions
-        if: github.event.client_payload.environment == 'production'
-        env:
-          DEPLOYMENT_URL: ${{ github.event.client_payload.url }}
-        run: >-
-          curl --fail --show-error --silent
-          --retry 5 --retry-all-errors --retry-delay 5
-          --request PUT
-          "${DEPLOYMENT_URL%/}/api/inngest"
 
       - name: Set Vercel status pending
         if: always()
@@ -67,3 +59,27 @@ jobs:
             -f "state=${state}" \
             -f "context=${STATUS_CONTEXT}" \
             -f "target_url=${STATUS_TARGET_URL}"
+
+  inngest:
+    name: Production Inngest sync
+    if: >-
+      github.event.action == 'vercel.deployment.promoted' &&
+      github.event.client_payload.environment == 'production'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Sync self hosted Inngest functions
+        env:
+          PRODUCTION_URL: https://tape.inevitable.tech
+        shell: bash
+        run: |
+          set -euo pipefail
+          response="$(
+            curl --fail --show-error --silent \
+              --retry 5 --retry-all-errors --retry-delay 5 \
+              --request PUT \
+              "${PRODUCTION_URL%/}/api/inngest"
+          )"
+          jq --exit-status \
+            '.message == "Successfully registered" and (.modified | type == "boolean")' \
+            <<<"$response"
