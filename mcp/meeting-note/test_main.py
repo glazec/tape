@@ -1,6 +1,95 @@
 import unittest
+from unittest.mock import AsyncMock, patch
 
 import main
+
+
+class ApiKeyAuthenticationTests(unittest.IsolatedAsyncioTestCase):
+    def setUp(self):
+        main._apikey_pool = None
+        self.provider = main.GoogleOrApiKeyProvider(
+            client_id="test-client",
+            client_secret="test-secret",
+            base_url="https://mcp.example.com",
+            required_scopes=["openid"],
+            jwt_signing_key="x" * 32,
+        )
+
+    async def test_shared_api_key_resolves_before_google_oauth(self):
+        identity = {
+            "sub": "apikey:agent@example.com",
+            "email": "agent@example.com",
+            "name": "Agent",
+        }
+
+        with patch.object(
+            main,
+            "_resolve_api_key",
+            AsyncMock(return_value=identity),
+        ):
+            token = await self.provider.verify_token("sk_mcp_test")
+
+        self.assertIsNotNone(token)
+        self.assertEqual(token.client_id, "api-key")
+        self.assertEqual(token.scopes, ["openid"])
+        self.assertEqual(token.claims["email"], identity["email"])
+
+    async def test_non_api_key_falls_back_to_google_oauth(self):
+        oauth_token = main.AccessToken(
+            token="oauth-token",
+            client_id="google-client",
+            scopes=["openid"],
+        )
+
+        with patch.object(
+            main.GoogleProvider,
+            "verify_token",
+            AsyncMock(return_value=oauth_token),
+        ) as verify_google:
+            token = await self.provider.verify_token("oauth-token")
+
+        self.assertIs(token, oauth_token)
+        verify_google.assert_awaited_once_with("oauth-token")
+
+    async def test_invalid_shared_api_key_fails_closed(self):
+        with (
+            patch.object(
+                main,
+                "_resolve_api_key",
+                AsyncMock(return_value=None),
+            ),
+            patch.object(
+                main.GoogleProvider,
+                "verify_token",
+                AsyncMock(),
+            ) as verify_google,
+        ):
+            token = await self.provider.verify_token("sk_mcp_invalid")
+
+        self.assertIsNone(token)
+        verify_google.assert_not_awaited()
+
+    async def test_database_error_fails_api_key_closed(self):
+        class FailingConnection:
+            async def __aenter__(self):
+                raise RuntimeError("database unavailable")
+
+            async def __aexit__(self, exc_type, exc, traceback):
+                return False
+
+        class FailingPool:
+            def acquire(self):
+                return FailingConnection()
+
+        main._apikey_pool = FailingPool()
+        with patch.object(
+            main,
+            "APIKEY_DATABASE_URL",
+            "postgresql://example",
+        ):
+            token = await main._resolve_api_key("sk_mcp_example")
+
+        self.assertIsNone(token)
 
 
 class OAuthConfigurationTests(unittest.TestCase):

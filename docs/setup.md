@@ -66,6 +66,7 @@ REST API key are configured.
 | Feature | Variables |
 | --- | --- |
 | Google Calendar OAuth | `GOOGLE_CALENDAR_CLIENT_ID`, `GOOGLE_CALENDAR_CLIENT_SECRET` |
+| Tape MCP shared API keys | `APIKEY_DATABASE_URL` |
 | Explicit Neon Auth base URL | `NEON_AUTH_BASE_URL` |
 | Public R2 media URL | `R2_PUBLIC_BASE_URL` |
 | Admin access | `APP_ADMIN_EMAILS` |

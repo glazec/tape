@@ -14,6 +14,8 @@ from urllib.parse import urlparse
 from uuid import UUID
 import asyncio
 import atexit
+import hashlib
+import logging
 import os
 import re
 
@@ -39,6 +41,8 @@ from psycopg.rows import dict_row
 from sqlglot import exp
 from sqlglot.errors import ParseError
 
+logger = logging.getLogger(__name__)
+
 SERVICE_NAME = "meeting-note-mcp"
 DISABLE_AUTH = os.environ.get("DISABLE_AUTH", "false").strip().lower() in {
     "1",
@@ -51,6 +55,8 @@ MCP_ALLOW_DEV_AUTH = os.environ.get("MCP_ALLOW_DEV_AUTH", "false").strip().lower
     "yes",
 }
 DATABASE_URL = os.environ.get("DATABASE_URL", "").strip()
+APIKEY_DATABASE_URL = os.environ.get("APIKEY_DATABASE_URL", "").strip()
+_apikey_pool = None
 APP_BASE_URL = os.environ.get("APP_BASE_URL", "").strip().rstrip("/")
 DEFAULT_MCP_HOST = "0.0.0.0" if os.environ.get("PORT") else "127.0.0.1"
 MCP_HOST = os.environ.get("MCP_HOST", DEFAULT_MCP_HOST).strip() or DEFAULT_MCP_HOST
@@ -510,6 +516,78 @@ def _claim_value(claims: dict[str, Any], key: str) -> str | None:
     return None
 
 
+async def _resolve_api_key(token: str) -> dict[str, Any] | None:
+    if not APIKEY_DATABASE_URL or not token.startswith("sk_mcp_"):
+        return None
+
+    try:
+        import asyncpg
+    except ImportError:
+        logger.warning("asyncpg is required when APIKEY_DATABASE_URL is set")
+        return None
+
+    global _apikey_pool
+    if _apikey_pool is None:
+        try:
+            _apikey_pool = await asyncpg.create_pool(
+                APIKEY_DATABASE_URL,
+                min_size=1,
+                max_size=5,
+            )
+        except Exception as exc:
+            logger.warning("API key DB pool failed: %s", exc)
+            return None
+
+    try:
+        async with _apikey_pool.acquire() as connection:
+            row = await connection.fetchrow(
+                """
+                UPDATE api_keys
+                SET last_used_at = now()
+                WHERE key_hash = $1
+                  AND revoked_at IS NULL
+                  AND (expires_at IS NULL OR expires_at > now())
+                RETURNING user_sub, user_email, user_name, scopes
+                """,
+                hashlib.sha256(token.encode()).hexdigest(),
+            )
+    except Exception as exc:
+        logger.warning("API key DB lookup failed: %s", exc)
+        return None
+
+    if not row:
+        return None
+    return {
+        "sub": row["user_sub"],
+        "email": row["user_email"],
+        "name": row["user_name"] or "Agent",
+        "scopes": row["scopes"] or [],
+    }
+
+
+class GoogleOrApiKeyProvider(GoogleProvider):
+    """Use shared MCP API keys first and Google OAuth for other tokens."""
+
+    async def verify_token(self, token: str) -> AccessToken | None:
+        if token.startswith("sk_mcp_"):
+            resolved = await _resolve_api_key(token)
+            if not resolved:
+                return None
+            return AccessToken(
+                token=token,
+                client_id="api-key",
+                scopes=self.required_scopes,
+                expires_at=None,
+                claims={
+                    "sub": resolved["sub"],
+                    "email": resolved["email"],
+                    "name": resolved["name"],
+                    "picture": None,
+                },
+            )
+        return await super().verify_token(token)
+
+
 class NeonAuthJWTVerifier(TokenVerifier):
     """Verify Neon Auth bearer JWTs with the configured JWKS and issuer."""
 
@@ -615,7 +693,7 @@ def _build_auth_provider() -> AuthProvider | None:
         )
 
     base_url = _mcp_base_url()
-    google_provider = GoogleProvider(
+    google_provider = GoogleOrApiKeyProvider(
         client_id=GOOGLE_CLIENT_ID,
         client_secret=GOOGLE_CLIENT_SECRET,
         base_url=base_url,
@@ -1328,7 +1406,9 @@ async def get_user_info() -> dict[str, Any]:
     """Return the authenticated MCP user."""
     claims = _current_user_claims()
     return {
-        "auth_provider": "disabled" if DISABLE_AUTH else "oauth_or_neon_auth",
+        "auth_provider": (
+            "disabled" if DISABLE_AUTH else "api_key_or_oauth_or_neon_auth"
+        ),
         "auth_id": _claim_value(claims, "sub"),
         "email": _claim_value(claims, "email"),
         "name": _claim_value(claims, "name"),

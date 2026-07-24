@@ -28,6 +28,6 @@ npm run test:mcp
 
 Deploy the MCP and image worker as separate services in one Railway project named `tape`. This keeps the MCP OAuth volume attached to the MCP service while the stateless image worker can sleep and scale independently.
 
-Keep `DISABLE_AUTH=false`. Configure `MCP_BASE_URL`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `FASTMCP_JWT_SIGNING_KEY`, `OAUTH_STORAGE_PATH`, `NEON_AUTH_JWKS_URL`, `NEON_AUTH_ISSUER`, `DATABASE_URL`, and `APP_BASE_URL`. Use a least privilege read only database role.
+Keep `DISABLE_AUTH=false`. Configure `MCP_BASE_URL`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `FASTMCP_JWT_SIGNING_KEY`, `OAUTH_STORAGE_PATH`, `NEON_AUTH_JWKS_URL`, `NEON_AUTH_ISSUER`, `DATABASE_URL`, and `APP_BASE_URL`. Set `APIKEY_DATABASE_URL` to the shared Neon database containing the `api_keys` table. Use a least privilege read only database role for meeting data.
 
-Add `https://<mcp-domain>/auth/callback` to the Google OAuth client. Set `NEON_AUTH_AUDIENCE` only when Neon Auth JWTs include a known audience claim. Interactive MCP clients use OAuth; direct bearer clients may send a Neon Auth JWT in the `Authorization: Bearer ...` header.
+Add `https://<mcp-domain>/auth/callback` to the Google OAuth client. Set `NEON_AUTH_AUDIENCE` only when Neon Auth JWTs include a known audience claim. Shared `sk_mcp_` bearer keys are resolved first. Requests without a shared key use Google OAuth, and direct bearer clients may still send a Neon Auth JWT.
