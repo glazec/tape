@@ -7,8 +7,6 @@ import Link from "next/link";
 
 const HeroScene = dynamic(() => import("./hero-scene"), { ssr: false });
 
-const EASE = [0.16, 1, 0.3, 1] as const;
-
 function usePrefersReducedMotion() {
   return useSyncExternalStore(
     (onChange) => {
@@ -75,39 +73,19 @@ export function LandingHero() {
           className="pointer-events-none relative mx-auto flex h-full w-full max-w-7xl items-center px-5 pb-24 pt-32 sm:px-8"
         >
           <div className="pointer-events-auto max-w-2xl">
-            <motion.p
-              initial={{ opacity: 0, y: 16 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.7, ease: EASE }}
-              className="font-mono text-[11px] uppercase tracking-[0.22em] text-brand"
-            >
+            <p className="font-mono text-[11px] uppercase tracking-[0.22em] text-brand">
               Tape · Meeting intelligence, owned by you
-            </motion.p>
-            <motion.h1
-              initial={{ opacity: 0, y: 24 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.8, delay: 0.08, ease: EASE }}
-              className="font-display mt-7 text-6xl leading-[1.02] tracking-tight text-ink sm:text-7xl lg:text-[4.1rem]"
-            >
+            </p>
+            <h1 className="font-display mt-7 text-6xl leading-[1.02] tracking-tight text-ink sm:text-7xl lg:text-[4.1rem]">
               Every conversation,
               <br />
               <em className="italic text-brand">on the record.</em>
-            </motion.h1>
-            <motion.p
-              initial={{ opacity: 0, y: 24 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.8, delay: 0.16, ease: EASE }}
-              className="mt-7 max-w-[44ch] text-lg leading-8 text-ash"
-            >
+            </h1>
+            <p className="mt-7 max-w-[44ch] text-lg leading-8 text-ash">
               Tape records, transcribes, and understands your meetings — and you
               own every word. Search it on the web, or ask your AI assistant.
-            </motion.p>
-            <motion.div
-              initial={{ opacity: 0, y: 24 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.8, delay: 0.24, ease: EASE }}
-              className="mt-10 flex flex-wrap items-center gap-7"
-            >
+            </p>
+            <div className="mt-10 flex flex-wrap items-center gap-7">
               <Link
                 href="/auth/sign-in"
                 className="inline-flex h-12 items-center rounded-full bg-ink px-8 text-[15px] font-medium text-paper transition-colors hover:bg-graphite"
@@ -120,7 +98,7 @@ export function LandingHero() {
               >
                 See how it works
               </a>
-            </motion.div>
+            </div>
           </div>
         </motion.div>
 
