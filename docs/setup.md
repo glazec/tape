@@ -235,13 +235,48 @@ PORT=8080
 INNGEST_UPSTREAM=http://inngest.railway.internal:8288
 DASHBOARD_USERNAME
 DASHBOARD_PASSWORD_HASH
+SESSION_SECRET
+MCP_AUTH_TOKEN_HASH
+MCP_URL_TOKEN_HASH
 ```
 
 Generate `DASHBOARD_PASSWORD_HASH` with `htpasswd -niB USERNAME`, then keep the
-plaintext password in a password manager. Assign the generated public Railway
-domain to the gateway on port `8080`. The gateway leaves health, event, function
-registration, and signed SDK API routes available while requiring HTTP Basic
-authentication for the dashboard and GraphQL API.
+plaintext password in a password manager. Set `SESSION_SECRET` to at least 32
+random bytes. Generate a separate MCP bearer token, store only its SHA 256
+digest in `MCP_AUTH_TOKEN_HASH`, and keep the token in the MCP client's secret
+configuration. For Claude custom connectors, generate a second independent
+token and store only its SHA 256 digest in `MCP_URL_TOKEN_HASH`. Assign the
+generated public Railway domain to the gateway on port `8080`. The gateway
+leaves health, event, function registration, and signed SDK API routes available
+while requiring a seven day secure cookie session for the dashboard and GraphQL
+API.
+
+Configure MCP clients with the exact bare endpoint and bearer header:
+
+```text
+URL=https://your-inngest-gateway.example/mcp
+Authorization=Bearer YOUR_MCP_TOKEN
+```
+
+Do not use `/mcp/` with a trailing slash. The gateway consumes the bearer token
+and does not forward it to the private Inngest engine.
+
+Claude custom connectors do not provide an arbitrary header field. Configure
+Claude with the separate URL token:
+
+```text
+URL=https://your-inngest-gateway.example/mcp?accessToken=YOUR_MCP_URL_TOKEN
+```
+
+Treat the complete URL as a secret. URL credentials can appear in client and
+edge request logs. The gateway removes `accessToken` before proxying, disables
+response caching, and keeps this credential separate so it can be rotated
+without invalidating bearer clients. Never reuse the dashboard password,
+Inngest signing key, or bearer token here.
+
+The gateway returns `404` for OAuth discovery and dynamic registration routes.
+This prevents Claude from mistaking the dashboard login page for an MCP OAuth
+service after the URL token has already authenticated the MCP request.
 
 Port `8289` is only needed if a future service uses Inngest Connect.
 
