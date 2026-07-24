@@ -54,18 +54,24 @@ describe("OnboardingTutorial", () => {
     expect(html).toContain(
       "https://github.com/glazec/tape/blob/main/docs/meeting-note-mcp-api.md",
     );
-    expect(html).toContain("Show MCP setup");
+    expect(html).toContain("MCP setup instructions");
     expect(html).toContain("Streamable HTTP");
     expect(html).toContain(
       "https://meeting-note-mcp-production.up.railway.app/mcp",
     );
-    expect(html).toContain("Copy address");
+    expect(html).toContain("Copy MCP server link");
     expect(html).toContain(
       'href="https://github.com/glazec/tape/releases/download/mac-v0.2.0/MeetingNoteLocalRecorder-0.2.0.zip"',
     );
-    expect(html).toContain("Download for macOS");
-    expect(html).toContain("Show macOS setup");
+    expect(html).toContain("Download app");
+    expect(html).toContain("macOS setup instructions");
     expect(html).toContain("xattr -dr com.apple.quarantine");
+    expect(html.indexOf("Copy MCP server link")).toBeLessThan(
+      html.indexOf("MCP server link</p>"),
+    );
+    expect(html.indexOf("MCP server link</p>")).toBeLessThan(
+      html.indexOf("MCP setup instructions"),
+    );
   });
 
   it("marks the calendar step complete only when capture is operational", () => {

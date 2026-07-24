@@ -68,7 +68,7 @@ export function OnboardingTutorial({
                   Calendar connected
                 </p>
               ) : (
-                <div className="[&_button]:min-h-11 sm:[&_button]:min-h-8">
+                <div className="[&_button]:min-h-11 [&_button]:w-full sm:[&_button]:min-h-8 sm:[&_button]:w-auto">
                   <CalendarSyncButton
                     autoSync={autoSyncCalendar}
                     connected={calendarStatus.connected}
@@ -93,9 +93,11 @@ export function OnboardingTutorial({
             title="Get the desktop app"
           />
           <OnboardingStep
+            action={<CopyMcpAddressButton address={MCP_SERVER_URL} />}
             description="Let Claude, Cursor, and other assistants search meetings you can access."
             details={<McpSetupSteps />}
             number={3}
+            supporting={<McpServerAddress />}
             title="Connect the MCP server"
           />
         </ol>
@@ -109,16 +111,18 @@ function OnboardingStep({
   description,
   details,
   number,
+  supporting,
   title,
 }: {
   action?: ReactNode;
   description: string;
   details?: ReactNode;
   number: number;
+  supporting?: ReactNode;
   title: string;
 }) {
   return (
-    <li className="grid gap-4 px-5 py-5 sm:grid-cols-[2.75rem_minmax(0,1fr)_auto] sm:items-center sm:px-6">
+    <li className="grid grid-cols-[2.75rem_minmax(0,1fr)] gap-x-4 gap-y-3 px-5 py-5 sm:grid-cols-[2.75rem_minmax(0,1fr)_auto] sm:items-start sm:px-6">
       <div
         aria-hidden="true"
         className="flex size-11 items-center justify-center rounded-full bg-primary/10 text-base font-semibold text-primary"
@@ -130,10 +134,17 @@ function OnboardingStep({
         <p className="mt-1 max-w-2xl leading-6 text-muted-foreground">
           {description}
         </p>
-        {details}
       </div>
       {action ? (
-        <div className="justify-self-start sm:justify-self-end">{action}</div>
+        <div className="col-start-2 w-full sm:col-start-3 sm:row-start-1 sm:w-auto sm:justify-self-end">
+          {action}
+        </div>
+      ) : null}
+      {supporting ? (
+        <div className="col-start-2 min-w-0 sm:col-span-2">{supporting}</div>
+      ) : null}
+      {details ? (
+        <div className="col-start-2 min-w-0 sm:col-span-2">{details}</div>
       ) : null}
     </li>
   );
@@ -143,29 +154,29 @@ function DesktopDownloadLink() {
   return (
     <a
       className={cn(
-        buttonVariants({ variant: "outline" }),
-        "min-h-11 sm:min-h-8",
+        buttonVariants({ variant: "default" }),
+        "min-h-11 w-full sm:min-h-8 sm:w-auto",
       )}
       href={MAC_APP_DOWNLOAD_URL}
     >
-      Download for macOS
+      Download app
     </a>
   );
 }
 
 function DesktopSetupSteps() {
   return (
-    <details className="group mt-3">
+    <details className="group">
       <summary
         className={cn(
-          buttonVariants({ variant: "outline" }),
-          "min-h-11 w-fit cursor-pointer list-none sm:min-h-8 [&::-webkit-details-marker]:hidden",
+          buttonVariants({ variant: "ghost", size: "sm" }),
+          "min-h-11 w-fit cursor-pointer list-none text-muted-foreground sm:min-h-8 [&::-webkit-details-marker]:hidden",
         )}
       >
-        Show macOS setup
+        macOS setup instructions
         <ChevronDown className="transition-transform group-open:rotate-180" />
       </summary>
-      <ol className="mt-3 max-w-xl space-y-2 text-sm leading-6 text-muted-foreground">
+      <ol className="mt-2 max-w-xl space-y-2 text-sm leading-6 text-muted-foreground">
         <li>1. Download and unzip the app.</li>
         <li>
           2. Move <code>MeetingNoteLocalRecorder.app</code> to Applications.
@@ -187,28 +198,30 @@ function DesktopSetupSteps() {
   );
 }
 
-function McpSetupSteps() {
+function McpServerAddress() {
   return (
-    <details className="group mt-3">
-      <summary
-        className={cn(
-          buttonVariants({ variant: "outline" }),
-          "min-h-11 w-fit cursor-pointer list-none sm:min-h-8 [&::-webkit-details-marker]:hidden",
-        )}
-      >
-        Show MCP setup
-        <ChevronDown className="transition-transform group-open:rotate-180" />
-      </summary>
-      <p className="mt-3 text-sm font-medium text-foreground">
-        Tape MCP address
-      </p>
+    <>
+      <p className="text-sm font-medium text-foreground">MCP server link</p>
       <code className="mt-1 block max-w-xl select-all overflow-x-auto rounded-md bg-muted px-2 py-2 text-xs text-foreground">
         {MCP_SERVER_URL}
       </code>
-      <div className="mt-2">
-        <CopyMcpAddressButton address={MCP_SERVER_URL} />
-      </div>
-      <ol className="mt-3 max-w-xl space-y-2 text-sm leading-6 text-muted-foreground">
+    </>
+  );
+}
+
+function McpSetupSteps() {
+  return (
+    <details className="group">
+      <summary
+        className={cn(
+          buttonVariants({ variant: "ghost", size: "sm" }),
+          "min-h-11 w-fit cursor-pointer list-none text-muted-foreground sm:min-h-8 [&::-webkit-details-marker]:hidden",
+        )}
+      >
+        MCP setup instructions
+        <ChevronDown className="transition-transform group-open:rotate-180" />
+      </summary>
+      <ol className="mt-2 max-w-xl space-y-2 text-sm leading-6 text-muted-foreground">
         <li>
           1. Add a custom Streamable HTTP server named Tape in your AI
           client&apos;s MCP or connector settings.

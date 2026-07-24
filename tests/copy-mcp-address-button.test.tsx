@@ -16,7 +16,9 @@ describe("CopyMcpAddressButton", () => {
   it("copies the MCP address and confirms success", async () => {
     render(<CopyMcpAddressButton address="https://mcp.example.com/mcp" />);
 
-    fireEvent.click(screen.getByRole("button", { name: "Copy address" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: "Copy MCP server link" }),
+    );
 
     expect(await screen.findByText("MCP address copied.")).toBeTruthy();
     expect(navigator.clipboard.writeText).toHaveBeenCalledWith(
@@ -31,13 +33,18 @@ describe("CopyMcpAddressButton", () => {
     );
     render(<CopyMcpAddressButton address="https://mcp.example.com/mcp" />);
 
-    fireEvent.click(screen.getByRole("button", { name: "Copy address" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: "Copy MCP server link" }),
+    );
 
     expect(
       await screen.findByText("Could not copy the MCP address."),
     ).toBeTruthy();
     expect(
-      screen.getByRole("button", { name: "Could not copy" }),
+      screen.getByRole("button", { name: "Try again" }),
+    ).toBeTruthy();
+    expect(
+      screen.getByText("Could not copy. Select the link below."),
     ).toBeTruthy();
   });
 });

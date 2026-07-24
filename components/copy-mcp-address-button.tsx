@@ -18,21 +18,24 @@ export function CopyMcpAddressButton({ address }: { address: string }) {
   }
 
   return (
-    <>
+    <div className="w-full sm:w-auto">
       <Button
-        className="min-h-11 sm:min-h-8"
+        className="min-h-11 w-full sm:min-h-8 sm:w-auto"
         onClick={copyAddress}
-        size="sm"
         type="button"
-        variant="outline"
       >
         {status === "copied" ? <Check /> : <Copy />}
         {status === "copied"
           ? "Copied"
           : status === "failed"
-            ? "Could not copy"
-            : "Copy address"}
+            ? "Try again"
+            : "Copy MCP server link"}
       </Button>
+      {status === "failed" ? (
+        <p className="mt-1 max-w-56 text-xs leading-5 text-destructive">
+          Could not copy. Select the link below.
+        </p>
+      ) : null}
       <span aria-live="polite" className="sr-only">
         {status === "copied"
           ? "MCP address copied."
@@ -40,6 +43,6 @@ export function CopyMcpAddressButton({ address }: { address: string }) {
             ? "Could not copy the MCP address."
             : ""}
       </span>
-    </>
+    </div>
   );
 }
