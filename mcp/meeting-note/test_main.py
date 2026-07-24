@@ -3,6 +3,14 @@ import unittest
 import main
 
 
+class OAuthConfigurationTests(unittest.TestCase):
+    def test_allows_mintmcp_callback(self):
+        self.assertIn(
+            "https://app.mintmcp.com/oauth/callback",
+            main.ALLOWED_CLIENT_REDIRECT_URIS,
+        )
+
+
 class SqlSafetyTests(unittest.TestCase):
     def test_accepts_read_only_queries_against_public_ctes(self):
         sql = "select id, title from readable_meetings order by created_at desc"

@@ -64,6 +64,14 @@ GOOGLE_CLIENT_ID = os.environ.get("GOOGLE_CLIENT_ID", "").strip()
 GOOGLE_CLIENT_SECRET = os.environ.get("GOOGLE_CLIENT_SECRET", "").strip()
 FASTMCP_JWT_SIGNING_KEY = os.environ.get("FASTMCP_JWT_SIGNING_KEY", "").strip()
 OAUTH_STORAGE_PATH = os.environ.get("OAUTH_STORAGE_PATH", "./oauth_data").strip()
+ALLOWED_CLIENT_REDIRECT_URIS = [
+    "https://claude.ai/api/mcp/auth_callback",
+    "https://chatgpt.com/connector/oauth/*",
+    "https://chatgpt.com/connector_platform_oauth_redirect",
+    "https://app.mintmcp.com/oauth/callback",
+    "http://localhost:*",
+    "http://127.0.0.1:*",
+]
 NEON_AUTH_ALLOWED_ALGORITHMS = {
     "RS256",
     "RS384",
@@ -616,13 +624,7 @@ def _build_auth_provider() -> AuthProvider | None:
             "https://www.googleapis.com/auth/userinfo.email",
             "https://www.googleapis.com/auth/userinfo.profile",
         ],
-        allowed_client_redirect_uris=[
-            "https://claude.ai/api/mcp/auth_callback",
-            "https://chatgpt.com/connector/oauth/*",
-            "https://chatgpt.com/connector_platform_oauth_redirect",
-            "http://localhost:*",
-            "http://127.0.0.1:*",
-        ],
+        allowed_client_redirect_uris=ALLOWED_CLIENT_REDIRECT_URIS,
         redirect_path="/auth/callback",
         client_storage=_oauth_client_storage(),
         jwt_signing_key=FASTMCP_JWT_SIGNING_KEY,
