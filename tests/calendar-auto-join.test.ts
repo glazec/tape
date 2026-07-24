@@ -9,7 +9,10 @@ const {
   deleteRecallCalendarEventBot,
   deleteScheduledRecallBot,
   getMeetingBotProfile,
+  cancelLocationRemindersForMeeting,
+  hasUndispatchedLocationReminder,
   insert,
+  scheduleLocationReminder,
   scheduleRecallCalendarEventBot,
   scheduleRecallBot,
   select,
@@ -21,7 +24,10 @@ const {
   deleteRecallCalendarEventBot: vi.fn(),
   deleteScheduledRecallBot: vi.fn(),
   getMeetingBotProfile: vi.fn(),
+  cancelLocationRemindersForMeeting: vi.fn(),
+  hasUndispatchedLocationReminder: vi.fn(),
   insert: vi.fn(),
+  scheduleLocationReminder: vi.fn(),
   scheduleRecallCalendarEventBot: vi.fn(),
   scheduleRecallBot: vi.fn(),
   select: vi.fn(),
@@ -32,6 +38,12 @@ const {
 
 vi.mock("@/lib/meeting-share-rules", () => ({
   applyMeetingShareRules,
+}));
+
+vi.mock("@/lib/location-reminders", () => ({
+  cancelLocationRemindersForMeeting,
+  hasUndispatchedLocationReminder,
+  scheduleLocationReminder,
 }));
 
 vi.mock("@/lib/meeting-participant-access", () => ({
@@ -84,6 +96,11 @@ vi.mock("@/lib/meeting-bot-profile", () => ({
 
 describe("calendar auto join", () => {
   beforeEach(() => {
+    cancelLocationRemindersForMeeting.mockResolvedValue(undefined);
+    hasUndispatchedLocationReminder.mockResolvedValue(false);
+    scheduleLocationReminder.mockResolvedValue({
+      id: "66666666-6666-4666-8666-666666666666",
+    });
     applyMeetingShareRules.mockResolvedValue({ sharedCount: 0 });
     syncMeetingParticipantAccess.mockResolvedValue({
       attendeeCount: 0,
@@ -100,7 +117,10 @@ describe("calendar auto join", () => {
     deleteRecallCalendarEventBot.mockReset();
     deleteScheduledRecallBot.mockReset();
     getMeetingBotProfile.mockReset();
+    cancelLocationRemindersForMeeting.mockReset();
+    hasUndispatchedLocationReminder.mockReset();
     insert.mockReset();
+    scheduleLocationReminder.mockReset();
     scheduleRecallCalendarEventBot.mockReset();
     scheduleRecallBot.mockReset();
     select.mockReset();
@@ -414,17 +434,11 @@ describe("calendar auto join", () => {
       .mockResolvedValue([{ id: "44444444-4444-4444-8444-444444444444" }]);
     const meetingValues = vi.fn().mockReturnValue({ returning: meetingReturning });
 
-    const reminderOnConflictDoUpdate = vi.fn().mockResolvedValue(undefined);
-    const reminderValues = vi
-      .fn()
-      .mockReturnValue({ onConflictDoUpdate: reminderOnConflictDoUpdate });
-
     const existingLimit = vi.fn().mockResolvedValue([]);
 
     insert
       .mockReturnValueOnce({ values: calendarEventValues })
-      .mockReturnValueOnce({ values: meetingValues })
-      .mockReturnValueOnce({ values: reminderValues });
+      .mockReturnValueOnce({ values: meetingValues });
     select.mockReturnValue({
       from: () => ({
         where: () => ({
@@ -467,25 +481,11 @@ describe("calendar auto join", () => {
         title: "Office visit",
       }),
     );
-    expect(reminderValues).toHaveBeenCalledWith(
-      expect.objectContaining({
-        meetingId: "44444444-4444-4444-8444-444444444444",
-        userId: "55555555-5555-4555-8555-555555555555",
-        status: "pending",
-      }),
-    );
-    expect(reminderOnConflictDoUpdate).toHaveBeenCalledWith(
-      expect.objectContaining({
-      target: expect.any(Array),
-      set: expect.objectContaining({
-        errorMessage: null,
-        providerNotificationId: null,
-        sentAt: null,
-        status: "pending",
-      }),
-      setWhere: expect.anything(),
-    }),
-    );
+    expect(scheduleLocationReminder).toHaveBeenCalledWith({
+      meetingId: "44444444-4444-4444-8444-444444444444",
+      scheduledFor: new Date("2026-06-30T11:58:00.000Z"),
+      userId: "55555555-5555-4555-8555-555555555555",
+    });
   });
 
   it("stores the nested Recall Calendar V2 bot id instead of the calendar event id", async () => {

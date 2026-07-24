@@ -32,6 +32,7 @@ describe("OneSignal vendor", () => {
 
     await expect(
       sendOneSignalLocationReminder({
+        idempotencyKey: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
         externalUserId: "11111111-1111-4111-8111-111111111111",
         meetingId: "22222222-2222-4222-8222-222222222222",
         meetingTitle: "Founder office visit",
@@ -51,6 +52,7 @@ describe("OneSignal vendor", () => {
         isIos: true,
         isAndroid: true,
         isAnyWeb: true,
+        idempotency_key: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
         include_aliases: {
           external_id: ["11111111-1111-4111-8111-111111111111"],
         },
@@ -93,6 +95,7 @@ describe("OneSignal vendor", () => {
 
     await expect(
       sendOneSignalLocationReminder({
+        idempotencyKey: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
         externalUserId: "11111111-1111-4111-8111-111111111111",
         meetingId: "22222222-2222-4222-8222-222222222222",
         meetingTitle: "Founder office visit",
@@ -121,6 +124,7 @@ describe("OneSignal vendor", () => {
       "@/lib/vendors/onesignal"
     );
     const input = {
+      idempotencyKey: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
       externalUserId: "user_1",
       meetingId: "meeting_1",
       meetingTitle: "Weekly sync",

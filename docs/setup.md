@@ -268,6 +268,8 @@ Inngest Cloud and the self-hosted database. Before cutover:
 6. Run `npm run inngest:sync` and `npm run inngest:sync:image-worker`.
 7. Verify the registered functions and run one safe canary.
 8. Disable the old Cloud applications so their cron functions cannot resume in a later billing period.
+9. Run `npm run reminders:dispatch` with the production self hosted Inngest
+   environment loaded to create delayed runs for every pending location reminder.
 
 ## macOS local recorder
 

@@ -15,6 +15,7 @@ type OneSignalNotificationResponse = {
 };
 
 export async function sendOneSignalLocationReminder(input: {
+  idempotencyKey: string;
   externalUserId: string;
   meetingId: string;
   meetingTitle: string;
@@ -27,6 +28,7 @@ export async function sendOneSignalLocationReminder(input: {
     isIos: true,
     isAndroid: true,
     isAnyWeb: true,
+    idempotency_key: input.idempotencyKey,
     include_aliases: {
       external_id: [input.externalUserId],
     },

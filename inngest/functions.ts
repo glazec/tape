@@ -7,7 +7,11 @@ import { inngest } from "./client";
 import { currentTranscriptJobIdsSubquery } from "@/lib/current-transcript-job";
 import { convertVideoObjectToAudio } from "@/lib/media-conversion";
 import { createReadUrl } from "@/lib/r2";
-import { sendDueLocationReminders } from "@/lib/location-reminders";
+import {
+  dispatchPendingLocationReminderSchedules,
+  markLocationReminderDeliveryFailed,
+  sendScheduledLocationReminder,
+} from "@/lib/location-reminders";
 import { getMeetingVocabularyKeyterms } from "@/lib/team-vocabulary";
 import { completeUploadedVideoConversion } from "@/lib/transcription-records";
 import { createElevenLabsTranscriptJob } from "@/lib/vendors/elevenlabs";
@@ -79,6 +83,12 @@ const enrichTranscriptDataSchema = z.object({
   translateToChinese: z.boolean().optional(),
 });
 const ENRICH_TRANSCRIPT_RETRIES = 4;
+const SEND_LOCATION_REMINDER_RETRIES = 4;
+const locationReminderDataSchema = z.object({
+  reminderId: z.uuid(),
+  scheduleVersion: z.number().int().positive(),
+  scheduledFor: z.iso.datetime(),
+});
 
 function getAppUrl() {
   return appUrlSchema.parse(process.env.NEXT_PUBLIC_APP_URL);
@@ -383,15 +393,46 @@ export const enrichTranscript = inngest.createFunction(
   },
 );
 
-const sendLocationReminders = inngest.createFunction(
+export const sendLocationReminder = inngest.createFunction(
   {
-    id: "send-location-reminders",
+    id: "send-location-reminder",
+    retries: SEND_LOCATION_REMINDER_RETRIES,
+    triggers: [{ event: "meeting/send.location-reminder" }],
+  },
+  async ({ event, step, attempt = 0 }) => {
+    const data = locationReminderDataSchema.parse(event.data);
+
+    await step.sleepUntil(
+      "wait-for-location-reminder",
+      new Date(data.scheduledFor),
+    );
+
+    try {
+      return await step.run("deliver-location-reminder", () =>
+        sendScheduledLocationReminder(data),
+      );
+    } catch (error) {
+      if (attempt >= SEND_LOCATION_REMINDER_RETRIES) {
+        await markLocationReminderDeliveryFailed({
+          error,
+          reminderId: data.reminderId,
+          scheduleVersion: data.scheduleVersion,
+        });
+      }
+      throw error;
+    }
+  },
+);
+
+export const reconcileLocationReminderSchedules = inngest.createFunction(
+  {
+    id: "reconcile-location-reminder-schedules",
     triggers: [
-      { event: "meeting/send.location-reminders" },
-      { cron: "* * * * *" },
+      { event: "meeting/reconcile.location-reminder-schedules" },
+      { cron: "5 * * * *" },
     ],
   },
-  async () => sendDueLocationReminders(),
+  async () => dispatchPendingLocationReminderSchedules(),
 );
 
 export const syncRecallCalendarsHourly = inngest.createFunction(
@@ -416,7 +457,8 @@ export const functions = [
   transcribeAudio,
   convertVideoToAudio,
   enrichTranscript,
-  sendLocationReminders,
+  sendLocationReminder,
+  reconcileLocationReminderSchedules,
   syncRecallCalendarsHourly,
   reconcileStaleJobs,
 ];

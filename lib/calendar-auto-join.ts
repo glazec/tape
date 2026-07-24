@@ -4,7 +4,6 @@ import { db } from "@/db/client";
 import {
   auditEvents,
   calendarEvents,
-  meetingReminders,
   meetings,
 } from "@/db/schema";
 import { normalizeEmail } from "@/lib/access";
@@ -16,6 +15,11 @@ import {
 import { buildSmartMeetingTitle } from "@/lib/meeting-intelligence";
 import { syncMeetingParticipantAccess } from "@/lib/meeting-participant-access";
 import { applyMeetingShareRules } from "@/lib/meeting-share-rules";
+import {
+  cancelLocationRemindersForMeeting,
+  hasUndispatchedLocationReminder,
+  scheduleLocationReminder,
+} from "@/lib/location-reminders";
 import {
   getMeetingBotMetadata,
   getMeetingBotProfile,
@@ -256,6 +260,17 @@ export async function autoJoinCalendarEvent(input: AutoJoinInput) {
     (meetingUrl && platform) ||
       (location && !input.event.isDeleted && !declinedByExternalAttendees),
   );
+  const locationReminderNeedsRepair = Boolean(
+    existingMeeting &&
+      location &&
+      !meetingUrl &&
+      !input.event.isDeleted &&
+      !declinedByExternalAttendees &&
+      (await hasUndispatchedLocationReminder({
+        meetingId: existingMeeting.id,
+        userId: input.connection.userId,
+      })),
+  );
 
   if (
     existingMeeting &&
@@ -272,6 +287,7 @@ export async function autoJoinCalendarEvent(input: AutoJoinInput) {
   if (
     existingMeeting &&
     !calendarEventChanged &&
+    !locationReminderNeedsRepair &&
     !needsUnchangedCalendarEventRepair({
       calendarEventId: calendarEvent.id,
       event: input.event,
@@ -455,6 +471,10 @@ export async function autoJoinCalendarEvent(input: AutoJoinInput) {
       meetingUrl,
       reason: "unsupported_meeting_link" as const,
     };
+  }
+
+  if (existingMeeting) {
+    await cancelLocationRemindersForMeeting(existingMeeting.id);
   }
 
   if (isPastRepairEvent && !existingMeeting) {
@@ -776,38 +796,11 @@ async function syncLocationCalendarMeeting(input: {
 
   const reminderScheduledFor = new Date(input.startsAt.getTime() - 2 * 60 * 1000);
 
-  await db
-    .insert(meetingReminders)
-    .values({
-      meetingId: meeting.id,
-      userId: input.connection.userId,
-      scheduledFor: reminderScheduledFor,
-      status: "pending",
-    })
-    .onConflictDoUpdate({
-      target: [meetingReminders.meetingId, meetingReminders.userId],
-      set: {
-        errorMessage: null,
-        providerNotificationId: null,
-        scheduledFor: reminderScheduledFor,
-        sentAt: null,
-        status: "pending",
-        updatedAt: new Date(),
-      },
-      setWhere: sql`(
-        ${meetingReminders.scheduledFor},
-        ${meetingReminders.status},
-        ${meetingReminders.errorMessage},
-        ${meetingReminders.providerNotificationId},
-        ${meetingReminders.sentAt}
-      ) is distinct from (
-        excluded.scheduled_for,
-        'pending',
-        null,
-        null,
-        null
-      )`,
-    });
+  await scheduleLocationReminder({
+    meetingId: meeting.id,
+    scheduledFor: reminderScheduledFor,
+    userId: input.connection.userId,
+  });
 
   return {
     action: "scheduled" as const,
@@ -1308,6 +1301,7 @@ async function markMeetingMissedFromCalendar(input: {
       updatedAt: new Date(),
     })
     .where(eq(meetings.id, input.meetingId));
+  await cancelLocationRemindersForMeeting(input.meetingId);
 }
 
 async function cancelScheduledMeetingBotFromCalendar(input: {

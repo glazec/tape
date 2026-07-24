@@ -246,6 +246,13 @@
       "when": 1785600000000,
       "tag": "0034_kind_randall",
       "breakpoints": true
+    },
+    {
+      "idx": 35,
+      "version": "7",
+      "when": 1785700000000,
+      "tag": "0035_versioned_location_reminders",
+      "breakpoints": true
     }
   ]
 }

@@ -19,6 +19,7 @@
     "start:image-worker": "node dist/image-worker/server.mjs",
     "inngest:sync": "node scripts/sync-inngest.mjs",
     "inngest:sync:image-worker": "node scripts/sync-image-worker-inngest.mjs",
+    "reminders:dispatch": "node --import=tsx scripts/dispatch-location-reminders.ts",
     "lint": "eslint",
     "test": "vitest run",
     "test:deployment-schema": "vitest run tests/migrations.test.ts",

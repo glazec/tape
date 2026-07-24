@@ -281,4 +281,27 @@ describe("database migrations", () => {
     expect(sql).toContain("'historicalEstimate', true");
     expect(sql).toContain('ON CONFLICT ("idempotency_key") DO NOTHING');
   });
+
+  it("adds versioned durable location reminder scheduling", () => {
+    const sql = readFileSync(
+      "db/migrations/0035_versioned_location_reminders.sql",
+      "utf8",
+    ).replace(/\s+/g, " ");
+
+    expect(sql).toContain(
+      'ADD COLUMN "delivery_idempotency_key" uuid DEFAULT gen_random_uuid() NOT NULL',
+    );
+    expect(sql).toContain(
+      'ADD COLUMN "schedule_version" integer DEFAULT 1 NOT NULL',
+    );
+    expect(sql).toContain(
+      'ADD COLUMN "dispatched_version" integer DEFAULT 0 NOT NULL',
+    );
+    expect(sql).toContain(
+      `SET "status" = 'pending', "updated_at" = now() WHERE "status" = 'sending' AND "sent_at" IS NULL`,
+    );
+    expect(sql).toContain(
+      'CREATE INDEX "meeting_reminders_undispatched_index"',
+    );
+  });
 });

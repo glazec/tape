@@ -992,6 +992,11 @@ export const meetingReminders = pgTable(
     scheduledFor: timestamp("scheduled_for", { withTimezone: true }).notNull(),
     sentAt: timestamp("sent_at", { withTimezone: true }),
     providerNotificationId: text("provider_notification_id"),
+    deliveryIdempotencyKey: uuid("delivery_idempotency_key")
+      .defaultRandom()
+      .notNull(),
+    scheduleVersion: integer("schedule_version").notNull().default(1),
+    dispatchedVersion: integer("dispatched_version").notNull().default(0),
     status: text("status").notNull().default("pending"),
     errorMessage: text("error_message"),
     ...timestamps,
@@ -1001,6 +1006,11 @@ export const meetingReminders = pgTable(
       table.meetingId,
       table.userId,
     ),
+    index("meeting_reminders_undispatched_index")
+      .on(table.scheduledFor)
+      .where(
+        sql`${table.status} = 'pending' and ${table.sentAt} is null and ${table.dispatchedVersion} < ${table.scheduleVersion}`,
+      ),
   ],
 );
 

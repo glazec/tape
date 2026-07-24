@@ -146,6 +146,16 @@ After deploying or changing `NEXT_PUBLIC_APP_URL`, register the provider callbac
 npm run inngest:sync
 ```
 
+Location reminders use versioned delayed Inngest runs instead of minute polling.
+After deploying the reminder migration or moving Inngest environments, enqueue
+all pending reminder schedules once:
+
+```bash
+npm run reminders:dispatch
+```
+
+Run this command with the production self hosted Inngest environment loaded.
+
 The [setup guide](docs/setup.md) contains the callback routes, environment variables, local tunnel flow, and production checklist.
 
 ## Verification
