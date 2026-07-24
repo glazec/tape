@@ -40,10 +40,12 @@ describe("image worker", () => {
     expect(
       buildImageWorkerClientOptions({
         NODE_ENV: "production",
+        INNGEST_BASE_URL: "https://inngest.example.com",
         INNGEST_SIGNING_KEY: "signkey-prod-worker",
       }),
     ).toMatchObject({
       id: "meeting-image-worker",
+      baseUrl: "https://inngest.example.com",
       signingKey: "signkey-prod-worker",
     });
   });

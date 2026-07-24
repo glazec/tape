@@ -76,7 +76,7 @@ Legacy `/share/[token]` links remain supported, require sign in, and resolve onl
 | Cloud meeting capture | Recall.ai bots and Calendar V2 |
 | Transcription | ElevenLabs Speech to Text using `scribe_v2` |
 | Translation and live answers | OpenRouter, with optional Exa web search for live answers |
-| Background work | Inngest functions for transcription, scheduling, translation, reminders, and repair |
+| Background work | Self hosted Inngest on Railway for transcription, scheduling, translation, reminders, and repair |
 | Screen share extraction | A Railway Node worker using ffmpeg and ffprobe |
 | Notifications | Optional OneSignal browser and mobile push |
 | Vocabulary enrichment | Optional Twenty CRM names and companies |
@@ -124,7 +124,7 @@ npm run setup:check
 
 The web application deploys to Vercel. Its production build validates required configuration and migration lineage, applies pending migrations, and then builds the application. Preview builds do not mutate the production database.
 
-The MCP and optional image worker run as separate services in one Railway project named `tape`. The image worker accepts Inngest requests at `/api/inngest` and exposes `/health` for service health checks.
+The Inngest engine, MCP, and optional image worker run as separate services in one Railway project named `tape`. Inngest uses dedicated PostgreSQL and Redis services. The image worker accepts Inngest requests at `/api/inngest` and exposes `/health` for service health checks.
 
 ```bash
 npm run build:image-worker

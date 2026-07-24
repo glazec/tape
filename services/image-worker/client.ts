@@ -8,6 +8,7 @@ const optionalSecret = z.preprocess(
 );
 
 const environmentSchema = z.object({
+  INNGEST_BASE_URL: optionalSecret,
   INNGEST_EVENT_KEY: optionalSecret,
   INNGEST_SIGNING_KEY: optionalSecret,
   NODE_ENV: z.string().optional(),
@@ -26,6 +27,10 @@ export function buildImageWorkerClientOptions(
   }
 
   const options: ClientOptions = { id: "meeting-image-worker" };
+
+  if (environment.INNGEST_BASE_URL) {
+    options.baseUrl = environment.INNGEST_BASE_URL;
+  }
 
   if (environment.INNGEST_EVENT_KEY) {
     options.eventKey = environment.INNGEST_EVENT_KEY;

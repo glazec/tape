@@ -206,6 +206,50 @@ IMAGE_WORKER_URL=https://your-worker.example npm run inngest:sync:image-worker
 
 Do not route the Next.js application to this service. The worker serves only `/api/inngest` and `/health`.
 
+## Deploy Inngest on Railway
+
+The production workflow engine runs as an always-on Railway service backed by
+dedicated PostgreSQL and Redis services. The pinned runtime image and health
+check live in `services/inngest-runtime`.
+
+Configure the Inngest service with:
+
+```text
+INNGEST_EVENT_KEY
+INNGEST_SIGNING_KEY
+INNGEST_POSTGRES_URI
+INNGEST_REDIS_URI
+```
+
+Use private Railway URLs for PostgreSQL and Redis. Keep the generated public
+Inngest domain on port `8288`. The runtime disables its unauthenticated
+dashboard and GraphQL UI. Port `8289` is only needed if a future service uses
+Inngest Connect.
+
+Set the same values on the Vercel application and image worker:
+
+```text
+INNGEST_BASE_URL=https://your-inngest-service.example
+INNGEST_EVENT_KEY
+INNGEST_SIGNING_KEY
+```
+
+When `INNGEST_BASE_URL` is present, both Inngest sync scripts ask the deployed
+application endpoints to register with that self-hosted engine. When it is
+absent, they continue to use the Inngest Cloud sync API.
+
+Active, queued, sleeping, and retrying runs are not transferred between
+Inngest Cloud and the self-hosted database. Before cutover:
+
+1. Pause new event producers where practical.
+2. Let active Cloud runs finish or record the work that must be replayed.
+3. Deploy the Railway engine and verify `/health`.
+4. Update Vercel and the image worker with the new base URL and keys.
+5. Redeploy both services.
+6. Run `npm run inngest:sync` and `npm run inngest:sync:image-worker`.
+7. Verify the registered functions and run one safe canary.
+8. Disable the old Cloud applications so their cron functions cannot resume in a later billing period.
+
 ## macOS local recorder
 
 The recorder is a Swift package for macOS 15 or newer.

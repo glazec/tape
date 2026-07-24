@@ -6,6 +6,7 @@ loadDotEnvLocal();
 
 const appId = "meeting-transcript";
 const appUrl = process.env.NEXT_PUBLIC_APP_URL?.trim();
+const apiHost = process.env.INNGEST_BASE_URL?.trim();
 
 if (!appUrl) {
   console.error("NEXT_PUBLIC_APP_URL is required");
@@ -13,11 +14,17 @@ if (!appUrl) {
 }
 
 const endpoint = new URL("/api/inngest", appUrl).toString();
+
+if (apiHost) {
+  await syncSelfHostedEndpoint(endpoint);
+  process.exit(0);
+}
+
 const result = spawnSync(
   "npx",
   ["inngest-cli", "api", "--prod", "sync-app", appId, "--url", endpoint],
   {
-    env: process.env,
+    env: normalizedInngestEnv(),
     stdio: "inherit",
   },
 );
@@ -64,4 +71,24 @@ function stripQuotes(value) {
   }
 
   return value;
+}
+
+function normalizedInngestEnv() {
+  return {
+    ...process.env,
+    INNGEST_EVENT_KEY: process.env.INNGEST_EVENT_KEY?.trim(),
+    INNGEST_SIGNING_KEY: process.env.INNGEST_SIGNING_KEY?.trim(),
+  };
+}
+
+async function syncSelfHostedEndpoint(url) {
+  const response = await fetch(url, { method: "PUT" });
+  const body = await response.text();
+
+  if (!response.ok) {
+    console.error(`Inngest sync failed with ${response.status}: ${body}`);
+    process.exit(1);
+  }
+
+  console.log(body);
 }

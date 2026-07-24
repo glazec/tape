@@ -8,6 +8,7 @@ const optionalSecret = z.preprocess(
 );
 
 const inngestEnvSchema = z.object({
+  INNGEST_BASE_URL: optionalSecret,
   INNGEST_EVENT_KEY: optionalSecret,
   INNGEST_SIGNING_KEY: optionalSecret,
 });
@@ -17,6 +18,10 @@ export function buildInngestClientOptions(
 ): ClientOptions {
   const env = inngestEnvSchema.parse(source);
   const options: ClientOptions = { id: "meeting-transcript" };
+
+  if (env.INNGEST_BASE_URL) {
+    options.baseUrl = env.INNGEST_BASE_URL;
+  }
 
   if (env.INNGEST_EVENT_KEY) {
     options.eventKey = env.INNGEST_EVENT_KEY;
