@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 import {
   AlertCircle,
   Building2,
@@ -78,6 +78,15 @@ export function ShareDialog({
   const titleId = `${instanceId}-share-title`;
   const emailId = `${instanceId}-share-email`;
 
+  useEffect(() => {
+    if (state !== "success" || !message) {
+      return;
+    }
+
+    const timeout = window.setTimeout(() => setMessage(null), 5000);
+    return () => window.clearTimeout(timeout);
+  }, [message, state]);
+
   async function loadShares() {
     const response = await fetch(`/api/meetings/${encodedMeetingId}/share`);
 
@@ -141,15 +150,18 @@ export function ShareDialog({
         return;
       }
 
+      const copied = await copyMeetingLink(meetingId);
       setPreview(null);
       setState("success");
       setEmail("");
-      setMessage(
+      const shareMessage =
         body.futureMeetings
           ? `Shared ${body.meetingCount ?? 1} meetings. Future related meetings are included.`
           : body.pending
             ? `Invite saved for ${body.email}.`
-            : `Shared with ${body.email}.`,
+            : `Shared with ${body.email}.`;
+      setMessage(
+        `${shareMessage} ${copied ? "Meeting link copied." : "Could not copy the meeting link."}`,
       );
       await loadShares();
     } catch {
@@ -239,13 +251,16 @@ export function ShareDialog({
       return;
     }
 
+    const copied = await copyMeetingLink(meetingId);
     setState("success");
     setEmail("");
     setScope("single");
-    setMessage(
+    const shareMessage =
       audience === "organization"
         ? `Shared with ${body?.recipientCount ?? 0} organization members.`
-        : `Shared with ${body?.recipientCount ?? customAudience?.memberCount ?? 0} ${customAudience?.name ?? "group"} members.`,
+        : `Shared with ${body?.recipientCount ?? customAudience?.memberCount ?? 0} ${customAudience?.name ?? "group"} members.`;
+    setMessage(
+      `${shareMessage} ${copied ? "Meeting link copied." : "Could not copy the meeting link."}`,
     );
     await loadShares();
   }
@@ -379,7 +394,13 @@ export function ShareDialog({
           </form>
         )}
 
-        {message ? <ShareMessage message={message} state={state} /> : null}
+        {message ? (
+          state === "success" ? (
+            <ShareToast message={message} />
+          ) : (
+            <ShareMessage message={message} state={state} />
+          )
+        ) : null}
 
         <div className="border-t pt-3">
           <p className="text-xs font-medium text-muted-foreground">
@@ -428,6 +449,24 @@ export function ShareDialog({
       </CardContent>
     </Card>
   );
+}
+
+async function copyMeetingLink(meetingId: string) {
+  if (!navigator.clipboard?.writeText) {
+    return false;
+  }
+
+  const meetingUrl = new URL(
+    `/meetings/${encodeURIComponent(meetingId)}`,
+    window.location.origin,
+  ).toString();
+
+  try {
+    await navigator.clipboard.writeText(meetingUrl);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function buildPeopleWithAccess({
@@ -607,6 +646,19 @@ function ShareMessage({
       ) : (
         <CheckCircle2 className="mt-0.5 size-4 shrink-0" />
       )}
+      <span>{message}</span>
+    </div>
+  );
+}
+
+function ShareToast({ message }: { message: string }) {
+  return (
+    <div
+      aria-live="polite"
+      className="fixed right-4 bottom-4 z-50 flex max-w-[calc(100vw-2rem)] items-start gap-2 rounded-lg bg-card px-4 py-3 text-sm text-card-foreground shadow-lg ring-1 ring-border sm:min-w-80"
+      role="status"
+    >
+      <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-primary" />
       <span>{message}</span>
     </div>
   );

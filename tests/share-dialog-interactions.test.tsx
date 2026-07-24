@@ -20,6 +20,10 @@ const props = {
 describe("ShareDialog interactions", () => {
   beforeEach(() => {
     vi.stubGlobal("fetch", vi.fn());
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { writeText: vi.fn().mockResolvedValue(undefined) },
+    });
     vi.stubGlobal("ResizeObserver", class { observe() {} unobserve() {} disconnect() {} });
     HTMLElement.prototype.scrollIntoView = vi.fn();
   });
@@ -35,7 +39,14 @@ describe("ShareDialog interactions", () => {
     changeRecipient("guest@example.com");
     fireEvent.click(screen.getByRole("button", { name: "Share meeting" }));
 
-    expect(await screen.findByText("Shared with guest@example.com.")).toBeTruthy();
+    const toast = await screen.findByRole("status");
+    expect(toast.textContent).toBe(
+      "Shared with guest@example.com. Meeting link copied.",
+    );
+    expect(toast.className).toContain("fixed");
+    expect(navigator.clipboard.writeText).toHaveBeenCalledWith(
+      `${window.location.origin}/meetings/meeting%2Fone`,
+    );
     expect(fetch).toHaveBeenNthCalledWith(
       1,
       "/api/meetings/meeting%2Fone/share",
@@ -62,6 +73,7 @@ describe("ShareDialog interactions", () => {
     expect(screen.getByText("First meeting")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Confirm" }));
     expect(await screen.findByText(/Future related meetings are included/)).toBeTruthy();
+    expect(navigator.clipboard.writeText).toHaveBeenCalledTimes(1);
   });
 
   it("shares with organization and reports audience failures", async () => {
@@ -71,7 +83,12 @@ describe("ShareDialog interactions", () => {
     const { unmount } = render(<ShareDialog {...props} />);
     changeRecipient("Whole organization");
     fireEvent.click(screen.getByRole("button", { name: "Share meeting" }));
-    expect(await screen.findByText("Shared with 4 organization members.")).toBeTruthy();
+    expect(
+      await screen.findByText(
+        "Shared with 4 organization members. Meeting link copied.",
+      ),
+    ).toBeTruthy();
+    expect(navigator.clipboard.writeText).toHaveBeenCalledTimes(1);
     unmount();
 
     vi.mocked(fetch).mockReset().mockResolvedValueOnce(response({ error: "Audience unavailable" }, 503));
@@ -144,6 +161,25 @@ describe("ShareDialog interactions", () => {
     changeRecipient("guest@example.com");
     fireEvent.click(screen.getByRole("button", { name: "Share meeting" }));
     expect(await screen.findByText("Could not share right now. Try again.")).toBeTruthy();
+  });
+
+  it("reports a successful share when clipboard access is unavailable", async () => {
+    vi.mocked(navigator.clipboard.writeText).mockRejectedValueOnce(
+      new Error("clipboard denied"),
+    );
+    vi.mocked(fetch)
+      .mockResolvedValueOnce(response({ email: "guest@example.com" }))
+      .mockResolvedValueOnce(response({ shares: [] }));
+    render(<ShareDialog {...props} />);
+
+    changeRecipient("guest@example.com");
+    fireEvent.click(screen.getByRole("button", { name: "Share meeting" }));
+
+    expect(
+      await screen.findByText(
+        "Shared with guest@example.com. Could not copy the meeting link.",
+      ),
+    ).toBeTruthy();
   });
 });
 
