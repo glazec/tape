@@ -118,6 +118,8 @@ const WPM_GRAPH_MAX = 260;
 const WPM_GRAPH_WINDOW_SECONDS = 30;
 const WPM_GRAPH_MAX_WINDOW_SECONDS = 90;
 const WPM_GRAPH_MIN_SAMPLE_SECONDS = 8;
+const TRANSCRIPT_WAVEFORM_REFERENCE_WPM = 180;
+const TRANSCRIPT_WAVEFORM_SMOOTHING_RADIUS = 2;
 const TRANSCRIPT_FALLBACK_WORD_PATTERN = /[A-Za-z0-9]+(?:['’][A-Za-z0-9]+)?/g;
 const TRANSCRIPT_CJK_CHARACTER_PATTERN = /[\u3400-\u9fff\uf900-\ufaff]/g;
 
@@ -2070,6 +2072,9 @@ function TranscriptAudioPlayer({
     duration: safeDuration,
     timelineDuration,
   });
+  const waveformAccessibleName = shouldLoadAudioWaveform
+    ? "Audio waveform"
+    : "Transcript activity waveform";
   const isResolvingAudioWaveform =
     shouldLoadAudioWaveform &&
     !hasAudioWaveform &&
@@ -2289,8 +2294,8 @@ function TranscriptAudioPlayer({
           aria-busy={false}
           aria-label={
             activeWaveformLabel
-              ? `Audio waveform, ${activeWaveformLabel}`
-              : "Audio waveform"
+              ? `${waveformAccessibleName}, ${activeWaveformLabel}`
+              : waveformAccessibleName
           }
           className="relative h-24 w-full overflow-hidden rounded-lg border bg-background px-2 outline-none focus-visible:ring-3 focus-visible:ring-ring/50 sm:px-1"
           onPointerDown={seekFromWaveform}
@@ -2500,7 +2505,7 @@ function TranscriptAudioPlayer({
               ? `Current section: ${activeWaveformLabel}`
               : hasAudioWaveform
                 ? "Audio waveform ready"
-                : "Transcript section waveform"}
+                : "Transcript activity waveform"}
           </span>
         </button>
         <input
@@ -2676,27 +2681,95 @@ function buildFallbackWaveform(segments: TranscriptSegment[], count: number) {
     return Array.from({ length: count }, () => 0.18);
   }
 
-  const totalMs = getSegmentTimelineDuration(segments);
+  const totalMs = getSegmentTimelineDuration(segments) * 1000;
 
   if (!totalMs) {
     return Array.from({ length: count }, () => 0.18);
   }
 
-  const peaks = Array.from({ length: count }, (_, index) => {
-    const currentMs = (index / count) * totalMs;
-    const segment = findSegmentAtTime(segments, currentMs);
+  const bucketDurationMs = totalMs / count;
+  const timedSegments = segments.map((segment) => ({
+    ...segment,
+    wordCount: countTranscriptWords(segment.text),
+  }));
+  const activity = Array.from({ length: count }, (_, index) => {
+    const bucketStartMs = index * bucketDurationMs;
+    const bucketEndMs = bucketStartMs + bucketDurationMs;
+    let activeMs = 0;
+    let wordCount = 0;
 
-    if (!segment) {
-      return 0.12;
+    for (const segment of timedSegments) {
+      const segmentEndMs = segment.endMs ?? segment.startMs;
+
+      if (
+        segmentEndMs <= bucketStartMs ||
+        segment.startMs >= bucketEndMs
+      ) {
+        continue;
+      }
+
+      const overlapMs = Math.max(
+        0,
+        Math.min(segmentEndMs, bucketEndMs) -
+          Math.max(segment.startMs, bucketStartMs),
+      );
+      const segmentDurationMs = Math.max(
+        1,
+        segmentEndMs - segment.startMs,
+      );
+
+      activeMs += overlapMs;
+      wordCount +=
+        segment.wordCount * (overlapMs / segmentDurationMs);
     }
 
-    const segmentMs = Math.max(1, (segment.endMs ?? segment.startMs) - segment.startMs);
-    const density = segment.text.length / (segmentMs / 1000);
+    const activityRatio = clamp(activeMs / bucketDurationMs, 0, 1);
+    const wordsPerMinute = wordCount / (bucketDurationMs / 60_000);
 
-    return Math.min(1, 0.18 + density / 45);
+    return (
+      activityRatio * 0.55 +
+      clamp(wordsPerMinute / TRANSCRIPT_WAVEFORM_REFERENCE_WPM, 0, 1) * 0.45
+    );
   });
 
-  return normalizePeaks(peaks);
+  const smoothedActivity = activity.map((_, index) => {
+    let weightedActivity = 0;
+    let totalWeight = 0;
+
+    for (
+      let offset = -TRANSCRIPT_WAVEFORM_SMOOTHING_RADIUS;
+      offset <= TRANSCRIPT_WAVEFORM_SMOOTHING_RADIUS;
+      offset += 1
+    ) {
+      const sampleIndex = clamp(index + offset, 0, activity.length - 1);
+      const weight =
+        TRANSCRIPT_WAVEFORM_SMOOTHING_RADIUS + 1 - Math.abs(offset);
+
+      weightedActivity += activity[sampleIndex] * weight;
+      totalWeight += weight;
+    }
+
+    return weightedActivity / totalWeight;
+  });
+
+  return normalizeTranscriptActivity(smoothedActivity);
+}
+
+function normalizeTranscriptActivity(activity: number[]) {
+  const sortedActivity = [...activity].sort((left, right) => left - right);
+  const lowerBound =
+    sortedActivity[Math.round((sortedActivity.length - 1) * 0.05)] ?? 0;
+  const upperBound =
+    sortedActivity[Math.round((sortedActivity.length - 1) * 0.95)] ?? 1;
+  const spread = upperBound - lowerBound;
+
+  if (spread < 0.08) {
+    return activity.map((value) => clamp(0.12 + value * 0.88, 0.08, 1));
+  }
+
+  return activity.map((value) =>
+    clamp(0.12 + clamp((value - lowerBound) / spread, 0, 1) * 0.88, 0.08, 1),
+  );
 }
 
 function normalizePeaks(peaks: number[]) {

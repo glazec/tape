@@ -280,6 +280,73 @@ describe("TranscriptViewer interactions", () => {
     expect(close).toHaveBeenCalled();
   });
 
+  it("shows transcript activity changes in the long recording waveform", () => {
+    const bucketDurationMs = 30_000;
+    const activeSegments = Array.from({ length: 120 }, (_, index) => {
+      const isActiveHalf = index < 60;
+      const durationMs = isActiveHalf ? bucketDurationMs : 3_000;
+
+      return {
+        id: `activity_${index}`,
+        speaker: "Speaker 1",
+        startMs: index * bucketDurationMs,
+        endMs: index * bucketDurationMs + durationMs,
+        text: "steady pace ".repeat(isActiveHalf ? 25 : 3),
+      };
+    });
+    const longRecordingSegments: TranscriptSegment[] = activeSegments;
+
+    render(
+      <TranscriptViewer
+        audioUrl="/long-recording.mp3"
+        segments={longRecordingSegments}
+      />,
+    );
+
+    const waveform = screen.getByRole("button", {
+      name: /Transcript activity waveform/,
+    });
+    const heights = [...waveform.querySelectorAll<HTMLElement>(".flex-1")].map(
+      (bar) => Number.parseInt(bar.style.height, 10),
+    );
+    const average = (values: number[]) =>
+      values.reduce((sum, value) => sum + value, 0) / values.length;
+
+    expect(heights).toHaveLength(120);
+    expect(average(heights.slice(0, 60))).toBeGreaterThan(
+      average(heights.slice(60)) + 8,
+    );
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it("keeps steady long recording activity visibly strong", () => {
+    render(
+      <TranscriptViewer
+        audioUrl="/steady-long-recording.mp3"
+        segments={[
+          {
+            id: "steady_activity",
+            speaker: "Speaker 1",
+            startMs: 0,
+            endMs: 60 * 60 * 1_000,
+            text: "steady ".repeat(180),
+          },
+        ]}
+      />,
+    );
+
+    const waveform = screen.getByRole("button", {
+      name: /Transcript activity waveform/,
+    });
+    const heights = [...waveform.querySelectorAll<HTMLElement>(".flex-1")].map(
+      (bar) => Number.parseInt(bar.style.height, 10),
+    );
+
+    expect(heights).toHaveLength(120);
+    expect(heights.every((height) => height >= 25)).toBe(true);
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
   it("stops showing waveform activity when background audio loading fails", async () => {
     Object.defineProperty(window, "requestIdleCallback", {
       configurable: true,
