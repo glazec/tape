@@ -34,8 +34,12 @@ describe("AppShell", () => {
 
     expect(html).toContain("Dashboard body");
     expect(html).toContain("Sign out");
+    expect(html).toContain("Setup guide");
+    expect(html).toContain('href="/dashboard?setup=1"');
     expect(primaryNav).toContain("Dashboard");
+    expect(primaryNav).not.toContain("Setup guide");
     expect(primaryNav).not.toContain("Sign out");
+    expect(primaryNav).not.toContain("Usage");
   });
 
   it("marks the active navigation item", () => {
@@ -77,6 +81,7 @@ describe("AppShell", () => {
 
     expect(html).toContain("Dashboard");
     expect(html).not.toContain("New meeting");
+    expect(html).not.toContain("Setup guide");
     expect(html).not.toContain("Team settings");
   });
 });

@@ -1,8 +1,9 @@
 import type { ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const {
+  cookies,
   getCalendarConnectionSummaryForWorkspace,
   getDefaultMeetingLibraryView,
   getMeetingDashboardSummaryForWorkspace,
@@ -11,6 +12,7 @@ const {
   listMeetingLibraryPageForWorkspace,
   requireCurrentUser,
 } = vi.hoisted(() => ({
+  cookies: vi.fn(),
   getCalendarConnectionSummaryForWorkspace: vi.fn(),
   getDefaultMeetingLibraryView: vi.fn(),
   getMeetingDashboardSummaryForWorkspace: vi.fn(),
@@ -20,12 +22,28 @@ const {
   requireCurrentUser: vi.fn(),
 }));
 
+vi.mock("next/headers", () => ({
+  cookies,
+}));
+
 vi.mock("@/components/app-shell", () => ({
   AppShell: ({ children }: { children: ReactNode }) => <div>{children}</div>,
 }));
 
 vi.mock("@/components/calendar-automation-panel", () => ({
   CalendarAutomationPanel: () => <div />,
+}));
+
+vi.mock("@/components/onboarding-tutorial", () => ({
+  OnboardingTutorial: ({
+    calendarStatus,
+  }: {
+    calendarStatus: { recallCalendarStatus: string | null };
+  }) => (
+    <div>
+      Onboarding tutorial: {calendarStatus.recallCalendarStatus ?? "not connected"}
+    </div>
+  ),
 }));
 
 vi.mock("@/lib/auth-guards", () => ({
@@ -55,7 +73,14 @@ vi.mock("@/lib/workspace", () => ({
 }));
 
 describe("DashboardPage", () => {
+  beforeEach(() => {
+    cookies.mockResolvedValue({
+      get: () => ({ value: "1" }),
+    });
+  });
+
   afterEach(() => {
+    cookies.mockReset();
     getCalendarConnectionSummaryForWorkspace.mockReset();
     getDefaultMeetingLibraryView.mockReset();
     getMeetingDashboardSummaryForWorkspace.mockReset();
@@ -263,5 +288,111 @@ describe("DashboardPage", () => {
     });
     expect(html).toContain('value="alice"');
     expect(html).toContain("My view");
+  });
+
+  it("shows onboarding until the current user hides it", async () => {
+    const workspace = {
+      userId: "user_123",
+      teamId: "team_123",
+      domain: "iosg.vc",
+      canCreateMeetings: true,
+    };
+    requireCurrentUser.mockResolvedValue({
+      id: "auth_user_123",
+      email: "member@iosg.vc",
+      name: null,
+    });
+    getWorkspace.mockResolvedValue(workspace);
+    getWorkspaceAccessSummary.mockResolvedValue({
+      canCreateMeetings: true,
+      hasExternalShares: false,
+      hasWorkspaceMeetings: false,
+      isSharedOnly: false,
+    });
+    cookies.mockResolvedValue({
+      get: () => undefined,
+    });
+    getDefaultMeetingLibraryView.mockResolvedValue(null);
+    getMeetingDashboardSummaryForWorkspace.mockResolvedValue({
+      upcomingBotJoins: 0,
+      readyTranscripts: 0,
+      activeWork: 0,
+      failedMeetings: 0,
+      scheduledWithoutBot: 0,
+      overdueScheduled: 0,
+      needsAttention: 0,
+      nextBotJoin: null,
+      userStats: {
+        last7DaysMeetings: 0,
+        previous7DaysMeetings: 0,
+        meetingChangePercent: 0,
+        meetingHours: 0,
+        spokenWords: 0,
+        talkSharePercent: null,
+        dominantEmotion: null,
+      },
+    });
+    getCalendarConnectionSummaryForWorkspace.mockResolvedValue({
+      connected: true,
+      autoJoinEnabled: true,
+      recallCalendarStatus: "connected",
+      recallCalendarLastSyncedAt: null,
+    });
+    listMeetingLibraryPageForWorkspace.mockResolvedValue({
+      meetings: [],
+      page: 1,
+      pageSize: 50,
+      hasPreviousPage: false,
+      hasNextPage: false,
+      hasOlderMeetings: false,
+      historyMonths: 6,
+      relatedHistoryMonths: 2,
+    });
+
+    const { default: DashboardPage } = await import("@/app/dashboard/page");
+    const html = renderToStaticMarkup(
+      await DashboardPage({
+        searchParams: Promise.resolve({}),
+      }),
+    );
+
+    expect(html).toContain("Onboarding tutorial: connected");
+    expect(html).not.toContain("Welcome back");
+    expect(html).not.toContain("Search meetings");
+
+    getWorkspaceAccessSummary.mockResolvedValue({
+      canCreateMeetings: true,
+      hasExternalShares: false,
+      hasWorkspaceMeetings: true,
+      isSharedOnly: false,
+    });
+    const populatedWorkspaceHtml = renderToStaticMarkup(
+      await DashboardPage({
+        searchParams: Promise.resolve({}),
+      }),
+    );
+
+    expect(populatedWorkspaceHtml).toContain("Onboarding tutorial: connected");
+    expect(populatedWorkspaceHtml).toContain("Search meetings");
+
+    cookies.mockResolvedValue({
+      get: () => ({ value: "1" }),
+    });
+    const hiddenHtml = renderToStaticMarkup(
+      await DashboardPage({
+        searchParams: Promise.resolve({}),
+      }),
+    );
+
+    expect(hiddenHtml).not.toContain("Onboarding tutorial");
+    expect(hiddenHtml).toContain("Welcome back");
+
+    const reopenedHtml = renderToStaticMarkup(
+      await DashboardPage({
+        searchParams: Promise.resolve({ setup: "1" }),
+      }),
+    );
+
+    expect(reopenedHtml).toContain("Onboarding tutorial: connected");
   });
 });

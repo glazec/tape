@@ -12,7 +12,7 @@ This repository is source available for noncommercial use. See [License](#licens
 
 ### Find and manage meetings
 
-The dashboard combines weekly activity, calendar capture status, and a searchable meeting library. Users can filter by meeting state, choose the search scope and sort order, save a default view, browse older history, and open related meetings.
+The dashboard combines weekly activity, calendar capture status, and a searchable meeting library. First time users see a setup guide for Google Calendar, the macOS recorder, and MCP access, which they can hide or reopen later. Users can filter by meeting state, choose the search scope and sort order, save a default view, browse older history, and open related meetings.
 
 <p align="center">
   <img src="assets/product/meeting-hub.png" alt="Tape dashboard with calendar capture and the searchable meeting library" width="900">

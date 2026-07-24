@@ -76,6 +76,17 @@ export function AppShell({
                 );
               })}
             </nav>
+            {canCreateMeetings ? (
+              <Link
+                className={cn(
+                  buttonVariants({ variant: "ghost", size: "sm" }),
+                  "min-h-11 text-muted-foreground sm:min-h-8",
+                )}
+                href="/dashboard?setup=1"
+              >
+                Setup guide
+              </Link>
+            ) : null}
             <SignOutButton />
           </div>
         </div>
