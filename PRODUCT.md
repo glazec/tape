@@ -54,7 +54,7 @@ Dense administration panels, exposed implementation identifiers, decorative anal
 5. Shared only users see only explicitly granted content and no owner actions.
 6. Automated tests cover the web app, browser flows, macOS recorder, sidecar, and MCP server.
 7. Cost summaries separate exact provider charges from published rate estimates without exposing another member's meeting details.
-8. Public accounts receive isolated personal workspaces, while configured organization domains keep their shared workspace and unlimited credit.
+8. Public accounts receive isolated personal workspaces, while IOSG team members and other configured organization domains keep their shared workspace and unlimited credit.
 
 ## Not Product Goals
 

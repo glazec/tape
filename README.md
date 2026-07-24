@@ -67,7 +67,7 @@ Legacy `/share/[token]` links remain supported, require sign in, and resolve onl
 
 ### Review billing and credits
 
-Anyone with a Google account can sign in. An email domain already present in `allowed_domains` joins its existing organization workspace. Every other account receives a separate personal workspace with $5 of one time provider credit, so unrelated users on public email domains never share a workspace.
+Anyone with a Google account can sign in. IOSG team members join the IOSG workspace with unlimited credit. Another email domain already present in `allowed_domains` joins its existing organization workspace. Every other account receives a separate personal workspace with $5 of one time provider credit, so unrelated users on public email domains never share a workspace.
 
 Team settings shows remaining workspace credit plus current month personal and organization consumption. Billing details supports current month, previous month, trailing 90 day, and all time views. Recall.ai and ElevenLabs activity uses published duration based rates, while OpenRouter records the exact cost reported for each model response. New provider work stops when a limited workspace has consumed its credit. Work already in progress may finish, so recorded cost can slightly exceed the allowance. Organization detail stays aggregate and recent meeting activity is limited to meetings owned by the signed in user.
 

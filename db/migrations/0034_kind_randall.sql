@@ -2,6 +2,16 @@ ALTER TABLE "teams" ADD COLUMN "credit_limit_usd_micros" bigint;--> statement-br
 ALTER TABLE "teams" ADD CONSTRAINT "teams_credit_limit_nonnegative" CHECK ("teams"."credit_limit_usd_micros" is null or "teams"."credit_limit_usd_micros" >= 0);--> statement-breakpoint
 UPDATE "teams"
 SET
+	"credit_limit_usd_micros" = NULL,
+	"updated_at" = now()
+WHERE EXISTS (
+	SELECT 1
+	FROM "allowed_domains"
+	WHERE "allowed_domains"."team_id" = "teams"."id"
+		AND "allowed_domains"."domain" = 'iosg.vc'
+);--> statement-breakpoint
+UPDATE "teams"
+SET
 	"credit_limit_usd_micros" = 5000000,
 	"name" = regexp_replace("name", ' guest workspace$', ' workspace'),
 	"updated_at" = now()

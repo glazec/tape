@@ -270,6 +270,8 @@ describe("database migrations", () => {
     expect(sql).toContain('ADD COLUMN "credit_limit_usd_micros" bigint');
     expect(sql).toContain("teams_credit_limit_nonnegative");
     expect(sql).toContain('"credit_limit_usd_micros" = 5000000');
+    expect(sql).toContain('"allowed_domains"."domain" = \'iosg.vc\'');
+    expect(sql).toContain('"credit_limit_usd_micros" = NULL');
     expect(sql).toContain('"team_memberships"."role" = \'external\'');
     expect(sql).toContain('SET "role" = \'owner\'');
     expect(sql).toContain('FROM "allowed_domains"');

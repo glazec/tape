@@ -96,7 +96,7 @@ npm run dev
 
 Open [http://localhost:3000](http://localhost:3000). Google sign in must already be configured in Neon Auth. To accept public registrations, configure the Google provider to allow accounts outside the organization.
 
-Domains already present in `allowed_domains` join their existing organization workspace and have no Tape credit ceiling. Unknown accounts receive isolated personal workspaces with $5 of provider credit. Do not rely on the first sign in to bootstrap an organization domain; insert the intended domain and team association explicitly before inviting organization members.
+IOSG team members join the IOSG workspace with no Tape credit ceiling. Other domains already present in `allowed_domains` join their existing organization workspace and also have no Tape credit ceiling unless a limit is configured on their team. Unknown accounts receive isolated personal workspaces with $5 of provider credit. Do not rely on the first sign in to bootstrap an organization domain; insert the intended domain and team association explicitly before inviting organization members.
 
 ## Public callbacks
 
