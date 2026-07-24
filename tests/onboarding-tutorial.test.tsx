@@ -8,8 +8,20 @@ vi.mock("@/components/onboarding-dismiss-button", () => ({
 }));
 
 vi.mock("@/components/calendar-sync-button", () => ({
-  CalendarSyncButton: ({ connected }: { connected: boolean }) => (
-    <button type="button">
+  CalendarSyncButton: ({
+    autoSync,
+    connected,
+    setupMode,
+  }: {
+    autoSync?: boolean;
+    connected: boolean;
+    setupMode?: boolean;
+  }) => (
+    <button
+      data-auto-sync={autoSync ? "true" : "false"}
+      data-setup-mode={setupMode ? "true" : "false"}
+      type="button"
+    >
       {connected ? "Sync calendar" : "Connect calendar"}
     </button>
   ),
@@ -19,6 +31,7 @@ describe("OnboardingTutorial", () => {
   it("shows the three setup steps and their real destinations", () => {
     const html = renderToStaticMarkup(
       <OnboardingTutorial
+        autoSyncCalendar={false}
         calendarStatus={{
           connected: false,
           autoJoinEnabled: false,
@@ -26,6 +39,8 @@ describe("OnboardingTutorial", () => {
           recallCalendarStatus: null,
         }}
         dismissalCookieName="tape_onboarding_hidden_user_team"
+        forceCalendarSync={false}
+        mcpServerAddress="https://mcp.example.com/mcp"
       />,
     );
 
@@ -42,6 +57,7 @@ describe("OnboardingTutorial", () => {
     );
     expect(html).toContain("Show MCP setup");
     expect(html).toContain("Streamable HTTP");
+    expect(html).toContain("https://mcp.example.com/mcp");
     expect(html).toContain("Show macOS setup");
     expect(html).toContain("xattr -dr com.apple.quarantine");
   });
@@ -49,6 +65,7 @@ describe("OnboardingTutorial", () => {
   it("marks the calendar step complete only when capture is operational", () => {
     const html = renderToStaticMarkup(
       <OnboardingTutorial
+        autoSyncCalendar={false}
         calendarStatus={{
           connected: true,
           autoJoinEnabled: true,
@@ -56,6 +73,8 @@ describe("OnboardingTutorial", () => {
           recallCalendarStatus: "connected",
         }}
         dismissalCookieName="tape_onboarding_hidden_user_team"
+        forceCalendarSync={false}
+        mcpServerAddress="https://mcp.example.com/mcp"
       />,
     );
 
@@ -66,6 +85,7 @@ describe("OnboardingTutorial", () => {
   it("offers recovery while the calendar connection is still syncing", () => {
     const html = renderToStaticMarkup(
       <OnboardingTutorial
+        autoSyncCalendar
         calendarStatus={{
           connected: true,
           autoJoinEnabled: true,
@@ -73,11 +93,56 @@ describe("OnboardingTutorial", () => {
           recallCalendarStatus: "connecting",
         }}
         dismissalCookieName="tape_onboarding_hidden_user_team"
+        forceCalendarSync={false}
+        mcpServerAddress="https://mcp.example.com/mcp"
+      />,
+    );
+
+    expect(html).toContain("Finish calendar sync");
+    expect(html).toContain("Sync calendar");
+    expect(html).toContain('data-auto-sync="true"');
+    expect(html).toContain('data-setup-mode="true"');
+    expect(html).not.toContain("Calendar connected");
+  });
+
+  it("forces a retry when the initial event sync failed", () => {
+    const html = renderToStaticMarkup(
+      <OnboardingTutorial
+        autoSyncCalendar
+        calendarStatus={{
+          connected: true,
+          autoJoinEnabled: true,
+          recallCalendarLastSyncedAt: null,
+          recallCalendarStatus: "connected",
+        }}
+        dismissalCookieName="tape_onboarding_hidden_user_team"
+        forceCalendarSync
+        mcpServerAddress="https://mcp.example.com/mcp"
       />,
     );
 
     expect(html).toContain("Finish calendar sync");
     expect(html).toContain("Sync calendar");
     expect(html).not.toContain("Calendar connected");
+  });
+
+  it("explains when MCP is not configured", () => {
+    const html = renderToStaticMarkup(
+      <OnboardingTutorial
+        autoSyncCalendar={false}
+        calendarStatus={{
+          connected: false,
+          autoJoinEnabled: false,
+          recallCalendarLastSyncedAt: null,
+          recallCalendarStatus: null,
+        }}
+        dismissalCookieName="tape_onboarding_hidden_user_team"
+        forceCalendarSync={false}
+        mcpServerAddress={null}
+      />,
+    );
+
+    expect(html).toContain("MCP is not configured for this deployment yet");
+    expect(html).not.toContain("Ask your workspace administrator");
   });
 });

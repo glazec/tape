@@ -19,13 +19,20 @@ const MCP_GUIDE_URL =
   "https://github.com/glazec/tape/blob/main/docs/meeting-note-mcp-api.md";
 
 export function OnboardingTutorial({
+  autoSyncCalendar,
   calendarStatus,
   dismissalCookieName,
+  forceCalendarSync,
+  mcpServerAddress,
 }: {
+  autoSyncCalendar: boolean;
   calendarStatus: CalendarConnectionSummary;
   dismissalCookieName: string;
+  forceCalendarSync: boolean;
+  mcpServerAddress: string | null;
 }) {
   const calendarReady =
+    !forceCalendarSync &&
     calendarStatus.connected &&
     calendarStatus.autoJoinEnabled &&
     calendarStatus.recallCalendarStatus === "connected";
@@ -59,7 +66,11 @@ export function OnboardingTutorial({
                 </p>
               ) : (
                 <div className="[&_button]:min-h-11 sm:[&_button]:min-h-8">
-                  <CalendarSyncButton connected={calendarStatus.connected} />
+                  <CalendarSyncButton
+                    autoSync={autoSyncCalendar}
+                    connected={calendarStatus.connected}
+                    setupMode
+                  />
                 </div>
               )
             }
@@ -79,7 +90,7 @@ export function OnboardingTutorial({
           />
           <OnboardingStep
             description="Let Claude, Cursor, and other assistants search meetings you can access."
-            details={<McpSetupSteps />}
+            details={<McpSetupSteps serverAddress={mcpServerAddress} />}
             number={3}
             title="Connect the MCP server"
           />
@@ -167,7 +178,7 @@ function DesktopSetupSteps() {
   );
 }
 
-function McpSetupSteps() {
+function McpSetupSteps({ serverAddress }: { serverAddress: string | null }) {
   return (
     <details className="group mt-3">
       <summary
@@ -179,17 +190,32 @@ function McpSetupSteps() {
         Show MCP setup
         <ChevronDown className="transition-transform group-open:rotate-180" />
       </summary>
-      <ol className="mt-3 max-w-xl space-y-2 text-sm leading-6 text-muted-foreground">
-        <li>1. Ask your workspace administrator for the Tape MCP address.</li>
-        <li>
-          2. Add a custom Streamable HTTP server named Tape in your AI
-          client&apos;s MCP or connector settings.
-        </li>
-        <li>
-          3. Open the connection and sign in with the same Google account you
-          use for Tape.
-        </li>
-      </ol>
+      {serverAddress ? (
+        <>
+          <p className="mt-3 text-sm font-medium text-foreground">
+            Tape MCP address
+          </p>
+          <code className="mt-1 block max-w-xl select-all overflow-x-auto rounded-md bg-muted px-2 py-1.5 text-xs text-foreground">
+            {serverAddress}
+          </code>
+          <ol className="mt-3 max-w-xl space-y-2 text-sm leading-6 text-muted-foreground">
+            <li>
+              1. Add a custom Streamable HTTP server named Tape in your AI
+              client&apos;s MCP or connector settings.
+            </li>
+            <li>
+              2. Use the address above, open the connection, and sign in with
+              the same Google account you use for Tape.
+            </li>
+          </ol>
+        </>
+      ) : (
+        <p className="mt-3 max-w-xl text-sm leading-6 text-muted-foreground">
+          Tape MCP is not configured for this deployment yet. The person who
+          manages this Tape installation can use the technical reference below
+          to enable it.
+        </p>
+      )}
       <a
         className="mt-3 inline-flex min-h-11 items-center gap-1.5 rounded-lg text-sm font-medium text-muted-foreground outline-none hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50 sm:min-h-8"
         href={MCP_GUIDE_URL}

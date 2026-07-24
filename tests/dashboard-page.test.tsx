@@ -394,5 +394,20 @@ describe("DashboardPage", () => {
     );
 
     expect(reopenedHtml).toContain("Onboarding tutorial: connected");
+
+    const calendarErrorHtml = renderToStaticMarkup(
+      await DashboardPage({
+        searchParams: Promise.resolve({
+          calendarError: "sync_failed",
+          setup: "1",
+        }),
+      }),
+    );
+
+    expect(calendarErrorHtml).toContain("Calendar setup needs attention");
+    expect(calendarErrorHtml).toContain(
+      "Tape could not capture your events",
+    );
+    expect(calendarErrorHtml).not.toContain("Try connecting again");
   });
 });

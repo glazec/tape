@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { cookies } from "next/headers";
 import {
+  AlertCircle,
   CalendarCheck2,
   ChevronDown,
   ChevronLeft,
@@ -14,6 +15,11 @@ import { CalendarAutomationPanel } from "@/components/calendar-automation-panel"
 import { DashboardWorkflowSummary } from "@/components/dashboard-workflow-summary";
 import { MeetingList } from "@/components/meeting-list";
 import { OnboardingTutorial } from "@/components/onboarding-tutorial";
+import {
+  Alert,
+  AlertDescription,
+  AlertTitle,
+} from "@/components/ui/alert";
 import { buttonVariants } from "@/components/ui/button";
 import {
   Card,
@@ -54,7 +60,10 @@ import {
   MEETING_LIBRARY_HISTORY_MONTH_STEP,
   listMeetingLibraryPageForWorkspace,
 } from "@/lib/meeting-queries";
-import { getOnboardingHiddenCookieName } from "@/lib/onboarding";
+import {
+  getConfiguredMcpServerAddress,
+  getOnboardingHiddenCookieName,
+} from "@/lib/onboarding";
 import { cn } from "@/lib/utils";
 import {
   getOrCreateWorkspaceForSessionUser,
@@ -67,6 +76,7 @@ export default async function DashboardPage({
   searchParams,
 }: {
   searchParams: Promise<{
+    calendarError?: string | string[];
     page?: string | string[];
     historyMonths?: string | string[];
     q?: string | string[];
@@ -85,6 +95,7 @@ export default async function DashboardPage({
     cookies(),
   ]);
   const {
+    calendarError,
     page,
     historyMonths: historyMonthsParam,
     q,
@@ -138,6 +149,13 @@ export default async function DashboardPage({
         : Promise.resolve(null),
     ]);
   const onboardingHiddenCookieName = getOnboardingHiddenCookieName(workspace);
+  const calendarErrorCode = getSearchParamValue(calendarError);
+  const calendarErrorMessage = getCalendarErrorMessage(calendarErrorCode);
+  const showCalendarError =
+    accessSummary.canCreateMeetings &&
+    calendarErrorMessage &&
+    (calendarErrorCode === "sync_failed" ||
+      !isCalendarOperational(calendarStatus));
   const showOnboarding =
     accessSummary.canCreateMeetings &&
     (getSearchParamValue(setup) === "1" ||
@@ -164,10 +182,22 @@ export default async function DashboardPage({
       oneSignalExternalId={workspace.userId}
     >
       <section className="flex flex-col gap-4">
+        {showCalendarError ? (
+          <Alert variant="destructive">
+            <AlertCircle />
+            <AlertTitle>Calendar setup needs attention</AlertTitle>
+            <AlertDescription>
+              {calendarErrorMessage}
+            </AlertDescription>
+          </Alert>
+        ) : null}
         {showOnboarding && calendarStatus ? (
           <OnboardingTutorial
+            autoSyncCalendar={getSearchParamValue(syncCalendar) === "1"}
             calendarStatus={calendarStatus}
             dismissalCookieName={onboardingHiddenCookieName}
+            forceCalendarSync={calendarErrorCode === "sync_failed"}
+            mcpServerAddress={getConfiguredMcpServerAddress()}
           />
         ) : !accessSummary.isSharedOnly ? (
           <div className="grid gap-4 lg:grid-cols-2">
@@ -285,6 +315,33 @@ export default async function DashboardPage({
         ) : null}
       </section>
     </AppShell>
+  );
+}
+
+function getCalendarErrorMessage(error: string | undefined) {
+  switch (error) {
+    case "google_denied":
+      return "Google Calendar access was not granted. Try again when you are ready.";
+    case "state_mismatch":
+      return "The calendar connection expired before it finished. Start the connection again.";
+    case "connect_failed":
+      return "Tape could not finish connecting Google Calendar. Try again.";
+    case "sync_failed":
+      return "Google Calendar connected, but Tape could not capture your events. The calendar control is trying again.";
+    default:
+      return null;
+  }
+}
+
+function isCalendarOperational(
+  status: Awaited<
+    ReturnType<typeof getCalendarConnectionSummaryForWorkspace>
+  > | null,
+) {
+  return Boolean(
+    status?.connected &&
+      status.autoJoinEnabled &&
+      status.recallCalendarStatus === "connected",
   );
 }
 
