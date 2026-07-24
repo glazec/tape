@@ -31,6 +31,7 @@ type SyncState =
 type CalendarSyncButtonProps = {
   autoSync?: boolean;
   connected?: boolean;
+  setupMode?: boolean;
 };
 
 type CalendarSyncResponse = {
@@ -40,10 +41,26 @@ type CalendarSyncResponse = {
   syncedEventCount?: number;
 };
 
-export function getCalendarSyncPostSuccessAction(autoSync: boolean) {
+export function getCalendarSyncPostSuccessAction(
+  autoSync: boolean,
+  setupMode = false,
+) {
+  if (setupMode) {
+    return {
+      href: "/dashboard?setup=1",
+      type: "replace",
+    } as const;
+  }
+
   return autoSync
     ? ({ href: "/dashboard", type: "replace" } as const)
     : ({ type: "refresh" } as const);
+}
+
+export function getCalendarConnectHref(setupMode: boolean) {
+  return setupMode
+    ? "/api/calendar/oauth/start?setup=1"
+    : "/api/calendar/oauth/start";
 }
 
 export function formatCalendarSyncMessage(result: CalendarSyncResponse) {
@@ -73,6 +90,7 @@ export function formatCalendarSyncMessage(result: CalendarSyncResponse) {
 export function CalendarSyncButton({
   autoSync = false,
   connected = true,
+  setupMode = false,
 }: CalendarSyncButtonProps) {
   const router = useRouter();
   const autoSyncAttempted = useRef(false);
@@ -105,7 +123,10 @@ export function CalendarSyncButton({
       setState(result.failedEventCount ? "partial" : "synced");
       setMessage(formatCalendarSyncMessage(result));
 
-      const postSuccessAction = getCalendarSyncPostSuccessAction(autoSync);
+      const postSuccessAction = getCalendarSyncPostSuccessAction(
+        autoSync,
+        setupMode,
+      );
 
       if (postSuccessAction.type === "replace") {
         router.replace(postSuccessAction.href);
@@ -116,7 +137,7 @@ export function CalendarSyncButton({
       setState("error");
       setMessage("Calendar events could not be captured. Try syncing again.");
     }
-  }, [autoSync, router]);
+  }, [autoSync, router, setupMode]);
 
   useEffect(() => {
     if (!autoSync || autoSyncAttempted.current) {
@@ -130,7 +151,7 @@ export function CalendarSyncButton({
   function connectCalendar() {
     setState("connecting");
     setMessage(null);
-    window.location.href = "/api/calendar/oauth/start";
+    window.location.href = getCalendarConnectHref(setupMode);
   }
 
   async function disconnectCalendar() {

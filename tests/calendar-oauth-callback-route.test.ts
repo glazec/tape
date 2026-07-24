@@ -33,6 +33,7 @@ vi.mock("@/lib/workspace", () => ({
 
 vi.mock("@/lib/google-calendar-oauth", () => ({
   exchangeGoogleCalendarCode,
+  GOOGLE_CALENDAR_OAUTH_SETUP_COOKIE: "google-calendar-oauth-return-to-setup",
   GOOGLE_CALENDAR_OAUTH_STATE_COOKIE: "google-calendar-oauth-state",
   storeGoogleCalendarTokens,
 }));
@@ -148,6 +149,86 @@ describe("GET /api/calendar/oauth/callback", () => {
       {
         error: {
           message: "Google token request failed",
+          name: "Error",
+        },
+        userId: "auth_user_123",
+      },
+    );
+  });
+
+  it("returns to the setup guide after an OAuth denial", async () => {
+    vi.stubEnv("NEXT_PUBLIC_APP_URL", "https://app.example.com");
+    cookies.mockResolvedValue({
+      get: vi.fn((name: string) =>
+        name === "google-calendar-oauth-return-to-setup"
+          ? { value: "1" }
+          : { value: "state_123" },
+      ),
+    });
+
+    const { GET } = await import("@/app/api/calendar/oauth/callback/route");
+    const response = await GET(
+      new Request(
+        "https://app.example.com/api/calendar/oauth/callback?error=access_denied",
+      ),
+    );
+
+    expect(response.status).toBe(307);
+    expect(response.headers.get("location")).toBe(
+      "https://app.example.com/dashboard?calendarError=google_denied&setup=1",
+    );
+  });
+
+  it("reports an initial calendar event sync failure and keeps setup open", async () => {
+    vi.stubEnv("NEXT_PUBLIC_APP_URL", "https://app.example.com");
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+    const workspace = {
+      userId: "11111111-1111-4111-8111-111111111111",
+      teamId: "22222222-2222-4222-8222-222222222222",
+      domain: "example.com",
+    };
+
+    cookies.mockResolvedValue({
+      get: vi.fn((name: string) =>
+        name === "google-calendar-oauth-return-to-setup"
+          ? { value: "1" }
+          : { value: "state_123" },
+      ),
+    });
+    getCurrentUser.mockResolvedValue({
+      id: "auth_user_123",
+      email: "alice@example.com",
+      name: null,
+    });
+    getWorkspace.mockResolvedValue(workspace);
+    assertCanCreateMeetings.mockResolvedValue(undefined);
+    exchangeGoogleCalendarCode.mockResolvedValue({
+      accessToken: "google-access-token",
+      accessTokenExpiresAt: new Date("2026-06-30T12:00:00.000Z"),
+      refreshToken: "google-refresh-token",
+    });
+    storeGoogleCalendarTokens.mockResolvedValue(
+      "33333333-3333-4333-8333-333333333333",
+    );
+    syncRecallCalendarEventsForWorkspace.mockRejectedValue(
+      new Error("Recall sync failed"),
+    );
+
+    const { GET } = await import("@/app/api/calendar/oauth/callback/route");
+    const response = await GET(
+      new Request(
+        "https://app.example.com/api/calendar/oauth/callback?code=code_123&state=state_123",
+      ),
+    );
+
+    expect(response.headers.get("location")).toBe(
+      "https://app.example.com/dashboard?calendarError=sync_failed&syncCalendar=1&setup=1",
+    );
+    expect(consoleError).toHaveBeenCalledWith(
+      "calendar_oauth_initial_sync_failed",
+      {
+        error: {
+          message: "Recall sync failed",
           name: "Error",
         },
         userId: "auth_user_123",

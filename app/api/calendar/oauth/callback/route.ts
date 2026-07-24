@@ -5,6 +5,7 @@ import { SharedOnlyAccessError } from "@/lib/access-errors";
 import { getCurrentUser } from "@/lib/auth";
 import {
   exchangeGoogleCalendarCode,
+  GOOGLE_CALENDAR_OAUTH_SETUP_COOKIE,
   GOOGLE_CALENDAR_OAUTH_STATE_COOKIE,
   storeGoogleCalendarTokens,
 } from "@/lib/google-calendar-oauth";
@@ -23,13 +24,15 @@ export async function GET(request: Request) {
   const error = requestUrl.searchParams.get("error");
   const cookieStore = await cookies();
   const storedState = cookieStore.get(GOOGLE_CALENDAR_OAUTH_STATE_COOKIE)?.value;
+  const returnToSetup =
+    cookieStore.get(GOOGLE_CALENDAR_OAUTH_SETUP_COOKIE)?.value === "1";
 
   if (error || !code) {
-    return redirectToDashboard("calendarError=google_denied");
+    return redirectToDashboard("calendarError=google_denied", returnToSetup);
   }
 
   if (!state || !storedState || state !== storedState) {
-    return redirectToDashboard("calendarError=state_mismatch");
+    return redirectToDashboard("calendarError=state_mismatch", returnToSetup);
   }
 
   const user = await getCurrentUser();
@@ -51,12 +54,24 @@ export async function GET(request: Request) {
       refreshToken: tokens.refreshToken,
     });
 
-    await syncRecallCalendarEventsForWorkspace({
-      workspace,
-      autoJoinEnabled: true,
-    }).catch(() => null);
+    try {
+      await syncRecallCalendarEventsForWorkspace({
+        workspace,
+        autoJoinEnabled: true,
+      });
+    } catch (syncError) {
+      console.error("calendar_oauth_initial_sync_failed", {
+        error: serializeError(syncError),
+        userId: user.id,
+      });
 
-    return redirectToDashboard("syncCalendar=1");
+      return redirectToDashboard(
+        "calendarError=sync_failed&syncCalendar=1",
+        returnToSetup,
+      );
+    }
+
+    return redirectToDashboard("syncCalendar=1", returnToSetup);
   } catch (error) {
     if (error instanceof SharedOnlyAccessError) {
       return redirectToDashboard();
@@ -67,12 +82,21 @@ export async function GET(request: Request) {
       userId: user.id,
     });
 
-    return redirectToDashboard("calendarError=connect_failed");
+    return redirectToDashboard("calendarError=connect_failed", returnToSetup);
   }
 }
 
-function redirectToDashboard(search?: string) {
-  const path = search ? `/dashboard?${search}` : "/dashboard";
+function redirectToDashboard(search?: string, returnToSetup = false) {
+  const searchParams = new URLSearchParams(search);
+
+  if (returnToSetup) {
+    searchParams.set("setup", "1");
+  }
+
+  const serializedSearch = searchParams.toString();
+  const path = serializedSearch
+    ? `/dashboard?${serializedSearch}`
+    : "/dashboard";
   const response = NextResponse.redirect(new URL(path, getAppUrl()));
 
   expireOAuthStateCookie(response);
@@ -89,10 +113,15 @@ function redirectToSignIn() {
 }
 
 function expireOAuthStateCookie(response: NextResponse) {
-  response.cookies.set(GOOGLE_CALENDAR_OAUTH_STATE_COOKIE, "", {
-    maxAge: 0,
-    path: "/api/calendar/oauth",
-  });
+  for (const name of [
+    GOOGLE_CALENDAR_OAUTH_STATE_COOKIE,
+    GOOGLE_CALENDAR_OAUTH_SETUP_COOKIE,
+  ]) {
+    response.cookies.set(name, "", {
+      maxAge: 0,
+      path: "/api/calendar/oauth",
+    });
+  }
 }
 
 function getAppUrl() {

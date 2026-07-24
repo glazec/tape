@@ -25,6 +25,8 @@ const encryptedTokenPrefix = "v1";
 
 export const GOOGLE_CALENDAR_OAUTH_STATE_COOKIE =
   "google-calendar-oauth-state";
+export const GOOGLE_CALENDAR_OAUTH_SETUP_COOKIE =
+  "google-calendar-oauth-return-to-setup";
 
 type GoogleTokenResponse = {
   access_token?: unknown;

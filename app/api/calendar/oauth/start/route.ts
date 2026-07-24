@@ -5,6 +5,7 @@ import { SharedOnlyAccessError } from "@/lib/access-errors";
 import { getCurrentUser } from "@/lib/auth";
 import {
   buildGoogleCalendarOAuthUrl,
+  GOOGLE_CALENDAR_OAUTH_SETUP_COOKIE,
   GOOGLE_CALENDAR_OAUTH_STATE_COOKIE,
   shouldUseSecureCalendarOAuthCookie,
 } from "@/lib/google-calendar-oauth";
@@ -15,7 +16,7 @@ import {
 
 export const runtime = "nodejs";
 
-export async function GET() {
+export async function GET(request: Request) {
   const user = await getCurrentUser();
 
   if (!user) {
@@ -34,6 +35,8 @@ export async function GET() {
   }
 
   const state = randomBytes(32).toString("base64url");
+  const returnToSetup =
+    new URL(request.url).searchParams.get("setup") === "1";
   const response = NextResponse.redirect(buildGoogleCalendarOAuthUrl(state));
 
   response.cookies.set(GOOGLE_CALENDAR_OAUTH_STATE_COOKIE, state, {
@@ -43,6 +46,17 @@ export async function GET() {
     sameSite: "lax",
     secure: shouldUseSecureCalendarOAuthCookie(),
   });
+  response.cookies.set(
+    GOOGLE_CALENDAR_OAUTH_SETUP_COOKIE,
+    returnToSetup ? "1" : "",
+    {
+      httpOnly: true,
+      maxAge: returnToSetup ? 10 * 60 : 0,
+      path: "/api/calendar/oauth",
+      sameSite: "lax",
+      secure: shouldUseSecureCalendarOAuthCookie(),
+    },
+  );
 
   return response;
 }
