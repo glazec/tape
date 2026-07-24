@@ -195,6 +195,191 @@ describe("location reminders", () => {
     expect(sendOneSignalLocationReminder).not.toHaveBeenCalled();
   });
 
+  it("cancels delivery when the meeting is no longer eligible", async () => {
+    const cancelledReminder = {
+      ...currentReminder,
+      meetingStatus: "cancelled",
+    };
+    mockReminderSelection([cancelledReminder]);
+    const cancelWhere = vi.fn().mockResolvedValue(undefined);
+    const cancelSet = vi.fn().mockReturnValue({ where: cancelWhere });
+    update.mockReturnValue({ set: cancelSet });
+
+    const { sendScheduledLocationReminder } = await import(
+      "@/lib/location-reminders"
+    );
+
+    await expect(
+      sendScheduledLocationReminder({
+        reminderId: currentReminder.id,
+        scheduleVersion: 3,
+        scheduledFor: "2026-06-30T11:58:00.000Z",
+      }),
+    ).resolves.toEqual({
+      action: "skipped",
+      reason: "cancelled",
+    });
+    expect(cancelSet).toHaveBeenCalledWith({
+      errorMessage: null,
+      status: "cancelled",
+      updatedAt: expect.any(Date),
+    });
+    expect(sendOneSignalLocationReminder).not.toHaveBeenCalled();
+  });
+
+  it("does not send before the persisted reminder time", async () => {
+    mockReminderSelection([currentReminder]);
+
+    const { sendScheduledLocationReminder } = await import(
+      "@/lib/location-reminders"
+    );
+
+    await expect(
+      sendScheduledLocationReminder(
+        {
+          reminderId: currentReminder.id,
+          scheduleVersion: 3,
+          scheduledFor: "2026-06-30T11:58:00.000Z",
+        },
+        { now: new Date("2026-06-30T11:57:00.000Z") },
+      ),
+    ).resolves.toEqual({
+      action: "skipped",
+      reason: "not_due",
+    });
+    expect(update).not.toHaveBeenCalled();
+    expect(sendOneSignalLocationReminder).not.toHaveBeenCalled();
+  });
+
+  it("expires a reminder after the meeting starts", async () => {
+    const now = new Date("2026-06-30T12:01:00.000Z");
+    mockReminderSelection([currentReminder]);
+    const failedWhere = vi.fn().mockResolvedValue(undefined);
+    const failedSet = vi.fn().mockReturnValue({ where: failedWhere });
+    update.mockReturnValue({ set: failedSet });
+
+    const { sendScheduledLocationReminder } = await import(
+      "@/lib/location-reminders"
+    );
+
+    await expect(
+      sendScheduledLocationReminder(
+        {
+          reminderId: currentReminder.id,
+          scheduleVersion: 3,
+          scheduledFor: "2026-06-30T11:58:00.000Z",
+        },
+        { now },
+      ),
+    ).resolves.toEqual({
+      action: "skipped",
+      reason: "expired",
+    });
+    expect(failedSet).toHaveBeenCalledWith({
+      errorMessage: "Reminder expired after meeting start",
+      status: "failed",
+      updatedAt: now,
+    });
+    expect(sendOneSignalLocationReminder).not.toHaveBeenCalled();
+  });
+
+  it("fails safely when the persisted location is missing", async () => {
+    const now = new Date("2026-06-30T11:58:00.000Z");
+    mockReminderSelection([{ ...currentReminder, location: null }]);
+    const failedWhere = vi.fn().mockResolvedValue(undefined);
+    const failedSet = vi.fn().mockReturnValue({ where: failedWhere });
+    update.mockReturnValue({ set: failedSet });
+
+    const { sendScheduledLocationReminder } = await import(
+      "@/lib/location-reminders"
+    );
+
+    await expect(
+      sendScheduledLocationReminder(
+        {
+          reminderId: currentReminder.id,
+          scheduleVersion: 3,
+          scheduledFor: "2026-06-30T11:58:00.000Z",
+        },
+        { now },
+      ),
+    ).resolves.toEqual({
+      action: "skipped",
+      reason: "missing_location",
+    });
+    expect(failedSet).toHaveBeenCalledWith({
+      errorMessage: "Reminder has no location",
+      status: "failed",
+      updatedAt: now,
+    });
+    expect(sendOneSignalLocationReminder).not.toHaveBeenCalled();
+  });
+
+  it("does not send when another execution already completed the claim", async () => {
+    const now = new Date("2026-06-30T11:58:00.000Z");
+    mockReminderSelection([currentReminder]);
+    const claimReturning = vi.fn().mockResolvedValue([]);
+    const claimWhere = vi.fn().mockReturnValue({ returning: claimReturning });
+    const claimSet = vi.fn().mockReturnValue({ where: claimWhere });
+    update.mockReturnValue({ set: claimSet });
+
+    const { sendScheduledLocationReminder } = await import(
+      "@/lib/location-reminders"
+    );
+
+    await expect(
+      sendScheduledLocationReminder(
+        {
+          reminderId: currentReminder.id,
+          scheduleVersion: 3,
+          scheduledFor: "2026-06-30T11:58:00.000Z",
+        },
+        { now },
+      ),
+    ).resolves.toEqual({
+      action: "skipped",
+      reason: "not_claimable",
+    });
+    expect(sendOneSignalLocationReminder).not.toHaveBeenCalled();
+  });
+
+  it("dispatches pending schedules for hourly reconciliation", async () => {
+    const reminder = {
+      deliveryIdempotencyKey: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      dispatchedVersion: 0,
+      id: "33333333-3333-4333-8333-333333333333",
+      scheduleVersion: 1,
+      scheduledFor: new Date("2026-07-28T13:28:00.000Z"),
+      sentAt: null,
+      status: "pending",
+    };
+    mockPendingScheduleSelection([reminder]);
+    inngestSend.mockResolvedValue({ ids: ["event_123"] });
+    const dispatchWhere = vi.fn().mockResolvedValue(undefined);
+    const dispatchSet = vi.fn().mockReturnValue({ where: dispatchWhere });
+    update.mockReturnValue({ set: dispatchSet });
+
+    const { dispatchPendingLocationReminderSchedules } = await import(
+      "@/lib/location-reminders"
+    );
+
+    await expect(
+      dispatchPendingLocationReminderSchedules(),
+    ).resolves.toEqual({ dispatchedCount: 1 });
+    expect(inngestSend).toHaveBeenCalledWith({
+      id: "location-reminder:33333333-3333-4333-8333-333333333333:1",
+      name: "meeting/send.location-reminder",
+      data: {
+        reminderId: "33333333-3333-4333-8333-333333333333",
+        scheduleVersion: 1,
+        scheduledFor: "2026-07-28T13:28:00.000Z",
+      },
+    });
+    expect(dispatchSet).toHaveBeenCalledWith(
+      expect.objectContaining({ dispatchedVersion: 1 }),
+    );
+  });
+
   it("returns a failed delivery to pending and lets Inngest retry", async () => {
     const now = new Date("2026-06-30T11:58:00.000Z");
     mockReminderSelection([currentReminder]);
@@ -266,6 +451,15 @@ function mockScheduleSelection(rows: unknown[]) {
   const limit = vi.fn().mockResolvedValue(rows);
   const where = vi.fn().mockReturnValue({ limit });
   const from = vi.fn().mockReturnValue({ where });
+
+  select.mockReturnValue({ from });
+}
+
+function mockPendingScheduleSelection(rows: unknown[]) {
+  const limit = vi.fn().mockResolvedValue(rows);
+  const where = vi.fn().mockReturnValue({ limit });
+  const innerJoin = vi.fn().mockReturnValue({ where });
+  const from = vi.fn().mockReturnValue({ innerJoin });
 
   select.mockReturnValue({ from });
 }

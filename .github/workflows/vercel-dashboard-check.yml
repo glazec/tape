@@ -23,6 +23,16 @@ jobs:
           --retry 5 --retry-all-errors --retry-delay 5
           "${DEPLOYMENT_URL%/}/api/health/dashboard"
 
+      - name: Sync self hosted Inngest functions
+        if: github.event.client_payload.environment == 'production'
+        env:
+          DEPLOYMENT_URL: ${{ github.event.client_payload.url }}
+        run: >-
+          curl --fail --show-error --silent
+          --retry 5 --retry-all-errors --retry-delay 5
+          --request PUT
+          "${DEPLOYMENT_URL%/}/api/inngest"
+
       - name: Set Vercel status pending
         if: always()
         env:
