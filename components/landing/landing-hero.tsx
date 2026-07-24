@@ -2,11 +2,7 @@
 
 import { useEffect, useRef, useSyncExternalStore } from "react";
 import dynamic from "next/dynamic";
-import {
-  motion,
-  useMotionValue,
-  useTransform,
-} from "framer-motion";
+import { motion, useMotionValue, useTransform } from "framer-motion";
 import Link from "next/link";
 
 const HeroScene = dynamic(() => import("./hero-scene"), { ssr: false });
@@ -85,7 +81,7 @@ export function LandingHero() {
               transition={{ duration: 0.7, ease: EASE }}
               className="font-mono text-[11px] uppercase tracking-[0.22em] text-brand"
             >
-              Meeting intelligence, owned by you
+              Tape · Meeting intelligence, owned by you
             </motion.p>
             <motion.h1
               initial={{ opacity: 0, y: 24 }}

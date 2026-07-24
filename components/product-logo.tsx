@@ -17,7 +17,7 @@ export function ProductLogo({
           ? "/brand/tape-lockup-light.svg"
           : "/brand/tape-lockup.svg"
       }
-      alt=""
+      alt="Tape"
       width={90}
       height={32}
       loading="eager"
