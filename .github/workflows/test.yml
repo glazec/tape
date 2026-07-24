@@ -70,6 +70,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
+      DATABASE_AUTHENTICATED_URL: postgresql://ci:ci@127.0.0.1:5432/meeting_note
       DATABASE_URL: postgresql://ci:ci@127.0.0.1:5432/meeting_note
       NEON_AUTH_JWKS_URL: https://auth.example.com/.well-known/jwks.json
       NEON_AUTH_ISSUER: https://auth.example.com
