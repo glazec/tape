@@ -52,7 +52,10 @@ export function LandingCta() {
             <a href="#recorder" className="transition-colors hover:text-ink">
               Recorder
             </a>
-            <a href="#intelligence" className="transition-colors hover:text-ink">
+            <a
+              href="#intelligence"
+              className="transition-colors hover:text-ink"
+            >
               Intelligence
             </a>
             <Link
@@ -60,6 +63,12 @@ export function LandingCta() {
               className="transition-colors hover:text-ink"
             >
               Sign in
+            </Link>
+            <Link href="/privacy" className="transition-colors hover:text-ink">
+              Privacy
+            </Link>
+            <Link href="/terms" className="transition-colors hover:text-ink">
+              Terms
             </Link>
           </nav>
           <p className="font-mono text-[10px] uppercase tracking-[0.22em] text-ash">
