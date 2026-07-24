@@ -40,7 +40,6 @@ describe("OnboardingTutorial", () => {
         }}
         dismissalCookieName="tape_onboarding_hidden_user_team"
         forceCalendarSync={false}
-        mcpServerAddress="https://mcp.example.com/mcp"
       />,
     );
 
@@ -50,14 +49,21 @@ describe("OnboardingTutorial", () => {
     expect(html).toContain("Connect the MCP server");
     expect(html).toContain("Connect calendar");
     expect(html).toContain(
-      "https://github.com/glazec/tape/releases/tag/mac-v0.2.0",
+      "https://github.com/glazec/tape/releases/download/mac-v0.2.0/MeetingNoteLocalRecorder-0.2.0.zip",
     );
     expect(html).toContain(
       "https://github.com/glazec/tape/blob/main/docs/meeting-note-mcp-api.md",
     );
     expect(html).toContain("Show MCP setup");
     expect(html).toContain("Streamable HTTP");
-    expect(html).toContain("https://mcp.example.com/mcp");
+    expect(html).toContain(
+      "https://meeting-note-mcp-production.up.railway.app/mcp",
+    );
+    expect(html).toContain("Copy address");
+    expect(html).toContain(
+      'href="https://github.com/glazec/tape/releases/download/mac-v0.2.0/MeetingNoteLocalRecorder-0.2.0.zip"',
+    );
+    expect(html).toContain("Download for macOS");
     expect(html).toContain("Show macOS setup");
     expect(html).toContain("xattr -dr com.apple.quarantine");
   });
@@ -74,7 +80,6 @@ describe("OnboardingTutorial", () => {
         }}
         dismissalCookieName="tape_onboarding_hidden_user_team"
         forceCalendarSync={false}
-        mcpServerAddress="https://mcp.example.com/mcp"
       />,
     );
 
@@ -94,7 +99,6 @@ describe("OnboardingTutorial", () => {
         }}
         dismissalCookieName="tape_onboarding_hidden_user_team"
         forceCalendarSync={false}
-        mcpServerAddress="https://mcp.example.com/mcp"
       />,
     );
 
@@ -117,7 +121,6 @@ describe("OnboardingTutorial", () => {
         }}
         dismissalCookieName="tape_onboarding_hidden_user_team"
         forceCalendarSync
-        mcpServerAddress="https://mcp.example.com/mcp"
       />,
     );
 
@@ -126,23 +129,4 @@ describe("OnboardingTutorial", () => {
     expect(html).not.toContain("Calendar connected");
   });
 
-  it("explains when MCP is not configured", () => {
-    const html = renderToStaticMarkup(
-      <OnboardingTutorial
-        autoSyncCalendar={false}
-        calendarStatus={{
-          connected: false,
-          autoJoinEnabled: false,
-          recallCalendarLastSyncedAt: null,
-          recallCalendarStatus: null,
-        }}
-        dismissalCookieName="tape_onboarding_hidden_user_team"
-        forceCalendarSync={false}
-        mcpServerAddress={null}
-      />,
-    );
-
-    expect(html).toContain("MCP is not configured for this deployment yet");
-    expect(html).not.toContain("Ask your workspace administrator");
-  });
 });

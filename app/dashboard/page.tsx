@@ -60,10 +60,7 @@ import {
   MEETING_LIBRARY_HISTORY_MONTH_STEP,
   listMeetingLibraryPageForWorkspace,
 } from "@/lib/meeting-queries";
-import {
-  getConfiguredMcpServerAddress,
-  getOnboardingHiddenCookieName,
-} from "@/lib/onboarding";
+import { getOnboardingHiddenCookieName } from "@/lib/onboarding";
 import { cn } from "@/lib/utils";
 import {
   getOrCreateWorkspaceForSessionUser,
@@ -197,7 +194,6 @@ export default async function DashboardPage({
             calendarStatus={calendarStatus}
             dismissalCookieName={onboardingHiddenCookieName}
             forceCalendarSync={calendarErrorCode === "sync_failed"}
-            mcpServerAddress={getConfiguredMcpServerAddress()}
           />
         ) : !accessSummary.isSharedOnly ? (
           <div className="grid gap-4 lg:grid-cols-2">
