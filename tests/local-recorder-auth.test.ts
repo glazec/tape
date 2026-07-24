@@ -1,4 +1,9 @@
+import { createHash } from "node:crypto";
 import { afterEach, describe, expect, it, vi } from "vitest";
+
+const deviceIdHash = createHash("sha256")
+  .update("mac_123")
+  .digest("base64url");
 
 const {
   assertCanCreateMeetings,
@@ -62,6 +67,7 @@ describe("local recorder auth", () => {
     );
     const workspace = await getLocalRecorderWorkspace(
       new Request("https://app.example.com/api/local-recorder/missed-meetings"),
+      "mac_123",
     );
 
     expect(workspace).toBeNull();
@@ -80,6 +86,7 @@ describe("local recorder auth", () => {
     where.mockReturnValue({ limit });
     limit.mockResolvedValue([
       {
+        deviceIdHash,
         role: "member",
         teamId: "team_123",
         userId: "user_123",
@@ -95,6 +102,7 @@ describe("local recorder auth", () => {
           authorization: "Bearer token_123",
         },
       }),
+      "mac_123",
     );
 
     expect(workspace).toEqual({
@@ -115,6 +123,7 @@ describe("local recorder auth", () => {
     where.mockReturnValue({ limit });
     limit.mockResolvedValue([
       {
+        deviceIdHash,
         role: "member",
         teamId: "team_123",
         userId: "user_123",
@@ -162,6 +171,42 @@ describe("local recorder auth", () => {
     });
   });
 
+  it("rejects a valid token presented by another recorder device", async () => {
+    select.mockReturnValue({
+      from: () => ({
+        innerJoin,
+      }),
+    });
+    innerJoin.mockReturnValue({ where });
+    where.mockReturnValue({ limit });
+    limit.mockResolvedValue([
+      {
+        deviceIdHash,
+        role: "member",
+        teamId: "team_123",
+        userId: "user_123",
+      },
+    ]);
+
+    const { getLocalRecorderDeviceRequestContext } = await import(
+      "@/lib/local-recorder-auth"
+    );
+    const context = await getLocalRecorderDeviceRequestContext(
+      new Request("https://app.example.com/api/local-recorder/monitoring", {
+        headers: {
+          authorization: "Bearer token_123",
+          "x-local-recorder-device-id": "mac_stolen",
+        },
+      }),
+    );
+
+    expect(context).toEqual({
+      error: "Unauthorized",
+      ok: false,
+      status: 401,
+    });
+  });
+
   it("rejects bearer device sessions after a user loses creator access", async () => {
     select.mockReturnValue({
       from: () => ({
@@ -172,6 +217,7 @@ describe("local recorder auth", () => {
     where.mockReturnValue({ limit });
     limit.mockResolvedValue([
       {
+        deviceIdHash,
         role: "external",
         teamId: "team_123",
         userId: "user_123",
@@ -187,6 +233,7 @@ describe("local recorder auth", () => {
           authorization: "Bearer token_123",
         },
       }),
+      "mac_123",
     );
 
     expect(workspace).toBeNull();

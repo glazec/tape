@@ -4,6 +4,15 @@ import {
   LocalRecorderUploadError,
 } from "@/lib/local-recorder-records";
 import { parseLocalRecorderUploadCompletionRequest } from "@/lib/local-recorder-upload-request";
+import {
+  assertWorkspaceHasProviderCredit,
+  providerCreditErrorResponse,
+} from "@/lib/provider-credit";
+import {
+  assertRequestRateLimit,
+  requestRateLimitErrorResponse,
+  requestRateLimitPolicies,
+} from "@/lib/request-rate-limit";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -18,17 +27,22 @@ export async function POST(request: Request) {
     );
   }
 
-  const body = await request.json().catch(() => null);
-  const parsed = parseLocalRecorderUploadCompletionRequest(body);
-
-  if (!parsed.ok) {
-    return Response.json(
-      { error: "Invalid local recording completion" },
-      { status: 400 },
-    );
-  }
-
   try {
+    await assertWorkspaceHasProviderCredit(deviceContext.workspace);
+    await assertRequestRateLimit({
+      ...requestRateLimitPolicies.localRecorderProviderUpload,
+      subject: `${deviceContext.workspace.teamId}:${deviceContext.workspace.userId}`,
+    });
+    const body = await request.json().catch(() => null);
+    const parsed = parseLocalRecorderUploadCompletionRequest(body);
+
+    if (!parsed.ok) {
+      return Response.json(
+        { error: "Invalid local recording completion" },
+        { status: 400 },
+      );
+    }
+
     const result = await completeLocalRecorderRecordingUpload({
       ...parsed.value,
       deviceId: deviceContext.deviceId,
@@ -37,6 +51,18 @@ export async function POST(request: Request) {
 
     return Response.json(result, { status: 202 });
   } catch (error) {
+    const rateLimitResponse = requestRateLimitErrorResponse(error);
+
+    if (rateLimitResponse) {
+      return rateLimitResponse;
+    }
+
+    const creditResponse = providerCreditErrorResponse(error);
+
+    if (creditResponse) {
+      return creditResponse;
+    }
+
     if (error instanceof LocalRecorderUploadError) {
       return Response.json({ error: error.message }, { status: 409 });
     }

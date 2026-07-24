@@ -1,7 +1,19 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+const { isTwentyCrmTeam } = vi.hoisted(() => ({
+  isTwentyCrmTeam: vi.fn().mockResolvedValue(true),
+}));
+
+vi.mock("@/lib/twenty-crm-access", () => ({
+  isTwentyCrmTeam,
+}));
+
+const IOSG_TEAM_ID = "11111111-1111-4111-8111-111111111111";
+
 describe("Twenty CRM vendor", () => {
   afterEach(() => {
+    isTwentyCrmTeam.mockReset();
+    isTwentyCrmTeam.mockResolvedValue(true);
     vi.unstubAllGlobals();
     vi.resetModules();
   });
@@ -30,7 +42,7 @@ describe("Twenty CRM vendor", () => {
     const { getTwentyCrmKeyterms } = await import("@/lib/vendors/twenty");
 
     await expect(
-      getTwentyCrmKeyterms({
+      getTwentyCrmKeyterms(IOSG_TEAM_ID, {
         TWENTY_API_BASE_URL: "https://crm.example.com/rest",
         TWENTY_API_KEY: "twenty-key",
       }),
@@ -42,6 +54,31 @@ describe("Twenty CRM vendor", () => {
     expect(init.headers.Authorization).toBe("Bearer twenty-key");
   });
 
+  it("does not contact Twenty for a non IOSG team", async () => {
+    isTwentyCrmTeam.mockResolvedValue(false);
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { getTwentyCrmCompanyDomains, getTwentyCrmKeyterms } = await import(
+      "@/lib/vendors/twenty"
+    );
+    const source = {
+      TWENTY_API_BASE_URL: "https://crm.example.com/rest",
+      TWENTY_API_KEY: "twenty-key",
+    };
+
+    await expect(
+      getTwentyCrmKeyterms("22222222-2222-4222-8222-222222222222", source),
+    ).resolves.toEqual([]);
+    await expect(
+      getTwentyCrmCompanyDomains(
+        "22222222-2222-4222-8222-222222222222",
+        source,
+      ),
+    ).resolves.toEqual([]);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
   it("keeps keyterms empty when CRM keyterm fetch fails", async () => {
     const fetchMock = vi.fn().mockRejectedValue(new Error("network down"));
     vi.stubGlobal("fetch", fetchMock);
@@ -49,7 +86,7 @@ describe("Twenty CRM vendor", () => {
     const { getTwentyCrmKeyterms } = await import("@/lib/vendors/twenty");
 
     await expect(
-      getTwentyCrmKeyterms({
+      getTwentyCrmKeyterms(IOSG_TEAM_ID, {
         TWENTY_API_BASE_URL: "https://crm.example.com/rest",
         TWENTY_API_KEY: "twenty-key",
       }),
@@ -96,7 +133,7 @@ describe("Twenty CRM vendor", () => {
     const { getTwentyCrmCompanyDomains } = await import("@/lib/vendors/twenty");
 
     await expect(
-      getTwentyCrmCompanyDomains({
+      getTwentyCrmCompanyDomains(IOSG_TEAM_ID, {
         TWENTY_API_BASE_URL: "https://crm.example.com/rest",
         TWENTY_API_KEY: "twenty-key",
       }),
@@ -121,7 +158,9 @@ describe("Twenty CRM vendor", () => {
       "@/lib/vendors/twenty"
     );
 
-    await expect(getTwentyCrmKeyterms({})).resolves.toEqual([]);
-    await expect(getTwentyCrmCompanyDomains({})).resolves.toEqual([]);
+    await expect(getTwentyCrmKeyterms(IOSG_TEAM_ID, {})).resolves.toEqual([]);
+    await expect(
+      getTwentyCrmCompanyDomains(IOSG_TEAM_ID, {}),
+    ).resolves.toEqual([]);
   });
 });

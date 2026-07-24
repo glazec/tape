@@ -1,4 +1,4 @@
-import { asc, eq } from "drizzle-orm";
+import { asc, eq, sql } from "drizzle-orm";
 
 import { db } from "@/db/client";
 import { teamMemberships, teams, users } from "@/db/schema";
@@ -61,4 +61,40 @@ export async function listAdminImpersonationTargets() {
     .leftJoin(teams, eq(teams.id, teamMemberships.teamId))
     .orderBy(asc(users.email))
     .limit(200);
+}
+
+export async function recordAdminImpersonationAudit(input: {
+  action: "admin_impersonation_cleared" | "admin_impersonation_started";
+  actorAuthUserId: string;
+  targetUserId: string;
+}) {
+  await db.execute(sql`
+    insert into audit_events (
+      team_id,
+      actor_user_id,
+      action,
+      target_type,
+      target_id,
+      metadata,
+      created_at
+    )
+    select
+      target_membership.team_id,
+      actor.id,
+      ${input.action},
+      'user',
+      target.id::text,
+      jsonb_build_object('actorAuthUserId', ${input.actorAuthUserId}),
+      now()
+    from users target
+    join lateral (
+      select membership.team_id
+      from team_memberships membership
+      where membership.user_id = target.id
+      order by membership.created_at asc, membership.id asc
+      limit 1
+    ) target_membership on true
+    left join users actor on actor.auth_user_id = ${input.actorAuthUserId}
+    where target.id = ${input.targetUserId}::uuid
+  `);
 }

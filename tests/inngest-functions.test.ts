@@ -1,29 +1,43 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 const {
+  assertMeetingHasProviderCredit,
+  assertWorkspaceHasProviderCredit,
   createElevenLabsTranscriptJob,
   completeUploadedVideoConversion,
   convertVideoObjectToAudio,
   createReadUrl,
   deleteScheduledRecallBot,
   dispatchPendingLocationReminderSchedules,
+  getMeetingVocabularyKeyterms,
   markLocationReminderDeliveryFailed,
   scheduleRecallBot,
   sendScheduledLocationReminder,
+  stopBotsForExhaustedWorkspaces,
   syncRecallCalendarEventsForAllConnectedUsers,
   update,
 } = vi.hoisted(() => ({
+  assertMeetingHasProviderCredit: vi.fn(),
+  assertWorkspaceHasProviderCredit: vi.fn(),
   createElevenLabsTranscriptJob: vi.fn(),
   completeUploadedVideoConversion: vi.fn(),
   convertVideoObjectToAudio: vi.fn(),
   createReadUrl: vi.fn(),
   deleteScheduledRecallBot: vi.fn(),
   dispatchPendingLocationReminderSchedules: vi.fn(),
+  getMeetingVocabularyKeyterms: vi.fn().mockResolvedValue([]),
   markLocationReminderDeliveryFailed: vi.fn(),
   scheduleRecallBot: vi.fn(),
   sendScheduledLocationReminder: vi.fn(),
+  stopBotsForExhaustedWorkspaces: vi.fn(),
   syncRecallCalendarEventsForAllConnectedUsers: vi.fn(),
   update: vi.fn(),
+}));
+
+vi.mock("@/lib/provider-credit", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/provider-credit")>()),
+  assertMeetingHasProviderCredit,
+  assertWorkspaceHasProviderCredit,
 }));
 
 vi.mock("@/db/client", () => ({
@@ -57,10 +71,18 @@ vi.mock("@/lib/recall-calendar-bulk-sync", () => ({
   syncRecallCalendarEventsForAllConnectedUsers,
 }));
 
+vi.mock("@/lib/provider-credit-enforcement", () => ({
+  stopBotsForExhaustedWorkspaces,
+}));
+
 vi.mock("@/lib/location-reminders", () => ({
   dispatchPendingLocationReminderSchedules,
   markLocationReminderDeliveryFailed,
   sendScheduledLocationReminder,
+}));
+
+vi.mock("@/lib/team-vocabulary", () => ({
+  getMeetingVocabularyKeyterms,
 }));
 
 type RunnableInngestFunction = {
@@ -70,6 +92,8 @@ type RunnableInngestFunction = {
 describe("Inngest functions", () => {
   afterEach(() => {
     vi.clearAllMocks();
+    assertMeetingHasProviderCredit.mockReset();
+    assertWorkspaceHasProviderCredit.mockReset();
     vi.resetModules();
     vi.unstubAllEnvs();
   });
@@ -119,10 +143,38 @@ describe("Inngest functions", () => {
         triggers: [{ cron: "0 * * * *" }],
       },
       {
+        id: "enforce-provider-credit",
+        triggers: [{ cron: "*/5 * * * *" }],
+      },
+      {
         id: "reconcile-stale-meeting-jobs",
         triggers: [{ cron: "*/15 * * * *" }],
       },
     ]);
+  });
+
+  it("checks workspace credit before scheduling a background bot", async () => {
+    vi.stubEnv("NEXT_PUBLIC_APP_URL", "https://app.example.com");
+    scheduleRecallBot.mockResolvedValue({ id: "bot_123" });
+    const { scheduleMeetingBot } = await import("@/inngest/functions");
+
+    await expect(
+      (scheduleMeetingBot as unknown as RunnableInngestFunction).fn({
+        event: {
+          data: {
+            meetingUrl: "https://meet.google.com/abc-defg-hij",
+            teamId: "11111111-1111-4111-8111-111111111111",
+          },
+        },
+      }),
+    ).resolves.toEqual({ id: "bot_123" });
+
+    expect(assertWorkspaceHasProviderCredit).toHaveBeenCalledWith(
+      "11111111-1111-4111-8111-111111111111",
+    );
+    expect(assertWorkspaceHasProviderCredit.mock.invocationCallOrder[0]).toBeLessThan(
+      scheduleRecallBot.mock.invocationCallOrder[0],
+    );
   });
 
   it("sleeps until the reminder schedule and then delivers it", async () => {
@@ -230,6 +282,17 @@ describe("Inngest functions", () => {
     );
   });
 
+  it("removes scheduled bots after provider credit is exhausted", async () => {
+    const result = { failed: 0, stopped: 2 };
+    stopBotsForExhaustedWorkspaces.mockResolvedValue(result);
+    const { enforceProviderCredit } = await import("@/inngest/functions");
+
+    await expect(
+      (enforceProviderCredit as unknown as RunnableInngestFunction).fn(),
+    ).resolves.toEqual(result);
+    expect(stopBotsForExhaustedWorkspaces).toHaveBeenCalledOnce();
+  });
+
   it("marks the transcript job failed when the final transcription attempt fails", async () => {
     const error = new Error(
       "ElevenLabs transcript job failed with 400 Bad Request",
@@ -248,6 +311,7 @@ describe("Inngest functions", () => {
         attempt: 4,
         event: {
           data: {
+            meetingId: "11111111-1111-4111-8111-111111111111",
             objectKey: "users/user_123/uploads/audio.mp3",
             transcriptJobId: "22222222-2222-4222-8222-222222222222",
           },
@@ -261,6 +325,44 @@ describe("Inngest functions", () => {
       updatedAt: expect.any(Date),
     });
     expect(where).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not start transcription after the workspace credit is exhausted", async () => {
+    const where = vi.fn().mockResolvedValue(undefined);
+    const set = vi.fn().mockReturnValue({ where });
+    update.mockReturnValue({ set });
+    const { ProviderCreditExhaustedError } = await import(
+      "@/lib/provider-credit"
+    );
+    assertMeetingHasProviderCredit.mockRejectedValue(
+      new ProviderCreditExhaustedError(5_000_000),
+    );
+    vi.stubEnv("NEXT_PUBLIC_APP_URL", "https://app.example.com");
+    const { transcribeAudio } = await import("@/inngest/functions");
+
+    await expect(
+      (transcribeAudio as unknown as RunnableInngestFunction).fn({
+        event: {
+          data: {
+            meetingId: "11111111-1111-4111-8111-111111111111",
+            objectKey: "users/user_123/uploads/audio.mp3",
+            transcriptJobId: "22222222-2222-4222-8222-222222222222",
+          },
+        },
+      }),
+    ).resolves.toEqual({
+      action: "skipped",
+      reason: "credit_exhausted",
+    });
+
+    expect(createReadUrl).not.toHaveBeenCalled();
+    expect(createElevenLabsTranscriptJob).not.toHaveBeenCalled();
+    expect(set).toHaveBeenCalledWith({
+      errorMessage:
+        "Your Tape credit has been used. You can still review existing meetings.",
+      status: "failed",
+      updatedAt: expect.any(Date),
+    });
   });
 
   it("converts video to audio before queuing transcription", async () => {

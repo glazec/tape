@@ -63,13 +63,11 @@ Meeting owners can rename meetings, correct speakers, start or repair translatio
 
 Workspace members can open workspace meetings. Named users outside the workspace receive explicit meeting access after sign in. Pending email invitations activate when the matching user signs in. Shared only users can read granted transcripts but cannot create, edit, delete, or reshare meetings.
 
-Legacy `/share/[token]` links remain supported, require sign in, and resolve only active, unexpired grants.
-
 ### Review billing and credits
 
 Anyone with a Google account can sign in. IOSG team members join the IOSG workspace with unlimited credit. Another email domain already present in `allowed_domains` joins its existing organization workspace. Every other account receives a separate personal workspace with $5 of one time provider credit, so unrelated users on public email domains never share a workspace.
 
-Team settings shows remaining workspace credit plus current month personal and organization consumption. Billing details supports current month, previous month, trailing 90 day, and all time views. Recall.ai and ElevenLabs activity uses published duration based rates, while OpenRouter records the exact cost reported for each model response. New provider work stops when a limited workspace has consumed its credit. Work already in progress may finish, so recorded cost can slightly exceed the allowance. Organization detail stays aggregate and recent meeting activity is limited to meetings owned by the signed in user.
+Team settings shows remaining workspace credit plus current month personal and organization consumption. Billing details supports current month, previous month, trailing 90 day, and all time views. Recall.ai and ElevenLabs activity uses published duration based rates, while OpenRouter records the exact cost reported for each model response. Uploads, bot scheduling, transcription, and transcript enrichment recheck the workspace credit before starting provider work. A five minute reconciliation removes scheduled bots after a workspace exhausts its credit. Work already in progress may finish, so recorded cost can slightly exceed the allowance. Organization detail stays aggregate and recent meeting activity is limited to meetings owned by the signed in user.
 
 ## Architecture
 
@@ -78,6 +76,7 @@ Team settings shows remaining workspace credit plus current month personal and o
 | Web application | Next.js 16 and React 19 on Vercel |
 | Authentication | Neon Auth with Google sign in |
 | Product data | Neon Postgres with Drizzle migrations |
+| Tenant isolation | Forced PostgreSQL RLS for signed in web and MCP reads |
 | Media | Cloudflare R2 with authenticated application routes |
 | Cloud meeting capture | Recall.ai bots and Calendar V2 |
 | Transcription | ElevenLabs Speech to Text using `scribe_v2` |
@@ -86,7 +85,7 @@ Team settings shows remaining workspace credit plus current month personal and o
 | Background work | Self hosted Inngest on Railway for transcription, scheduling, translation, reminders, and repair |
 | Screen share extraction | A Railway Node worker using ffmpeg and ffprobe |
 | Notifications | Optional OneSignal browser and mobile push |
-| Vocabulary enrichment | Optional Twenty CRM names and companies |
+| Vocabulary enrichment | Optional Twenty CRM names and companies for the IOSG workspace only |
 | Agent access | A separate FastMCP server with caller scoped read only tools |
 
 The database is the source of truth for meetings, access, jobs, and transcript records. Vendor payloads and media URLs do not replace local access checks.

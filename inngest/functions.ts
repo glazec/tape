@@ -36,12 +36,19 @@ import {
 } from "@/lib/vendors/recall";
 import { syncRecallCalendarEventsForAllConnectedUsers } from "@/lib/recall-calendar-bulk-sync";
 import { reconcileStaleMeetingJobs } from "@/lib/stale-meeting-jobs";
+import { stopBotsForExhaustedWorkspaces } from "@/lib/provider-credit-enforcement";
+import {
+  assertMeetingHasProviderCredit,
+  assertWorkspaceHasProviderCredit,
+  ProviderCreditExhaustedError,
+} from "@/lib/provider-credit";
 
 const appUrlSchema = z.string().trim().url();
 
 const scheduleMeetingBotDataSchema = z.object({
   meetingUrl: z.url(),
   startAt: z.iso.datetime().optional(),
+  teamId: z.uuid(),
 });
 const deleteRecallBotDataSchema = z.object({
   botId: z.string().trim().min(1),
@@ -50,14 +57,14 @@ const deleteRecallBotDataSchema = z.object({
 const transcribeAudioDataSchema = z.union([
   z.object({
     audioUrl: z.url(),
-    meetingId: z.uuid().optional(),
+    meetingId: z.uuid(),
     mediaAssetId: z.uuid().optional(),
     recordingId: z.uuid().optional(),
     transcriptJobId: z.uuid().optional(),
   }),
   z.object({
     objectKey: z.string().min(1),
-    meetingId: z.uuid().optional(),
+    meetingId: z.uuid(),
     mediaAssetId: z.uuid().optional(),
     recordingId: z.uuid().optional(),
     transcriptJobId: z.uuid().optional(),
@@ -94,11 +101,12 @@ function getAppUrl() {
   return appUrlSchema.parse(process.env.NEXT_PUBLIC_APP_URL);
 }
 
-const scheduleMeetingBot = inngest.createFunction(
+export const scheduleMeetingBot = inngest.createFunction(
   { id: "schedule-meeting-bot", triggers: [{ event: "meeting/schedule.bot" }] },
   async ({ event }) => {
     const data = scheduleMeetingBotDataSchema.parse(event.data);
     const appUrl = getAppUrl();
+    await assertWorkspaceHasProviderCredit(data.teamId);
 
     return scheduleRecallBot({
       meetingUrl: data.meetingUrl,
@@ -131,14 +139,14 @@ export const transcribeAudio = inngest.createFunction(
     const data = transcribeAudioDataSchema.parse(event.data);
 
     try {
+      await assertMeetingHasProviderCredit(data.meetingId);
+
       const appUrl = getAppUrl();
       const audioUrl =
         "audioUrl" in data
           ? data.audioUrl
           : await createReadUrl({ key: data.objectKey });
-      const keyterms = data.meetingId
-        ? await getMeetingVocabularyKeyterms(data.meetingId)
-        : [];
+      const keyterms = await getMeetingVocabularyKeyterms(data.meetingId);
 
       const response = await createElevenLabsTranscriptJob({
         audioUrl,
@@ -163,6 +171,14 @@ export const transcribeAudio = inngest.createFunction(
 
       return response;
     } catch (error) {
+      if (error instanceof ProviderCreditExhaustedError) {
+        if (data.transcriptJobId) {
+          await markTranscriptJobCreditExhausted(data.transcriptJobId, error);
+        }
+
+        return { action: "skipped", reason: "credit_exhausted" };
+      }
+
       await markTranscriptJobFailedAfterFinalAttempt({
         attempt,
         error,
@@ -228,6 +244,8 @@ export const enrichTranscript = inngest.createFunction(
     let translationFinished = !shouldTranslate;
 
     try {
+      await assertMeetingHasProviderCredit(data.meetingId);
+
       const segments = await db
         .select({
           id: transcriptSegments.id,
@@ -381,6 +399,14 @@ export const enrichTranscript = inngest.createFunction(
         translatedCount: newTranslatedCount,
       };
     } catch (error) {
+      if (error instanceof ProviderCreditExhaustedError) {
+        if (shouldTranslate) {
+          await markMeetingTranslationFailed(data.meetingId, error);
+        }
+
+        return { action: "skipped", reason: "credit_exhausted" };
+      }
+
       if (
         shouldTranslate &&
         !translationFinished &&
@@ -443,6 +469,14 @@ export const syncRecallCalendarsHourly = inngest.createFunction(
   async () => syncRecallCalendarEventsForAllConnectedUsers(),
 );
 
+export const enforceProviderCredit = inngest.createFunction(
+  {
+    id: "enforce-provider-credit",
+    triggers: [{ cron: "*/5 * * * *" }],
+  },
+  async () => stopBotsForExhaustedWorkspaces(),
+);
+
 const reconcileStaleJobs = inngest.createFunction(
   {
     id: "reconcile-stale-meeting-jobs",
@@ -460,6 +494,7 @@ export const functions = [
   sendLocationReminder,
   reconcileLocationReminderSchedules,
   syncRecallCalendarsHourly,
+  enforceProviderCredit,
   reconcileStaleJobs,
 ];
 
@@ -472,9 +507,7 @@ function buildTranscriptMetadata(
     metadata.objectKey = data.objectKey;
   }
 
-  if (data.meetingId) {
-    metadata.meetingId = data.meetingId;
-  }
+  metadata.meetingId = data.meetingId;
 
   if (data.mediaAssetId) {
     metadata.mediaAssetId = data.mediaAssetId;
@@ -509,6 +542,20 @@ async function markTranscriptJobFailedAfterFinalAttempt(input: {
       updatedAt: new Date(),
     })
     .where(eq(transcriptJobs.id, input.transcriptJobId));
+}
+
+async function markTranscriptJobCreditExhausted(
+  transcriptJobId: string,
+  error: ProviderCreditExhaustedError,
+) {
+  await db
+    .update(transcriptJobs)
+    .set({
+      errorMessage: error.message,
+      status: "failed",
+      updatedAt: new Date(),
+    })
+    .where(eq(transcriptJobs.id, transcriptJobId));
 }
 
 function getErrorMessage(error: unknown) {

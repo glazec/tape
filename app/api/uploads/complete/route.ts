@@ -51,26 +51,25 @@ export async function POST(request: Request) {
     return Response.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const body = await request.json().catch(() => null);
-  const result = completeUploadSchema.safeParse(body);
-  const uploadMedia = result.success
-    ? getSupportedUploadMedia({
-        extension: result.data.extension,
-        contentType: result.data.contentType,
-      })
-    : null;
-
-  if (!result.success || !uploadMedia) {
-    return Response.json(
-      { error: "Invalid upload completion request" },
-      { status: 400 },
-    );
-  }
-
   try {
     const workspace = await getOrCreateWorkspaceForSessionUser(user);
     await assertCanCreateMeetings(workspace);
     await assertWorkspaceHasProviderCredit(workspace);
+    const body = await request.json().catch(() => null);
+    const result = completeUploadSchema.safeParse(body);
+    const uploadMedia = result.success
+      ? getSupportedUploadMedia({
+          extension: result.data.extension,
+          contentType: result.data.contentType,
+        })
+      : null;
+
+    if (!result.success || !uploadMedia) {
+      return Response.json(
+        { error: "Invalid upload completion request" },
+        { status: 400 },
+      );
+    }
 
     const key = buildPendingUploadObjectKey({
       userId: user.id,

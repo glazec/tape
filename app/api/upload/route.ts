@@ -16,6 +16,11 @@ import {
   providerCreditErrorResponse,
 } from "@/lib/provider-credit";
 import {
+  assertRequestRateLimit,
+  requestRateLimitErrorResponse,
+  requestRateLimitPolicies,
+} from "@/lib/request-rate-limit";
+import {
   assertCanCreateMeetings,
   getOrCreateWorkspaceForSessionUser,
 } from "@/lib/workspace";
@@ -35,27 +40,30 @@ export async function POST(request: Request) {
     return Response.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const body = await request.json().catch(() => null);
-  const result = uploadRequestSchema.safeParse(body);
-  const uploadMedia = result.success
-    ? getSupportedUploadMedia(result.data)
-    : null;
-
-  if (!result.success || !uploadMedia) {
-    return Response.json({ error: "Invalid upload request" }, { status: 400 });
-  }
-
-  if (!isUploadMediaSizeAllowed(result.data.fileSize)) {
-    return Response.json(
-      { error: "Recording file must be 1 GB or smaller" },
-      { status: 413 },
-    );
-  }
-
   try {
     const workspace = await getOrCreateWorkspaceForSessionUser(user);
     await assertCanCreateMeetings(workspace);
     await assertWorkspaceHasProviderCredit(workspace);
+    await assertRequestRateLimit({
+      ...requestRateLimitPolicies.serverMediaUpload,
+      subject: `${workspace.teamId}:${workspace.userId}`,
+    });
+    const body = await request.json().catch(() => null);
+    const result = uploadRequestSchema.safeParse(body);
+    const uploadMedia = result.success
+      ? getSupportedUploadMedia(result.data)
+      : null;
+
+    if (!result.success || !uploadMedia) {
+      return Response.json({ error: "Invalid upload request" }, { status: 400 });
+    }
+
+    if (!isUploadMediaSizeAllowed(result.data.fileSize)) {
+      return Response.json(
+        { error: "Recording file must be 1 GB or smaller" },
+        { status: 413 },
+      );
+    }
 
     const uploadId = crypto.randomUUID();
     const key = buildPendingUploadObjectKey({
@@ -70,6 +78,12 @@ export async function POST(request: Request) {
 
     return Response.json({ key, uploadUrl, uploadId });
   } catch (error) {
+    const rateLimitResponse = requestRateLimitErrorResponse(error);
+
+    if (rateLimitResponse) {
+      return rateLimitResponse;
+    }
+
     const creditResponse = providerCreditErrorResponse(error);
 
     if (creditResponse) {

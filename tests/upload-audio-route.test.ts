@@ -1,8 +1,12 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@/lib/provider-credit", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/provider-credit")>()),
   assertWorkspaceHasProviderCredit: vi.fn(),
+}));
+vi.mock("@/lib/request-rate-limit", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/request-rate-limit")>()),
+  assertRequestRateLimit: vi.fn(),
 }));
 
 const getCurrentUser = vi.fn();
@@ -67,6 +71,15 @@ async function postAudioUpload(
 }
 
 describe("POST /api/uploads/audio", () => {
+  beforeEach(() => {
+    getWorkspace.mockResolvedValue({
+      userId: "user_123",
+      teamId: "team_123",
+      domain: "example.com",
+    });
+    assertCanCreateMeetings.mockResolvedValue(undefined);
+  });
+
   afterEach(() => {
     vi.restoreAllMocks();
     assertCanCreateMeetings.mockReset();
@@ -90,6 +103,31 @@ describe("POST /api/uploads/audio", () => {
     expect(response.status).toBe(401);
     await expect(response.json()).resolves.toEqual({ error: "Unauthorized" });
     expect(putObject).not.toHaveBeenCalled();
+  });
+
+  it("checks provider credit before parsing a multipart upload", async () => {
+    getCurrentUser.mockResolvedValue({
+      id: "user_123",
+      email: "user@example.com",
+      name: null,
+    });
+    const {
+      assertWorkspaceHasProviderCredit,
+      ProviderCreditExhaustedError,
+    } = await import("@/lib/provider-credit");
+    vi.mocked(assertWorkspaceHasProviderCredit).mockRejectedValueOnce(
+      new ProviderCreditExhaustedError(5_000_000),
+    );
+    const formData = vi.fn();
+    const { POST } = await import("@/app/api/uploads/audio/route");
+
+    const response = await POST({
+      formData,
+      headers: new Headers(),
+    } as unknown as Request);
+
+    expect(response.status).toBe(402);
+    expect(formData).not.toHaveBeenCalled();
   });
 
   it("queues transcription after storing the authenticated user's MP3", async () => {
@@ -173,6 +211,7 @@ describe("POST /api/uploads/audio", () => {
 
     const response = await POST({
       formData: vi.fn().mockResolvedValue(formData),
+      headers: new Headers(),
     } as unknown as Request);
 
     expect(response.status).toBe(413);

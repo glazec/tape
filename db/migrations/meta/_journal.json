@@ -253,6 +253,41 @@
       "when": 1785700000000,
       "tag": "0035_versioned_location_reminders",
       "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1785800000000,
+      "tag": "0036_persistent_request_rate_limits",
+      "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "7",
+      "when": 1785900000000,
+      "tag": "0037_tenant_rls",
+      "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "7",
+      "when": 1786000000000,
+      "tag": "0038_drop_legacy_share_links",
+      "breakpoints": true
+    },
+    {
+      "idx": 39,
+      "version": "7",
+      "when": 1786100000000,
+      "tag": "0039_restrict_rate_limit_table",
+      "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "7",
+      "when": 1786200000000,
+      "tag": "0040_mcp_verified_email_identity",
+      "breakpoints": true
     }
   ]
 }

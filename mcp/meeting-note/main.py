@@ -15,6 +15,7 @@ from uuid import UUID
 import asyncio
 import atexit
 import hashlib
+import json
 import logging
 import os
 import re
@@ -327,7 +328,6 @@ FORBIDDEN_SQL_TABLES = {
     "pg_tables",
     "pg_user",
     "recordings",
-    "share_links",
     "team_meeting_bot_profiles",
     "team_memberships",
     "team_vocabulary_terms",
@@ -819,6 +819,10 @@ async def _fetch_all(
             await cur.execute("set transaction read only")
             await cur.execute(
                 f"set local statement_timeout = {SQL_TOOL_STATEMENT_TIMEOUT_MS}",
+            )
+            await cur.execute(
+                "select set_config('request.jwt.claims', %s, true)",
+                (json.dumps(_current_user_claims()),),
             )
             await cur.execute(query, params or {})
             rows = await cur.fetchall()

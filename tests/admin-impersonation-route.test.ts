@@ -4,7 +4,9 @@ const {
   cookies,
   getAdminImpersonationTarget,
   getAuthenticatedUser,
+  assertRequestRateLimit,
   isAdminSessionUser,
+  recordAdminImpersonationAudit,
   setCookie,
   deleteCookie,
 } = vi.hoisted(() => ({
@@ -12,7 +14,9 @@ const {
   deleteCookie: vi.fn(),
   getAdminImpersonationTarget: vi.fn(),
   getAuthenticatedUser: vi.fn(),
+  assertRequestRateLimit: vi.fn(),
   isAdminSessionUser: vi.fn(),
+  recordAdminImpersonationAudit: vi.fn(),
   setCookie: vi.fn(),
 }));
 
@@ -38,6 +42,19 @@ vi.mock("@/lib/admin-access", () => ({
 
 vi.mock("@/lib/admin-impersonation", () => ({
   getAdminImpersonationTarget,
+  recordAdminImpersonationAudit,
+}));
+
+vi.mock("@/lib/request-rate-limit", () => ({
+  assertRequestRateLimit,
+  requestRateLimitErrorResponse: () => null,
+  requestRateLimitPolicies: {
+    adminImpersonation: {
+      limit: 30,
+      scope: "admin_impersonation",
+      windowMs: 3_600_000,
+    },
+  },
 }));
 
 function impersonationRequest(body: URLSearchParams) {
@@ -53,7 +70,9 @@ describe("POST /api/admin/impersonation", () => {
     deleteCookie.mockReset();
     getAdminImpersonationTarget.mockReset();
     getAuthenticatedUser.mockReset();
+    assertRequestRateLimit.mockReset();
     isAdminSessionUser.mockReset();
+    recordAdminImpersonationAudit.mockReset();
     setCookie.mockReset();
     vi.resetModules();
   });
@@ -64,7 +83,7 @@ describe("POST /api/admin/impersonation", () => {
       email: "member@example.com",
       name: "Member",
     });
-    isAdminSessionUser.mockReturnValue(false);
+    isAdminSessionUser.mockResolvedValue(false);
 
     const { POST } = await import("@/app/api/admin/impersonation/route");
     const response = await POST(impersonationRequest(new URLSearchParams()));
@@ -80,7 +99,7 @@ describe("POST /api/admin/impersonation", () => {
       email: "owner@example.com",
       name: "Owner",
     });
-    isAdminSessionUser.mockReturnValue(true);
+    isAdminSessionUser.mockResolvedValue(true);
     cookies.mockResolvedValue({
       delete: deleteCookie,
       set: setCookie,
@@ -115,6 +134,11 @@ describe("POST /api/admin/impersonation", () => {
       secure: false,
       value: "target_user_id",
     });
+    expect(recordAdminImpersonationAudit).toHaveBeenCalledWith({
+      action: "admin_impersonation_started",
+      actorAuthUserId: "auth_owner",
+      targetUserId: "target_user_id",
+    });
   });
 
   it("clears the impersonation cookie for the configured admin", async () => {
@@ -123,9 +147,12 @@ describe("POST /api/admin/impersonation", () => {
       email: "owner@example.com",
       name: "Owner",
     });
-    isAdminSessionUser.mockReturnValue(true);
+    isAdminSessionUser.mockResolvedValue(true);
     cookies.mockResolvedValue({
       delete: deleteCookie,
+      get: vi.fn().mockReturnValue({
+        value: "11111111-1111-4111-8111-111111111111",
+      }),
       set: setCookie,
     });
 
@@ -146,5 +173,10 @@ describe("POST /api/admin/impersonation", () => {
     expect(response.headers.get("location")).toBe(
       "https://app.example.com/admin",
     );
+    expect(recordAdminImpersonationAudit).toHaveBeenCalledWith({
+      action: "admin_impersonation_cleared",
+      actorAuthUserId: "auth_owner",
+      targetUserId: "11111111-1111-4111-8111-111111111111",
+    });
   });
 });

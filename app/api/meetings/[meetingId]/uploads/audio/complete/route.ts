@@ -4,6 +4,7 @@ import { z } from "zod";
 import { inngest } from "@/inngest/client";
 import { getCurrentUser } from "@/lib/auth";
 import {
+  assertCanManageMeeting,
   completeMeetingAudioUpload,
   MeetingRecoveryUploadError,
 } from "@/lib/meeting-recovery-uploads";
@@ -44,28 +45,27 @@ export async function POST(
     return Response.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const [{ meetingId }, body] = await Promise.all([
-    context.params,
-    request.json().catch(() => null),
-  ]);
-  const result = completeMeetingAudioUploadSchema.safeParse(body);
-  const uploadMedia = result.success
-    ? getSupportedUploadMedia({
-        extension: result.data.extension,
-        contentType: result.data.contentType,
-      })
-    : null;
-
-  if (!result.success || !uploadMedia || uploadMedia.kind !== "audio") {
-    return Response.json(
-      { error: "Invalid audio upload completion request" },
-      { status: 400 },
-    );
-  }
-
   try {
+    const { meetingId } = await context.params;
     const workspace = await getOrCreateWorkspaceForSessionUser(user);
+    await assertCanManageMeeting(workspace, meetingId);
     await assertWorkspaceHasProviderCredit(workspace);
+    const body = await request.json().catch(() => null);
+    const result = completeMeetingAudioUploadSchema.safeParse(body);
+    const uploadMedia = result.success
+      ? getSupportedUploadMedia({
+          extension: result.data.extension,
+          contentType: result.data.contentType,
+        })
+      : null;
+
+    if (!result.success || !uploadMedia || uploadMedia.kind !== "audio") {
+      return Response.json(
+        { error: "Invalid audio upload completion request" },
+        { status: 400 },
+      );
+    }
+
     const objectKey = buildPendingUploadObjectKey({
       userId: user.id,
       uploadId: result.data.uploadId,

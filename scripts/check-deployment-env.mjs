@@ -3,6 +3,7 @@ import { fileURLToPath } from "node:url";
 
 export const requiredDeploymentVariables = [
   "DATABASE_URL",
+  "DATABASE_AUTHENTICATED_URL",
   "NEON_AUTH_JWKS_URL",
   "NEON_AUTH_ISSUER",
   "NEON_AUTH_COOKIE_SECRET",
@@ -62,9 +63,29 @@ export function getDeploymentEnvironmentIssues(
   }
 
   const databaseUrl = source.DATABASE_URL?.trim();
+  const authenticatedDatabaseUrl =
+    source.DATABASE_AUTHENTICATED_URL?.trim();
 
   if (databaseUrl && !isPostgresUrl(databaseUrl)) {
     issues.push("DATABASE_URL must be a PostgreSQL connection URL");
+  }
+
+  if (authenticatedDatabaseUrl && !isPostgresUrl(authenticatedDatabaseUrl)) {
+    issues.push(
+      "DATABASE_AUTHENTICATED_URL must be a PostgreSQL connection URL",
+    );
+  }
+
+  if (
+    databaseUrl &&
+    authenticatedDatabaseUrl &&
+    isPostgresUrl(databaseUrl) &&
+    isPostgresUrl(authenticatedDatabaseUrl) &&
+    getDatabaseRole(databaseUrl) === getDatabaseRole(authenticatedDatabaseUrl)
+  ) {
+    issues.push(
+      "DATABASE_AUTHENTICATED_URL must use a separate RLS enforced role",
+    );
   }
 
   const cookieSecret = source.NEON_AUTH_COOKIE_SECRET?.trim();
@@ -124,6 +145,14 @@ function isPostgresUrl(value) {
     return ["postgres:", "postgresql:"].includes(new URL(value).protocol);
   } catch {
     return false;
+  }
+}
+
+function getDatabaseRole(value) {
+  try {
+    return decodeURIComponent(new URL(value).username);
+  } catch {
+    return "";
   }
 }
 

@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import { buildTranscriptionKeyterms } from "@/lib/meeting-intelligence";
+import { isTwentyCrmTeam } from "@/lib/twenty-crm-access";
 
 const DEFAULT_TWENTY_CRM_KEYTERM_LIMIT = 500;
 const DEFAULT_TWENTY_CRM_COMPANY_DOMAIN_LIMIT = 500;
@@ -129,8 +130,13 @@ export type TwentyCrmCompanyDomain = {
 };
 
 export async function getTwentyCrmKeyterms(
+  teamId: string,
   source: Record<string, string | undefined> = process.env,
 ) {
+  if (!(await isTwentyCrmTeam(teamId))) {
+    return [];
+  }
+
   const env = twentyEnvSchema.parse(source);
 
   if (!env.TWENTY_API_BASE_URL || !env.TWENTY_API_KEY) {
@@ -175,8 +181,13 @@ export async function getTwentyCrmKeyterms(
 }
 
 export async function getTwentyCrmCompanyDomains(
+  teamId: string,
   source: Record<string, string | undefined> = process.env,
 ): Promise<TwentyCrmCompanyDomain[]> {
+  if (!(await isTwentyCrmTeam(teamId))) {
+    return [];
+  }
+
   const env = twentyEnvSchema.parse(source);
 
   if (!env.TWENTY_API_BASE_URL || !env.TWENTY_API_KEY) {

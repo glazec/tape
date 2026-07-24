@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 const {
+  assertMeetingHasProviderCredit,
   getStoredMeetingTranslationLanguage,
   markMeetingTranslationCompleted,
   markMeetingTranslationFailed,
@@ -10,6 +11,7 @@ const {
   translateTranscriptSegments,
   update,
 } = vi.hoisted(() => ({
+  assertMeetingHasProviderCredit: vi.fn(),
   getStoredMeetingTranslationLanguage: vi.fn(),
   markMeetingTranslationCompleted: vi.fn(),
   markMeetingTranslationFailed: vi.fn(),
@@ -18,6 +20,11 @@ const {
   select: vi.fn(),
   translateTranscriptSegments: vi.fn(),
   update: vi.fn(),
+}));
+
+vi.mock("@/lib/provider-credit", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/provider-credit")>()),
+  assertMeetingHasProviderCredit,
 }));
 
 vi.mock("@/db/client", () => ({

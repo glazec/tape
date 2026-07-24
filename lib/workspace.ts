@@ -1,6 +1,9 @@
+import { randomUUID } from "node:crypto";
+
 import { and, asc, eq, sql } from "drizzle-orm";
 
 import { db } from "@/db/client";
+import { setDatabaseWorkspace } from "@/db/rls-context";
 import {
   allowedDomains,
   meetingAccess,
@@ -76,7 +79,7 @@ export async function getOrCreateWorkspaceForSessionUser(
         target: [teamMemberships.teamId, teamMemberships.userId],
       });
 
-    return {
+    return activateWorkspace({
       canCreateMeetings: true,
       creditLimitUsdMicros: existingDomain[0].creditLimitUsdMicros,
       domain,
@@ -85,7 +88,7 @@ export async function getOrCreateWorkspaceForSessionUser(
         ? { teamName: existingDomain[0].teamName }
         : {}),
       userId,
-    };
+    });
   }
 
   const existingMembership = await db
@@ -124,7 +127,7 @@ export async function getOrCreateWorkspaceForSessionUser(
       });
     }
 
-    return {
+    return activateWorkspace({
       canCreateMeetings:
         existingMembership[0].role !== "external" || isPublicWorkspace,
       creditLimitUsdMicros: isPublicWorkspace
@@ -136,14 +139,17 @@ export async function getOrCreateWorkspaceForSessionUser(
         ? { teamName: existingMembership[0].teamName }
         : {}),
       userId,
-    };
+    });
   }
 
   const teamName = `${getWorkspaceDisplayName(domain)} workspace`;
+  const teamId = randomUUID();
+  setDatabaseWorkspace({ teamId, userId });
   const [team] = await db
     .insert(teams)
     .values({
       creditLimitUsdMicros: PUBLIC_WORKSPACE_CREDIT_USD_MICROS,
+      id: teamId,
       name: teamName,
     })
     .returning({ id: teams.id });
@@ -159,14 +165,19 @@ export async function getOrCreateWorkspaceForSessionUser(
       target: [teamMemberships.teamId, teamMemberships.userId],
     });
 
-  return {
+  return activateWorkspace({
     canCreateMeetings: true,
     creditLimitUsdMicros: PUBLIC_WORKSPACE_CREDIT_USD_MICROS,
     domain,
     teamId: team.id,
     teamName,
     userId,
-  };
+  });
+}
+
+function activateWorkspace(workspace: WorkspaceContext) {
+  setDatabaseWorkspace(workspace);
+  return workspace;
 }
 
 async function promotePublicWorkspaceMembership(input: {

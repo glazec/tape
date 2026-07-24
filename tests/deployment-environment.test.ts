@@ -21,6 +21,8 @@ describe("deployment environment", () => {
   it("accepts a complete production environment", () => {
     const environment = {
       ...validEnvironment(),
+      DATABASE_AUTHENTICATED_URL:
+        "postgresql://app:password@db.example.com/tape",
       DATABASE_URL: "postgresql://user:password@db.example.com/tape",
       NEON_AUTH_ISSUER: "https://auth.example.com",
       NEON_AUTH_JWKS_URL: "https://auth.example.com/.well-known/jwks.json",
@@ -38,6 +40,8 @@ describe("deployment environment", () => {
   it("rejects insecure production origins and partial OneSignal setup", () => {
     const environment = {
       ...validEnvironment(),
+      DATABASE_AUTHENTICATED_URL:
+        "postgresql://app:password@db.example.com/tape",
       DATABASE_URL: "postgresql://user:password@db.example.com/tape",
       NEON_AUTH_ISSUER: "https://auth.example.com",
       NEON_AUTH_JWKS_URL: "https://auth.example.com/.well-known/jwks.json",
@@ -56,9 +60,31 @@ describe("deployment environment", () => {
     ]);
   });
 
+  it("rejects an authenticated connection using the owner role", () => {
+    const environment = {
+      ...validEnvironment(),
+      DATABASE_AUTHENTICATED_URL:
+        "postgresql://owner:other-password@pooler.example.com/tape",
+      DATABASE_URL: "postgresql://owner:password@db.example.com/tape",
+      NEON_AUTH_ISSUER: "https://auth.example.com",
+      NEON_AUTH_JWKS_URL: "https://auth.example.com/.well-known/jwks.json",
+      NEON_AUTH_COOKIE_SECRET: "a".repeat(32),
+      NEXT_PUBLIC_APP_URL: "https://meetings.example.com",
+      RECALL_API_BASE_URL: "https://us-east-1.recall.ai",
+      RECALL_WEBHOOK_SECRET: "whsec_example",
+    };
+
+    expect(
+      getDeploymentEnvironmentIssues(environment, { production: true }),
+    ).toEqual([
+      "DATABASE_AUTHENTICATED_URL must use a separate RLS enforced role",
+    ]);
+  });
+
   it("rejects malformed database, cookie, app URL, and push origins", () => {
     const environment = {
       ...validEnvironment(),
+      DATABASE_AUTHENTICATED_URL: "https://db.example.com/tape",
       DATABASE_URL: "https://db.example.com/tape",
       NEON_AUTH_ISSUER: "https://auth.example.com",
       NEON_AUTH_JWKS_URL: "https://auth.example.com/.well-known/jwks.json",
@@ -74,6 +100,7 @@ describe("deployment environment", () => {
     ).toEqual([
       "NEXT_PUBLIC_APP_URL must be an origin without a path or query",
       "DATABASE_URL must be a PostgreSQL connection URL",
+      "DATABASE_AUTHENTICATED_URL must be a PostgreSQL connection URL",
       "NEON_AUTH_COOKIE_SECRET must contain at least 32 characters",
       "NEXT_PUBLIC_ONESIGNAL_ALLOWED_ORIGINS must contain valid HTTP or HTTPS URLs",
     ]);

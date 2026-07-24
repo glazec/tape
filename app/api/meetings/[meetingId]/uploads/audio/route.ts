@@ -15,6 +15,7 @@ import {
 import {
   getUploadMediaFromFile,
   isUploadMediaSizeAllowed,
+  MAX_UPLOAD_MEDIA_BYTES,
 } from "@/lib/upload-media";
 import { getOrCreateWorkspaceForSessionUser } from "@/lib/workspace";
 import { normalizeRecordingDurationMs } from "@/lib/recording-duration";
@@ -22,6 +23,11 @@ import {
   assertWorkspaceHasProviderCredit,
   providerCreditErrorResponse,
 } from "@/lib/provider-credit";
+import {
+  assertRequestRateLimit,
+  requestRateLimitErrorResponse,
+  requestRateLimitPolicies,
+} from "@/lib/request-rate-limit";
 
 export const runtime = "nodejs";
 
@@ -40,6 +46,22 @@ export async function POST(
     const workspace = await getOrCreateWorkspaceForSessionUser(user);
     await assertCanManageMeeting(workspace, meetingId);
     await assertWorkspaceHasProviderCredit(workspace);
+    await assertRequestRateLimit({
+      ...requestRateLimitPolicies.serverMediaUpload,
+      subject: `${workspace.teamId}:${workspace.userId}`,
+    });
+    const contentLength = Number(request.headers.get("content-length"));
+
+    if (
+      Number.isFinite(contentLength) &&
+      contentLength > MAX_UPLOAD_MEDIA_BYTES + 1_000_000
+    ) {
+      return Response.json(
+        { error: "Recording file must be 1 GB or smaller" },
+        { status: 413 },
+      );
+    }
+
     const formData = await request.formData().catch(() => null);
     const file = formData?.get("meeting-audio");
     const durationMs = normalizeRecordingDurationMs(
@@ -115,6 +137,12 @@ export async function POST(
       { status: 202 },
     );
   } catch (error) {
+    const rateLimitResponse = requestRateLimitErrorResponse(error);
+
+    if (rateLimitResponse) {
+      return rateLimitResponse;
+    }
+
     const creditResponse = providerCreditErrorResponse(error);
 
     if (creditResponse) {

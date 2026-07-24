@@ -4,6 +4,10 @@ vi.mock("@/lib/provider-credit", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/provider-credit")>()),
   assertWorkspaceHasProviderCredit: vi.fn(),
 }));
+vi.mock("@/lib/request-rate-limit", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/request-rate-limit")>()),
+  assertRequestRateLimit: vi.fn(),
+}));
 
 const createLocalRecorderDeviceSession = vi.fn();
 const getLocalRecorderDeviceRequestContext = vi.fn();

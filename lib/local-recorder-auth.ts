@@ -1,6 +1,7 @@
 import { and, eq, gt, isNull, sql } from "drizzle-orm";
 
 import { db } from "@/db/client";
+import { setDatabaseWorkspace } from "@/db/rls-context";
 import {
   localRecorderDeviceSessions,
   teamMemberships,
@@ -19,6 +20,7 @@ const deviceTokenBytes = 32;
 
 export async function getLocalRecorderWorkspace(
   request: Request,
+  deviceId: string,
 ): Promise<WorkspaceContext | null> {
   const bearerToken = getBearerToken(request);
 
@@ -35,6 +37,7 @@ export async function getLocalRecorderWorkspace(
         where ${teams.id} = ${localRecorderDeviceSessions.teamId}
       )`,
       role: teamMemberships.role,
+      deviceIdHash: localRecorderDeviceSessions.deviceIdHash,
       teamId: localRecorderDeviceSessions.teamId,
       userId: localRecorderDeviceSessions.userId,
     })
@@ -55,8 +58,13 @@ export async function getLocalRecorderWorkspace(
     )
     .limit(1);
 
-  return session && session.role !== "external"
-      ? {
+  const deviceIdHash = await hashLocalRecorderSecret(deviceId);
+
+  const workspace =
+    session &&
+    session.role !== "external" &&
+    session.deviceIdHash === deviceIdHash
+    ? {
         canCreateMeetings: true,
         creditLimitUsdMicros: session.creditLimitUsdMicros,
         domain: "",
@@ -64,19 +72,15 @@ export async function getLocalRecorderWorkspace(
         userId: session.userId,
       }
     : null;
+
+  if (workspace) {
+    setDatabaseWorkspace(workspace);
+  }
+
+  return workspace;
 }
 
 export async function getLocalRecorderDeviceRequestContext(request: Request) {
-  const workspace = await getLocalRecorderWorkspace(request);
-
-  if (!workspace) {
-    return {
-      ok: false as const,
-      error: "Unauthorized",
-      status: 401,
-    };
-  }
-
   const deviceId = request.headers.get("x-local-recorder-device-id")?.trim();
 
   if (!deviceId) {
@@ -84,6 +88,16 @@ export async function getLocalRecorderDeviceRequestContext(request: Request) {
       ok: false as const,
       error: "Missing recorder device",
       status: 400,
+    };
+  }
+
+  const workspace = await getLocalRecorderWorkspace(request, deviceId);
+
+  if (!workspace) {
+    return {
+      ok: false as const,
+      error: "Unauthorized",
+      status: 401,
     };
   }
 

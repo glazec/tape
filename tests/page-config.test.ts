@@ -12,10 +12,6 @@ vi.mock("@/lib/calendar-connection-queries", () => ({
   getCalendarConnectionSummaryForWorkspace: vi.fn(),
 }));
 
-vi.mock("@/lib/share-links", () => ({
-  getSharedTranscriptByToken: vi.fn(),
-}));
-
 vi.mock("@/lib/team-vocabulary", () => ({
   listTeamVocabularyTerms: vi.fn(),
 }));
@@ -132,9 +128,4 @@ describe("page rendering configuration", () => {
     expect(page.dynamic).toBe("force-dynamic");
   });
 
-  it("renders share pages dynamically because share tokens can expire or be revoked", async () => {
-    const page = await import("@/app/share/[token]/page");
-
-    expect(page.dynamic).toBe("force-dynamic");
-  });
 });

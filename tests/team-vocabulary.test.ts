@@ -39,6 +39,9 @@ describe("team vocabulary", () => {
     await expect(
       getTeamVocabularyKeyterms("22222222-2222-4222-8222-222222222222"),
     ).resolves.toEqual(["IOSG", "TCG platform"]);
+    expect(getTwentyCrmKeyterms).toHaveBeenCalledWith(
+      "22222222-2222-4222-8222-222222222222",
+    );
   });
 
   it("merges CRM names after manual team vocabulary", async () => {

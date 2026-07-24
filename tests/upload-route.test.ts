@@ -1,8 +1,12 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@/lib/provider-credit", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/provider-credit")>()),
   assertWorkspaceHasProviderCredit: vi.fn(),
+}));
+vi.mock("@/lib/request-rate-limit", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/request-rate-limit")>()),
+  assertRequestRateLimit: vi.fn(),
 }));
 
 const getCurrentUser = vi.fn();
@@ -49,6 +53,15 @@ const validBody = {
 };
 
 describe("POST /api/upload", () => {
+  beforeEach(() => {
+    getWorkspace.mockResolvedValue({
+      userId: "user_123",
+      teamId: "team_123",
+      domain: "example.com",
+    });
+    assertCanCreateMeetings.mockResolvedValue(undefined);
+  });
+
   afterEach(() => {
     vi.restoreAllMocks();
     assertCanCreateMeetings.mockReset();

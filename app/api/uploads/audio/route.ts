@@ -22,11 +22,17 @@ import { titleFromUploadFileName } from "@/lib/upload-titles";
 import {
   getUploadMediaFromFile,
   isUploadMediaSizeAllowed,
+  MAX_UPLOAD_MEDIA_BYTES,
 } from "@/lib/upload-media";
 import {
   assertWorkspaceHasProviderCredit,
   providerCreditErrorResponse,
 } from "@/lib/provider-credit";
+import {
+  assertRequestRateLimit,
+  requestRateLimitErrorResponse,
+  requestRateLimitPolicies,
+} from "@/lib/request-rate-limit";
 
 export const runtime = "nodejs";
 
@@ -39,37 +45,49 @@ export async function POST(request: Request) {
     return Response.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const formData = await request.formData().catch(() => null);
-  const file = formData?.get("meeting-audio");
-  const startedAt = parseUploadStartedAt(formData?.get("startedAt"));
-  const durationMs = normalizeRecordingDurationMs(
-    Number(formData?.get("durationMs")),
-  );
-  const uploadMedia = file instanceof File ? getUploadMediaFromFile(file) : null;
-
-  if (
-    !(file instanceof File) ||
-    file.size === 0 ||
-    !uploadMedia ||
-    startedAt === null
-  ) {
-    return Response.json(
-      { error: "Invalid audio upload request" },
-      { status: 400 },
-    );
-  }
-
-  if (!isUploadMediaSizeAllowed(file.size)) {
-    return Response.json(
-      { error: "Recording file must be 1 GB or smaller" },
-      { status: 413 },
-    );
-  }
-
   try {
     const workspace = await getOrCreateWorkspaceForSessionUser(user);
     await assertCanCreateMeetings(workspace);
     await assertWorkspaceHasProviderCredit(workspace);
+    await assertRequestRateLimit({
+      ...requestRateLimitPolicies.serverMediaUpload,
+      subject: `${workspace.teamId}:${workspace.userId}`,
+    });
+
+    if (isRequestBodyTooLarge(request, MAX_UPLOAD_MEDIA_BYTES + 1_000_000)) {
+      return Response.json(
+        { error: "Recording file must be 1 GB or smaller" },
+        { status: 413 },
+      );
+    }
+
+    const formData = await request.formData().catch(() => null);
+    const file = formData?.get("meeting-audio");
+    const startedAt = parseUploadStartedAt(formData?.get("startedAt"));
+    const durationMs = normalizeRecordingDurationMs(
+      Number(formData?.get("durationMs")),
+    );
+    const uploadMedia =
+      file instanceof File ? getUploadMediaFromFile(file) : null;
+
+    if (
+      !(file instanceof File) ||
+      file.size === 0 ||
+      !uploadMedia ||
+      startedAt === null
+    ) {
+      return Response.json(
+        { error: "Invalid audio upload request" },
+        { status: 400 },
+      );
+    }
+
+    if (!isUploadMediaSizeAllowed(file.size)) {
+      return Response.json(
+        { error: "Recording file must be 1 GB or smaller" },
+        { status: 413 },
+      );
+    }
 
     const uploadId = crypto.randomUUID();
     const key = buildPendingUploadObjectKey({
@@ -149,6 +167,12 @@ export async function POST(request: Request) {
       { status: 202 },
     );
   } catch (error) {
+    const rateLimitResponse = requestRateLimitErrorResponse(error);
+
+    if (rateLimitResponse) {
+      return rateLimitResponse;
+    }
+
     const creditResponse = providerCreditErrorResponse(error);
 
     if (creditResponse) {
@@ -192,4 +216,10 @@ function parseUploadStartedAt(value: FormDataEntryValue | null | undefined) {
   }
 
   return new Date(result.data);
+}
+
+function isRequestBodyTooLarge(request: Request, maxBytes: number) {
+  const contentLength = Number(request.headers.get("content-length"));
+
+  return Number.isFinite(contentLength) && contentLength > maxBytes;
 }

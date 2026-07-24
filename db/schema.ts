@@ -414,24 +414,6 @@ export const meetingAccess = pgTable(
   ],
 );
 
-export const shareLinks = pgTable(
-  "share_links",
-  {
-    id: uuid("id").primaryKey().defaultRandom(),
-    meetingId: uuid("meeting_id")
-      .notNull()
-      .references(() => meetings.id, { onDelete: "cascade" }),
-    tokenHash: text("token_hash").notNull(),
-    createdByUserId: uuid("created_by_user_id")
-      .notNull()
-      .references(() => users.id),
-    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
-    revokedAt: timestamp("revoked_at", { withTimezone: true }),
-    ...timestamps,
-  },
-  (table) => [uniqueIndex("share_links_token_hash_unique").on(table.tokenHash)],
-);
-
 export const meetingShareInvites = pgTable(
   "meeting_share_invites",
   {
@@ -1079,3 +1061,29 @@ export const auditEvents = pgTable("audit_events", {
     .defaultNow()
     .notNull(),
 });
+
+export const requestRateLimits = pgTable(
+  "request_rate_limits",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    scope: text("scope").notNull(),
+    subjectHash: text("subject_hash").notNull(),
+    windowStartedAt: timestamp("window_started_at", {
+      withTimezone: true,
+    }).notNull(),
+    requestCount: integer("request_count").notNull().default(1),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    ...timestamps,
+  },
+  (table) => [
+    uniqueIndex("request_rate_limits_scope_subject_unique").on(
+      table.scope,
+      table.subjectHash,
+    ),
+    index("request_rate_limits_expires_index").on(table.expiresAt),
+    check(
+      "request_rate_limits_count_positive",
+      sql`${table.requestCount} > 0`,
+    ),
+  ],
+);

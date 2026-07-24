@@ -3,6 +3,11 @@ import {
   getAdminImpersonatedUserId,
   isAdminSessionUser,
 } from "@/lib/admin-access";
+import {
+  clearDatabaseClaims,
+  initializeDatabaseClaimsContext,
+  setDatabaseSessionUser,
+} from "@/db/rls-context";
 
 export type SessionUser = {
   id: string;
@@ -29,19 +34,33 @@ export function sessionUserFromAuthUser(user: unknown): SessionUser | null {
 }
 
 export async function getAuthenticatedUser(): Promise<SessionUser | null> {
+  initializeDatabaseClaimsContext();
+  return getAuthenticatedUserInCurrentContext();
+}
+
+async function getAuthenticatedUserInCurrentContext(): Promise<SessionUser | null> {
   try {
     const { data } = await auth.getSession();
+    const user = sessionUserFromAuthUser(data?.user);
 
-    return sessionUserFromAuthUser(data?.user);
+    if (user) {
+      setDatabaseSessionUser(user);
+    } else {
+      clearDatabaseClaims();
+    }
+
+    return user;
   } catch {
+    clearDatabaseClaims();
     return null;
   }
 }
 
 export async function getCurrentUser(): Promise<SessionUser | null> {
-  const user = await getAuthenticatedUser();
+  initializeDatabaseClaimsContext();
+  const user = await getAuthenticatedUserInCurrentContext();
 
-  if (!user || !isAdminSessionUser(user)) {
+  if (!user || !(await isAdminSessionUser(user))) {
     return user;
   }
 
@@ -55,7 +74,15 @@ export async function getCurrentUser(): Promise<SessionUser | null> {
     const { getImpersonatedSessionUser } = await import(
       "@/lib/admin-impersonation"
     );
-    return (await getImpersonatedSessionUser(impersonatedUserId)) ?? user;
+    const impersonatedUser =
+      await getImpersonatedSessionUser(impersonatedUserId);
+
+    if (!impersonatedUser) {
+      return user;
+    }
+
+    setDatabaseSessionUser(impersonatedUser);
+    return impersonatedUser;
   } catch {
     return user;
   }

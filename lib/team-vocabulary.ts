@@ -20,7 +20,7 @@ export async function getTeamVocabularyKeyterms(teamId: string) {
         ),
       )
       .orderBy(asc(teamVocabularyTerms.term)),
-    getTwentyCrmKeyterms(),
+    getTwentyCrmKeyterms(teamId),
   ]);
 
   return buildTranscriptionKeyterms(

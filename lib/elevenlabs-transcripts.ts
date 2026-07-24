@@ -513,22 +513,23 @@ function getMetadataList(metadata: Record<string, unknown>, ...keys: string[]) {
 async function loadMeetingEntityContext(
   meetingId: string,
 ): Promise<EntityExtractionContext> {
-  const [rows, organizationDomains] = await Promise.all([
-    db
-      .select({
-        attendeeEmails: calendarEvents.attendeeEmails,
-        calendarMeetingUrl: calendarEvents.meetingUrl,
-        meetingUrl: meetings.meetingUrl,
-        ownerEmail: users.email,
-      })
-      .from(meetings)
-      .leftJoin(calendarEvents, eq(calendarEvents.id, meetings.calendarEventId))
-      .leftJoin(users, eq(users.id, meetings.ownerUserId))
-      .where(eq(meetings.id, meetingId))
-      .limit(1),
-    getTwentyCrmCompanyDomains(),
-  ]);
+  const rows = await db
+    .select({
+      attendeeEmails: calendarEvents.attendeeEmails,
+      calendarMeetingUrl: calendarEvents.meetingUrl,
+      meetingUrl: meetings.meetingUrl,
+      ownerEmail: users.email,
+      teamId: meetings.teamId,
+    })
+    .from(meetings)
+    .leftJoin(calendarEvents, eq(calendarEvents.id, meetings.calendarEventId))
+    .leftJoin(users, eq(users.id, meetings.ownerUserId))
+    .where(eq(meetings.id, meetingId))
+    .limit(1);
   const row = rows[0];
+  const organizationDomains = row
+    ? await getTwentyCrmCompanyDomains(row.teamId)
+    : [];
 
   return {
     attendeeEmails: normalizeAttendeeEmails(row?.attendeeEmails),

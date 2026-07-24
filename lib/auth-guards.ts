@@ -20,7 +20,7 @@ export async function requireAdminUser() {
     redirect("/auth/sign-in");
   }
 
-  if (!isAdminSessionUser(user)) {
+  if (!(await isAdminSessionUser(user))) {
     redirect("/dashboard");
   }
 

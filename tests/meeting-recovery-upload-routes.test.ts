@@ -1,8 +1,12 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@/lib/provider-credit", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/provider-credit")>()),
   assertWorkspaceHasProviderCredit: vi.fn(),
+}));
+vi.mock("@/lib/request-rate-limit", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/request-rate-limit")>()),
+  assertRequestRateLimit: vi.fn(),
 }));
 
 const getCurrentUser = vi.fn();
@@ -109,6 +113,15 @@ async function postTranscriptUpload(formData: FormData) {
 }
 
 describe("meeting recovery upload routes", () => {
+  beforeEach(() => {
+    getWorkspace.mockResolvedValue({
+      userId: "user_123",
+      teamId: "team_123",
+      domain: "example.com",
+    });
+    assertCanManageMeeting.mockResolvedValue(undefined);
+  });
+
   afterEach(() => {
     completeManualTranscriptUpload.mockReset();
     completeMeetingAudioUpload.mockReset();
@@ -121,6 +134,37 @@ describe("meeting recovery upload routes", () => {
     revalidatePath.mockReset();
     send.mockReset();
     vi.resetModules();
+  });
+
+  it("authorizes transcript recovery before parsing the multipart body", async () => {
+    getCurrentUser.mockResolvedValue({
+      id: "user_123",
+      email: "user@example.com",
+      name: null,
+    });
+    getWorkspace.mockResolvedValue({
+      userId: "user_123",
+      teamId: "team_123",
+      domain: "example.com",
+    });
+    assertCanManageMeeting.mockRejectedValue(
+      new MeetingRecoveryUploadError("Meeting not found"),
+    );
+    const formData = vi.fn();
+    const { POST } = await import(
+      "@/app/api/meetings/[meetingId]/uploads/transcript/route"
+    );
+
+    const response = await POST(
+      {
+        formData,
+        headers: new Headers(),
+      } as unknown as Request,
+      { params: Promise.resolve({ meetingId: "meeting_123" }) },
+    );
+
+    expect(response.status).toBe(403);
+    expect(formData).not.toHaveBeenCalled();
   });
 
   it("attaches an uploaded MP3 to the existing meeting and queues transcription", async () => {

@@ -14,18 +14,6 @@ async function expectNoHorizontalOverflow(page: Page) {
 test.describe("dynamic route values on mobile", () => {
   test.use({ viewport: { width: 320, height: 720 } });
 
-  test("anonymous shared transcript tokens redirect to sign in", async ({
-    page,
-  }) => {
-    await page.goto(`/share/${longValue}`);
-
-    await expect(
-      page.getByRole("button", { name: "Continue with Google" }),
-    ).toBeVisible();
-    await expect(page.getByText("Weekly product review")).toHaveCount(0);
-    await expectNoHorizontalOverflow(page);
-  });
-
   test("long meeting IDs do not create horizontal overflow", async ({
     page,
   }) => {

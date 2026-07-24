@@ -100,4 +100,35 @@ describe("admin impersonation", () => {
     });
     expect(select).not.toHaveBeenCalled();
   });
+
+  it("keeps administrator database claims when an impersonation target is stale", async () => {
+    vi.stubEnv("APP_ADMIN_EMAILS", "owner@example.com");
+    getSession.mockResolvedValue({
+      data: {
+        user: {
+          id: "auth_owner",
+          email: "owner@example.com",
+          name: "Owner",
+        },
+      },
+      error: null,
+    });
+    cookies.mockResolvedValue({
+      get: vi.fn().mockReturnValue({ value: "missing_user_id" }),
+    });
+    mockTargetUser([]);
+
+    const { getDatabaseClaimsJson } = await import("@/db/rls-context");
+    const { getCurrentUser } = await import("@/lib/auth");
+
+    await expect(getCurrentUser()).resolves.toEqual({
+      id: "auth_owner",
+      email: "owner@example.com",
+      name: "Owner",
+    });
+    expect(JSON.parse(getDatabaseClaimsJson() ?? "{}")).toMatchObject({
+      app_global_admin: true,
+      sub: "auth_owner",
+    });
+  });
 });

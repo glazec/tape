@@ -304,4 +304,106 @@ describe("database migrations", () => {
       'CREATE INDEX "meeting_reminders_undispatched_index"',
     );
   });
+
+  it("enforces caller scoped row level security for tenant data", () => {
+    const sql = readFileSync(
+      "db/migrations/0037_tenant_rls.sql",
+      "utf8",
+    ).replace(/\s+/g, " ");
+
+    expect(sql).toContain("create role tape_authenticated");
+    expect(sql).toContain("create role tape_mcp");
+    expect(sql).toContain("nobypassrls");
+    expect(sql).toContain(
+      "current_setting('request.jwt.claims', true)",
+    );
+    expect(sql).toContain(
+      "create or replace function app_private.can_read_meeting",
+    );
+    expect(sql).toContain(
+      "create or replace function app_private.can_write_meeting",
+    );
+    expect(sql).toContain(
+      "alter table public.meetings force row level security",
+    );
+    expect(sql).toContain(
+      "alter table public.users force row level security",
+    );
+    expect(sql).toContain(
+      "revoke all on table public.vendor_webhook_events from tape_authenticated",
+    );
+    expect(sql).toContain("and role = 'owner'");
+    expect(sql).toContain("role = 'member'");
+    expect(sql).toContain("and invite.role = meeting_access.role");
+    expect(sql).toContain(
+      "create trigger meeting_share_invites_protect_recipient_update",
+    );
+
+    for (const table of [
+      "meeting_attendees",
+      "share_links",
+      "meeting_access_sources",
+      "meeting_access_exclusions",
+      "recordings",
+      "media_assets",
+      "local_recording_attempts",
+      "local_recordings",
+      "transcript_jobs",
+      "transcript_segments",
+      "meeting_entities",
+      "meeting_participant_timeline",
+      "meeting_reminders",
+    ]) {
+      expect(sql).toContain(`'${table}'`);
+    }
+
+    const intentionallyGlobalTables = new Set([
+      "request_rate_limits",
+      "vendor_webhook_events",
+    ]);
+    const tenantTables = Object.values(schema).flatMap((value) => {
+      try {
+        const table = getTableName(
+          value as Parameters<typeof getTableName>[0],
+        );
+
+        return typeof table !== "string" ||
+          intentionallyGlobalTables.has(table)
+          ? []
+          : [table];
+      } catch {
+        return [];
+      }
+    });
+
+    for (const table of tenantTables) {
+      expect(
+        sql.includes(`public.${table}`) || sql.includes(`'${table}'`),
+        `${table} must have an RLS policy`,
+      ).toBe(true);
+    }
+  });
+
+  it("keeps operational rate limits private from tenant roles", () => {
+    const sql = readFileSync(
+      "db/migrations/0039_restrict_rate_limit_table.sql",
+      "utf8",
+    ).toLowerCase();
+
+    expect(sql).toContain(
+      'revoke all on table "request_rate_limits" from "tape_authenticated"',
+    );
+  });
+
+  it("maps verified MCP email identity after subject lookup", () => {
+    const sql = readFileSync(
+      "db/migrations/0040_mcp_verified_email_identity.sql",
+      "utf8",
+    ).replace(/\s+/g, " ");
+
+    expect(sql.indexOf("app_user.auth_user_id")).toBeLessThan(
+      sql.indexOf("lower(app_user.email)"),
+    );
+    expect(sql).toContain("app_private.claim_email()");
+  });
 });

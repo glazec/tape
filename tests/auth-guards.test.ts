@@ -39,7 +39,7 @@ describe("auth guards", () => {
 
   it("redirects signed in non admins to the dashboard", async () => {
     getAuthenticatedUser.mockResolvedValue({ id: "user_123" });
-    isAdminSessionUser.mockReturnValue(false);
+    isAdminSessionUser.mockResolvedValue(false);
     const { requireAdminUser } = await import("@/lib/auth-guards");
 
     await expect(requireAdminUser()).rejects.toThrow("redirect:/dashboard");
@@ -48,7 +48,7 @@ describe("auth guards", () => {
   it("returns an authenticated admin", async () => {
     const user = { id: "admin_123" };
     getAuthenticatedUser.mockResolvedValue(user);
-    isAdminSessionUser.mockReturnValue(true);
+    isAdminSessionUser.mockResolvedValue(true);
     const { requireAdminUser } = await import("@/lib/auth-guards");
 
     await expect(requireAdminUser()).resolves.toBe(user);

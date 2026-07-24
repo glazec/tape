@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@/lib/provider-credit", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/provider-credit")>()),
@@ -64,6 +64,15 @@ async function postUploadComplete(body: unknown) {
 }
 
 describe("POST /api/uploads/complete", () => {
+  beforeEach(() => {
+    getWorkspace.mockResolvedValue({
+      userId: "user_123",
+      teamId: "team_123",
+      domain: "example.com",
+    });
+    assertCanCreateMeetings.mockResolvedValue(undefined);
+  });
+
   afterEach(() => {
     vi.restoreAllMocks();
     assertCanCreateMeetings.mockReset();

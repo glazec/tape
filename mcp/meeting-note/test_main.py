@@ -125,6 +125,67 @@ class SqlSafetyTests(unittest.TestCase):
                     main._normalize_sql_params(params)
 
 
+class RlsQueryContextTests(unittest.IsolatedAsyncioTestCase):
+    async def test_sets_verified_caller_claims_before_the_query(self):
+        class Cursor:
+            def __init__(self):
+                self.execute = AsyncMock()
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, exc_type, exc, traceback):
+                return False
+
+            async def fetchall(self):
+                return [{"id": "meeting-1"}]
+
+        class Connection:
+            def __init__(self, cursor):
+                self._cursor = cursor
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, exc_type, exc, traceback):
+                return False
+
+            def cursor(self):
+                return self._cursor
+
+        cursor = Cursor()
+        connection = Connection(cursor)
+        claims = {
+            "sub": "auth-user-1",
+            "email": "member@example.com",
+        }
+
+        with (
+            patch.object(main, "DATABASE_URL", "postgresql://example"),
+            patch.object(
+                main.psycopg.AsyncConnection,
+                "connect",
+                AsyncMock(return_value=connection),
+            ),
+            patch.object(main, "_current_user_claims", return_value=claims),
+        ):
+            rows = await main._fetch_all("select id from readable_meetings")
+
+        self.assertEqual(rows, [{"id": "meeting-1"}])
+        self.assertEqual(
+            cursor.execute.await_args_list[2].args[0],
+            "select set_config('request.jwt.claims', %s, true)",
+        )
+        self.assertIn(
+            '"sub": "auth-user-1"',
+            cursor.execute.await_args_list[2].args[1][0],
+        )
+        self.assertEqual(
+            cursor.execute.await_args_list[3].args[0],
+            "select id from readable_meetings",
+        )
+
+
 class MeetingImagesPayloadTests(unittest.TestCase):
     def setUp(self):
         self.original_app_base_url = main.APP_BASE_URL

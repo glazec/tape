@@ -34,7 +34,7 @@ Fill these values in `.env.local` for the complete application:
 
 | Area | Variables |
 | --- | --- |
-| Database | `DATABASE_URL` |
+| Database | `DATABASE_URL`, `DATABASE_AUTHENTICATED_URL` |
 | Neon Auth | `NEON_AUTH_JWKS_URL`, `NEON_AUTH_ISSUER`, `NEON_AUTH_COOKIE_SECRET` |
 | R2 storage | `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET` |
 | Recall.ai | `RECALL_API_KEY`, `RECALL_API_BASE_URL`, `RECALL_WEBHOOK_SECRET` |
@@ -50,6 +50,12 @@ openssl rand -base64 32
 ```
 
 `RECALL_API_BASE_URL` must match the region of the Recall.ai API key. `RECALL_WEBHOOK_SECRET` must begin with `whsec_`. For local browser access, use `NEXT_PUBLIC_APP_URL=http://localhost:3000` until webhook testing requires a public origin.
+
+`DATABASE_URL` is the Neon owner connection used only by migrations and
+privileged background jobs. `DATABASE_AUTHENTICATED_URL` must use a separate
+login role without `BYPASSRLS`; all signed in web requests use that connection
+and inject their verified Neon Auth claims in the same transaction as each
+query. Never use the owner URL for `DATABASE_AUTHENTICATED_URL`.
 
 Check the complete configuration before running a production deployment:
 
@@ -69,14 +75,20 @@ REST API key are configured.
 | Tape MCP shared API keys | `APIKEY_DATABASE_URL` |
 | Explicit Neon Auth base URL | `NEON_AUTH_BASE_URL` |
 | Public R2 media URL | `R2_PUBLIC_BASE_URL` |
-| Admin access | `APP_ADMIN_EMAILS` |
+| Admin access | `APP_ADMIN_EMAILS`, `APP_SELF_HOSTED` |
 | Exa web search for live answers | `EXA_API_KEY` |
 | OneSignal reminders | `NEXT_PUBLIC_ONESIGNAL_APP_ID`, `NEXT_PUBLIC_ONESIGNAL_ALLOWED_ORIGINS`, `ONESIGNAL_REST_API_KEY` |
-| Twenty CRM vocabulary | `TWENTY_API_BASE_URL`, `TWENTY_API_KEY` |
+| Twenty CRM vocabulary | `TWENTY_API_BASE_URL`, `TWENTY_API_KEY`; restricted to the team owning `iosg.vc` |
 | PostHog events | `POSTHOG_API_KEY`, `POSTHOG_HOST` |
 | Cloudflare tunnel | `CLOUDFLARED_TOKEN` |
 
 Leave optional variables empty when their feature is not used. `NEON_AUTH_BASE_URL` can remain empty when `NEON_AUTH_JWKS_URL` ends with `/.well-known/jwks.json`.
+
+Hosted Tape defaults global administration to `yiping@iosg.vc`. A self hosted
+installation can set `APP_SELF_HOSTED=true`; when `APP_ADMIN_EMAILS` is empty,
+the first registered Tape user becomes the administrator. Set
+`APP_ADMIN_EMAILS` to an explicit comma separated allowlist to override either
+default.
 
 ## Database
 
@@ -85,6 +97,24 @@ Apply every committed migration to the configured database:
 ```bash
 npm run db:migrate
 ```
+
+Migration `0037_tenant_rls` creates the `tape_authenticated` and `tape_mcp`
+group roles without login credentials. Create separate Neon login roles, assign
+each group, and use their connection strings:
+
+```sql
+create role tape_web_login login password '<generated password>' nobypassrls;
+grant tape_authenticated to tape_web_login;
+
+create role tape_mcp_login login password '<generated password>' nobypassrls;
+grant tape_mcp to tape_mcp_login;
+```
+
+Set `DATABASE_AUTHENTICATED_URL` to the `tape_web_login` connection. Set the
+MCP server `DATABASE_URL` to the `tape_mcp_login` connection. Keep the Neon
+owner connection only in the application `DATABASE_URL` used by migrations and
+privileged background jobs. Rotate generated passwords through Neon rather
+than placing literal credentials in migration files.
 
 Run migrations before deploying code that depends on new tables, columns, indexes, or enum values.
 
@@ -97,6 +127,12 @@ npm run dev
 Open [http://localhost:3000](http://localhost:3000). Google sign in must already be configured in Neon Auth. To accept public registrations, configure the Google provider to allow accounts outside the organization.
 
 IOSG team members join the IOSG workspace with no Tape credit ceiling. Other domains already present in `allowed_domains` join their existing organization workspace and also have no Tape credit ceiling unless a limit is configured on their team. Unknown accounts receive isolated personal workspaces with $5 of provider credit. Do not rely on the first sign in to bootstrap an organization domain; insert the intended domain and team association explicitly before inviting organization members.
+
+Server media uploads, transcript recovery, LocalRecorder provider uploads, and
+administrator impersonation use persistent database rate limits. Provider
+credit is checked before uploads are parsed and again immediately before
+background transcription, translation, or bot scheduling starts. A five minute
+background reconciliation removes scheduled bots for exhausted workspaces.
 
 ## Public callbacks
 
