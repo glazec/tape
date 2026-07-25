@@ -3,6 +3,7 @@
 import { useEffect, useRef } from "react";
 import type { MotionValue } from "framer-motion";
 import * as THREE from "three";
+import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
 
 /**
  * "Spools, studio white" — scroll-driven hero scene.
@@ -33,6 +34,11 @@ export default function HeroScene({
 
     const scene = new THREE.Scene();
     scene.fog = new THREE.Fog(0xffffff, 14, 26);
+
+    // studio reflections for glossy surfaces (tape clearcoat, spool edges)
+    const pmrem = new THREE.PMREMGenerator(renderer);
+    const envMap = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+    scene.environment = envMap;
 
     const camera = new THREE.PerspectiveCamera(38, 1, 0.1, 100);
 
@@ -142,10 +148,13 @@ export default function HeroScene({
       roughness: 0.48,
       metalness: 0.22,
     });
-    const woundTape = new THREE.MeshStandardMaterial({
-      color: 0x232427,
-      roughness: 0.6,
-      metalness: 0.1,
+    const woundTape = new THREE.MeshPhysicalMaterial({
+      color: 0xc03227,
+      roughness: 0.38,
+      metalness: 0.0,
+      clearcoat: 0.9,
+      clearcoatRoughness: 0.22,
+      envMapIntensity: 0.8,
     });
     const brandGlow = new THREE.MeshBasicMaterial({ color: 0xec4f44 });
     const shadowTex = radialShadowTexture();
@@ -180,7 +189,22 @@ export default function HeroScene({
         new THREE.CylinderGeometry(0.12, 0.12, 0.5, 24),
         brandGlow,
       );
-      spin.add(core, tape, f1, f2, ring, ringB, hub);
+      // reel-window triangles on the top flange — the classic tape-reel read
+      const triShape = new THREE.Shape();
+      triShape.moveTo(0, -0.1);
+      triShape.lineTo(0.14, 0.1);
+      triShape.lineTo(-0.14, 0.1);
+      triShape.closePath();
+      const triGeo = new THREE.ShapeGeometry(triShape);
+      const tris: THREE.Mesh[] = [];
+      for (let k = 0; k < 3; k++) {
+        const tri = new THREE.Mesh(triGeo, brandGlow);
+        const a = (k / 3) * Math.PI * 2;
+        tri.rotation.set(-Math.PI / 2, 0, -a + Math.PI / 2);
+        tri.position.set(Math.cos(a) * 0.33, 0.272, Math.sin(a) * 0.33);
+        tris.push(tri);
+      }
+      spin.add(core, tape, f1, f2, ring, ringB, hub, ...tris);
       spin.traverse((o) => {
         o.castShadow = true;
       });
@@ -240,40 +264,89 @@ export default function HeroScene({
     }
     placeShadows();
 
-    // ---------- tape path: supply → bottom-left guide bow → take-up ----------
+    // ---------- tape path: wound onto supply → bottom sweep → wound onto take-up ----------
+    // Join points are built in spool-local space: the tape enters through the
+    // gap between the flanges (local y = 0 plane), touches the winding surface
+    // tangentially, then wraps a short arc ON the surface like the outermost
+    // layer — so it never clips through a flange or the winding itself.
+    function spoolTapeJoin(
+      spool: THREE.Group,
+      neighbor: THREE.Vector3,
+      surfaceR: number,
+      sweep: number,
+    ) {
+      spool.updateMatrixWorld(true);
+      const localN = spool.worldToLocal(neighbor.clone());
+      const a0 = Math.atan2(localN.z, localN.x);
+      const polar = (r: number, a: number) =>
+        spool.localToWorld(
+          new THREE.Vector3(Math.cos(a) * r, 0, Math.sin(a) * r),
+        );
+      const pts = [
+        polar(1.3, a0), // outside the flanges, gap plane
+        polar(0.98, a0), // between the flanges
+        polar(surfaceR, a0), // first contact with the winding
+      ];
+      for (let k = 1; k <= 4; k++) {
+        pts.push(polar(surfaceR, a0 + (k / 4) * sweep));
+      }
+      return pts;
+    }
+    // take-up: winding starts at radius 0.84 * 0.78 ≈ 0.66 and grows past the
+    // wrap arc, swallowing the join as the recording accumulates
+    const takeupJoin = spoolTapeJoin(
+      takeup,
+      new THREE.Vector3(0.6, -0.2, 0.6),
+      0.68,
+      -1.6,
+    );
+    // supply (scale 0.62): winding starts at local radius 0.84 and drains
+    const supplyJoin = spoolTapeJoin(
+      supply,
+      new THREE.Vector3(2.4, -2.15, -1.2),
+      0.86,
+      1.6,
+    ).reverse();
     const curve = new THREE.CatmullRomCurve3([
-      new THREE.Vector3(3.85, -1.28, -2.15), // supply rim
+      ...supplyJoin, // wrap on the supply winding → out through the flange gap
       new THREE.Vector3(2.4, -2.15, -1.2),
       new THREE.Vector3(0.2, -2.45, 0.4), // bottom sweep
-      new THREE.Vector3(-1.6, -2.1, 1.9), // bottom-left guide
+      new THREE.Vector3(-1.6, -2.1, 1.9), // bottom-left bow
       new THREE.Vector3(-0.5, -1.2, 1.3),
       new THREE.Vector3(0.6, -0.2, 0.6),
-      new THREE.Vector3(2.15, 0.75, -0.5), // take-up rim (buried in the winding)
+      ...takeupJoin, // in through the flange gap → wrap onto the take-up winding
     ]);
     const widthDir = new THREE.Vector3(0, 1, 0.35).normalize();
+    // magnetic tape: deep brand red with a glossy clearcoat, so the surface
+    // picks up studio reflections and reads as tape, not a flat ribbon
     const ribbon = new THREE.Mesh(
-      buildRibbon(curve, 0.26, 220, widthDir),
-      new THREE.MeshBasicMaterial({
-        color: 0xec4f44,
-        transparent: true,
-        opacity: 0.95,
-        depthWrite: false,
+      buildRibbon(curve, 0.24, 220, widthDir),
+      new THREE.MeshPhysicalMaterial({
+        color: 0xd63a2e,
+        roughness: 0.3,
+        metalness: 0.0,
+        clearcoat: 1.0,
+        clearcoatRoughness: 0.16,
+        envMapIntensity: 0.9,
         side: THREE.DoubleSide,
       }),
     );
+    ribbon.castShadow = true;
     scene.add(ribbon);
     // darker tape edge
     const ribbonEdge = new THREE.Mesh(
       buildRibbon(curve, 0.045, 220, widthDir),
-      new THREE.MeshBasicMaterial({
-        color: 0xb33229,
-        transparent: true,
-        opacity: 0.85,
-        depthWrite: false,
+      new THREE.MeshPhysicalMaterial({
+        color: 0x9c2a20,
+        roughness: 0.34,
+        metalness: 0.0,
+        clearcoat: 0.8,
+        clearcoatRoughness: 0.2,
+        envMapIntensity: 0.8,
         side: THREE.DoubleSide,
       }),
     );
-    ribbonEdge.position.y = 0.14;
+    ribbonEdge.position.y = 0.135;
     scene.add(ribbonEdge);
     // flow stripes — shimmer along the tape while it winds
     const stripeTex = stripeTexture();
@@ -289,10 +362,19 @@ export default function HeroScene({
       buildRibbon(curve, 0.06, 220, widthDir),
       stripeMat,
     );
-    stripes.position.y = -0.14;
+    stripes.position.y = 0.006; // just above the tape face — it is opaque now
     scene.add(stripes);
 
     // ---------- scroll timeline ----------
+    // tape color transitions with scroll: vivid brand red at the top,
+    // dimmed/desaturated as the story progresses — keeps the page balanced
+    const TAPE_COLORS = {
+      ribbon: [new THREE.Color(0xd63a2e), new THREE.Color(0xbc5f53)],
+      edge: [new THREE.Color(0x9c2a20), new THREE.Color(0x934439)],
+      winding: [new THREE.Color(0xc03227), new THREE.Color(0xb04e44)],
+    } as const;
+    const ribbonMat = ribbon.material as THREE.MeshPhysicalMaterial;
+    const edgeMat = ribbonEdge.material as THREE.MeshPhysicalMaterial;
     const CAM = [
       {
         p: 0,
@@ -366,9 +448,14 @@ export default function HeroScene({
     let rafId = 0;
     let running = false;
 
-    function frame(time: number, p: number) {
+    function frame(time: number, p: number, dt: number) {
       const flow = smooth(clamp01((p - 0.12) / 0.73)); // winding timeline
       const settle = smooth(clamp01((p - 0.6) / 0.4)); // detail-shot warmth
+      const dim = smooth(clamp01((p - 0.1) / 0.75)); // color transition
+
+      ribbonMat.color.lerpColors(TAPE_COLORS.ribbon[0], TAPE_COLORS.ribbon[1], dim);
+      edgeMat.color.lerpColors(TAPE_COLORS.edge[0], TAPE_COLORS.edge[1], dim);
+      woundTape.color.lerpColors(TAPE_COLORS.winding[0], TAPE_COLORS.winding[1], dim);
 
       // winding transfer: take-up grows, supply drains
       const takeupS = 0.78 + flow * 0.38;
@@ -382,14 +469,15 @@ export default function HeroScene({
       takeup.position.y = 1.0 + Math.sin(time * 0.5) * 0.06;
       supply.position.y = -1.15 + Math.sin(time * 0.42 + 1.7) * 0.08;
       takeup.rotation.z = -0.5 + Math.sin(time * 0.3) * 0.025;
-      warm.intensity = 3.8 + settle * 2.5 + Math.sin(time * 1.4) * 0.6;
+      warm.intensity = 3.8 + settle * 1.6 + Math.sin(time * 1.4) * 0.6;
       placeShadows();
 
       // tape shimmer only while the wind is actually moving
       stripeTex.offset.x = -flow * 10;
       const flowVel = Math.abs(flow - prevFlow);
       prevFlow = flow;
-      stripeGlow += (Math.min(1, flowVel * 160) - stripeGlow) * 0.12;
+      const glowEase = 1 - Math.exp(-dt * 8);
+      stripeGlow += (Math.min(1, flowVel * 160) - stripeGlow) * glowEase;
       stripeMat.opacity = stripeGlow * 0.85;
 
       camAt(p);
@@ -397,8 +485,10 @@ export default function HeroScene({
     }
     function loop(timestamp: number) {
       timer.update(timestamp);
-      damped += (target - damped) * 0.09;
-      frame(timer.getElapsed(), damped);
+      const dt = Math.min(timer.getDelta(), 0.05);
+      // exponential, frame-rate independent damping — long, even glide
+      damped += (target - damped) * (1 - Math.exp(-dt * 3.6));
+      frame(timer.getElapsed(), damped, dt);
       rafId = requestAnimationFrame(loop);
     }
     function start() {
@@ -417,7 +507,7 @@ export default function HeroScene({
 
     if (reducedMotion) {
       // Static composed frame at the top of the story.
-      frame(1.4, 0);
+      frame(1.4, 0, 1 / 60);
     } else {
       start();
       document.addEventListener("visibilitychange", onVisibility);
@@ -443,6 +533,8 @@ export default function HeroScene({
         }
       });
       renderer.dispose();
+      envMap.dispose();
+      pmrem.dispose();
     };
   }, [progress]);
 
