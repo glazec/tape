@@ -87,6 +87,24 @@ Use the existing white and graphite system.
 
 Do not use coral for decoration when it would compete with the primary action. Prefer a border, tonal surface, or spacing before introducing another color.
 
+The brand coral is `#EC4F44`. It drives the shadcn `--primary`, `--ring`, and `--sidebar-primary` tokens plus `--chart-1`, so application buttons, focus rings, sidebar accents, and default charts all follow the brand. The public site uses the landing tokens in `app/globals.css`: `--paper` white, `--mist` light surface, `--ink` near black, `--graphite` supporting, `--ash` muted, and `--brand` coral.
+
+### Public landing page
+
+The landing page (`app/page.tsx`, `components/landing/*`) is the expressive brand surface, in the same calm editorial register as Granola-tier product sites: pure white canvas, generous whitespace, Fraunces serif headlines with a coral italic accent word, Space Grotesk body, and IBM Plex Mono uppercase microcopy. No brutalist borders, hard shadows, metric grids, or dashboard screenshots inside the hero.
+
+The hero is a scroll-driven three.js scene (`components/landing/hero-scene.tsx`): abstract graphite tape spools with a glossy coral tape ribbon that winds from the supply reel onto the take-up reel as you scroll — the recording metaphor. Rules for the scene:
+
+1. Geometry and light only. No text cards, no UI mockups, no particle fields inside the 3D scene
+2. The scroll scrubs the animation; it never autoplays beyond the gentle ambient float
+3. Tape ends join the reels tangentially through the flange gap and wrap on the winding surface; reel windings are tape-colored so ribbon and reel read as one object
+4. Tape color transitions with scroll — vivid coral at the top, dimmed and desaturated toward the close-up — so the page stays balanced
+5. Respect reduced motion with a static composed frame and no scroll pinning; pause on tab hide; dispose all WebGL resources on unmount; clamp DPR at 2
+
+Sections follow the positioning: your archive your rules (ownership, web and MCP search), it records itself (Meet and Zoom bots, local macOS recorder with speaker recognition), understands the conversation (translation, emotion and talk metrics, entities, related meeting grouping), and a dark enterprise section (multi-tenant workspaces, access controls, expiring share links). Partner logos live in `public/brand/partners/` as monochrome graphite SVGs.
+
+Use `ProductLogo` with `variant="light"` on dark backgrounds. Never apply a CSS `invert` filter to the logo.
+
 ### Typography
 
 Use Geist for the application interface. Use Fraunces, Space Grotesk, and IBM Plex Mono only on the public site and sign in surfaces where the editorial brand voice is intentional.
