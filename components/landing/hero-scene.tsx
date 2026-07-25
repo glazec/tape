@@ -30,14 +30,16 @@ export default function HeroScene({
     renderer.toneMappingExposure = 1.0;
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.shadowMap.enabled = true;
-    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    renderer.shadowMap.type = THREE.PCFShadowMap;
 
     const scene = new THREE.Scene();
     scene.fog = new THREE.Fog(0xffffff, 14, 26);
 
     // studio reflections for glossy surfaces (tape clearcoat, spool edges)
     const pmrem = new THREE.PMREMGenerator(renderer);
-    const envMap = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+    const roomEnvironment = new RoomEnvironment();
+    const envMap = pmrem.fromScene(roomEnvironment, 0.04).texture;
+    roomEnvironment.dispose();
     scene.environment = envMap;
 
     const camera = new THREE.PerspectiveCamera(38, 1, 0.1, 100);

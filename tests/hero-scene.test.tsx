@@ -4,14 +4,31 @@ import { act, render } from "@testing-library/react";
 import type { MotionValue } from "framer-motion";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const { rendererDispose, rendererRender, rendererSetSize } = vi.hoisted(() => ({
+const {
+  envMapDispose,
+  pmremDispose,
+  pmremFromScene,
+  rendererDispose,
+  rendererRender,
+  rendererSetSize,
+  roomEnvironmentDispose,
+} = vi.hoisted(() => ({
+  envMapDispose: vi.fn(),
+  pmremDispose: vi.fn(),
+  pmremFromScene: vi.fn(),
   rendererDispose: vi.fn(),
   rendererRender: vi.fn(),
   rendererSetSize: vi.fn(),
+  roomEnvironmentDispose: vi.fn(),
 }));
 
 vi.mock("three", async (importOriginal) => {
   const actual = await importOriginal<typeof import("three")>();
+
+  class PMREMGenerator {
+    dispose = pmremDispose;
+    fromScene = pmremFromScene;
+  }
 
   class WebGLRenderer {
     outputColorSpace: unknown;
@@ -26,7 +43,15 @@ vi.mock("three", async (importOriginal) => {
     setSize = rendererSetSize;
   }
 
-  return { ...actual, WebGLRenderer };
+  return { ...actual, PMREMGenerator, WebGLRenderer };
+});
+
+vi.mock("three/examples/jsm/environments/RoomEnvironment.js", () => {
+  class RoomEnvironment {
+    dispose = roomEnvironmentDispose;
+  }
+
+  return { RoomEnvironment };
 });
 
 import HeroScene from "@/components/landing/hero-scene";
@@ -47,6 +72,13 @@ describe("HeroScene", () => {
     rendererDispose.mockReset();
     rendererRender.mockReset();
     rendererSetSize.mockReset();
+    envMapDispose.mockReset();
+    pmremDispose.mockReset();
+    pmremFromScene.mockReset();
+    roomEnvironmentDispose.mockReset();
+    pmremFromScene.mockReturnValue({
+      texture: { dispose: envMapDispose },
+    });
     vi.spyOn(console, "warn").mockImplementation(() => undefined);
 
     vi.stubGlobal(
@@ -101,6 +133,8 @@ describe("HeroScene", () => {
 
     expect(rendererSetSize).toHaveBeenLastCalledWith(1200, 700, false);
     expect(rendererRender).toHaveBeenCalledTimes(1);
+    expect(pmremFromScene).toHaveBeenCalledTimes(1);
+    expect(roomEnvironmentDispose).toHaveBeenCalledTimes(1);
     expect(animationFrames).toHaveLength(0);
     expect(console.warn).not.toHaveBeenCalledWith(
       expect.stringContaining("deprecated"),
@@ -109,6 +143,8 @@ describe("HeroScene", () => {
     unmount();
     expect(harness.unsubscribe).toHaveBeenCalledTimes(1);
     expect(rendererDispose).toHaveBeenCalledTimes(1);
+    expect(envMapDispose).toHaveBeenCalledTimes(1);
+    expect(pmremDispose).toHaveBeenCalledTimes(1);
   });
 
   it("animates a narrow composition and pauses while hidden", () => {

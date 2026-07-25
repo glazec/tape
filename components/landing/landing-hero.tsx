@@ -66,6 +66,10 @@ export function LandingHero() {
         <div className="absolute inset-0">
           <HeroScene progress={scrollYProgress} />
         </div>
+        <div
+          aria-hidden
+          className="pointer-events-none absolute inset-0 bg-gradient-to-r from-paper via-paper via-[75%] to-transparent sm:hidden"
+        />
 
         {/* intro copy */}
         <motion.div
