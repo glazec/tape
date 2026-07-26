@@ -127,6 +127,25 @@ export function getDeploymentEnvironmentIssues(
     );
   }
 
+  for (const name of [
+    "OTEL_EXPORTER_OTLP_ENDPOINT",
+    "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT",
+    "OTEL_EXPORTER_OTLP_LOGS_ENDPOINT",
+  ]) {
+    const value = source[name]?.trim();
+    const parsedValue = value ? parseHttpUrl(value) : null;
+
+    if (value && !parsedValue) {
+      issues.push(`${name} must be an absolute HTTP or HTTPS URL`);
+    } else if (
+      production &&
+      parsedValue &&
+      parsedValue.protocol !== "https:"
+    ) {
+      issues.push(`${name} must use HTTPS in production`);
+    }
+  }
+
   return issues;
 }
 

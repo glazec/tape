@@ -34,6 +34,19 @@ npm run verify:all
 
 Run a focused suite while developing, then run the applicable release gate before handing off the change.
 
+For telemetry changes, run the deterministic signal, redaction, browser intake,
+and server exporter tests:
+
+```bash
+npx vitest run tests/telemetry-config.test.ts tests/telemetry-client.test.ts tests/telemetry-route.test.ts tests/telemetry-server.test.ts
+```
+
+After deployment, generate one page view and one safe test error. In SigNoz,
+filter logs by resource attribute `service.name = tape-web`, then confirm
+`frontend.page_view` and the test error are present. Confirm a Next.js request
+trace for the same service separately. A healthy dashboard alone does not prove
+that the OTLP collector received either signal.
+
 ## Coverage Contract
 
 Vitest measures application, component, Inngest, library, proxy, and service code. Shared UI primitives, layout shells, and type declarations are excluded. Current minimums are:

@@ -105,4 +105,28 @@ describe("deployment environment", () => {
       "NEXT_PUBLIC_ONESIGNAL_ALLOWED_ORIGINS must contain valid HTTP or HTTPS URLs",
     ]);
   });
+
+  it("validates optional OpenTelemetry collector endpoints", () => {
+    const environment = {
+      ...validEnvironment(),
+      DATABASE_AUTHENTICATED_URL:
+        "postgresql://app:password@db.example.com/tape",
+      DATABASE_URL: "postgresql://user:password@db.example.com/tape",
+      NEON_AUTH_ISSUER: "https://auth.example.com",
+      NEON_AUTH_JWKS_URL: "https://auth.example.com/.well-known/jwks.json",
+      NEON_AUTH_COOKIE_SECRET: "a".repeat(32),
+      NEXT_PUBLIC_APP_URL: "https://meetings.example.com",
+      OTEL_EXPORTER_OTLP_ENDPOINT: "http://otel.example.com:4318",
+      OTEL_EXPORTER_OTLP_LOGS_ENDPOINT: "not-a-url",
+      RECALL_API_BASE_URL: "https://us-east-1.recall.ai",
+      RECALL_WEBHOOK_SECRET: "whsec_example",
+    };
+
+    expect(
+      getDeploymentEnvironmentIssues(environment, { production: true }),
+    ).toEqual([
+      "OTEL_EXPORTER_OTLP_ENDPOINT must use HTTPS in production",
+      "OTEL_EXPORTER_OTLP_LOGS_ENDPOINT must be an absolute HTTP or HTTPS URL",
+    ]);
+  });
 });

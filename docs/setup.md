@@ -80,6 +80,7 @@ REST API key are configured.
 | OneSignal reminders | `NEXT_PUBLIC_ONESIGNAL_APP_ID`, `NEXT_PUBLIC_ONESIGNAL_ALLOWED_ORIGINS`, `ONESIGNAL_REST_API_KEY` |
 | Twenty CRM vocabulary | `TWENTY_API_BASE_URL`, `TWENTY_API_KEY`; restricted to the team owning `iosg.vc` |
 | PostHog events | `POSTHOG_API_KEY`, `POSTHOG_HOST` |
+| SigNoz telemetry | `OTEL_EXPORTER_OTLP_ENDPOINT`, `OTEL_EXPORTER_OTLP_HEADERS`, `OTEL_SERVICE_NAME` |
 | Cloudflare tunnel | `CLOUDFLARED_TOKEN` |
 
 Leave optional variables empty when their feature is not used. `NEON_AUTH_BASE_URL` can remain empty when `NEON_AUTH_JWKS_URL` ends with `/.well-known/jwks.json`.
@@ -89,6 +90,32 @@ installation can set `APP_SELF_HOSTED=true`; when `APP_ADMIN_EMAILS` is empty,
 the first registered Tape user becomes the administrator. Set
 `APP_ADMIN_EMAILS` to an explicit comma separated allowlist to override either
 default.
+
+## SigNoz telemetry
+
+Tape uses OpenTelemetry to send Next.js request traces and Node.js logs to
+SigNoz. Browser page views, navigation, safe action metadata, page load time,
+uncaught errors, and unhandled promise rejections are batched through
+`/api/telemetry/events`. The browser never receives the collector endpoint or
+collector credentials.
+
+Configure the common OTLP HTTP collector origin on the Vercel application:
+
+```text
+OTEL_EXPORTER_OTLP_ENDPOINT=https://your-otel-collector.example
+OTEL_SERVICE_NAME=tape-web
+```
+
+Set the same endpoint on the Railway image worker with
+`OTEL_SERVICE_NAME=tape-image-worker`. The SDK appends `/v1/traces` and
+`/v1/logs`. Use the collector origin, not the SigNoz dashboard origin.
+Self hosted SigNoz does not require an ingestion key by default. If the public
+collector is protected by a reverse proxy, pass its encoded headers through
+`OTEL_EXPORTER_OTLP_HEADERS`.
+
+Telemetry intentionally excludes DOM text, form values, meeting content,
+query strings, email addresses, and raw authenticated user IDs. Routes replace
+UUID and long numeric path segments with `:id`.
 
 ## Database
 
@@ -227,6 +254,8 @@ R2_BUCKET
 R2_SECRET_ACCESS_KEY
 RECALL_API_BASE_URL
 RECALL_API_KEY
+OTEL_EXPORTER_OTLP_ENDPOINT
+OTEL_SERVICE_NAME=tape-image-worker
 ```
 
 Build and check the worker locally:
