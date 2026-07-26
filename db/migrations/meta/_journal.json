@@ -288,6 +288,13 @@
       "when": 1786200000000,
       "tag": "0040_mcp_verified_email_identity",
       "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "7",
+      "when": 1786300000000,
+      "tag": "0041_mcp_onboarding_usage",
+      "breakpoints": true
     }
   ]
 }

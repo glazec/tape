@@ -31,6 +31,7 @@ from fastmcp import FastMCP
 from fastmcp.server.auth import AccessToken, AuthProvider, MultiAuth, TokenVerifier
 from fastmcp.server.auth.providers.google import GoogleProvider
 from fastmcp.server.dependencies import get_access_token
+from fastmcp.server.middleware import CallNext, Middleware, MiddlewareContext
 from jwt import PyJWKClient, PyJWTError
 from key_value.aio.stores.filetree import (
     FileTreeStore,
@@ -58,6 +59,7 @@ MCP_ALLOW_DEV_AUTH = os.environ.get("MCP_ALLOW_DEV_AUTH", "false").strip().lower
 DATABASE_URL = os.environ.get("DATABASE_URL", "").strip()
 APIKEY_DATABASE_URL = os.environ.get("APIKEY_DATABASE_URL", "").strip()
 _apikey_pool = None
+_recorded_mcp_onboarding_emails: set[str] = set()
 APP_BASE_URL = os.environ.get("APP_BASE_URL", "").strip().rstrip("/")
 DEFAULT_MCP_HOST = "0.0.0.0" if os.environ.get("PORT") else "127.0.0.1"
 MCP_HOST = os.environ.get("MCP_HOST", DEFAULT_MCP_HOST).strip() or DEFAULT_MCP_HOST
@@ -65,6 +67,7 @@ MCP_PORT = int(os.environ.get("PORT") or os.environ.get("MCP_PORT", "8000"))
 SQL_TOOL_STATEMENT_TIMEOUT_MS = int(
     os.environ.get("SQL_TOOL_STATEMENT_TIMEOUT_MS", "10000"),
 )
+MCP_ONBOARDING_USAGE_TIMEOUT_SECONDS = 2.0
 NEON_AUTH_ISSUER = os.environ.get("NEON_AUTH_ISSUER", "").strip()
 NEON_AUTH_AUDIENCE = os.environ.get("NEON_AUTH_AUDIENCE", "").strip() or None
 GOOGLE_CLIENT_ID = os.environ.get("GOOGLE_CLIENT_ID", "").strip()
@@ -857,6 +860,67 @@ async def _workspace_for_current_user() -> Workspace:
         raise RuntimeError("Authenticated caller email is required")
 
     return await _workspace_for_auth_user(auth_user_id, token_email)
+
+
+async def _record_mcp_onboarding_use(workspace: Workspace) -> bool:
+    if not DATABASE_URL or not workspace.team_id:
+        return False
+
+    try:
+        async with asyncio.timeout(MCP_ONBOARDING_USAGE_TIMEOUT_SECONDS):
+            conn = await psycopg.AsyncConnection.connect(DATABASE_URL)
+            async with conn:
+                async with conn.cursor() as cur:
+                    await cur.execute(
+                        "select set_config('request.jwt.claims', %s, true)",
+                        (json.dumps(_current_user_claims()),),
+                    )
+                    await cur.execute(
+                        "select app_private.record_mcp_onboarding_use(%s::uuid)",
+                        (workspace.team_id,),
+                    )
+        return True
+    except Exception as exc:
+        logger.warning("MCP onboarding usage recording failed: %s", exc)
+        return False
+
+
+async def _record_current_mcp_onboarding_use() -> None:
+    try:
+        claims = _current_user_claims()
+        auth_user_id = _claim_value(claims, "sub")
+        token_email = _claim_value(claims, "email")
+        if not auth_user_id or not token_email:
+            return
+
+        normalized_email = _normalize_email(token_email)
+        if normalized_email in _recorded_mcp_onboarding_emails:
+            return
+
+        workspace = await _workspace_for_auth_user(auth_user_id, token_email)
+        if await _record_mcp_onboarding_use(workspace):
+            _recorded_mcp_onboarding_emails.add(normalized_email)
+    except Exception as exc:
+        logger.warning("Current MCP onboarding usage recording failed: %s", exc)
+
+
+class McpOnboardingUsageMiddleware(Middleware):
+    async def on_call_tool(
+        self,
+        context: MiddlewareContext,
+        call_next: CallNext,
+    ) -> Any:
+        result = await call_next(context)
+        if not result.is_error:
+            try:
+                async with asyncio.timeout(MCP_ONBOARDING_USAGE_TIMEOUT_SECONDS):
+                    await _record_current_mcp_onboarding_use()
+            except TimeoutError:
+                logger.warning("MCP onboarding usage recording timed out")
+        return result
+
+
+mcp.add_middleware(McpOnboardingUsageMiddleware())
 
 
 async def _workspace_for_auth_user(auth_user_id: str, token_email: str) -> Workspace:

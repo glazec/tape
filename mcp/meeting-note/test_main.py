@@ -1,4 +1,6 @@
+import asyncio
 import unittest
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 import main
@@ -126,6 +128,9 @@ class SqlSafetyTests(unittest.TestCase):
 
 
 class RlsQueryContextTests(unittest.IsolatedAsyncioTestCase):
+    def setUp(self):
+        main._recorded_mcp_onboarding_emails.clear()
+
     async def test_sets_verified_caller_claims_before_the_query(self):
         class Cursor:
             def __init__(self):
@@ -184,6 +189,176 @@ class RlsQueryContextTests(unittest.IsolatedAsyncioTestCase):
             cursor.execute.await_args_list[3].args[0],
             "select id from readable_meetings",
         )
+
+    async def test_records_mcp_onboarding_use_with_verified_claims(self):
+        class Cursor:
+            def __init__(self):
+                self.execute = AsyncMock()
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, exc_type, exc, traceback):
+                return False
+
+        class Connection:
+            def __init__(self, cursor):
+                self._cursor = cursor
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, exc_type, exc, traceback):
+                return False
+
+            def cursor(self):
+                return self._cursor
+
+        cursor = Cursor()
+        connection = Connection(cursor)
+        claims = {
+            "sub": "auth-user-1",
+            "email": "member@example.com",
+        }
+        workspace = main.Workspace(
+            email="member@example.com",
+            user_id="11111111-1111-4111-8111-111111111111",
+            team_id="22222222-2222-4222-8222-222222222222",
+            can_create_meetings=True,
+            can_manage_team_meetings=False,
+        )
+
+        with (
+            patch.object(main, "DATABASE_URL", "postgresql://example"),
+            patch.object(
+                main.psycopg.AsyncConnection,
+                "connect",
+                AsyncMock(return_value=connection),
+            ),
+            patch.object(main, "_current_user_claims", return_value=claims),
+        ):
+            recorded = await main._record_mcp_onboarding_use(workspace)
+
+        self.assertTrue(recorded)
+        self.assertIn(
+            '"sub": "auth-user-1"',
+            cursor.execute.await_args_list[0].args[1][0],
+        )
+        self.assertEqual(
+            cursor.execute.await_args_list[1].args,
+            (
+                "select app_private.record_mcp_onboarding_use(%s::uuid)",
+                (workspace.team_id,),
+            ),
+        )
+
+
+class McpOnboardingUsageMiddlewareTests(unittest.IsolatedAsyncioTestCase):
+    def setUp(self):
+        main._recorded_mcp_onboarding_emails.clear()
+
+    def test_is_registered_for_all_tools(self):
+        self.assertTrue(
+            any(
+                isinstance(middleware, main.McpOnboardingUsageMiddleware)
+                for middleware in main.mcp.middleware
+            ),
+        )
+
+    async def test_records_every_successful_tool_call(self):
+        context = SimpleNamespace()
+        result = SimpleNamespace(is_error=False)
+        call_next = AsyncMock(return_value=result)
+
+        with patch.object(
+            main,
+            "_record_current_mcp_onboarding_use",
+            AsyncMock(),
+        ) as record_usage:
+            returned = await main.McpOnboardingUsageMiddleware().on_call_tool(
+                context,
+                call_next,
+            )
+
+        self.assertIs(returned, result)
+        call_next.assert_awaited_once_with(context)
+        record_usage.assert_awaited_once_with()
+
+    async def test_does_not_record_failed_tool_calls(self):
+        result = SimpleNamespace(is_error=True)
+
+        with patch.object(
+            main,
+            "_record_current_mcp_onboarding_use",
+            AsyncMock(),
+        ) as record_usage:
+            returned = await main.McpOnboardingUsageMiddleware().on_call_tool(
+                SimpleNamespace(),
+                AsyncMock(return_value=result),
+            )
+
+        self.assertIs(returned, result)
+        record_usage.assert_not_awaited()
+
+    async def test_returns_tool_result_when_usage_recording_times_out(self):
+        result = SimpleNamespace(is_error=False)
+
+        async def slow_recording():
+            await asyncio.sleep(1)
+
+        with (
+            patch.object(
+                main,
+                "MCP_ONBOARDING_USAGE_TIMEOUT_SECONDS",
+                0.001,
+            ),
+            patch.object(
+                main,
+                "_record_current_mcp_onboarding_use",
+                AsyncMock(side_effect=slow_recording),
+            ),
+        ):
+            returned = await main.McpOnboardingUsageMiddleware().on_call_tool(
+                SimpleNamespace(),
+                AsyncMock(return_value=result),
+            )
+
+        self.assertIs(returned, result)
+
+    async def test_caches_successful_usage_by_verified_email(self):
+        workspace = main.Workspace(
+            email="member@example.com",
+            user_id="11111111-1111-4111-8111-111111111111",
+            team_id="22222222-2222-4222-8222-222222222222",
+            can_create_meetings=True,
+            can_manage_team_meetings=False,
+        )
+        claims = {
+            "sub": "auth-user-1",
+            "email": "Member@Example.com",
+        }
+
+        with (
+            patch.object(main, "_current_user_claims", return_value=claims),
+            patch.object(
+                main,
+                "_workspace_for_auth_user",
+                AsyncMock(return_value=workspace),
+            ) as get_workspace,
+            patch.object(
+                main,
+                "_record_mcp_onboarding_use",
+                AsyncMock(return_value=True),
+            ) as record_usage,
+        ):
+            await main._record_current_mcp_onboarding_use()
+            await main._record_current_mcp_onboarding_use()
+
+        get_workspace.assert_awaited_once_with(
+            "auth-user-1",
+            "Member@Example.com",
+        )
+        record_usage.assert_awaited_once_with(workspace)
 
 
 class MeetingImagesPayloadTests(unittest.TestCase):

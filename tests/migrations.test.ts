@@ -406,4 +406,25 @@ describe("database migrations", () => {
     );
     expect(sql).toContain("app_private.claim_email()");
   });
+
+  it("records MCP onboarding usage through one bounded function", () => {
+    const sql = readFileSync(
+      "db/migrations/0041_mcp_onboarding_usage.sql",
+      "utf8",
+    ).replace(/\s+/g, " ");
+
+    expect(sql).toContain(
+      "create or replace function app_private.record_mcp_onboarding_use",
+    );
+    expect(sql).toContain("security definer");
+    expect(sql).toContain("app_private.current_user_id()");
+    expect(sql).toContain("app_private.can_discover_team(target_team_id)");
+    expect(sql).toContain("'onboarding_mcp_used'");
+    expect(sql).toContain(
+      "revoke all on function app_private.record_mcp_onboarding_use(uuid) from public",
+    );
+    expect(sql).toContain(
+      "grant execute on function app_private.record_mcp_onboarding_use(uuid) to tape_mcp",
+    );
+  });
 });
