@@ -12,6 +12,10 @@ import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment
  * small cinematic arc into a close-up of the take-up spool catching warm
  * light. Scrubbed by scroll progress (fed via ref, no React re-renders).
  */
+
+/** Matches the `--paper` token, for fog and for the transparent clear color. */
+const PAPER = 0xfffdfc;
+
 export default function HeroScene({
   progress,
 }: {
@@ -25,7 +29,7 @@ export default function HeroScene({
 
     const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-    renderer.setClearColor(0xffffff, 1);
+    renderer.setClearColor(PAPER, 1);
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     renderer.toneMappingExposure = 1.0;
     renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -33,7 +37,7 @@ export default function HeroScene({
     renderer.shadowMap.type = THREE.PCFShadowMap;
 
     const scene = new THREE.Scene();
-    scene.fog = new THREE.Fog(0xffffff, 14, 26);
+    scene.fog = new THREE.Fog(PAPER, 14, 26);
 
     // studio reflections for glossy surfaces (tape clearcoat, spool edges)
     const pmrem = new THREE.PMREMGenerator(renderer);

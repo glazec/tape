@@ -48,23 +48,23 @@ export function SignInForm({ callbackUrl }: { callbackUrl?: string }) {
         type="button"
         onClick={signInWithGoogle}
         disabled={isPending}
-        className="inline-flex h-12 w-full items-center justify-center gap-3 rounded-full bg-ink font-mono text-xs font-medium uppercase tracking-[0.2em] text-paper transition-colors duration-150 hover:bg-graphite disabled:pointer-events-none disabled:opacity-60"
+        className="inline-flex h-12 w-full items-center justify-center gap-2.5 rounded-full bg-ink text-[0.9375rem] font-medium text-paper transition-colors duration-150 hover:bg-graphite focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-4 disabled:pointer-events-none disabled:opacity-60"
       >
         <GoogleMark />
         {isPending ? "Opening Google…" : "Continue with Google"}
       </button>
-      <p className="text-center font-mono text-[10px] uppercase tracking-[0.2em] text-ink/45">
+      <p className="text-center font-mono text-label uppercase tracking-[0.16em] text-ash">
         Any Google account · $5 included credit
       </p>
       {error ? (
         <div
           role="alert"
-          className="flex items-start gap-3 border-2 border-destructive bg-destructive/10 p-4 text-sm text-destructive"
+          className="flex items-start gap-3 rounded-lg border border-destructive/40 bg-destructive/8 p-4 text-[0.875rem] text-destructive"
         >
           <AlertCircle className="mt-0.5 size-4 shrink-0" />
           <div>
-            <p className="font-semibold">Google sign in failed</p>
-            <p className="mt-1 leading-6">{error}</p>
+            <p className="font-medium">Google sign in failed</p>
+            <p className="mt-1 leading-[1.7]">{error}</p>
           </div>
         </div>
       ) : null}

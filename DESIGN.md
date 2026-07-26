@@ -87,11 +87,22 @@ Use the existing white and graphite system.
 
 Do not use coral for decoration when it would compete with the primary action. Prefer a border, tonal surface, or spacing before introducing another color.
 
-The brand coral is `#EC4F44`. It drives the shadcn `--primary`, `--ring`, and `--sidebar-primary` tokens plus `--chart-1`, so application buttons, focus rings, sidebar accents, and default charts all follow the brand. The public site uses the landing tokens in `app/globals.css`: `--paper` white, `--mist` light surface, `--ink` near black, `--graphite` supporting, `--ash` muted, and `--brand` coral.
+The brand coral is `#EC4F44`. It drives the shadcn `--primary`, `--ring`, and `--sidebar-primary` tokens plus `--chart-1`, so application buttons, focus rings, sidebar accents, and default charts all follow the brand.
+
+Every neutral in `app/globals.css` is declared in OKLCH and carries a trace of the brand hue (hue 30, chroma 0.002 to 0.024). Nothing is a pure gray and nothing is `#fff` or `#000`, on either surface. The public site uses the landing tokens: `--paper` warm near white canvas, `--mist` warm light surface, `--ink` warm near black, `--graphite` supporting text, `--ash` quiet metadata, `--brand` coral for fills, and `--brand-ink` for coral text.
+
+Two contrast rules follow from those tokens:
+
+1. `--brand` coral reaches only 3.6:1 on paper, so it is a fill color. Small coral text uses `--brand-ink`, which passes AA.
+2. `--ash` is the quietest text color that still passes AA on paper. Anything quieter than `--ash` is decoration, not text. Supporting body copy uses `--graphite`.
 
 ### Public landing page
 
-The landing page (`app/page.tsx`, `components/landing/*`) is the expressive brand surface, in the same calm editorial register as Granola-tier product sites: pure white canvas, generous whitespace, Fraunces serif headlines with a coral italic accent word, Space Grotesk body, and IBM Plex Mono uppercase microcopy. No brutalist borders, hard shadows, metric grids, or dashboard screenshots inside the hero.
+The landing page (`app/page.tsx`, `components/landing/*`) is the expressive brand surface, in the same calm editorial register as Granola-tier product sites: warm paper canvas, generous whitespace, Fraunces serif headlines with a coral italic accent word, Space Grotesk body, and IBM Plex Mono uppercase microcopy. No brutalist borders, hard shadows, metric grids, or dashboard screenshots inside the hero.
+
+Shared primitives live in `components/landing/landing-section.tsx`: `Container` sets the single site measure and gutters, `SplitSection` is the copy-and-still shape, and `PointList` renders feature points as a definition list with no rules and no cards. Sections must use these rather than repeating grid and measure classes, so every section edge lines up.
+
+`SplitSection` takes `flip` and `stillWidth`. The wide grid track always follows whichever column needs the room, so the copy measure stays constant whichever side the still is on. A full application capture takes the wide track; a small application window takes the narrow one.
 
 The hero is a scroll-driven three.js scene (`components/landing/hero-scene.tsx`): abstract graphite tape spools with a glossy coral tape ribbon that winds from the supply reel onto the take-up reel as you scroll — the recording metaphor. Rules for the scene:
 
@@ -101,7 +112,19 @@ The hero is a scroll-driven three.js scene (`components/landing/hero-scene.tsx`)
 4. Tape color transitions with scroll — vivid coral at the top, dimmed and desaturated toward the close-up — so the page stays balanced
 5. Respect reduced motion with a static composed frame and no scroll pinning; pause on tab hide; dispose all WebGL resources on unmount; clamp DPR at 2
 
-Sections follow the positioning: your archive your rules (ownership, web and MCP search), it records itself (Meet and Zoom bots, local macOS recorder with speaker recognition), understands the conversation (translation, emotion and talk metrics, entities, related meeting grouping), and a dark enterprise section (multi-tenant workspaces, access controls, expiring share links). Partner logos live in `public/brand/partners/` as monochrome graphite SVGs.
+The tape scene is the only WebGL layer in the hero. A second pointer-driven fluid layer was tried and removed: it competed with the spools for attention without earning it.
+
+Transcription is no longer a differentiator, and neither is bot-free capture. The section order reflects what the category does not yet cover, strongest claim first:
+
+1. `01 · Capture` — calendar bots for scheduled Zoom and Meet calls *and* a local macOS recorder for the room, with speaker separation. Competitors offer one or the other, not both
+2. `02 · Every language` — 30+ languages with the translation kept beside the original line. The bot-free tools are weakest here
+3. `03 · Memory` — recurring calls grouped into one series, detected entities, talk metrics beside the transcript
+4. `04 · Agents` — the archive published over MCP to the assistant the team already uses, rather than another vendor chatbot. Read only and scoped to the caller's access
+5. `05 · Enterprise` — dark section: workspaces per team, sharing a future meeting series so nobody wonders what they missed, access that matches the room, expiring share links
+
+Section grammar alternates on purpose: three copy-and-still splits, then the agents section with a mono result panel and a three-column row, then the dark enterprise spec grid. Do not add a fourth identical split. Partner logos live in `public/brand/partners/` as monochrome graphite SVGs.
+
+The stills in the languages, memory, and enterprise sections are interface mockups drawn in HTML (`components/landing/mockups.tsx`), not screenshots. Prefer that for anything the page needs to *argue*: a 1440px application capture scaled into a 640px column is unreadable, and raster captures drift out of brand as the product changes. Each mockup shows one idea, uses the live brand tokens, and stays crisp at any size. Keep the content generic: no real customer names and no quotes attributed to real people. The macOS recorder still stays a real capture, because it is a native window rather than something the web app renders.
 
 Use `ProductLogo` with `variant="light"` on dark backgrounds. Never apply a CSS `invert` filter to the logo.
 
@@ -109,15 +132,25 @@ Use `ProductLogo` with `variant="light"` on dark backgrounds. Never apply a CSS 
 
 Use Geist for the application interface. Use Fraunces, Space Grotesk, and IBM Plex Mono only on the public site and sign in surfaces where the editorial brand voice is intentional.
 
-Headings should be short, sentence case, and visually distinct through size and weight rather than uppercase. Small uppercase text may label a section, but it must not repeat the heading below it.
+The public site has one display scale, defined as font-size tokens in `app/globals.css`: `text-display-1` for the hero, `text-display-2` for section headings, `text-display-3` for sub-display lines, `text-lede` for opening paragraphs, and `text-label` for mono microcopy. Each step is fluid through `clamp()` and monotonic, so a heading never shrinks as the viewport grows. Never hand-write a landing font size; add a token if a step is missing.
 
-Use tabular numerals for timers, durations, and changing metrics. Keep body copy readable with generous line height and a narrow measure.
+Those custom sizes are registered with tailwind-merge in `lib/utils.ts`. Without that registration `cn()` reads `text-display-2` as a text color and silently drops it whenever a real color follows.
+
+The application uses a fixed rem scale with a tight ratio: `text-2xl` for a page heading, `text-lg` for a card heading, `text-sm` and `text-xs` for supporting rows. Do not use fluid `clamp()` sizes or display serif faces inside the workspace.
+
+Headings should be short, sentence case, and visually distinct through size and weight rather than uppercase. Small uppercase text may label a section, but it must not repeat the heading below it. Mono microcopy is never smaller than 11px.
+
+Use tabular numerals for timers, durations, and changing metrics. Keep body copy readable with generous line height and a narrow measure: cap prose around 48ch to 52ch, and use `text-pretty` on body copy and `text-balance` on display headings so lines do not end in orphans.
 
 ### Spacing and surfaces
 
 Use the existing four pixel scale, with eight pixels as the common spacing step. Prefer whitespace and alignment over nested cards.
 
 Cards should represent a meaningful group, not every section. Avoid card inside card. Keep borders quiet and shadows subtle. Use a maximum content width that supports scanning, while long transcript text should use a narrower reading measure.
+
+The public site paces sections rather than repeating one padding value: the partner strip is tight, content sections use the standard step, the dark enterprise section is more generous, and the closing call to action is the most generous of all. Split sections align their columns to the top. Centering columns of unequal height leaves matching voids above and below and reads as a mistake.
+
+Any grid whose children can hold long unbreakable content needs `[&>*]:min-w-0`. A grid item keeps a content-based minimum width otherwise, and it will push past its track and scroll the page sideways on small viewports.
 
 ### Motion
 

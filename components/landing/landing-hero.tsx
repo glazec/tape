@@ -5,6 +5,8 @@ import dynamic from "next/dynamic";
 import { motion, useMotionValue, useTransform } from "framer-motion";
 import Link from "next/link";
 
+import { Container } from "./landing-section";
+
 const HeroScene = dynamic(() => import("./hero-scene"), { ssr: false });
 
 function usePrefersReducedMotion() {
@@ -66,57 +68,68 @@ export function LandingHero() {
         <div className="absolute inset-0">
           <HeroScene progress={scrollYProgress} />
         </div>
+        {/* Keeps the copy legible where the tape ribbon crosses behind it. */}
         <div
           aria-hidden
           className="pointer-events-none absolute inset-0 bg-gradient-to-r from-paper via-paper via-[75%] to-transparent sm:hidden"
+        />
+        <div
+          aria-hidden
+          className="pointer-events-none absolute inset-0 hidden bg-gradient-to-r from-paper from-25% via-paper/80 via-50% to-transparent to-70% sm:block"
         />
 
         {/* intro copy */}
         <motion.div
           style={{ opacity: copyOpacity, y: copyY }}
-          className="pointer-events-none relative mx-auto flex h-full w-full max-w-7xl items-center px-5 pb-24 pt-32 sm:px-8"
+          className="pointer-events-none relative flex h-full items-center pb-20 pt-24 sm:pt-28"
         >
-          <div className="pointer-events-auto max-w-2xl">
-            <p className="font-mono text-[11px] uppercase tracking-[0.22em] text-brand">
-              Tape · Meeting intelligence, owned by you
-            </p>
-            <h1 className="font-display mt-7 text-6xl leading-[1.02] tracking-tight text-ink sm:text-7xl lg:text-[4.1rem]">
-              Every conversation,
-              <br />
-              <em className="italic text-brand">on the record.</em>
-            </h1>
-            <p className="mt-7 max-w-[44ch] text-lg leading-8 text-ash">
-              Tape records, transcribes, and understands your meetings — and you
-              own every word. Search it on the web, or ask your AI assistant.
-            </p>
-            <div className="mt-10 flex flex-wrap items-center gap-7">
-              <Link
-                href="/auth/sign-in"
-                className="inline-flex h-12 items-center rounded-full bg-ink px-8 text-[15px] font-medium text-paper transition-colors hover:bg-graphite"
-              >
-                Sign in to Tape
-              </Link>
-              <a
-                href="#archive"
-                className="border-b border-ink/25 pb-0.5 text-[15px] text-ink/70 transition-colors hover:border-ink hover:text-ink"
-              >
-                See how it works
-              </a>
+          <Container>
+            <div className="pointer-events-auto max-w-[42rem]">
+              <p className="font-mono text-label uppercase tracking-[0.2em] text-brand-ink">
+                Meeting intelligence, owned by you
+              </p>
+              <h1 className="font-display mt-6 text-display-1 tracking-[-0.025em] text-ink">
+                Every conversation,
+                <br />
+                <em className="italic text-brand">on the record.</em>
+              </h1>
+              <p className="mt-7 max-w-[46ch] text-lede text-pretty text-graphite">
+                Bots join your Zoom and Meet calls. A local recorder covers the
+                room you are actually in. Every word comes back transcribed,
+                translated, and searchable, by your team or by your AI
+                assistant.
+              </p>
+              <div className="mt-9 flex flex-wrap items-center gap-x-8 gap-y-4">
+                <Link
+                  href="/auth/sign-in"
+                  className="inline-flex h-12 items-center rounded-full bg-ink px-8 text-[0.9375rem] font-medium text-paper transition-colors hover:bg-graphite focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-4"
+                >
+                  Sign in to Tape
+                </Link>
+                <a
+                  href="#capture"
+                  className="text-[0.9375rem] text-graphite decoration-ink/25 underline-offset-[6px] transition-colors hover:text-ink hover:decoration-ink underline"
+                >
+                  See how it works
+                </a>
+              </div>
             </div>
-          </div>
+          </Container>
         </motion.div>
 
         {/* closing caption over the take-up detail shot */}
         <motion.div
           style={{ opacity: captionOpacity, y: captionY }}
-          className="pointer-events-none absolute left-5 top-28 sm:left-8 lg:left-[calc((100vw-80rem)/2+2rem)] lg:top-32"
+          className="pointer-events-none absolute inset-x-0 top-28 lg:top-32"
         >
-          <p className="font-mono text-[11px] uppercase tracking-[0.22em] text-brand">
-            While you talk
-          </p>
-          <p className="font-display mt-4 max-w-[16ch] text-3xl leading-[1.15] tracking-tight text-ink sm:text-4xl">
-            It listens, <em className="italic">so you can think.</em>
-          </p>
+          <Container>
+            <p className="font-mono text-label uppercase tracking-[0.2em] text-brand-ink">
+              While you talk
+            </p>
+            <p className="font-display mt-4 max-w-[17ch] text-display-3 tracking-[-0.02em] text-ink">
+              It listens, <em className="italic">so you can think.</em>
+            </p>
+          </Container>
         </motion.div>
       </div>
     </section>

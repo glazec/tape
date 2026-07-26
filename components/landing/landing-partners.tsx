@@ -2,55 +2,57 @@
 
 import Image from "next/image";
 
-import { FadeIn } from "./landing-section";
+import { Container, FadeIn } from "./landing-section";
 
 const PARTNERS = [
-  { name: "Google Meet", src: "/brand/partners/googlemeet.svg", width: 22 },
-  { name: "Zoom", src: "/brand/partners/zoom.svg", width: 22 },
-  { name: "Recall.ai", src: null, width: 0 },
-  { name: "ElevenLabs", src: "/brand/partners/elevenlabs.svg", width: 22 },
-  { name: "Neon", src: "/brand/partners/neon.svg", width: 22 },
-  { name: "Cloudflare", src: "/brand/partners/cloudflare.svg", width: 22 },
-  { name: "OpenRouter", src: "/brand/partners/openrouter.svg", width: 22 },
+  { name: "Google Meet", src: "/brand/partners/googlemeet.svg" },
+  { name: "Zoom", src: "/brand/partners/zoom.svg" },
+  { name: "Recall.ai", src: null },
+  { name: "ElevenLabs", src: "/brand/partners/elevenlabs.svg" },
+  { name: "Neon", src: "/brand/partners/neon.svg" },
+  { name: "Cloudflare", src: "/brand/partners/cloudflare.svg" },
+  { name: "OpenRouter", src: "/brand/partners/openrouter.svg" },
 ];
 
 export function LandingPartners() {
   return (
-    <section className="border-b border-ink/10 bg-paper">
-      <FadeIn className="mx-auto w-full max-w-7xl px-5 py-14 sm:px-8">
-        <p className="text-center font-mono text-[11px] uppercase tracking-[0.22em] text-ash">
-          Works with the tools your team already uses
-        </p>
-        <div className="mt-9 flex flex-wrap items-center justify-center gap-x-12 gap-y-6">
-          {PARTNERS.map((p) => (
-            <span
-              key={p.name}
-              className="flex items-center gap-2.5 text-graphite opacity-80 transition-opacity hover:opacity-100"
-            >
-              {p.src ? (
-                <Image
-                  src={p.src}
-                  alt=""
-                  width={p.width}
-                  height={p.width}
-                  unoptimized
-                  className="h-[22px] w-[22px]"
-                />
-              ) : (
-                <span
-                  aria-hidden
-                  className="flex h-[22px] w-[22px] items-center justify-center rounded-md border border-graphite/40 font-mono text-[11px] font-semibold"
-                >
-                  R
+    <section className="border-b border-ink/8 bg-paper">
+      <Container>
+        <FadeIn className="py-12 lg:py-14">
+          <p className="text-center font-mono text-label uppercase tracking-[0.18em] text-ash">
+            Records wherever your team already meets
+          </p>
+          <div className="mt-8 flex flex-wrap items-center justify-center gap-x-10 gap-y-5">
+            {PARTNERS.map((partner) => (
+              <span
+                key={partner.name}
+                className="flex items-center gap-2.5 text-graphite opacity-80 transition-opacity hover:opacity-100"
+              >
+                {partner.src ? (
+                  <Image
+                    src={partner.src}
+                    alt=""
+                    width={20}
+                    height={20}
+                    unoptimized
+                    className="h-5 w-5"
+                  />
+                ) : (
+                  <span
+                    aria-hidden
+                    className="flex h-5 w-5 items-center justify-center rounded border border-graphite/40 font-mono text-[0.625rem] font-semibold"
+                  >
+                    R
+                  </span>
+                )}
+                <span className="font-mono text-label uppercase tracking-[0.14em]">
+                  {partner.name}
                 </span>
-              )}
-              <span className="font-mono text-[11px] uppercase tracking-[0.18em]">
-                {p.name}
               </span>
-            </span>
-          ))}
-        </div>
-      </FadeIn>
+            ))}
+          </div>
+        </FadeIn>
+      </Container>
     </section>
   );
 }

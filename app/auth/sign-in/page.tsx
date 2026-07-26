@@ -5,9 +5,9 @@ import { ProductLogo } from "@/components/product-logo";
 import { SignInForm } from "./sign-in-form";
 
 const PANEL_POINTS = [
-  "Recordings and transcripts stay in your workspace",
-  "Search meetings, speakers, and transcript text",
-  "Share selected transcripts with colleagues",
+  "Bots for scheduled calls, a local recorder for the room",
+  "Transcribed and translated across 30+ languages",
+  "Searchable by your team, or by your own AI assistant",
 ];
 
 export default async function SignInPage({
@@ -28,31 +28,28 @@ export default async function SignInPage({
           <ProductLogo variant="light" />
         </div>
         <div className="relative">
-          <p className="font-mono text-[11px] uppercase tracking-[0.22em] text-brand">
+          <p className="font-mono text-label uppercase tracking-[0.2em] text-brand">
             Meeting intelligence, owned by you
           </p>
-          <h2 className="font-display mt-6 max-w-[15ch] text-5xl leading-[1.04] tracking-tight">
+          <h2 className="font-display mt-5 max-w-[16ch] text-display-2 tracking-[-0.02em] text-balance">
             Every conversation,{" "}
-            <em className="italic text-paper/60">on the record.</em>
+            <em className="italic text-paper/55">on the record.</em>
           </h2>
-          <ul className="mt-12 flex flex-col gap-5">
+          <ul className="mt-11 flex max-w-[36ch] flex-col gap-4">
             {PANEL_POINTS.map((point) => (
-              <li
-                key={point}
-                className="flex items-start gap-4 border-t border-paper/12 pt-5"
-              >
+              <li key={point} className="flex items-start gap-3.5">
                 <span
                   aria-hidden
-                  className="mt-[7px] h-1.5 w-1.5 shrink-0 rounded-full bg-brand"
+                  className="mt-[0.55rem] h-1 w-1 shrink-0 rounded-full bg-brand"
                 />
-                <span className="text-[15px] leading-7 text-paper/75">
+                <span className="text-[0.9375rem] leading-[1.75] text-pretty text-paper/75">
                   {point}
                 </span>
               </li>
             ))}
           </ul>
         </div>
-        <p className="relative font-mono text-[10px] uppercase tracking-[0.22em] text-paper/40">
+        <p className="relative font-mono text-label uppercase tracking-[0.16em] text-paper/60">
           Zoom · Google Meet · Local macOS recorder
         </p>
       </section>
@@ -69,27 +66,27 @@ export default async function SignInPage({
           </Link>
           <Link
             href="/"
-            className="font-mono text-[11px] uppercase tracking-[0.2em] text-ink/60 transition-colors hover:text-ink"
+            className="font-mono text-label uppercase tracking-[0.16em] text-graphite transition-colors hover:text-ink"
           >
             ← Back to site
           </Link>
         </header>
-        <div className="relative flex flex-1 items-center justify-center px-6 pb-16 sm:px-10">
-          <div className="w-full max-w-md">
-            <p className="font-mono text-[11px] uppercase tracking-[0.22em] text-brand">
+        <div className="relative flex flex-1 items-center px-6 pb-16 sm:px-10 lg:px-16">
+          <div className="w-full max-w-[26rem]">
+            <p className="font-mono text-label uppercase tracking-[0.2em] text-brand-ink">
               Workspace access
             </p>
-            <h1 className="font-display mt-5 text-4xl leading-tight tracking-tight sm:text-5xl">
+            <h1 className="font-display mt-5 text-display-3 tracking-[-0.02em] text-ink">
               Sign in to Tape.
             </h1>
-            <p className="mt-5 text-base leading-7 text-ash">
+            <p className="mt-4 text-[0.9375rem] leading-[1.7] text-pretty text-graphite">
               Use any Google account to create your meeting workspace or open
               meetings shared with you.
             </p>
-            <div className="mt-10">
+            <div className="mt-9">
               <SignInForm callbackUrl={signInCallbackUrl} />
             </div>
-            <p className="mt-10 border-t border-ink/10 pt-6 text-sm leading-6 text-ash">
+            <p className="mt-9 border-t border-ink/10 pt-6 text-[0.875rem] leading-[1.7] text-pretty text-graphite">
               New personal workspaces include $5 of provider credit. Existing
               organization workspaces keep their current access.
             </p>

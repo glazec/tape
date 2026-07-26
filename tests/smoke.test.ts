@@ -34,12 +34,15 @@ describe("landing page smoke test", () => {
 
     expect(html).toContain("tape-lockup.svg");
     expect(html).toContain("Every conversation,");
-    expect(html).toContain("01 · Your archive");
-    expect(html).toContain("02 · Capture");
-    expect(html).toContain("03 · Understanding");
+    expect(html).toContain("01 · Capture");
+    expect(html).toContain("02 · Every language");
+    expect(html).toContain("03 · Memory");
+    expect(html).toContain("04 · Agents");
+    expect(html).toContain("05 · Enterprise");
     expect(html).toContain("Google Meet");
     expect(html).toContain("ElevenLabs");
-    expect(html).toContain("Multi-tenant workspaces");
+    expect(html).toContain("A workspace per team");
+    expect(html).toContain("Nobody wonders what they missed");
     expect(html).toContain('href="/auth/sign-in"');
     expect(html).toContain(
       'href="https://github.com/glazec/tape/releases/download/mac-v0.2.0/MeetingNoteLocalRecorder-0.2.0.zip"',

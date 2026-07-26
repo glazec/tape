@@ -1,14 +1,15 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 
-import { LandingArchive } from "@/components/landing/landing-archive";
+import { LandingAgents } from "@/components/landing/landing-agents";
+import { LandingCapture } from "@/components/landing/landing-capture";
 import { LandingCta } from "@/components/landing/landing-cta";
 import { LandingEnterprise } from "@/components/landing/landing-enterprise";
 import { LandingHero } from "@/components/landing/landing-hero";
-import { LandingIntelligence } from "@/components/landing/landing-intelligence";
+import { LandingLanguages } from "@/components/landing/landing-languages";
+import { LandingMemory } from "@/components/landing/landing-memory";
 import { LandingNav } from "@/components/landing/landing-nav";
 import { LandingPartners } from "@/components/landing/landing-partners";
-import { LandingRecorder } from "@/components/landing/landing-recorder";
 import { getAuthenticatedUser } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
@@ -16,7 +17,7 @@ export const dynamic = "force-dynamic";
 export const metadata: Metadata = {
   title: "Tape — Every conversation, on the record",
   description:
-    "Tape records, transcribes, and understands your meetings — and you own every word. Search on the web or through MCP, record locally on macOS, and keep the archive in your own workspace.",
+    "Tape records your meetings with calendar bots and a local macOS recorder, transcribes and translates them across 30+ languages, groups recurring calls into one thread, and lets your own AI assistant query the archive over MCP. Your workspace, your data.",
 };
 
 export default async function LandingPage() {
@@ -31,9 +32,10 @@ export default async function LandingPage() {
       <LandingNav />
       <LandingHero />
       <LandingPartners />
-      <LandingArchive />
-      <LandingRecorder />
-      <LandingIntelligence />
+      <LandingCapture />
+      <LandingLanguages />
+      <LandingMemory />
+      <LandingAgents />
       <LandingEnterprise />
       <LandingCta />
     </main>

@@ -19,13 +19,14 @@ Turn meetings into dependable team memory. Success means colleagues can understa
 1. Add a Google Meet or Zoom link and send the meeting bot.
 2. Connect Google Calendar for automatic capture and repair.
 3. Upload audio or video, paste a transcript, or record on a phone.
-4. Use the macOS recorder when cloud capture misses a meeting.
+4. Use the macOS recorder for in-person meetings, ad hoc calls, and any meeting cloud capture misses.
 5. Search the meeting library by title, participant, entity, or transcript text.
-6. Review synchronized audio, transcript, speakers, translation, and captured screen share images.
-7. Export transcript text, audio, and meeting images.
-8. Share a transcript with workspace members or named external colleagues.
-9. Review remaining workspace credit and personal or organization provider consumption across useful time periods from Team settings.
-10. Start a personal workspace with any Google account and use up to $5 of included provider credit.
+6. Query the archive from an outside assistant over the MCP server, read only and scoped to the caller's access.
+7. Review synchronized audio, transcript, speakers, translation, and captured screen share images.
+8. Export transcript text, audio, and meeting images.
+9. Share a transcript with workspace members or named external colleagues, optionally including past and future meetings in the same related series.
+10. Review remaining workspace credit and personal or organization provider consumption across useful time periods from Team settings.
+11. Start a personal workspace with any Google account and use up to $5 of included provider credit.
 
 ## Brand Personality
 
