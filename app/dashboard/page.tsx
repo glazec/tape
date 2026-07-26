@@ -61,6 +61,7 @@ import {
   listMeetingLibraryPageForWorkspace,
 } from "@/lib/meeting-queries";
 import { getOnboardingHiddenCookieName } from "@/lib/onboarding";
+import { getWorkspaceProviderCreditStatus } from "@/lib/provider-credit";
 import { cn } from "@/lib/utils";
 import {
   getOrCreateWorkspaceForSessionUser,
@@ -124,7 +125,7 @@ export default async function DashboardPage({
       ? savedViewConfig
       : requestedViewConfig;
   const query = activeViewConfig.query ?? undefined;
-  const [meetingLibraryPage, dashboardSummary, calendarStatus] =
+  const [meetingLibraryPage, dashboardSummary, calendarStatus, creditStatus] =
     await Promise.all([
       listMeetingLibraryPageForWorkspace(workspace, {
         historyMonths,
@@ -143,6 +144,10 @@ export default async function DashboardPage({
         : Promise.resolve(null),
       accessSummary.canCreateMeetings
         ? getCalendarConnectionSummaryForWorkspace(workspace)
+        : Promise.resolve(null),
+      accessSummary.canCreateMeetings &&
+      workspace.creditLimitUsdMicros !== null
+        ? getWorkspaceProviderCreditStatus(workspace.teamId)
         : Promise.resolve(null),
     ]);
   const onboardingHiddenCookieName = getOnboardingHiddenCookieName(workspace);
@@ -179,6 +184,25 @@ export default async function DashboardPage({
       oneSignalExternalId={workspace.userId}
     >
       <section className="flex flex-col gap-4">
+        {creditStatus?.isExhausted ? (
+          <Alert
+            className="px-4 py-4 sm:grid-cols-[auto_minmax(0,1fr)_auto] sm:gap-x-3"
+            variant="destructive"
+          >
+            <AlertCircle />
+            <AlertTitle>Tape credit has been used</AlertTitle>
+            <AlertDescription>
+              New recording, transcription, translation, and assistant actions
+              are paused. Existing meetings remain available.
+            </AlertDescription>
+            <Link
+              className="col-start-2 mt-2 font-medium underline underline-offset-3 hover:text-foreground sm:col-start-3 sm:row-start-1 sm:row-span-2 sm:mt-0 sm:self-center"
+              href="/usage"
+            >
+              View billing details
+            </Link>
+          </Alert>
+        ) : null}
         {showCalendarError ? (
           <Alert variant="destructive">
             <AlertCircle />

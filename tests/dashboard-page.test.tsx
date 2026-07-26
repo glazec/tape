@@ -7,6 +7,7 @@ const {
   getCalendarConnectionSummaryForWorkspace,
   getDefaultMeetingLibraryView,
   getMeetingDashboardSummaryForWorkspace,
+  getWorkspaceProviderCreditStatus,
   getWorkspace,
   getWorkspaceAccessSummary,
   listMeetingLibraryPageForWorkspace,
@@ -16,6 +17,7 @@ const {
   getCalendarConnectionSummaryForWorkspace: vi.fn(),
   getDefaultMeetingLibraryView: vi.fn(),
   getMeetingDashboardSummaryForWorkspace: vi.fn(),
+  getWorkspaceProviderCreditStatus: vi.fn(),
   getWorkspace: vi.fn(),
   getWorkspaceAccessSummary: vi.fn(),
   listMeetingLibraryPageForWorkspace: vi.fn(),
@@ -67,6 +69,10 @@ vi.mock("@/lib/meeting-library-views", () => ({
   getDefaultMeetingLibraryView,
 }));
 
+vi.mock("@/lib/provider-credit", () => ({
+  getWorkspaceProviderCreditStatus,
+}));
+
 vi.mock("@/lib/workspace", () => ({
   getOrCreateWorkspaceForSessionUser: getWorkspace,
   getWorkspaceAccessSummary,
@@ -84,6 +90,7 @@ describe("DashboardPage", () => {
     getCalendarConnectionSummaryForWorkspace.mockReset();
     getDefaultMeetingLibraryView.mockReset();
     getMeetingDashboardSummaryForWorkspace.mockReset();
+    getWorkspaceProviderCreditStatus.mockReset();
     getWorkspace.mockReset();
     getWorkspaceAccessSummary.mockReset();
     listMeetingLibraryPageForWorkspace.mockReset();
@@ -97,6 +104,7 @@ describe("DashboardPage", () => {
       teamId: "team_123",
       domain: "iosg.vc",
       canCreateMeetings: true,
+      creditLimitUsdMicros: null,
     };
     requireCurrentUser.mockResolvedValue({
       id: "auth_user_123",
@@ -212,6 +220,7 @@ describe("DashboardPage", () => {
     expect(html).not.toContain("Everything is on track");
     expect(html).not.toContain("Workspace activity");
     expect(html).not.toContain("Meeting hub");
+    expect(getWorkspaceProviderCreditStatus).not.toHaveBeenCalled();
   });
 
   it("uses a saved default meeting view when the dashboard opens without filters", async () => {
@@ -220,6 +229,7 @@ describe("DashboardPage", () => {
       teamId: "team_123",
       domain: "iosg.vc",
       canCreateMeetings: true,
+      creditLimitUsdMicros: null,
     };
     requireCurrentUser.mockResolvedValue({
       id: "auth_user_123",
@@ -296,6 +306,7 @@ describe("DashboardPage", () => {
       teamId: "team_123",
       domain: "iosg.vc",
       canCreateMeetings: true,
+      creditLimitUsdMicros: null,
     };
     requireCurrentUser.mockResolvedValue({
       id: "auth_user_123",
@@ -409,5 +420,92 @@ describe("DashboardPage", () => {
       "Tape could not capture your events",
     );
     expect(calendarErrorHtml).not.toContain("Try connecting again");
+  });
+
+  it("shows an alert with billing details when workspace credit is exhausted", async () => {
+    const workspace = {
+      userId: "user_123",
+      teamId: "team_123",
+      domain: "example.com",
+      canCreateMeetings: true,
+      creditLimitUsdMicros: 5_000_000,
+    };
+    requireCurrentUser.mockResolvedValue({
+      id: "auth_user_123",
+      email: "member@example.com",
+      name: null,
+    });
+    getWorkspace.mockResolvedValue(workspace);
+    getWorkspaceAccessSummary.mockResolvedValue({
+      canCreateMeetings: true,
+      hasExternalShares: false,
+      hasWorkspaceMeetings: false,
+      isSharedOnly: false,
+    });
+    getDefaultMeetingLibraryView.mockResolvedValue(null);
+    getMeetingDashboardSummaryForWorkspace.mockResolvedValue({
+      upcomingBotJoins: 0,
+      readyTranscripts: 0,
+      activeWork: 0,
+      failedMeetings: 0,
+      scheduledWithoutBot: 0,
+      overdueScheduled: 0,
+      needsAttention: 0,
+      nextBotJoin: null,
+      userStats: {
+        last7DaysMeetings: 0,
+        previous7DaysMeetings: 0,
+        meetingChangePercent: 0,
+        meetingHours: 0,
+        spokenWords: 0,
+        talkSharePercent: null,
+        dominantEmotion: null,
+      },
+    });
+    getCalendarConnectionSummaryForWorkspace.mockResolvedValue(null);
+    listMeetingLibraryPageForWorkspace.mockResolvedValue({
+      meetings: [],
+      page: 1,
+      pageSize: 50,
+      hasPreviousPage: false,
+      hasNextPage: false,
+      hasOlderMeetings: false,
+      historyMonths: 6,
+      relatedHistoryMonths: 2,
+    });
+    getWorkspaceProviderCreditStatus.mockResolvedValue({
+      isExhausted: false,
+      limitUsdMicros: 5_000_000,
+      remainingUsdMicros: 1_000_000,
+      usedUsdMicros: 4_000_000,
+    });
+
+    const { default: DashboardPage } = await import("@/app/dashboard/page");
+    const availableHtml = renderToStaticMarkup(
+      await DashboardPage({
+        searchParams: Promise.resolve({}),
+      }),
+    );
+
+    expect(availableHtml).not.toContain("Tape credit has been used");
+    expect(getWorkspaceProviderCreditStatus).toHaveBeenCalledWith("team_123");
+
+    getWorkspaceProviderCreditStatus.mockResolvedValue({
+      isExhausted: true,
+      limitUsdMicros: 5_000_000,
+      remainingUsdMicros: 0,
+      usedUsdMicros: 5_000_000,
+    });
+    const exhaustedHtml = renderToStaticMarkup(
+      await DashboardPage({
+        searchParams: Promise.resolve({}),
+      }),
+    );
+
+    expect(exhaustedHtml).toContain("Tape credit has been used");
+    expect(exhaustedHtml).toContain(
+      "New recording, transcription, translation, and assistant actions are paused.",
+    );
+    expect(exhaustedHtml).toContain('href="/usage"');
   });
 });
