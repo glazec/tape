@@ -37,6 +37,10 @@ vi.mock("@/lib/meeting-library-views", () => ({
   getDefaultMeetingLibraryView: vi.fn(),
 }));
 
+vi.mock("@/lib/onboarding-queries", () => ({
+  getOnboardingSetupActivityForWorkspace: vi.fn(),
+}));
+
 vi.mock("@/lib/meeting-share-service", () => ({
   listActiveMeetingShares: vi.fn(),
 }));

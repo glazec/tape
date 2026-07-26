@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { cookies } from "next/headers";
+import { Suspense } from "react";
 import {
   AlertCircle,
   CalendarCheck2,
@@ -12,6 +13,10 @@ import {
 
 import { AppShell } from "@/components/app-shell";
 import { CalendarAutomationPanel } from "@/components/calendar-automation-panel";
+import {
+  DashboardOverviewSkeleton,
+  MeetingLibrarySkeleton,
+} from "@/components/dashboard-loading";
 import { DashboardWorkflowSummary } from "@/components/dashboard-workflow-summary";
 import { MeetingList } from "@/components/meeting-list";
 import { OnboardingTutorial } from "@/components/onboarding-tutorial";
@@ -60,7 +65,11 @@ import {
   MEETING_LIBRARY_HISTORY_MONTH_STEP,
   listMeetingLibraryPageForWorkspace,
 } from "@/lib/meeting-queries";
-import { getOnboardingHiddenCookieName } from "@/lib/onboarding";
+import {
+  getOnboardingHiddenCookieName,
+  isOnboardingAutomaticallyComplete,
+} from "@/lib/onboarding";
+import { getOnboardingSetupActivityForWorkspace } from "@/lib/onboarding-queries";
 import { getWorkspaceProviderCreditStatus } from "@/lib/provider-credit";
 import { cn } from "@/lib/utils";
 import {
@@ -70,27 +79,29 @@ import {
 
 export const dynamic = "force-dynamic";
 
+type DashboardSearchParams = {
+  calendarError?: string | string[];
+  page?: string | string[];
+  historyMonths?: string | string[];
+  q?: string | string[];
+  relatedMonths?: string | string[];
+  scope?: string | string[];
+  sort?: string | string[];
+  status?: string | string[];
+  setup?: string | string[];
+  syncCalendar?: string | string[];
+  view?: string | string[];
+};
+
 export default async function DashboardPage({
   searchParams,
 }: {
-  searchParams: Promise<{
-    calendarError?: string | string[];
-    page?: string | string[];
-    historyMonths?: string | string[];
-    q?: string | string[];
-    relatedMonths?: string | string[];
-    scope?: string | string[];
-    sort?: string | string[];
-    status?: string | string[];
-    setup?: string | string[];
-    syncCalendar?: string | string[];
-    view?: string | string[];
-  }>;
+  searchParams: Promise<DashboardSearchParams>;
 }) {
-  const [user, resolvedSearchParams, cookieStore] = await Promise.all([
+  const cookieStorePromise = cookies();
+  const [user, resolvedSearchParams] = await Promise.all([
     requireCurrentUser(),
     searchParams,
-    cookies(),
   ]);
   const {
     calendarError,
@@ -115,53 +126,11 @@ export default async function DashboardPage({
     sort,
   });
   const workspace = await getOrCreateWorkspaceForSessionUser(user);
-  const [accessSummary, savedViewConfig] = await Promise.all([
-    getWorkspaceAccessSummary(workspace),
-    getDefaultMeetingLibraryView(workspace),
-  ]);
-  const activeViewConfig =
-    shouldUseSavedMeetingLibraryView({ q, scope, sort, status, view }) &&
-    savedViewConfig
-      ? savedViewConfig
-      : requestedViewConfig;
-  const query = activeViewConfig.query ?? undefined;
-  const [meetingLibraryPage, dashboardSummary, calendarStatus, creditStatus] =
-    await Promise.all([
-      listMeetingLibraryPageForWorkspace(workspace, {
-        historyMonths,
-        page: currentPage,
-        query,
-        relatedHistoryMonths,
-        searchScope: activeViewConfig.searchScope,
-        sort: activeViewConfig.sort,
-        status: activeViewConfig.status,
-      }),
-      accessSummary.canCreateMeetings
-        ? getMeetingDashboardSummaryForWorkspace(workspace, {
-            userEmail: user.email,
-            userName: user.name,
-          })
-        : Promise.resolve(null),
-      accessSummary.canCreateMeetings
-        ? getCalendarConnectionSummaryForWorkspace(workspace)
-        : Promise.resolve(null),
-      accessSummary.canCreateMeetings &&
-      workspace.creditLimitUsdMicros !== null
-        ? getWorkspaceProviderCreditStatus(workspace.teamId)
-        : Promise.resolve(null),
-    ]);
-  const onboardingHiddenCookieName = getOnboardingHiddenCookieName(workspace);
-  const calendarErrorCode = getSearchParamValue(calendarError);
-  const calendarErrorMessage = getCalendarErrorMessage(calendarErrorCode);
-  const showCalendarError =
-    accessSummary.canCreateMeetings &&
-    calendarErrorMessage &&
-    (calendarErrorCode === "sync_failed" ||
-      !isCalendarOperational(calendarStatus));
-  const showOnboarding =
-    accessSummary.canCreateMeetings &&
-    (getSearchParamValue(setup) === "1" ||
-      cookieStore.get(onboardingHiddenCookieName)?.value !== "1");
+  const savedViewPromise = getDefaultMeetingLibraryView(workspace);
+
+  void savedViewPromise.catch(() => undefined);
+
+  const accessSummary = await getWorkspaceAccessSummary(workspace);
   const showMeetingLibrary =
     accessSummary.isSharedOnly ||
     accessSummary.hasWorkspaceMeetings ||
@@ -183,158 +152,291 @@ export default async function DashboardPage({
       canCreateMeetings={accessSummary.canCreateMeetings}
       oneSignalExternalId={workspace.userId}
     >
-      <section className="flex flex-col gap-4">
-        {creditStatus?.isExhausted ? (
-          <Alert
-            className="px-4 py-4 sm:grid-cols-[auto_minmax(0,1fr)_auto] sm:gap-x-3"
-            variant="destructive"
-          >
-            <AlertCircle />
-            <AlertTitle>Tape credit has been used</AlertTitle>
-            <AlertDescription>
-              New recording, transcription, translation, and assistant actions
-              are paused. Existing meetings remain available.
-            </AlertDescription>
-            <Link
-              className="col-start-2 mt-2 font-medium underline underline-offset-3 hover:text-foreground sm:col-start-3 sm:row-start-1 sm:row-span-2 sm:mt-0 sm:self-center"
-              href="/usage"
-            >
-              View billing details
-            </Link>
-          </Alert>
-        ) : null}
-        {showCalendarError ? (
-          <Alert variant="destructive">
-            <AlertCircle />
-            <AlertTitle>Calendar setup needs attention</AlertTitle>
-            <AlertDescription>
-              {calendarErrorMessage}
-            </AlertDescription>
-          </Alert>
-        ) : null}
-        {showOnboarding && calendarStatus ? (
-          <OnboardingTutorial
-            autoSyncCalendar={getSearchParamValue(syncCalendar) === "1"}
-            calendarStatus={calendarStatus}
-            dismissalCookieName={onboardingHiddenCookieName}
-            forceCalendarSync={calendarErrorCode === "sync_failed"}
-          />
-        ) : !accessSummary.isSharedOnly ? (
-          <div className="grid gap-4 lg:grid-cols-2">
-            <DashboardGreetingCard
-              meetingCount={dashboardSummary?.userStats.last7DaysMeetings ?? 0}
-              name={getDashboardFirstName(user.name, user.email)}
+      <section className="flex flex-col gap-6">
+        {!accessSummary.isSharedOnly ? (
+          <Suspense fallback={<DashboardOverviewSkeleton />}>
+            <DashboardOverview
+              accessSummary={accessSummary}
+              calendarError={calendarError}
+              cookieStorePromise={cookieStorePromise}
+              setup={setup}
+              syncCalendar={syncCalendar}
+              user={user}
+              workspace={workspace}
             />
-            {dashboardSummary ? (
-              <DashboardWorkflowSummary summary={dashboardSummary} />
-            ) : null}
-            {calendarStatus ? (
-              <CalendarAutomationPanel
-                accountLabel={user.email}
-                autoSync={getSearchParamValue(syncCalendar) === "1"}
-                nextJoinTitle={dashboardSummary?.nextBotJoin?.title ?? null}
-                status={calendarStatus}
-              />
-            ) : null}
-          </div>
+          </Suspense>
         ) : null}
 
         {showMeetingLibrary ? (
-          <Card className="gap-0 py-0 shadow-sm">
-            <CardHeader className="border-b bg-muted/25 px-4 py-4 sm:px-5">
-              <CardTitle>
-                {accessSummary.isSharedOnly ? (
-                  <h1 className="text-xl font-semibold tracking-tight">
-                    Meetings
-                  </h1>
-                ) : (
-                  <h2 className="text-xl font-semibold tracking-tight">
-                    Meetings
-                  </h2>
-                )}
-              </CardTitle>
-              <CardDescription>
-                {accessSummary.isSharedOnly
-                  ? "Transcripts shared with you."
-                  : "Search transcripts, recordings, and upcoming meetings."}
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="flex flex-col px-0">
-              <MeetingLibraryControls
-                activeViewConfig={activeViewConfig}
-                historyMonths={meetingLibraryPage.historyMonths}
-                hasSavedView={Boolean(savedViewConfig)}
-                isSharedOnly={accessSummary.isSharedOnly}
-                relatedHistoryMonths={meetingLibraryPage.relatedHistoryMonths}
-                syncCalendar={syncCalendar}
-              />
-
-              <MeetingList
-                emptyMessage={
-                  accessSummary.isSharedOnly
-                    ? "No transcripts have been shared with you yet"
-                    : "No meetings found"
-                }
-                meetings={withRelatedHistoryLinks(meetingLibraryPage.meetings, {
-                  activeViewConfig,
-                  historyMonths: meetingLibraryPage.historyMonths,
-                  relatedHistoryMonths:
-                    meetingLibraryPage.relatedHistoryMonths,
-                  syncCalendar,
-                })}
-                sort={activeViewConfig.sort}
-                sortLinks={getMeetingLibrarySortLinks({
-                  activeViewConfig,
-                  historyMonths: meetingLibraryPage.historyMonths,
-                  relatedHistoryMonths:
-                    meetingLibraryPage.relatedHistoryMonths,
-                  syncCalendar,
-                })}
-              />
-              <MeetingLibraryPagination
-                className="border-t px-4 py-3 sm:px-5"
-                hasNextPage={meetingLibraryPage.hasNextPage}
-                hasOlderMeetings={meetingLibraryPage.hasOlderMeetings}
-                hasPreviousPage={meetingLibraryPage.hasPreviousPage}
-                historyHref={buildDashboardPageHref({
-                  ...activeViewConfig,
-                  historyMonths: getNextHistoryMonths(
-                    meetingLibraryPage.historyMonths,
-                  ),
-                  relatedHistoryMonths: Math.max(
-                    meetingLibraryPage.relatedHistoryMonths,
-                    getNextHistoryMonths(meetingLibraryPage.historyMonths),
-                  ),
-                  syncCalendar,
-                })}
-                historyMonths={meetingLibraryPage.historyMonths}
-                nextHref={buildDashboardPageHref({
-                  ...activeViewConfig,
-                  historyMonths: meetingLibraryPage.historyMonths,
-                  page: meetingLibraryPage.page + 1,
-                  relatedHistoryMonths:
-                    meetingLibraryPage.relatedHistoryMonths,
-                  syncCalendar,
-                })}
-                page={meetingLibraryPage.page}
-                previousHref={buildDashboardPageHref({
-                  ...activeViewConfig,
-                  historyMonths: meetingLibraryPage.historyMonths,
-                  page: meetingLibraryPage.page - 1,
-                  relatedHistoryMonths:
-                    meetingLibraryPage.relatedHistoryMonths,
-                  syncCalendar,
-                })}
-                resetHistoryHref={buildDashboardPageHref({
-                  ...activeViewConfig,
-                  syncCalendar,
-                })}
-              />
-            </CardContent>
-          </Card>
+          <Suspense fallback={<MeetingLibrarySkeleton />}>
+            <DashboardMeetingLibrary
+              currentPage={currentPage}
+              historyMonths={historyMonths}
+              isSharedOnly={accessSummary.isSharedOnly}
+              relatedHistoryMonths={relatedHistoryMonths}
+              requestedViewConfig={requestedViewConfig}
+              savedViewPromise={savedViewPromise}
+              searchParams={resolvedSearchParams}
+              syncCalendar={syncCalendar}
+              workspace={workspace}
+            />
+          </Suspense>
         ) : null}
       </section>
     </AppShell>
+  );
+}
+
+async function DashboardOverview({
+  accessSummary,
+  calendarError,
+  cookieStorePromise,
+  setup,
+  syncCalendar,
+  user,
+  workspace,
+}: {
+  accessSummary: Awaited<ReturnType<typeof getWorkspaceAccessSummary>>;
+  calendarError?: string | string[];
+  cookieStorePromise: ReturnType<typeof cookies>;
+  setup?: string | string[];
+  syncCalendar?: string | string[];
+  user: Awaited<ReturnType<typeof requireCurrentUser>>;
+  workspace: Awaited<ReturnType<typeof getOrCreateWorkspaceForSessionUser>>;
+}) {
+  const onboardingHiddenCookieName = getOnboardingHiddenCookieName(workspace);
+  const onboardingForced = getSearchParamValue(setup) === "1";
+  const cookieStore = await cookieStorePromise;
+  const onboardingHiddenInBrowser =
+    cookieStore.get(onboardingHiddenCookieName)?.value === "1";
+  const [
+    dashboardSummary,
+    calendarStatus,
+    creditStatus,
+    onboardingSetupActivity,
+  ] = await Promise.all([
+    accessSummary.canCreateMeetings
+      ? getMeetingDashboardSummaryForWorkspace(workspace, {
+          userEmail: user.email,
+          userName: user.name,
+        })
+      : Promise.resolve(null),
+    accessSummary.canCreateMeetings
+      ? getCalendarConnectionSummaryForWorkspace(workspace)
+      : Promise.resolve(null),
+    accessSummary.canCreateMeetings && workspace.creditLimitUsdMicros !== null
+      ? getWorkspaceProviderCreditStatus(workspace.teamId)
+      : Promise.resolve(null),
+    accessSummary.canCreateMeetings &&
+    !onboardingForced &&
+    !onboardingHiddenInBrowser
+      ? getOnboardingSetupActivityForWorkspace(workspace)
+      : Promise.resolve(null),
+  ]);
+  const calendarErrorCode = getSearchParamValue(calendarError);
+  const calendarErrorMessage = getCalendarErrorMessage(calendarErrorCode);
+  const showCalendarError =
+    accessSummary.canCreateMeetings &&
+    calendarErrorMessage &&
+    (calendarErrorCode === "sync_failed" ||
+      !isCalendarOperational(calendarStatus));
+  const onboardingAutomaticallyComplete =
+    onboardingSetupActivity &&
+    isOnboardingAutomaticallyComplete({
+      calendarStatus,
+      ...onboardingSetupActivity,
+    });
+  const showOnboarding =
+    accessSummary.canCreateMeetings &&
+    (onboardingForced ||
+      (!onboardingAutomaticallyComplete && !onboardingHiddenInBrowser));
+
+  return (
+    <>
+      {creditStatus?.isExhausted ? (
+        <Alert
+          className="px-4 py-4 sm:grid-cols-[auto_minmax(0,1fr)_auto] sm:gap-x-3"
+          variant="destructive"
+        >
+          <AlertCircle />
+          <AlertTitle>Tape credit has been used</AlertTitle>
+          <AlertDescription>
+            New recording, transcription, translation, and assistant actions are
+            paused. Existing meetings remain available.
+          </AlertDescription>
+          <Link
+            className="col-start-2 mt-2 font-medium underline underline-offset-3 hover:text-foreground sm:col-start-3 sm:row-start-1 sm:row-span-2 sm:mt-0 sm:self-center"
+            href="/usage"
+          >
+            View billing details
+          </Link>
+        </Alert>
+      ) : null}
+      {showCalendarError ? (
+        <Alert variant="destructive">
+          <AlertCircle />
+          <AlertTitle>Calendar setup needs attention</AlertTitle>
+          <AlertDescription>{calendarErrorMessage}</AlertDescription>
+        </Alert>
+      ) : null}
+      {showOnboarding && calendarStatus ? (
+        <OnboardingTutorial
+          autoSyncCalendar={getSearchParamValue(syncCalendar) === "1"}
+          calendarStatus={calendarStatus}
+          dismissalCookieName={onboardingHiddenCookieName}
+          forceCalendarSync={calendarErrorCode === "sync_failed"}
+        />
+      ) : (
+        <div className="grid gap-4 lg:grid-cols-2">
+          <DashboardGreetingCard
+            meetingCount={dashboardSummary?.userStats.last7DaysMeetings ?? 0}
+            name={getDashboardFirstName(user.name, user.email)}
+          />
+          {dashboardSummary ? (
+            <DashboardWorkflowSummary summary={dashboardSummary} />
+          ) : null}
+          {calendarStatus ? (
+            <CalendarAutomationPanel
+              accountLabel={user.email}
+              autoSync={getSearchParamValue(syncCalendar) === "1"}
+              nextJoinTitle={dashboardSummary?.nextBotJoin?.title ?? null}
+              status={calendarStatus}
+            />
+          ) : null}
+        </div>
+      )}
+    </>
+  );
+}
+
+async function DashboardMeetingLibrary({
+  currentPage,
+  historyMonths,
+  isSharedOnly,
+  relatedHistoryMonths,
+  requestedViewConfig,
+  savedViewPromise,
+  searchParams,
+  syncCalendar,
+  workspace,
+}: {
+  currentPage: number;
+  historyMonths: number;
+  isSharedOnly: boolean;
+  relatedHistoryMonths: number;
+  requestedViewConfig: MeetingLibraryViewConfig;
+  savedViewPromise: ReturnType<typeof getDefaultMeetingLibraryView>;
+  searchParams: DashboardSearchParams;
+  syncCalendar?: string | string[];
+  workspace: Awaited<ReturnType<typeof getOrCreateWorkspaceForSessionUser>>;
+}) {
+  const savedViewConfig = await savedViewPromise;
+  const activeViewConfig =
+    shouldUseSavedMeetingLibraryView(searchParams) && savedViewConfig
+      ? savedViewConfig
+      : requestedViewConfig;
+  const meetingLibraryPage = await listMeetingLibraryPageForWorkspace(
+    workspace,
+    {
+      historyMonths,
+      page: currentPage,
+      query: activeViewConfig.query ?? undefined,
+      relatedHistoryMonths,
+      searchScope: activeViewConfig.searchScope,
+      sort: activeViewConfig.sort,
+      status: activeViewConfig.status,
+    },
+  );
+
+  return (
+    <Card className="gap-0 py-0 shadow-sm">
+      <CardHeader className="border-b bg-muted/25 px-4 py-4 sm:px-5">
+        <CardTitle>
+          {isSharedOnly ? (
+            <h1 className="text-lg font-semibold tracking-[-0.01em]">
+              Meetings
+            </h1>
+          ) : (
+            <h2 className="text-lg font-semibold tracking-[-0.01em]">
+              Meetings
+            </h2>
+          )}
+        </CardTitle>
+        <CardDescription>
+          {isSharedOnly
+            ? "Transcripts shared with you."
+            : "Search transcripts, recordings, and upcoming meetings."}
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="flex flex-col px-0">
+        <MeetingLibraryControls
+          activeViewConfig={activeViewConfig}
+          historyMonths={meetingLibraryPage.historyMonths}
+          hasSavedView={Boolean(savedViewConfig)}
+          isSharedOnly={isSharedOnly}
+          relatedHistoryMonths={meetingLibraryPage.relatedHistoryMonths}
+          syncCalendar={syncCalendar}
+        />
+
+        <MeetingList
+          emptyMessage={
+            isSharedOnly
+              ? "No transcripts have been shared with you yet"
+              : "No meetings found"
+          }
+          meetings={withRelatedHistoryLinks(meetingLibraryPage.meetings, {
+            activeViewConfig,
+            historyMonths: meetingLibraryPage.historyMonths,
+            relatedHistoryMonths: meetingLibraryPage.relatedHistoryMonths,
+            syncCalendar,
+          })}
+          sort={activeViewConfig.sort}
+          sortLinks={getMeetingLibrarySortLinks({
+            activeViewConfig,
+            historyMonths: meetingLibraryPage.historyMonths,
+            relatedHistoryMonths: meetingLibraryPage.relatedHistoryMonths,
+            syncCalendar,
+          })}
+        />
+        <MeetingLibraryPagination
+          className="border-t px-4 py-3 sm:px-5"
+          hasNextPage={meetingLibraryPage.hasNextPage}
+          hasOlderMeetings={meetingLibraryPage.hasOlderMeetings}
+          hasPreviousPage={meetingLibraryPage.hasPreviousPage}
+          historyHref={buildDashboardPageHref({
+            ...activeViewConfig,
+            historyMonths: getNextHistoryMonths(
+              meetingLibraryPage.historyMonths,
+            ),
+            relatedHistoryMonths: Math.max(
+              meetingLibraryPage.relatedHistoryMonths,
+              getNextHistoryMonths(meetingLibraryPage.historyMonths),
+            ),
+            syncCalendar,
+          })}
+          historyMonths={meetingLibraryPage.historyMonths}
+          nextHref={buildDashboardPageHref({
+            ...activeViewConfig,
+            historyMonths: meetingLibraryPage.historyMonths,
+            page: meetingLibraryPage.page + 1,
+            relatedHistoryMonths: meetingLibraryPage.relatedHistoryMonths,
+            syncCalendar,
+          })}
+          page={meetingLibraryPage.page}
+          previousHref={buildDashboardPageHref({
+            ...activeViewConfig,
+            historyMonths: meetingLibraryPage.historyMonths,
+            page: meetingLibraryPage.page - 1,
+            relatedHistoryMonths: meetingLibraryPage.relatedHistoryMonths,
+            syncCalendar,
+          })}
+          resetHistoryHref={buildDashboardPageHref({
+            ...activeViewConfig,
+            syncCalendar,
+          })}
+        />
+      </CardContent>
+    </Card>
   );
 }
 
@@ -381,18 +483,20 @@ function DashboardGreetingCard({
   name: string;
 }) {
   return (
-    <Card className="relative min-h-44 overflow-hidden bg-[radial-gradient(circle_at_top_right,color-mix(in_oklch,var(--primary)_12%,transparent),transparent_42%)] lg:row-span-2 lg:min-h-72">
-      <CardContent className="flex flex-1 flex-col justify-center py-6 sm:px-8 sm:py-8">
-        <div className="relative z-10 max-w-md">
-          <p className="text-sm font-medium text-primary">Dashboard</p>
-          <h1 className="mt-2 text-3xl font-semibold tracking-tight sm:mt-3 sm:text-4xl">
+    <Card className="relative min-h-36 overflow-hidden lg:row-span-2 lg:min-h-60">
+      <CardContent className="flex flex-1 flex-col justify-center py-6 sm:px-7 sm:py-7">
+        <div className="relative z-10 max-w-sm">
+          <h1 className="text-2xl font-semibold tracking-[-0.015em] sm:text-[1.75rem]">
             Welcome back, {name}.
           </h1>
-          <p className="mt-3 text-base leading-7 text-muted-foreground sm:mt-4">
+          <p className="mt-2.5 text-[0.9375rem] leading-[1.6] text-muted-foreground">
             {formatGreetingSummary(meetingCount)}
           </p>
         </div>
-        <CalendarCheck2 className="absolute right-6 bottom-6 size-20 text-primary/10 sm:right-8 sm:bottom-8 sm:size-32" />
+        <CalendarCheck2
+          aria-hidden="true"
+          className="absolute right-6 bottom-6 size-20 text-foreground/[0.06] sm:right-7 sm:bottom-7 sm:size-28"
+        />
       </CardContent>
     </Card>
   );

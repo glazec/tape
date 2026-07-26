@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { renderToStaticMarkup } from "react-dom/server";
+import { renderToReadableStream } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const {
@@ -7,6 +7,7 @@ const {
   getCalendarConnectionSummaryForWorkspace,
   getDefaultMeetingLibraryView,
   getMeetingDashboardSummaryForWorkspace,
+  getOnboardingSetupActivityForWorkspace,
   getWorkspaceProviderCreditStatus,
   getWorkspace,
   getWorkspaceAccessSummary,
@@ -17,6 +18,7 @@ const {
   getCalendarConnectionSummaryForWorkspace: vi.fn(),
   getDefaultMeetingLibraryView: vi.fn(),
   getMeetingDashboardSummaryForWorkspace: vi.fn(),
+  getOnboardingSetupActivityForWorkspace: vi.fn(),
   getWorkspaceProviderCreditStatus: vi.fn(),
   getWorkspace: vi.fn(),
   getWorkspaceAccessSummary: vi.fn(),
@@ -73,15 +75,31 @@ vi.mock("@/lib/provider-credit", () => ({
   getWorkspaceProviderCreditStatus,
 }));
 
+vi.mock("@/lib/onboarding-queries", () => ({
+  getOnboardingSetupActivityForWorkspace,
+}));
+
 vi.mock("@/lib/workspace", () => ({
   getOrCreateWorkspaceForSessionUser: getWorkspace,
   getWorkspaceAccessSummary,
 }));
 
+async function renderDashboard(element: ReactNode) {
+  const stream = await renderToReadableStream(element);
+
+  await stream.allReady;
+
+  return (await new Response(stream).text()).replace(/<!--[\s\S]*?-->/g, "");
+}
+
 describe("DashboardPage", () => {
   beforeEach(() => {
     cookies.mockResolvedValue({
       get: () => ({ value: "1" }),
+    });
+    getOnboardingSetupActivityForWorkspace.mockResolvedValue({
+      desktopAppConnected: false,
+      mcpUsed: false,
     });
   });
 
@@ -90,12 +108,112 @@ describe("DashboardPage", () => {
     getCalendarConnectionSummaryForWorkspace.mockReset();
     getDefaultMeetingLibraryView.mockReset();
     getMeetingDashboardSummaryForWorkspace.mockReset();
+    getOnboardingSetupActivityForWorkspace.mockReset();
     getWorkspaceProviderCreditStatus.mockReset();
     getWorkspace.mockReset();
     getWorkspaceAccessSummary.mockReset();
     listMeetingLibraryPageForWorkspace.mockReset();
     requireCurrentUser.mockReset();
     vi.resetModules();
+  });
+
+  it("starts the saved meeting view query while access summary is loading", async () => {
+    const workspace = {
+      userId: "user_123",
+      teamId: "team_123",
+      domain: "iosg.vc",
+      canCreateMeetings: true,
+      creditLimitUsdMicros: null,
+    };
+    let resolveAccessSummary: (
+      value: Awaited<ReturnType<typeof getWorkspaceAccessSummary>>,
+    ) => void = () => {};
+
+    requireCurrentUser.mockResolvedValue({
+      id: "auth_user_123",
+      email: "member@iosg.vc",
+      name: "Tape User",
+    });
+    getWorkspace.mockResolvedValue(workspace);
+    getWorkspaceAccessSummary.mockReturnValue(
+      new Promise((resolve) => {
+        resolveAccessSummary = resolve;
+      }),
+    );
+    getDefaultMeetingLibraryView.mockResolvedValue(null);
+
+    const { default: DashboardPage } = await import("@/app/dashboard/page");
+    const pagePromise = DashboardPage({
+      searchParams: Promise.resolve({}),
+    });
+
+    await vi.waitFor(() => {
+      expect(getWorkspaceAccessSummary).toHaveBeenCalledWith(workspace);
+      expect(getDefaultMeetingLibraryView).toHaveBeenCalledWith(workspace);
+    });
+
+    resolveAccessSummary({
+      canCreateMeetings: true,
+      hasExternalShares: false,
+      hasWorkspaceMeetings: false,
+      isSharedOnly: false,
+    });
+    await pagePromise;
+  });
+
+  it("streams dashboard section skeletons before their queries finish", async () => {
+    requireCurrentUser.mockResolvedValue({
+      id: "auth_user_123",
+      email: "member@iosg.vc",
+      name: "Tape User",
+    });
+    getWorkspace.mockResolvedValue({
+      userId: "user_123",
+      teamId: "team_123",
+      domain: "iosg.vc",
+      canCreateMeetings: true,
+      creditLimitUsdMicros: null,
+    });
+    getWorkspaceAccessSummary.mockResolvedValue({
+      canCreateMeetings: true,
+      hasExternalShares: false,
+      hasWorkspaceMeetings: true,
+      isSharedOnly: false,
+    });
+    getDefaultMeetingLibraryView.mockReturnValue(new Promise(() => {}));
+    getMeetingDashboardSummaryForWorkspace.mockReturnValue(
+      new Promise(() => {}),
+    );
+    getCalendarConnectionSummaryForWorkspace.mockReturnValue(
+      new Promise(() => {}),
+    );
+
+    const { default: DashboardPage } = await import("@/app/dashboard/page");
+    const page = await DashboardPage({
+      searchParams: Promise.resolve({}),
+    });
+    const stream = await renderToReadableStream(page);
+    const reader = stream.getReader();
+    const decoder = new TextDecoder();
+    let html = "";
+
+    while (
+      !html.includes('aria-label="Loading dashboard overview"') ||
+      !html.includes('aria-label="Loading meetings"')
+    ) {
+      const chunk = await reader.read();
+
+      if (chunk.done) {
+        break;
+      }
+
+      html += decoder.decode(chunk.value, { stream: true });
+    }
+
+    expect(html).toContain('aria-label="Loading dashboard overview"');
+    expect(html).toContain('aria-label="Loading meetings"');
+
+    await reader.cancel();
   });
 
   it("uses search params for meeting library pagination", async () => {
@@ -159,7 +277,7 @@ describe("DashboardPage", () => {
     });
 
     const { default: DashboardPage } = await import("@/app/dashboard/page");
-    const html = renderToStaticMarkup(
+    const html = await renderDashboard(
       await DashboardPage({
         searchParams: Promise.resolve({
           historyMonths: "12",
@@ -213,7 +331,9 @@ describe("DashboardPage", () => {
     expect(html).toContain("Showing last 12 months");
     expect(html).toContain("Load more meetings");
     expect(html).toContain("Meetings");
-    expect(html).toContain('<h2 class="text-xl font-semibold tracking-tight">Meetings</h2>');
+    expect(html).toContain(
+      '<h2 class="text-lg font-semibold tracking-[-0.01em]">Meetings</h2>',
+    );
     expect(html).toContain("Welcome back, member.");
     expect(html).toContain("You had 0 meetings in the last 7 days.");
     expect(html).not.toContain("need your attention");
@@ -221,6 +341,7 @@ describe("DashboardPage", () => {
     expect(html).not.toContain("Workspace activity");
     expect(html).not.toContain("Meeting hub");
     expect(getWorkspaceProviderCreditStatus).not.toHaveBeenCalled();
+    expect(getOnboardingSetupActivityForWorkspace).not.toHaveBeenCalled();
   });
 
   it("uses a saved default meeting view when the dashboard opens without filters", async () => {
@@ -281,7 +402,7 @@ describe("DashboardPage", () => {
     });
 
     const { default: DashboardPage } = await import("@/app/dashboard/page");
-    const html = renderToStaticMarkup(
+    const html = await renderDashboard(
       await DashboardPage({
         searchParams: Promise.resolve({}),
       }),
@@ -361,7 +482,7 @@ describe("DashboardPage", () => {
     });
 
     const { default: DashboardPage } = await import("@/app/dashboard/page");
-    const html = renderToStaticMarkup(
+    const html = await renderDashboard(
       await DashboardPage({
         searchParams: Promise.resolve({}),
       }),
@@ -377,7 +498,7 @@ describe("DashboardPage", () => {
       hasWorkspaceMeetings: true,
       isSharedOnly: false,
     });
-    const populatedWorkspaceHtml = renderToStaticMarkup(
+    const populatedWorkspaceHtml = await renderDashboard(
       await DashboardPage({
         searchParams: Promise.resolve({}),
       }),
@@ -386,10 +507,23 @@ describe("DashboardPage", () => {
     expect(populatedWorkspaceHtml).toContain("Onboarding tutorial: connected");
     expect(populatedWorkspaceHtml).toContain("Search meetings");
 
+    getOnboardingSetupActivityForWorkspace.mockResolvedValue({
+      desktopAppConnected: true,
+      mcpUsed: true,
+    });
+    const automaticallyCompletedHtml = await renderDashboard(
+      await DashboardPage({
+        searchParams: Promise.resolve({}),
+      }),
+    );
+
+    expect(automaticallyCompletedHtml).not.toContain("Onboarding tutorial");
+    expect(automaticallyCompletedHtml).toContain("Welcome back");
+
     cookies.mockResolvedValue({
       get: () => ({ value: "1" }),
     });
-    const hiddenHtml = renderToStaticMarkup(
+    const hiddenHtml = await renderDashboard(
       await DashboardPage({
         searchParams: Promise.resolve({}),
       }),
@@ -398,7 +532,7 @@ describe("DashboardPage", () => {
     expect(hiddenHtml).not.toContain("Onboarding tutorial");
     expect(hiddenHtml).toContain("Welcome back");
 
-    const reopenedHtml = renderToStaticMarkup(
+    const reopenedHtml = await renderDashboard(
       await DashboardPage({
         searchParams: Promise.resolve({ setup: "1" }),
       }),
@@ -406,7 +540,7 @@ describe("DashboardPage", () => {
 
     expect(reopenedHtml).toContain("Onboarding tutorial: connected");
 
-    const calendarErrorHtml = renderToStaticMarkup(
+    const calendarErrorHtml = await renderDashboard(
       await DashboardPage({
         searchParams: Promise.resolve({
           calendarError: "sync_failed",
@@ -481,7 +615,7 @@ describe("DashboardPage", () => {
     });
 
     const { default: DashboardPage } = await import("@/app/dashboard/page");
-    const availableHtml = renderToStaticMarkup(
+    const availableHtml = await renderDashboard(
       await DashboardPage({
         searchParams: Promise.resolve({}),
       }),
@@ -496,7 +630,7 @@ describe("DashboardPage", () => {
       remainingUsdMicros: 0,
       usedUsdMicros: 5_000_000,
     });
-    const exhaustedHtml = renderToStaticMarkup(
+    const exhaustedHtml = await renderDashboard(
       await DashboardPage({
         searchParams: Promise.resolve({}),
       }),
