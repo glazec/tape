@@ -85,7 +85,7 @@ export function MeetingBotRecoveryPanel({
               the next call under this meeting.
             </CardDescription>
           </div>
-          <span className="flex size-8 items-center justify-center rounded-lg bg-primary/10 text-primary">
+          <span className="flex size-8 items-center justify-center rounded-lg bg-muted text-muted-foreground">
             <Bot aria-hidden="true" className="size-4" />
           </span>
         </div>

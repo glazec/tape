@@ -33,10 +33,12 @@ export default async function AdminPage() {
     <AppShell activeHref="/admin">
       <section className="flex flex-col gap-6">
         <div>
-          <p className="text-sm font-medium uppercase tracking-normal text-primary">
+          <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
             Admin
           </p>
-          <h1 className="mt-3 text-3xl font-semibold">User view control</h1>
+          <h1 className="mt-2 text-3xl font-semibold tracking-tight">
+            User view control
+          </h1>
           <p className="mt-3 max-w-2xl text-base leading-7 text-muted-foreground">
             Signed in as {admin.email}. Choose a user to view and act as that
             account across the app.

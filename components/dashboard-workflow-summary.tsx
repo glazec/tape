@@ -63,10 +63,10 @@ function StatBlock({
 }) {
   return (
     <div className="min-w-0">
-      <p className="truncate text-2xl font-semibold leading-none tabular-nums text-foreground sm:text-3xl">
+      <p className="truncate text-2xl font-semibold leading-none tracking-[-0.015em] tabular-nums text-foreground">
         {value}
       </p>
-      <p className="mt-1 truncate text-xs font-medium text-muted-foreground">
+      <p className="mt-1.5 truncate text-xs font-medium text-muted-foreground">
         {label}
       </p>
       {detail ? (

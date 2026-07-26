@@ -1001,7 +1001,7 @@ export function TranscriptViewer({
                 <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                   <div className="min-w-0">
                     <p className="flex items-center gap-2 text-sm font-semibold">
-                      <Languages className="size-4 text-primary" />
+                      <Languages className="size-4 text-muted-foreground" />
                       {translationTargetChanged
                         ? "Translation language changed"
                         : getTranslationStatusTitle(displayTranslationSummary)}

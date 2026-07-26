@@ -32,13 +32,25 @@ export function MeetingHeaderMetadata({
   });
 
   return (
-    <div className="mt-3 flex flex-wrap items-center gap-3 text-sm text-muted-foreground">
-      <Badge>{status}</Badge>
+    <div className="mt-3 flex flex-wrap items-center gap-3 text-sm text-muted-foreground tabular-nums">
+      <Badge variant={getStatusBadgeVariant(status)}>{status}</Badge>
       <span>{platform}</span>
       {durationLabel ? <MetadataPart>{durationLabel}</MetadataPart> : null}
       {dateLabel ? <MetadataPart>{dateLabel}</MetadataPart> : null}
     </div>
   );
+}
+
+function getStatusBadgeVariant(status: string) {
+  if (status === "Failed") {
+    return "destructive" as const;
+  }
+
+  if (status === "Recording") {
+    return "default" as const;
+  }
+
+  return "secondary" as const;
 }
 
 function MetadataPart({ children }: { children: React.ReactNode }) {

@@ -23,10 +23,9 @@ export default async function NewMeetingPage() {
     <AppShell activeHref="/meetings/new" oneSignalExternalId={workspace.userId}>
       <section className="flex max-w-3xl flex-col gap-6">
         <div>
-          <p className="text-sm font-medium uppercase tracking-normal text-primary">
-            New meeting
-          </p>
-          <h1 className="mt-3 text-3xl font-semibold">Add a meeting</h1>
+          <h1 className="text-3xl font-semibold tracking-tight">
+            Add a meeting
+          </h1>
           <p className="mt-3 text-base leading-7 text-muted-foreground">
             Choose how you want to add it.
           </p>

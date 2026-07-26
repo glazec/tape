@@ -64,7 +64,7 @@ export function OnboardingTutorial({
             action={
               calendarReady ? (
                 <p className="flex min-h-8 items-center gap-1.5 text-sm font-medium text-foreground">
-                  <CheckCircle2 className="size-4 text-primary" />
+                  <CheckCircle2 className="size-4" />
                   Calendar connected
                 </p>
               ) : (
@@ -125,7 +125,7 @@ function OnboardingStep({
     <li className="grid grid-cols-[2.75rem_minmax(0,1fr)] gap-x-4 gap-y-3 px-5 py-5 sm:grid-cols-[2.75rem_minmax(0,1fr)_auto] sm:items-start sm:px-6">
       <div
         aria-hidden="true"
-        className="flex size-11 items-center justify-center rounded-full bg-primary/10 text-base font-semibold text-primary"
+        className="flex size-11 items-center justify-center rounded-full bg-muted text-base font-semibold text-foreground"
       >
         {number}
       </div>
@@ -154,7 +154,7 @@ function DesktopDownloadLink() {
   return (
     <a
       className={cn(
-        buttonVariants({ variant: "default" }),
+        buttonVariants({ variant: "outline" }),
         "min-h-11 w-full sm:min-h-8 sm:w-auto",
       )}
       href={MAC_APP_DOWNLOAD_URL}

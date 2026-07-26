@@ -73,7 +73,12 @@ export function NewMeetingSources() {
               onClick={() => setSource(option.value)}
               type="button"
             >
-              <Icon className="size-4 text-primary" />
+              <Icon
+                className={cn(
+                  "size-4",
+                  selected ? "text-primary" : "text-muted-foreground",
+                )}
+              />
               <span className="mt-2 block font-semibold">{option.label}</span>
               <span className="mt-1 block text-sm leading-5 text-muted-foreground">
                 {option.description}

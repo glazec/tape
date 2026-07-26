@@ -279,13 +279,13 @@ function MeetingTableRow({
       <TableCell className="hidden text-muted-foreground sm:table-cell">
         {platformLabels[meeting.platform]}
       </TableCell>
-      <TableCell className="hidden text-muted-foreground md:table-cell">
+      <TableCell className="hidden text-muted-foreground tabular-nums md:table-cell">
         <ParticipantCount
           count={meeting.participantCount}
           names={meeting.participantNames}
         />
       </TableCell>
-      <TableCell className="hidden text-muted-foreground md:table-cell">
+      <TableCell className="hidden text-muted-foreground tabular-nums md:table-cell">
         {formatMeetingDuration({
           durationMs: meeting.durationMs,
           endedAt: meeting.endedAt,
@@ -356,7 +356,7 @@ function ScheduledMeetingAction({ meeting }: { meeting: MeetingListBaseItem }) {
         aria-busy={state === "joining"}
         aria-label={`Join ${meeting.title} now`}
         className={cn(
-          "meeting-join-action col-start-1 row-start-1 h-5 w-[5.625rem] rounded-4xl border-primary bg-background px-2 py-0.5 text-xs text-primary shadow-none hover:bg-primary/10 hover:text-primary",
+          "meeting-join-action col-start-1 row-start-1 h-5 w-[5.625rem] rounded-4xl border-primary bg-background px-2 py-0.5 text-xs text-primary shadow-none hover:bg-primary/10 hover:text-primary [@media(hover:none)]:h-11 [@media(hover:none)]:text-sm",
           state === "error" &&
             "border-destructive/50 text-destructive hover:bg-destructive/10 hover:text-destructive",
         )}

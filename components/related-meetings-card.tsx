@@ -105,7 +105,9 @@ function RelatedMeetingItem({
                     <span className="font-medium text-foreground">
                       {segment.speaker?.trim() || "Unknown speaker"}
                     </span>
-                    <span>{formatTimestamp(segment.startMs)}</span>
+                    <span className="tabular-nums">
+                      {formatTimestamp(segment.startMs)}
+                    </span>
                   </div>
                   <p>{segment.text}</p>
                 </li>

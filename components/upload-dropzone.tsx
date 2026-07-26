@@ -178,7 +178,7 @@ export function UploadDropzone() {
           </div>
           <span
             aria-hidden="true"
-            className="flex size-9 items-center justify-center rounded-lg bg-primary/10 text-primary"
+            className="flex size-9 items-center justify-center rounded-lg bg-muted text-muted-foreground"
           >
             <UploadCloud className="size-4" />
           </span>

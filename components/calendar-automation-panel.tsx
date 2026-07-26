@@ -40,7 +40,7 @@ export function CalendarAutomationPanel({
             : "Connect Google Calendar to record and transcribe meetings automatically."}
         </CardDescription>
         <CardAction>
-          <Badge variant={connected ? "secondary" : "destructive"}>
+          <Badge variant={connected ? "secondary" : "outline"}>
             {connected ? "Connected" : "Not connected"}
           </Badge>
         </CardAction>
@@ -87,7 +87,7 @@ function StatusRow({
 }) {
   return (
     <div className="grid grid-cols-[1.5rem_1fr] gap-x-2">
-      <span className="flex size-6 items-center justify-center rounded-md bg-primary/10 text-primary [&>svg]:size-3.5">
+      <span className="flex size-6 items-center justify-center rounded-md bg-muted text-muted-foreground [&>svg]:size-3.5">
         {icon}
       </span>
       <span className="min-w-0">

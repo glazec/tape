@@ -658,7 +658,7 @@ function ShareToast({ message }: { message: string }) {
       className="fixed right-4 bottom-4 z-50 flex max-w-[calc(100vw-2rem)] items-start gap-2 rounded-lg bg-card px-4 py-3 text-sm text-card-foreground shadow-lg ring-1 ring-border sm:min-w-80"
       role="status"
     >
-      <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-primary" />
+      <CheckCircle2 className="mt-0.5 size-4 shrink-0" />
       <span>{message}</span>
     </div>
   );

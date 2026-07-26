@@ -219,7 +219,7 @@ export function MeetingRecoveryUploadPanel({
           </div>
           <span
             aria-hidden="true"
-            className="flex size-8 items-center justify-center rounded-lg bg-primary/10 text-primary"
+            className="flex size-8 items-center justify-center rounded-lg bg-muted text-muted-foreground"
           >
             <UploadCloud className="size-4" />
           </span>
@@ -247,7 +247,12 @@ export function MeetingRecoveryUploadPanel({
             }}
             type="button"
           >
-            <UploadCloud className="size-4 text-primary" />
+            <UploadCloud
+              className={cn(
+                "size-4",
+                source === "audio" ? "text-primary" : "text-muted-foreground",
+              )}
+            />
             <span className="mt-2 block text-sm font-semibold">
               Audio recording
             </span>
@@ -271,7 +276,14 @@ export function MeetingRecoveryUploadPanel({
             }}
             type="button"
           >
-            <FileText className="size-4 text-primary" />
+            <FileText
+              className={cn(
+                "size-4",
+                source === "transcript"
+                  ? "text-primary"
+                  : "text-muted-foreground",
+              )}
+            />
             <span className="mt-2 block text-sm font-semibold">Transcript</span>
             <span className="mt-1 block text-xs leading-5 text-muted-foreground">
               Paste text or upload a file

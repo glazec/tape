@@ -312,8 +312,12 @@ export function MobileMeetingRecorder({
       </header>
       <section className="mx-auto flex w-full max-w-xl flex-col items-center gap-6 px-4 py-8 sm:px-6 sm:py-12">
         <div className="text-center">
-          <p className="text-sm font-medium text-primary">Mobile recorder</p>
-          <h1 className="mt-2 text-3xl font-semibold">Record this meeting</h1>
+          <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+            Mobile recorder
+          </p>
+          <h1 className="mt-2 text-3xl font-semibold tracking-tight">
+            Record this meeting
+          </h1>
         </div>
         <Card className="w-full max-w-lg">
       <CardHeader className="border-b bg-muted/35">
@@ -328,7 +332,7 @@ export function MobileMeetingRecorder({
           className={`flex size-24 items-center justify-center rounded-full ${
             state === "recording"
               ? "bg-destructive/15 text-destructive"
-              : "bg-primary/10 text-primary"
+              : "bg-muted text-muted-foreground"
           }`}
         >
           <Mic className="size-10" />

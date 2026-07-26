@@ -83,7 +83,7 @@ export function MeetingTitleEditor({
         <div className="flex min-w-0 items-center gap-2">
           <Input
             aria-label="Meeting title"
-            className="h-10 min-w-0 text-2xl font-semibold sm:text-3xl"
+            className="h-10 min-w-0 text-2xl font-semibold tracking-tight sm:text-3xl"
             disabled={isSaving}
             onChange={(event) => setDraftTitle(event.target.value)}
             value={draftTitle}
@@ -118,7 +118,7 @@ export function MeetingTitleEditor({
 
   return (
     <div className="flex min-w-0 flex-1 items-start gap-2">
-      <h1 className="min-w-0 text-3xl font-semibold">{title}</h1>
+      <h1 className="min-w-0 text-3xl font-semibold tracking-tight">{title}</h1>
       <Button
         aria-label="Rename meeting"
         onClick={startEditing}

@@ -112,7 +112,7 @@ export default async function MeetingPage({
             translationStatus={meeting.translationSummary.status}
           />
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <p className="text-xs font-semibold uppercase tracking-wider text-primary">
+            <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
               Meeting
             </p>
             {canManage ? (
@@ -144,7 +144,7 @@ export default async function MeetingPage({
                 meetingTitle={meeting.title}
               />
             ) : (
-              <h1 className="break-words text-3xl font-semibold">
+              <h1 className="break-words text-3xl font-semibold tracking-tight">
                 {meeting.title}
               </h1>
             )}

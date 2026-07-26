@@ -5,6 +5,7 @@ import { AppShell } from "@/components/app-shell";
 import { Button, buttonVariants } from "@/components/ui/button";
 import {
   Card,
+  CardAction,
   CardContent,
   CardDescription,
   CardHeader,
@@ -78,10 +79,10 @@ export default async function TeamSettingsPage() {
     >
       <section className="flex max-w-3xl flex-col gap-6">
         <div>
-          <p className="text-sm font-medium uppercase tracking-normal text-primary">
+          <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
             Team settings
           </p>
-          <h1 className="mt-3 text-3xl font-semibold">
+          <h1 className="mt-2 text-3xl font-semibold tracking-tight">
             {teamConfiguration.name}
           </h1>
           {!canEditTeamSettings ? (
@@ -91,22 +92,22 @@ export default async function TeamSettingsPage() {
           ) : null}
         </div>
         <Card className="overflow-hidden">
-          <CardHeader className="gap-4 sm:flex-row sm:items-start sm:justify-between">
-            <div>
-              <CardTitle>Billing &amp; credits</CardTitle>
-              <CardDescription className="mt-1">
-                Workspace credit and provider consumption for the current month.
-              </CardDescription>
-            </div>
-            <Link
-              className={cn(
-                buttonVariants({ variant: "outline" }),
-                "min-h-11 self-start sm:min-h-8",
-              )}
-              href="/usage"
-            >
-              View billing details
-            </Link>
+          <CardHeader>
+            <CardTitle>Billing &amp; credits</CardTitle>
+            <CardDescription>
+              Workspace credit and provider consumption for the current month.
+            </CardDescription>
+            <CardAction>
+              <Link
+                className={cn(
+                  buttonVariants({ variant: "outline", size: "sm" }),
+                  "min-h-11 sm:min-h-8",
+                )}
+                href="/usage"
+              >
+                View billing details
+              </Link>
+            </CardAction>
           </CardHeader>
           <CardContent>
             <dl className="grid overflow-hidden rounded-lg border sm:grid-cols-3">

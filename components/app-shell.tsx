@@ -34,8 +34,8 @@ export function AppShell({
 
   return (
     <div className="min-h-screen bg-[linear-gradient(180deg,var(--background)_0%,var(--surface)_100%)] text-foreground">
-      <header className="sticky top-0 z-30 bg-background/90 backdrop-blur">
-        <div className="mx-auto flex w-full max-w-6xl flex-col gap-4 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-6">
+      <header className="sticky top-0 z-30 border-b border-border/70 bg-background/85 backdrop-blur-md">
+        <div className="mx-auto flex w-full max-w-6xl flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:gap-6 sm:px-6">
           <Link
             href="/dashboard"
             aria-label="Tape home"
@@ -46,7 +46,7 @@ export function AppShell({
           <div className="flex flex-wrap items-center gap-2">
             <nav
               aria-label="Primary navigation"
-              className="flex flex-wrap gap-1 rounded-lg border bg-card p-1 shadow-sm"
+              className="flex flex-wrap gap-1 rounded-lg border bg-card p-1"
             >
               {visibleNavItems.map((item) => {
                 const isPrimaryAction = item.href === "/meetings/new";
@@ -91,7 +91,7 @@ export function AppShell({
           </div>
         </div>
       </header>
-      <main className="mx-auto w-full max-w-6xl px-4 py-8 sm:px-6 sm:py-10">
+      <main className="mx-auto w-full max-w-6xl px-4 py-7 sm:px-6 sm:py-10">
         {children}
       </main>
       {oneSignalExternalId ? (
