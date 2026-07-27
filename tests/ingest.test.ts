@@ -1287,6 +1287,7 @@ describe("vendor job creation", () => {
           meetingId: "11111111-1111-4111-8111-111111111111",
           source: "local_recorder_sdk",
         },
+        participant_events: {},
         realtime_endpoints: [
           {
             type: "webhook",
@@ -1301,6 +1302,8 @@ describe("vendor job creation", () => {
             ],
           },
         ],
+        video_mixed_mp4: {},
+        video_mixed_participant_video_when_screenshare: "hide",
       },
     });
   });
@@ -1658,6 +1661,35 @@ describe("vendor job creation", () => {
       participantEventsUrl: "https://recall.example.com/events.json",
       recordingStartedAt: "2026-07-10T10:00:00.000Z",
       videoUrl: "https://recall.example.com/video.mp4",
+    });
+  });
+
+  it("extracts video frame artifacts from a direct Desktop SDK recording", () => {
+    expect(
+      findRecallVideoFrameArtifacts(
+        {
+          id: "recording_123",
+          started_at: "2026-07-10T10:00:00.000Z",
+          media_shortcuts: {
+            video_mixed: {
+              data: {
+                download_url: "https://recall.example.com/sdk-video.mp4",
+              },
+            },
+            participant_events: {
+              data: {
+                participant_events_download_url:
+                  "https://recall.example.com/sdk-events.json",
+              },
+            },
+          },
+        },
+        "recording_123",
+      ),
+    ).toEqual({
+      participantEventsUrl: "https://recall.example.com/sdk-events.json",
+      recordingStartedAt: "2026-07-10T10:00:00.000Z",
+      videoUrl: "https://recall.example.com/sdk-video.mp4",
     });
   });
 

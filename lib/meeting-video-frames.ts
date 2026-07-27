@@ -16,6 +16,7 @@ import {
 import {
   findRecallVideoFrameArtifacts,
   retrieveRecallBot,
+  retrieveRecallRecording,
 } from "@/lib/vendors/recall";
 import { analyzeStableVisualFrames } from "@/lib/video-frame-detection";
 import {
@@ -36,7 +37,7 @@ class ParticipantEventsTooLargeError extends Error {
 
 export async function persistRecallMeetingVideoFrames(input: {
   meetingId: string;
-  recallBotId: string;
+  recallBotId?: string;
   recallRecordingId: string;
 }): Promise<{
   duplicateCount: number;
@@ -58,9 +59,11 @@ export async function persistRecallMeetingVideoFrames(input: {
     throw new Error("Meeting not found");
   }
 
-  const bot = await retrieveRecallBot(input.recallBotId);
+  const recallArtifact = input.recallBotId
+    ? await retrieveRecallBot(input.recallBotId)
+    : await retrieveRecallRecording(input.recallRecordingId);
   const artifacts = findRecallVideoFrameArtifacts(
-    bot,
+    recallArtifact,
     input.recallRecordingId,
   );
 

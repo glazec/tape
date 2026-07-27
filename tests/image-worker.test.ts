@@ -82,6 +82,25 @@ describe("image worker", () => {
     expect(persistRecallMeetingVideoFrames).toHaveBeenCalledWith(input);
   });
 
+  it("accepts a direct Desktop SDK recording without a bot id", async () => {
+    const result = { duplicateCount: 0, frameCount: 2, intervalCount: 1 };
+    persistRecallMeetingVideoFrames.mockResolvedValue(result);
+    const { extractMeetingVideoFrames } = await import(
+      "@/services/image-worker/functions"
+    );
+    const input = {
+      meetingId: "22222222-2222-4222-8222-222222222222",
+      recallRecordingId: "recording_123",
+    };
+
+    await expect(
+      (extractMeetingVideoFrames as unknown as RunnableInngestFunction).fn({
+        event: { data: input },
+      }),
+    ).resolves.toEqual(result);
+    expect(persistRecallMeetingVideoFrames).toHaveBeenCalledWith(input);
+  });
+
   it("rejects invalid extraction events before delegation", async () => {
     const { extractMeetingVideoFrames } = await import(
       "@/services/image-worker/functions"

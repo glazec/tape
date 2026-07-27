@@ -12,6 +12,7 @@ const {
   probeVideoDurationMs,
   putObject,
   retrieveRecallBot,
+  retrieveRecallRecording,
   sampleScreenShareFrames,
   select,
 } = vi.hoisted(() => ({
@@ -22,6 +23,7 @@ const {
   probeVideoDurationMs: vi.fn(),
   putObject: vi.fn(),
   retrieveRecallBot: vi.fn(),
+  retrieveRecallRecording: vi.fn(),
   sampleScreenShareFrames: vi.fn(),
   select: vi.fn(),
 }));
@@ -39,6 +41,7 @@ vi.mock("@/lib/r2", async (importOriginal) => {
 vi.mock("@/lib/vendors/recall", () => ({
   findRecallVideoFrameArtifacts,
   retrieveRecallBot,
+  retrieveRecallRecording,
 }));
 
 vi.mock("@/lib/video-frame-detection", () => ({
@@ -157,6 +160,17 @@ async function persist() {
   });
 }
 
+async function persistDirectRecording() {
+  const { persistRecallMeetingVideoFrames } = await import(
+    "@/lib/meeting-video-frames"
+  );
+
+  return persistRecallMeetingVideoFrames({
+    meetingId: MEETING_ID,
+    recallRecordingId: RECORDING_ID,
+  });
+}
+
 describe("persistRecallMeetingVideoFrames", () => {
   beforeEach(() => {
     stubR2Env();
@@ -170,6 +184,7 @@ describe("persistRecallMeetingVideoFrames", () => {
     probeVideoDurationMs.mockReset();
     putObject.mockReset();
     retrieveRecallBot.mockReset();
+    retrieveRecallRecording.mockReset();
     sampleScreenShareFrames.mockReset();
     select.mockReset();
     vi.unstubAllEnvs();
@@ -472,6 +487,46 @@ describe("persistRecallMeetingVideoFrames", () => {
       "Recall video frame artifacts are unavailable",
     );
     expect((error as Error).message).not.toContain("event-secret");
+    expect(probeVideoDurationMs).not.toHaveBeenCalled();
+  });
+
+  it("retrieves Desktop SDK video artifacts directly without a bot id", async () => {
+    mockMeeting();
+    const recording = { id: RECORDING_ID };
+    retrieveRecallRecording.mockResolvedValue(recording);
+    findRecallVideoFrameArtifacts.mockReturnValue({
+      participantEventsUrl: EVENTS_URL,
+      recordingStartedAt: RECORDING_STARTED_AT,
+      videoUrl: VIDEO_URL,
+    });
+    probeVideoDurationMs.mockResolvedValue(12_000);
+    stubEventResponse(JSON.stringify([]));
+
+    await expect(persistDirectRecording()).resolves.toEqual({
+      duplicateCount: 0,
+      frameCount: 0,
+      intervalCount: 0,
+    });
+
+    expect(retrieveRecallBot).not.toHaveBeenCalled();
+    expect(retrieveRecallRecording).toHaveBeenCalledWith(RECORDING_ID);
+    expect(findRecallVideoFrameArtifacts).toHaveBeenCalledWith(
+      recording,
+      RECORDING_ID,
+    );
+  });
+
+  it("rejects a Desktop SDK recording with missing video artifacts", async () => {
+    mockMeeting();
+    const recording = { id: RECORDING_ID };
+    retrieveRecallRecording.mockResolvedValue(recording);
+    findRecallVideoFrameArtifacts.mockReturnValue(null);
+
+    await expect(persistDirectRecording()).rejects.toThrow(
+      "Recall video frame artifacts are unavailable",
+    );
+
+    expect(retrieveRecallRecording).toHaveBeenCalledWith(RECORDING_ID);
     expect(probeVideoDurationMs).not.toHaveBeenCalled();
   });
 

@@ -125,8 +125,7 @@ export async function applyRecallMeetingEvent(event: RecallWebhookEvent) {
 
   const shouldQueueTranscription =
     status === "processing" && shouldQueueRecallRecordingTranscription(event);
-  const shouldQueueVideoFrames =
-    Boolean(update.recallBotId) && shouldQueueRecallVideoFrames(event);
+  const shouldQueueVideoFrames = shouldQueueRecallVideoFrames(event);
 
   if (
     update.recallRecordingId &&
@@ -166,6 +165,7 @@ function shouldQueueRecallVideoFrames(event: RecallWebhookEvent) {
 
   return (
     eventType === "recording.done" ||
+    eventType === "sdk_upload.complete" ||
     eventType === "video_mixed.done" ||
     subCode === "recording_done"
   );
@@ -244,23 +244,21 @@ async function queueRecallRecordingProcessing(
     return;
   }
 
-  if (options.shouldQueueVideoFrames && update.recallBotId) {
+  if (options.shouldQueueVideoFrames) {
     await inngest.send({
       id: `video-frames:${update.recallRecordingId}:${options.videoFrameReadiness}`,
       name: "meeting/extract.video-frames",
       data: {
         meetingId: update.meetingId,
-        recallBotId: update.recallBotId,
         recallRecordingId: update.recallRecordingId,
+        ...(update.recallBotId
+          ? { recallBotId: update.recallBotId }
+          : {}),
       },
     });
   }
 
-  if (!options.shouldQueueTranscription) {
-    return;
-  }
-
-  if (speakerTimelineUrl) {
+  if (options.shouldQueueTranscription && speakerTimelineUrl) {
     if (update.recallBotId) {
       try {
         await fetchAndPersistRecallParticipantTimeline({
@@ -276,6 +274,10 @@ async function queueRecallRecordingProcessing(
         timelineUrl: speakerTimelineUrl,
       });
     }
+  }
+
+  if (!options.shouldQueueTranscription) {
+    return;
   }
 
   const recordingTiming =

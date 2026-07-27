@@ -5,7 +5,7 @@ import { imageWorkerInngest } from "@/services/image-worker/client";
 
 const extractionDataSchema = z.object({
   meetingId: z.uuid(),
-  recallBotId: z.string().trim().min(1),
+  recallBotId: z.string().trim().min(1).optional(),
   recallRecordingId: z.string().trim().min(1),
 });
 

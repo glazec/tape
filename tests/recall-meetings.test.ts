@@ -731,6 +731,7 @@ describe("applyRecallMeetingEvent", () => {
     selectLimit.mockResolvedValue([]);
     retrieveRecallRecording.mockResolvedValue({
       id: "recording_123",
+      started_at: "2026-07-08T11:00:00.000Z",
       media_shortcuts: {
         audio_mixed: {
           data: {
@@ -739,8 +740,15 @@ describe("applyRecallMeetingEvent", () => {
         },
         participant_events: {
           data: {
+            participant_events_download_url:
+              "https://recall.example.com/sdk-participant-events.json",
             speaker_timeline_download_url:
               "https://recall.example.com/sdk-speaker-timeline.json",
+          },
+        },
+        video_mixed: {
+          data: {
+            download_url: "https://recall.example.com/sdk-video.mp4",
           },
         },
       },
@@ -777,14 +785,28 @@ describe("applyRecallMeetingEvent", () => {
       meetingId: "11111111-1111-4111-8111-111111111111",
       timelineUrl: "https://recall.example.com/sdk-speaker-timeline.json",
     });
-    expect(send).toHaveBeenCalledWith({
-      name: "meeting/transcribe.audio",
-      data: {
-        audioUrl: "https://recall.example.com/sdk-audio.mp3",
-        meetingId: "11111111-1111-4111-8111-111111111111",
-        transcriptJobId: "22222222-2222-4222-8222-222222222222",
-      },
-    });
+    expect(send.mock.calls).toEqual([
+      [
+        {
+          id: "video-frames:recording_123:recording",
+          name: "meeting/extract.video-frames",
+          data: {
+            meetingId: "11111111-1111-4111-8111-111111111111",
+            recallRecordingId: "recording_123",
+          },
+        },
+      ],
+      [
+        {
+          name: "meeting/transcribe.audio",
+          data: {
+            audioUrl: "https://recall.example.com/sdk-audio.mp3",
+            meetingId: "11111111-1111-4111-8111-111111111111",
+            transcriptJobId: "22222222-2222-4222-8222-222222222222",
+          },
+        },
+      ],
+    ]);
   });
 
   it("fails a completed SDK upload when Recall has terminal failed media", async () => {
@@ -921,7 +943,14 @@ describe("applyRecallMeetingEvent", () => {
       }),
     ).rejects.toThrow("temporary Recall download failure");
     expect(createRecallRecordingTranscription).not.toHaveBeenCalled();
-    expect(send).not.toHaveBeenCalled();
+    expect(send).toHaveBeenCalledExactlyOnceWith({
+      id: "video-frames:recording_123:recording",
+      name: "meeting/extract.video-frames",
+      data: {
+        meetingId: "11111111-1111-4111-8111-111111111111",
+        recallRecordingId: "recording_123",
+      },
+    });
   });
 
   it("queues extraction but not transcription for video completion assets", async () => {

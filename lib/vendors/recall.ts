@@ -229,6 +229,9 @@ function buildRecallDesktopSdkRealtimeRecordingConfig(
 ) {
   return {
     metadata,
+    participant_events: {},
+    video_mixed_mp4: {},
+    video_mixed_participant_video_when_screenshare: "hide",
     realtime_endpoints: [
       {
         type: "webhook",
@@ -999,22 +1002,23 @@ export function findRecallRecordingTiming(
 }
 
 export function findRecallVideoFrameArtifacts(
-  bot: unknown,
+  artifact: unknown,
   recordingId: string,
 ): {
   participantEventsUrl: string;
   recordingStartedAt: string;
   videoUrl: string;
 } | null {
-  const recordings = getArray(getRecord(bot)?.recordings);
-
-  if (!recordings) {
-    return null;
-  }
-
-  const recording = getRecord(
-    recordings.find((candidate) => getRecord(candidate)?.id === recordingId),
-  );
+  const artifactRecord = getRecord(artifact);
+  const recordings = getArray(artifactRecord?.recordings);
+  const recording =
+    artifactRecord?.id === recordingId
+      ? artifactRecord
+      : getRecord(
+          recordings?.find(
+            (candidate) => getRecord(candidate)?.id === recordingId,
+          ),
+        );
   const mediaShortcuts = getRecord(recording?.media_shortcuts);
   const participantEvents = getRecord(mediaShortcuts?.participant_events);
   const participantEventsData = getRecord(participantEvents?.data);
