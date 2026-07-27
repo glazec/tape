@@ -253,8 +253,8 @@ describe("DashboardPage", () => {
       needsAttention: 0,
       nextBotJoin: null,
       userStats: {
-        last7DaysMeetings: 0,
-        previous7DaysMeetings: 0,
+        thisWeekMeetings: 0,
+        lastWeekMeetings: 0,
         meetingChangePercent: 0,
         meetingHours: 0,
         spokenWords: 0,
@@ -341,7 +341,7 @@ describe("DashboardPage", () => {
       '<h2 class="text-lg font-semibold tracking-[-0.01em]">Meetings</h2>',
     );
     expect(html).toContain("Welcome back, member.");
-    expect(html).toContain("You had 0 meetings in the last 7 days.");
+    expect(html).toContain("You had 0 meetings since Monday.");
     expect(html).not.toContain("need your attention");
     expect(html).not.toContain("Everything is on track");
     expect(html).not.toContain("Workspace activity");
@@ -386,8 +386,8 @@ describe("DashboardPage", () => {
       needsAttention: 0,
       nextBotJoin: null,
       userStats: {
-        last7DaysMeetings: 0,
-        previous7DaysMeetings: 0,
+        thisWeekMeetings: 0,
+        lastWeekMeetings: 0,
         meetingChangePercent: 0,
         meetingHours: 0,
         spokenWords: 0,
@@ -461,8 +461,8 @@ describe("DashboardPage", () => {
       needsAttention: 0,
       nextBotJoin: null,
       userStats: {
-        last7DaysMeetings: 0,
-        previous7DaysMeetings: 0,
+        thisWeekMeetings: 0,
+        lastWeekMeetings: 0,
         meetingChangePercent: 0,
         meetingHours: 0,
         spokenWords: 0,
@@ -593,8 +593,8 @@ describe("DashboardPage", () => {
       needsAttention: 0,
       nextBotJoin: null,
       userStats: {
-        last7DaysMeetings: 0,
-        previous7DaysMeetings: 0,
+        thisWeekMeetings: 0,
+        lastWeekMeetings: 0,
         meetingChangePercent: 0,
         meetingHours: 0,
         spokenWords: 0,

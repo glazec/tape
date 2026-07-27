@@ -111,14 +111,33 @@ describe("DashboardWorkflowSummary", () => {
     );
 
     expect(summary.userStats).toEqual({
-      last7DaysMeetings: 2,
-      previous7DaysMeetings: 1,
+      thisWeekMeetings: 2,
+      lastWeekMeetings: 1,
       meetingChangePercent: 100,
       meetingHours: 0,
       spokenWords: 4,
       talkSharePercent: 33,
       dominantEmotion: "hard",
       dominantEmotionPercent: 67,
+    });
+  });
+
+  it("uses UTC Monday calendar week boundaries", () => {
+    const summary = getDashboardWorkflowSummary(
+      [
+        meeting({ startedAt: "2026-06-29T00:00:00.000Z" }),
+        meeting({ startedAt: "2026-06-28T23:59:59.999Z" }),
+        meeting({ startedAt: "2026-06-22T00:00:00.000Z" }),
+        meeting({ startedAt: "2026-06-21T23:59:59.999Z" }),
+        meeting({ startedAt: "2026-06-29T13:00:00.000Z" }),
+      ],
+      new Date("2026-06-29T12:00:00.000Z"),
+    );
+
+    expect(summary.userStats).toMatchObject({
+      thisWeekMeetings: 1,
+      lastWeekMeetings: 2,
+      meetingChangePercent: -50,
     });
   });
 
@@ -182,8 +201,8 @@ describe("DashboardWorkflowSummary", () => {
       needsAttention: 0,
       nextBotJoin: null,
       userStats: {
-        last7DaysMeetings: 0,
-        previous7DaysMeetings: 0,
+        thisWeekMeetings: 0,
+        lastWeekMeetings: 0,
         meetingHours: 0,
       },
     });
@@ -205,7 +224,7 @@ describe("DashboardWorkflowSummary", () => {
     );
 
     expect(html).toContain("This week");
-    expect(html).toContain("Meeting activity from the last 7 days.");
+    expect(html).toContain("Meeting activity since Monday.");
     expect(html).toContain("bg-secondary");
     expect(html).not.toContain("Upcoming joins");
     expect(html).not.toContain("Founder follow up");

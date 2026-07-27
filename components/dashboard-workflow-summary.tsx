@@ -27,7 +27,7 @@ function UserStatsCard({ stats }: { stats: DashboardUserStats }) {
     <Card aria-label="This week activity" className="h-full">
       <CardHeader>
         <CardTitle>This week</CardTitle>
-        <CardDescription>Meeting activity from the last 7 days.</CardDescription>
+        <CardDescription>Meeting activity since Monday.</CardDescription>
         <CardAction>
           <Badge variant="secondary">{formatMeetingChange(stats)}</Badge>
         </CardAction>
@@ -36,7 +36,7 @@ function UserStatsCard({ stats }: { stats: DashboardUserStats }) {
         <div className="grid grid-cols-3 gap-4">
           <StatBlock
             label="Meetings"
-            value={stats.last7DaysMeetings.toLocaleString()}
+            value={stats.thisWeekMeetings.toLocaleString()}
           />
           <StatBlock
             label="Meeting time"

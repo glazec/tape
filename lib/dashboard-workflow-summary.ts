@@ -32,8 +32,8 @@ type NextMeeting = {
 type DashboardMeetingEmotion = "hard" | "chill" | "neutral";
 
 export type DashboardUserStats = {
-  last7DaysMeetings: number;
-  previous7DaysMeetings: number;
+  thisWeekMeetings: number;
+  lastWeekMeetings: number;
   meetingChangePercent: number;
   meetingHours: number;
   spokenWords: number;
@@ -66,7 +66,7 @@ const activeStatuses = new Set<MeetingDisplayStatus>([
   "transcribing",
   "processing",
 ]);
-const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
+const CALENDAR_WEEK_MS = 7 * 24 * 60 * 60 * 1000;
 const TRANSCRIPT_FALLBACK_WORD_PATTERN = /[A-Za-z0-9]+(?:['’][A-Za-z0-9]+)?/g;
 const TRANSCRIPT_CJK_CHARACTER_PATTERN = /[\u3400-\u9fff\uf900-\ufaff]/g;
 const dashboardWordSegmenter = createDashboardWordSegmenter();
@@ -154,16 +154,16 @@ function getDashboardUserStats(
   options: DashboardWorkflowSummaryOptions,
 ): DashboardUserStats {
   const nowTime = now.getTime();
-  const currentStartTime = nowTime - SEVEN_DAYS_MS;
-  const previousStartTime = nowTime - SEVEN_DAYS_MS * 2;
+  const currentStartTime = getUtcCalendarWeekStart(now).getTime();
+  const previousStartTime = currentStartTime - CALENDAR_WEEK_MS;
   const userAliases = getUserSpeakerAliases(options);
   const emotionScores: Record<DashboardMeetingEmotion, number> = {
     hard: 0,
     chill: 0,
     neutral: 0,
   };
-  let last7DaysMeetings = 0;
-  let previous7DaysMeetings = 0;
+  let thisWeekMeetings = 0;
+  let lastWeekMeetings = 0;
   let meetingDurationMs = 0;
   let spokenWords = 0;
   let totalDurationMs = 0;
@@ -185,10 +185,10 @@ function getDashboardUserStats(
     }
 
     if (isCurrentPeriod) {
-      last7DaysMeetings += 1;
+      thisWeekMeetings += 1;
       meetingDurationMs += getMeetingDurationMs(meeting);
     } else {
-      previous7DaysMeetings += 1;
+      lastWeekMeetings += 1;
       continue;
     }
 
@@ -215,11 +215,11 @@ function getDashboardUserStats(
   const dominantEmotionStats = getDominantEmotionStats(emotionScores);
 
   return {
-    last7DaysMeetings,
-    previous7DaysMeetings,
+    thisWeekMeetings,
+    lastWeekMeetings,
     meetingChangePercent: getMeetingChangePercent(
-      last7DaysMeetings,
-      previous7DaysMeetings,
+      thisWeekMeetings,
+      lastWeekMeetings,
     ),
     meetingHours: roundToSingleDecimal(meetingDurationMs / 3600000),
     spokenWords,
@@ -230,6 +230,18 @@ function getDashboardUserStats(
     dominantEmotion: dominantEmotionStats.emotion,
     dominantEmotionPercent: dominantEmotionStats.percent,
   };
+}
+
+function getUtcCalendarWeekStart(now: Date) {
+  const daysSinceMonday = (now.getUTCDay() + 6) % 7;
+
+  return new Date(
+    Date.UTC(
+      now.getUTCFullYear(),
+      now.getUTCMonth(),
+      now.getUTCDate() - daysSinceMonday,
+    ),
+  );
 }
 
 function getMeetingChangePercent(current: number, previous: number) {

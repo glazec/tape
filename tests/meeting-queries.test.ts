@@ -2217,8 +2217,8 @@ describe("getMeetingDashboardSummaryForWorkspace", () => {
       ),
     ).resolves.toMatchObject({
       userStats: {
-        last7DaysMeetings: 1,
-        previous7DaysMeetings: 1,
+        thisWeekMeetings: 1,
+        lastWeekMeetings: 1,
         meetingChangePercent: 0,
         meetingHours: 0,
         spokenWords: 4,

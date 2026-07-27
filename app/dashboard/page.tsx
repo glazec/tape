@@ -291,7 +291,7 @@ async function DashboardOverview({
       ) : (
         <div className="grid gap-4 lg:grid-cols-2">
           <DashboardGreetingCard
-            meetingCount={dashboardSummary?.userStats.last7DaysMeetings ?? 0}
+            meetingCount={dashboardSummary?.userStats.thisWeekMeetings ?? 0}
             name={getDashboardFirstName(user.name, user.email)}
           />
           {dashboardSummary ? (
@@ -520,8 +520,8 @@ function getDashboardFirstName(name: string | null, email: string) {
 
 function formatGreetingSummary(meetingCount: number) {
   return meetingCount === 1
-    ? "You had 1 meeting in the last 7 days."
-    : `You had ${meetingCount.toLocaleString()} meetings in the last 7 days.`;
+    ? "You had 1 meeting since Monday."
+    : `You had ${meetingCount.toLocaleString()} meetings since Monday.`;
 }
 
 function MeetingLibraryViewBar({
