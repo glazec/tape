@@ -59,7 +59,7 @@ private enum ActiveRecordingBackend: Equatable {
 enum RecorderPermissionStep {
     case microphone
     case accessibility
-    case systemAudio
+    case screenAndSystemAudio
     case alerts
 
     var actionTitle: String {
@@ -68,8 +68,8 @@ enum RecorderPermissionStep {
             return "Grant microphone"
         case .accessibility:
             return "Grant accessibility"
-        case .systemAudio:
-            return "Enable system audio"
+        case .screenAndSystemAudio:
+            return "Grant screen and audio"
         case .alerts:
             return "Allow alerts"
         }
@@ -81,8 +81,8 @@ enum RecorderPermissionStep {
             return "Microphone needed"
         case .accessibility:
             return "Accessibility needed"
-        case .systemAudio:
-            return "System audio needed"
+        case .screenAndSystemAudio:
+            return "Screen access needed"
         case .alerts:
             return "Alerts needed"
         }
@@ -91,13 +91,13 @@ enum RecorderPermissionStep {
     var statusDetail: String {
         switch self {
         case .microphone:
-            return "Step 1 of 4"
+            return "Allow microphone access"
         case .accessibility:
-            return "Step 2 of 4"
+            return "Allow meeting window detection"
         case .alerts:
-            return "Step 3 of 4"
-        case .systemAudio:
-            return "Step 4 of 4"
+            return "Allow meeting notifications"
+        case .screenAndSystemAudio:
+            return "Allow screen and system audio capture"
         }
     }
 
@@ -107,7 +107,7 @@ enum RecorderPermissionStep {
             return "mic.badge.plus"
         case .accessibility:
             return "figure.wave"
-        case .systemAudio:
+        case .screenAndSystemAudio:
             return "speaker.wave.2"
         case .alerts:
             return "bell.badge"
@@ -148,6 +148,7 @@ final class RecorderAppModel: NSObject, ObservableObject, UNUserNotificationCent
     @Published var bearerToken: String
     @Published var isRecording = false
     @Published var isTestingLevels = false
+    @Published var isRequestingPermissions = false
     @Published var availableMicrophones: [AudioInputDevice] = []
     @Published var selectedMicrophoneUID: String?
     @Published var microphoneLevel: Float = 0
@@ -178,7 +179,6 @@ final class RecorderAppModel: NSObject, ObservableObject, UNUserNotificationCent
     private var levelTestTimeoutTask: Task<Void, Never>?
     private var recallSDKMeterSession: AudioLevelTestSession?
     private var recallSDKMeterGeneration = 0
-    private var didRequestAccessibility = false
     private var monitoringTimer: Timer?
     private var permissionRefreshTask: Task<Void, Never>?
     private var fallbackNotificationCountsByIntentId: [String: Int] = [:]
@@ -214,9 +214,12 @@ final class RecorderAppModel: NSObject, ObservableObject, UNUserNotificationCent
             }
         }
         if !bearerToken.isEmpty {
-            statusText = "Grant permissions to start monitoring"
+            statusText = "Requesting access"
             Task {
-                await refreshPermissionsAndStartIfReady()
+                await requestAllPermissionsAtStartup()
+            }
+            Task {
+                // Durable upload recovery must not wait for interactive prompts.
                 await retryQueuedUploadsIfPossible()
             }
         } else {
@@ -234,36 +237,32 @@ final class RecorderAppModel: NSObject, ObservableObject, UNUserNotificationCent
         !bearerToken.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
-    var hasRequiredPermissions: Bool {
-        permissionChecklist.microphone == .granted &&
-            permissionChecklist.screenCapture == .granted
+    var hasAudioCapturePermissions: Bool {
+        permissionChecklist.canCaptureAudio
     }
 
     var nextPermissionStep: RecorderPermissionStep? {
+        guard isSignedIn else {
+            return nil
+        }
+
         if permissionChecklist.microphone != .granted {
             return .microphone
         }
-        // Accessibility is prompted once, early, but is NOT required to record
-        // (it only sharpens Recall SDK meeting detection) and cannot be granted
-        // synchronously — it needs a System Settings toggle. So we offer it a
-        // single time and then advance, never letting a decline block the
-        // required screen-capture / alerts steps or recording itself.
-        if !didRequestAccessibility && permissionChecklist.accessibility != .granted {
+        if permissionChecklist.screenCapture != .granted {
+            return .screenAndSystemAudio
+        }
+        if permissionChecklist.accessibility != .granted {
             return .accessibility
         }
         if permissionChecklist.notifications != .granted {
             return .alerts
         }
-        if permissionChecklist.screenCapture != .granted {
-            return .systemAudio
-        }
         return nil
     }
 
     var canMonitor: Bool {
-        isSignedIn &&
-            hasRequiredPermissions &&
-            permissionChecklist.notifications == .granted
+        isSignedIn && permissionChecklist.canMonitor
     }
 
     func signIn() {
@@ -297,12 +296,9 @@ final class RecorderAppModel: NSObject, ObservableObject, UNUserNotificationCent
                     bearerToken: callback.token
                 )
             )
-            statusText = "Grant permissions to start monitoring"
+            statusText = "Requesting access"
             Task {
-                await refreshPermissions()
-                if canMonitor {
-                    startMonitoring()
-                }
+                await requestAllPermissionsAtStartup()
             }
         } catch {
             statusText = "Could not finish login"
@@ -385,7 +381,9 @@ final class RecorderAppModel: NSObject, ObservableObject, UNUserNotificationCent
     }
 
     func requestPermissions() {
-        requestNextPermission()
+        Task {
+            await requestAllPermissionsAtStartup()
+        }
     }
 
     func requestNextPermission() {
@@ -394,26 +392,25 @@ final class RecorderAppModel: NSObject, ObservableObject, UNUserNotificationCent
 
             switch nextPermissionStep {
             case .microphone:
-                let microphonePermission = await requestMicrophonePermission()
-                permissionChecklist.microphone = microphonePermission
-                statusText = microphonePermission == .granted
-                    ? "Microphone ready"
-                    : "Microphone access needed"
+                if permissionChecklist.microphone == .denied {
+                    openMicrophoneSettings()
+                    statusText = "Enable microphone in Settings"
+                } else {
+                    let microphonePermission = await requestMicrophonePermission()
+                    permissionChecklist.microphone = microphonePermission
+                    statusText = microphonePermission == .granted
+                        ? "Microphone ready"
+                        : "Microphone access needed"
+                }
             case .accessibility:
-                // One-shot: mark offered so a decline advances the flow to the
-                // required steps instead of parking the primary button here.
-                didRequestAccessibility = true
                 let accessibilityPermission = requestAccessibilityPermission()
                 permissionChecklist.accessibility = accessibilityPermission
                 statusText = accessibilityPermission == .granted
                     ? "Accessibility ready"
                     : "Enable accessibility in Settings"
-            case .systemAudio:
-                let screenCapturePermission = requestScreenCapturePermission()
-                permissionChecklist.screenCapture = screenCapturePermission
-                statusText = screenCapturePermission == .granted
-                    ? "System audio ready"
-                    : "System audio access needed"
+            case .screenAndSystemAudio:
+                openScreenCaptureSettings()
+                statusText = "Enable screen and audio in Settings"
             case .alerts:
                 if permissionChecklist.notifications == .denied {
                     openNotificationSettings()
@@ -433,6 +430,56 @@ final class RecorderAppModel: NSObject, ObservableObject, UNUserNotificationCent
             if canMonitor {
                 startMonitoring()
             }
+        }
+    }
+
+    private func requestAllPermissionsAtStartup() async {
+        guard isSignedIn, !isRequestingPermissions else {
+            return
+        }
+
+        isRequestingPermissions = true
+        statusText = "Requesting access"
+        defer {
+            isRequestingPermissions = false
+        }
+
+        await refreshPermissions()
+
+        if permissionChecklist.microphone != .granted {
+            permissionChecklist.microphone = await requestMicrophonePermission()
+        }
+        if permissionChecklist.screenCapture != .granted {
+            permissionChecklist.screenCapture = requestScreenCapturePermission()
+        }
+        if permissionChecklist.notifications != .granted {
+            permissionChecklist.notifications = await requestNotificationPermission()
+        }
+        if permissionChecklist.accessibility != .granted {
+            permissionChecklist.accessibility = requestAccessibilityPermission()
+        }
+
+        await refreshPermissions()
+        if canMonitor {
+            startMonitoring()
+        } else {
+            statusText = "Finish access setup in System Settings"
+            openSettingsForNextPermission()
+        }
+    }
+
+    private func openSettingsForNextPermission() {
+        switch nextPermissionStep {
+        case .microphone:
+            openMicrophoneSettings()
+        case .screenAndSystemAudio:
+            openScreenCaptureSettings()
+        case .accessibility:
+            openAccessibilitySettings()
+        case .alerts:
+            openNotificationSettings()
+        case nil:
+            break
         }
     }
 
@@ -932,7 +979,7 @@ final class RecorderAppModel: NSObject, ObservableObject, UNUserNotificationCent
             return
         }
 
-        guard hasRequiredPermissions else {
+        guard hasAudioCapturePermissions else {
             statusText = "Grant permissions to test audio"
             return
         }
@@ -1275,12 +1322,36 @@ final class RecorderAppModel: NSObject, ObservableObject, UNUserNotificationCent
     }
 
     private func openAccessibilitySettings() {
-        let value = "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"
+        openPrivacySettings(
+            pane: "Privacy_Accessibility",
+            until: { $0.accessibility == .granted }
+        )
+    }
+
+    private func openMicrophoneSettings() {
+        openPrivacySettings(
+            pane: "Privacy_Microphone",
+            until: { $0.microphone == .granted }
+        )
+    }
+
+    private func openScreenCaptureSettings() {
+        openPrivacySettings(
+            pane: "Privacy_ScreenCapture",
+            until: { $0.screenCapture == .granted }
+        )
+    }
+
+    private func openPrivacySettings(
+        pane: String,
+        until isSatisfied: @escaping (PermissionChecklist) -> Bool
+    ) {
+        let value = "x-apple.systempreferences:com.apple.preference.security?\(pane)"
         guard let url = URL(string: value), NSWorkspace.shared.open(url) else {
             return
         }
 
-        pollPermissionsUntil { $0.accessibility == .granted }
+        pollPermissionsUntil(isSatisfied)
     }
 
     private func openNotificationSettings() {
@@ -1447,7 +1518,7 @@ struct RecorderMenuView: View {
             }
             .buttonStyle(.borderedProminent)
             .controlSize(.large)
-            .disabled(model.isFinishingRecording)
+            .disabled(model.isFinishingRecording || model.isRequestingPermissions)
 
             advancedSection
         }
@@ -1584,7 +1655,7 @@ struct RecorderMenuView: View {
                         action: model.toggleLevelTest
                     )
                     .controlSize(.small)
-                    .disabled(!model.hasRequiredPermissions || model.isFinishingRecording)
+                    .disabled(!model.hasAudioCapturePermissions || model.isFinishingRecording)
                 }
             }
 
@@ -1628,6 +1699,9 @@ struct RecorderMenuView: View {
     }
 
     private var headlineStatus: String {
+        if model.isRequestingPermissions {
+            return "Requesting access"
+        }
         if model.isFinishingRecording {
             return model.statusText.localizedCaseInsensitiveContains("upload")
                 ? "Uploading"
@@ -1658,6 +1732,9 @@ struct RecorderMenuView: View {
     }
 
     private var supportingStatus: String {
+        if model.isRequestingPermissions {
+            return "Approve each macOS permission prompt"
+        }
         if model.isFinishingRecording {
             return model.statusText
         }
@@ -1702,6 +1779,9 @@ struct RecorderMenuView: View {
     }
 
     private var primaryActionTitle: String {
+        if model.isRequestingPermissions {
+            return "Requesting access"
+        }
         if model.isFinishingRecording {
             return model.statusText.localizedCaseInsensitiveContains("upload")
                 ? "Uploading"
@@ -1724,6 +1804,9 @@ struct RecorderMenuView: View {
     }
 
     private var primaryActionIcon: String {
+        if model.isRequestingPermissions {
+            return "hourglass"
+        }
         if model.isFinishingRecording {
             return "hourglass"
         }
@@ -1908,9 +1991,9 @@ struct PermissionList: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             PermissionRow(title: "Microphone", detail: "Required", grant: checklist.microphone)
-            PermissionRow(title: "System audio", detail: "Required", grant: checklist.screenCapture)
-            PermissionRow(title: "Accessibility", detail: "Meeting detection", grant: checklist.accessibility)
-            PermissionRow(title: "Alerts", detail: "Recommended", grant: checklist.notifications)
+            PermissionRow(title: "Screen and system audio", detail: "Required", grant: checklist.screenCapture)
+            PermissionRow(title: "Accessibility", detail: "Required", grant: checklist.accessibility)
+            PermissionRow(title: "Alerts", detail: "Required", grant: checklist.notifications)
             PermissionRow(title: "Start at login", detail: "Optional", grant: checklist.startAtLogin)
         }
     }

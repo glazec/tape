@@ -384,6 +384,8 @@ swift test
 
 The signing certificate step is needed once for stable microphone and screen recording permissions. Without it, the build script uses ad hoc signing and macOS may ask for permissions again after rebuilding. Configure the server URL and device login in the launched application.
 
+After device login, the recorder immediately requests microphone, screen and system audio, notification, and Accessibility permissions together. All four are required before meeting monitoring or recording begins. If macOS has already denied one, the recorder opens its exact System Settings pane and waits for the grant.
+
 ## Verification
 
 Run the portable verification gate before submitting or deploying a change:

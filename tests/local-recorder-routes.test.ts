@@ -693,6 +693,39 @@ describe("local recorder API routes", () => {
     );
   });
 
+  it("finishes the browser page while opening the signed in Mac app", async () => {
+    createLocalRecorderDeviceSession.mockResolvedValue({
+      redirectUrl:
+        "meetingnote-local-recorder://login?token=token_123&server=https%3A%2F%2Fapp.example.com",
+    });
+
+    const { GET } = await import(
+      "@/app/api/local-recorder/device-login/route"
+    );
+    const response = await GET(
+      new Request(
+        "https://app.example.com/api/local-recorder/device-login?deviceId=mac_123&callbackUrl=meetingnote-local-recorder%3A%2F%2Flogin",
+        {
+          headers: { accept: "text/html,application/xhtml+xml" },
+        },
+      ),
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("cache-control")).toBe("no-store");
+    expect(response.headers.get("content-type")).toContain("text/html");
+
+    const body = await response.text();
+    expect(body).toContain("Opening Tape recorder");
+    expect(body).toContain(
+      "Sign in is complete. You can close this page after the recorder opens.",
+    );
+    expect(body).toContain("Open Tape recorder");
+    expect(body).toContain(
+      "meetingnote-local-recorder://login?token=token_123&amp;server=https%3A%2F%2Fapp.example.com",
+    );
+  });
+
   it("redirects unsigned in device login requests through web sign in", async () => {
     createLocalRecorderDeviceSession.mockResolvedValue({
       error: "Unauthorized",

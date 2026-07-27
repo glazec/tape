@@ -46,30 +46,62 @@ import Testing
     #expect(json == ["fallbackIntentId": "intent_123"])
 }
 
-@Test func permissionChecklistRequiresMicrophonePermission() {
+@Test func permissionChecklistRequiresEveryOperationalPermission() {
     let ready = PermissionChecklist(
         microphone: .granted,
         screenCapture: .granted,
+        accessibility: .granted,
         notifications: .granted,
-        startAtLogin: .denied
+        startAtLogin: .granted
     )
-    let blocked = PermissionChecklist(
+    let blockedByMicrophone = PermissionChecklist(
         microphone: .denied,
         screenCapture: .granted,
+        accessibility: .granted,
         notifications: .granted,
+        startAtLogin: .granted
+    )
+    let blockedByScreenCapture = PermissionChecklist(
+        microphone: .granted,
+        screenCapture: .denied,
+        accessibility: .granted,
+        notifications: .granted,
+        startAtLogin: .granted
+    )
+    let blockedByAccessibility = PermissionChecklist(
+        microphone: .granted,
+        screenCapture: .granted,
+        accessibility: .denied,
+        notifications: .granted,
+        startAtLogin: .granted
+    )
+    let blockedByAlerts = PermissionChecklist(
+        microphone: .granted,
+        screenCapture: .granted,
+        accessibility: .granted,
+        notifications: .denied,
         startAtLogin: .granted
     )
     let degraded = PermissionChecklist(
         microphone: .granted,
-        screenCapture: .denied,
-        notifications: .denied,
-        startAtLogin: .granted
+        screenCapture: .granted,
+        accessibility: .granted,
+        notifications: .granted,
+        startAtLogin: .denied
     )
 
     #expect(ready.canMonitor)
-    #expect(!blocked.canMonitor)
+    #expect(!blockedByMicrophone.canMonitor)
+    #expect(!blockedByScreenCapture.canMonitor)
+    #expect(!blockedByAccessibility.canMonitor)
+    #expect(!blockedByAlerts.canMonitor)
     #expect(degraded.canMonitor)
-    #expect(ready.setupState == .degraded)
+    #expect(ready.canCaptureAudio)
+    #expect(!blockedByMicrophone.canCaptureAudio)
+    #expect(!blockedByScreenCapture.canCaptureAudio)
+    #expect(blockedByAccessibility.canCaptureAudio)
+    #expect(blockedByAlerts.canCaptureAudio)
+    #expect(ready.setupState == .ready)
     #expect(degraded.setupState == .degraded)
 }
 

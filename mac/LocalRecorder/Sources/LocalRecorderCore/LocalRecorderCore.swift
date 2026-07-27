@@ -47,8 +47,15 @@ public struct PermissionChecklist: Sendable, Equatable {
         self.startAtLogin = startAtLogin
     }
 
+    public var canCaptureAudio: Bool {
+        microphone == .granted &&
+            screenCapture == .granted
+    }
+
     public var canMonitor: Bool {
-        microphone == .granted
+        canCaptureAudio &&
+            accessibility == .granted &&
+            notifications == .granted
     }
 
     public var setupState: PermissionSetupState {
@@ -56,9 +63,7 @@ public struct PermissionChecklist: Sendable, Equatable {
             return .blocked
         }
 
-        return notifications == .granted && startAtLogin == .granted
-            ? .ready
-            : .degraded
+        return startAtLogin == .granted ? .ready : .degraded
     }
 }
 

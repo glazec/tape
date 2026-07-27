@@ -96,6 +96,39 @@ describe("local recorder app packaging", () => {
       /elif \[\[ "\$CODESIGN_IDENTITY" == "\$LOCAL_CERT_NAME" \]\]; then[\s\S]*?--entitlements "\$ADHOC_APP_ENTITLEMENTS"[\s\S]*?else/,
     );
   });
+
+  it("requests every operational permission together after login", () => {
+    const appSource = readFileSync(
+      join(
+        packageRoot,
+        "Sources",
+        "MeetingNoteLocalRecorder",
+        "MeetingNoteLocalRecorderApp.swift",
+      ),
+      "utf8",
+    );
+    const requestAllStart = appSource.indexOf(
+      "private func requestAllPermissionsAtStartup() async",
+    );
+    const requestAllEnd = appSource.indexOf(
+      "private func startMonitoring()",
+      requestAllStart,
+    );
+    const requestAllSource = appSource.slice(requestAllStart, requestAllEnd);
+
+    expect(requestAllStart).toBeGreaterThan(-1);
+    expect(requestAllSource).toContain("requestMicrophonePermission()");
+    expect(requestAllSource).toContain("requestScreenCapturePermission()");
+    expect(requestAllSource).toContain("requestAccessibilityPermission()");
+    expect(requestAllSource).toContain("requestNotificationPermission()");
+    expect(appSource.match(/await requestAllPermissionsAtStartup\(\)/g)).toHaveLength(3);
+    expect(appSource).toMatch(
+      /if !bearerToken\.isEmpty \{[\s\S]*?Task \{\s+await requestAllPermissionsAtStartup\(\)\s+\}\s+Task \{[\s\S]*?await retryQueuedUploadsIfPossible\(\)/,
+    );
+    expect(appSource).toMatch(
+      /var nextPermissionStep: RecorderPermissionStep\? \{\s+guard isSignedIn else \{\s+return nil/,
+    );
+  });
 });
 
 function makeTemporaryDirectory() {
