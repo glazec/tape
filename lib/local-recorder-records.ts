@@ -12,20 +12,20 @@ import {
   sql,
 } from "drizzle-orm";
 
-import { db } from "@/db/client";
+import { databaseSql, db } from "@/db/client";
 import {
   localRecorderDevices,
   localRecordingAttempts,
   localRecordings,
   mediaAssets,
   meetings,
-  recordings,
   transcriptJobs,
 } from "@/db/schema";
 import { inngest } from "@/inngest/client";
 import {
   canUploadLocalRecorderAttempt,
   getLocalRecorderEligibility,
+  isLocalRecorderUploadMatch,
   isWithinLocalRecorderAutoClaimWindow,
   type LocalRecorderCandidate,
 } from "@/lib/local-recorder-policy";
@@ -908,14 +908,18 @@ export async function completeLocalRecorderRecordingUpload(input: {
   workspace: WorkspaceContext;
 }) {
   const now = new Date();
-  const attempt = await getUploadableLocalRecorderAttempt(input);
   const existingRecording = await findExistingLocalRecording({
     clientRecordingId: input.clientRecordingId,
     ownerUserId: input.workspace.userId,
   });
 
   if (existingRecording) {
-    if (existingRecording.meetingId !== attempt.meetingId) {
+    const attempt = await getRetryableLocalRecorderAttempt(input);
+
+    if (
+      existingRecording.meetingId !== attempt.meetingId ||
+      existingRecording.localRecordingAttemptId !== attempt.id
+    ) {
       throw new LocalRecorderUploadError(
         "Local recording already belongs to another meeting",
       );
@@ -932,6 +936,7 @@ export async function completeLocalRecorderRecordingUpload(input: {
     };
   }
 
+  const attempt = await getUploadableLocalRecorderAttempt(input);
   const keys = buildLocalRecorderObjectKeys({
     assetIds: input.assets,
     meetingId: attempt.meetingId,
@@ -949,121 +954,181 @@ export async function completeLocalRecorderRecordingUpload(input: {
     throw new LocalRecorderUploadError("Uploaded local recording audio not found");
   });
   const env = parseR2Env(process.env);
+  const localRecordingId = crypto.randomUUID();
+  const transcriptJobId = crypto.randomUUID();
+  const durationMs =
+    input.recordingStoppedAt.getTime() - input.recordingStartedAt.getTime();
+  const rows = await databaseSql`
+    with valid_attempt as (
+      update local_recording_attempts
+      set attempt_state = 'uploaded', updated_at = ${now}
+      where id = ${attempt.id}::uuid
+        and attempt_state in ('started', 'uploading')
+      returning meeting_id
+    ), inserted_assets as (
+      insert into media_assets (
+        id,
+        meeting_id,
+        source,
+        type,
+        bucket,
+        object_key,
+        mime_type,
+        file_size_bytes
+      )
+      select
+        asset.id,
+        valid_attempt.meeting_id,
+        'local_recorder',
+        asset.type::asset_type,
+        ${env.R2_BUCKET},
+        asset.object_key,
+        asset.mime_type,
+        asset.file_size_bytes
+      from valid_attempt
+      cross join (
+        values
+          (
+            ${input.assets.computerAudioAssetId}::uuid,
+            'computer_audio',
+            ${keys.computerAudioKey},
+            ${computerAudioMetadata.contentType ?? localRecorderAudioContentType},
+            ${normalizeLocalRecorderFileSizeBytes(computerAudioMetadata.contentLength)}::integer
+          ),
+          (
+            ${input.assets.microphoneAudioAssetId}::uuid,
+            'microphone_audio',
+            ${keys.microphoneAudioKey},
+            ${microphoneAudioMetadata.contentType ?? localRecorderAudioContentType},
+            ${normalizeLocalRecorderFileSizeBytes(microphoneAudioMetadata.contentLength)}::integer
+          ),
+          (
+            ${input.assets.synthesizedAudioAssetId}::uuid,
+            'synthesized_audio',
+            ${keys.synthesizedAudioKey},
+            ${synthesizedAudioMetadata.contentType ?? localRecorderAudioContentType},
+            ${normalizeLocalRecorderFileSizeBytes(synthesizedAudioMetadata.contentLength)}::integer
+          )
+      ) as asset(id, type, object_key, mime_type, file_size_bytes)
+      on conflict do nothing
+      returning id
+    ), local_recording as (
+      insert into local_recordings (
+        id,
+        meeting_id,
+        owner_user_id,
+        local_recording_attempt_id,
+        client_recording_id,
+        recording_started_at,
+        recording_stopped_at,
+        computer_audio_asset_id,
+        microphone_audio_asset_id,
+        synthesized_audio_asset_id,
+        manifest,
+        synthesis_status,
+        is_primary
+      )
+      select
+        ${localRecordingId}::uuid,
+        valid_attempt.meeting_id,
+        ${input.workspace.userId}::uuid,
+        ${attempt.id}::uuid,
+        ${input.clientRecordingId},
+        ${input.recordingStartedAt},
+        ${input.recordingStoppedAt},
+        ${input.assets.computerAudioAssetId}::uuid,
+        ${input.assets.microphoneAudioAssetId}::uuid,
+        ${input.assets.synthesizedAudioAssetId}::uuid,
+        ${JSON.stringify(input.manifest)}::jsonb,
+        'completed',
+        true
+      from valid_attempt
+      on conflict (owner_user_id, client_recording_id) do update
+      set updated_at = ${now}
+      returning id, meeting_id, synthesized_audio_asset_id
+    ), canonical_recording as (
+      insert into recordings (
+        id,
+        meeting_id,
+        source,
+        started_at,
+        ended_at,
+        duration_ms
+      )
+      select
+        local_recording.id,
+        local_recording.meeting_id,
+        'local_recorder',
+        ${input.recordingStartedAt},
+        ${input.recordingStoppedAt},
+        ${durationMs}
+      from local_recording
+      on conflict (id) do update
+      set
+        duration_ms = excluded.duration_ms,
+        ended_at = excluded.ended_at,
+        started_at = excluded.started_at,
+        updated_at = ${now}
+      returning id
+    ), meeting_update as (
+      update meetings
+      set status = 'processing', updated_at = ${now}
+      where id in (select meeting_id from valid_attempt)
+      returning id
+    ), transcript_job as (
+      insert into transcript_jobs (
+        id,
+        meeting_id,
+        recording_id,
+        media_asset_id,
+        provider,
+        status
+      )
+      select
+        ${transcriptJobId}::uuid,
+        local_recording.meeting_id,
+        local_recording.id,
+        local_recording.synthesized_audio_asset_id,
+        'elevenlabs',
+        'queued'
+      from local_recording
+      on conflict (recording_id) where recording_id is not null do update
+      set updated_at = ${now}
+      returning id, meeting_id, recording_id, media_asset_id
+    )
+    select
+      local_recording.id as local_recording_id,
+      transcript_job.id as transcript_job_id,
+      transcript_job.meeting_id,
+      transcript_job.media_asset_id
+    from local_recording
+    join transcript_job on transcript_job.recording_id = local_recording.id
+  `;
+  const [completed] = rows as Array<{
+    local_recording_id: string;
+    media_asset_id: string;
+    meeting_id: string;
+    transcript_job_id: string;
+  }>;
 
-  await db
-    .insert(mediaAssets)
-    .values([
-      {
-        bucket: env.R2_BUCKET,
-        fileSizeBytes: normalizeLocalRecorderFileSizeBytes(
-          computerAudioMetadata.contentLength,
-        ),
-        id: input.assets.computerAudioAssetId,
-        meetingId: attempt.meetingId,
-        mimeType:
-          computerAudioMetadata.contentType ?? localRecorderAudioContentType,
-        objectKey: keys.computerAudioKey,
-        source: "local_recorder",
-        type: "computer_audio",
-      },
-      {
-        bucket: env.R2_BUCKET,
-        fileSizeBytes: normalizeLocalRecorderFileSizeBytes(
-          microphoneAudioMetadata.contentLength,
-        ),
-        id: input.assets.microphoneAudioAssetId,
-        meetingId: attempt.meetingId,
-        mimeType:
-          microphoneAudioMetadata.contentType ?? localRecorderAudioContentType,
-        objectKey: keys.microphoneAudioKey,
-        source: "local_recorder",
-        type: "microphone_audio",
-      },
-      {
-        bucket: env.R2_BUCKET,
-        fileSizeBytes: normalizeLocalRecorderFileSizeBytes(
-          synthesizedAudioMetadata.contentLength,
-        ),
-        id: input.assets.synthesizedAudioAssetId,
-        meetingId: attempt.meetingId,
-        mimeType:
-          synthesizedAudioMetadata.contentType ?? localRecorderAudioContentType,
-        objectKey: keys.synthesizedAudioKey,
-        source: "local_recorder",
-        type: "synthesized_audio",
-      },
-    ])
-    .onConflictDoNothing();
+  if (!completed) {
+    throw new LocalRecorderUploadError(
+      "Local recording completion is no longer available",
+    );
+  }
 
-  const [recording] = await db
-    .insert(localRecordings)
-    .values({
-      clientRecordingId: input.clientRecordingId,
-      computerAudioAssetId: input.assets.computerAudioAssetId,
-      isPrimary: true,
-      localRecordingAttemptId: attempt.id,
-      manifest: input.manifest,
-      meetingId: attempt.meetingId,
-      microphoneAudioAssetId: input.assets.microphoneAudioAssetId,
-      ownerUserId: input.workspace.userId,
-      recordingStartedAt: input.recordingStartedAt,
-      recordingStoppedAt: input.recordingStoppedAt,
-      synthesizedAudioAssetId: input.assets.synthesizedAudioAssetId,
-      synthesisStatus: "completed",
-    })
-    .onConflictDoUpdate({
-      target: [localRecordings.ownerUserId, localRecordings.clientRecordingId],
-      set: {
-        updatedAt: now,
-      },
-    })
-    .returning({ id: localRecordings.id });
-
-  await db
-    .insert(recordings)
-    .values({
-      durationMs:
-        input.recordingStoppedAt.getTime() - input.recordingStartedAt.getTime(),
-      endedAt: input.recordingStoppedAt,
-      id: recording.id,
-      meetingId: attempt.meetingId,
-      source: "local_recorder",
-      startedAt: input.recordingStartedAt,
-    })
-    .onConflictDoUpdate({
-      target: recordings.id,
-      set: {
-        durationMs:
-          input.recordingStoppedAt.getTime() -
-          input.recordingStartedAt.getTime(),
-        endedAt: input.recordingStoppedAt,
-        startedAt: input.recordingStartedAt,
-        updatedAt: now,
-      },
-    });
-
-  await db
-    .update(localRecordingAttempts)
-    .set({ attemptState: "uploaded", updatedAt: now })
-    .where(eq(localRecordingAttempts.id, attempt.id));
-
-  await db
-    .update(meetings)
-    .set({
-      status: "processing",
-      updatedAt: now,
-    })
-    .where(eq(meetings.id, attempt.meetingId));
-
-  const transcriptionEventInput =
-    await getOrCreateLocalRecorderTranscriptionEventInput({
-      localRecordingId: recording.id,
-    });
+  const transcriptionEventInput: LocalRecorderTranscriptionEventInput = {
+    mediaAssetId: completed.media_asset_id,
+    meetingId: completed.meeting_id,
+    objectKey: keys.synthesizedAudioKey,
+    recordingId: completed.local_recording_id,
+    transcriptJobId: completed.transcript_job_id,
+  };
 
   await queueLocalRecorderTranscription(transcriptionEventInput);
 
   return {
-    localRecordingId: recording.id,
+    localRecordingId: completed.local_recording_id,
     meetingId: attempt.meetingId,
     queued: true,
   };
@@ -1197,6 +1262,50 @@ async function getUploadableLocalRecorderAttempt(input: {
   return attempt;
 }
 
+async function getRetryableLocalRecorderAttempt(input: {
+  clientRecordingId: string;
+  deviceId: string;
+  fallbackIntentId: string;
+  recordingStartedAt: Date;
+  workspace: WorkspaceContext;
+}) {
+  const deviceIdHash = await hashLocalRecorderValue(input.deviceId);
+  const fallbackIntentIdHash = await hashLocalRecorderValue(
+    input.fallbackIntentId,
+  );
+  const [attempt] = await db
+    .select({
+      attemptState: localRecordingAttempts.attemptState,
+      expiresAt: localRecordingAttempts.expiresAt,
+      id: localRecordingAttempts.id,
+      meetingId: localRecordingAttempts.meetingId,
+    })
+    .from(localRecordingAttempts)
+    .where(
+      and(
+        eq(localRecordingAttempts.userId, input.workspace.userId),
+        eq(localRecordingAttempts.deviceIdHash, deviceIdHash),
+        eq(localRecordingAttempts.fallbackIntentIdHash, fallbackIntentIdHash),
+      ),
+    )
+    .limit(1);
+
+  if (
+    !attempt ||
+    !["started", "uploading", "uploaded"].includes(attempt.attemptState) ||
+    !isLocalRecorderUploadMatch({
+      intentExpiresAt: attempt.expiresAt,
+      intentMeetingId: attempt.meetingId,
+      meetingId: attempt.meetingId,
+      recordingStartedAt: input.recordingStartedAt,
+    })
+  ) {
+    throw new LocalRecorderUploadError("No matching local recording intent");
+  }
+
+  return attempt;
+}
+
 async function getStartedLocalRecorderAttempt(input: {
   deviceId: string;
   fallbackIntentId: string;
@@ -1274,6 +1383,7 @@ async function findExistingLocalRecording(input: {
   const rows = await db
     .select({
       id: localRecordings.id,
+      localRecordingAttemptId: localRecordings.localRecordingAttemptId,
       meetingId: localRecordings.meetingId,
     })
     .from(localRecordings)

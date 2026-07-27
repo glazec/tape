@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 const {
   createRecallDesktopSdkUpload,
   createUploadUrl,
+  databaseSql,
   db,
   getObjectMetadata,
   inngestSend,
@@ -11,6 +12,7 @@ const {
 } = vi.hoisted(() => ({
     createRecallDesktopSdkUpload: vi.fn(),
     createUploadUrl: vi.fn(),
+    databaseSql: vi.fn(),
     db: {
       insert: vi.fn(),
       select: vi.fn(),
@@ -24,6 +26,7 @@ const {
   }));
 
 vi.mock("@/db/client", () => ({
+  databaseSql,
   db,
 }));
 
@@ -90,6 +93,7 @@ describe("local recorder records", () => {
     db.select.mockReset();
     db.transaction.mockReset();
     db.update.mockReset();
+    databaseSql.mockReset();
     createRecallDesktopSdkUpload.mockReset();
     createUploadUrl.mockReset();
     getObjectMetadata.mockReset();
@@ -185,6 +189,7 @@ describe("local recorder records", () => {
         meetingId: "22222222-2222-4222-8222-222222222222",
         objectKey:
           "teams/team_123/meetings/22222222-2222-4222-8222-222222222222/assets/11111111-1111-4111-8111-111111111111.wav",
+        recordingId: "44444444-4444-4444-8444-444444444444",
         transcriptJobId: "33333333-3333-4333-8333-333333333333",
       }),
     ).toEqual({
@@ -195,6 +200,7 @@ describe("local recorder records", () => {
         meetingId: "22222222-2222-4222-8222-222222222222",
         objectKey:
           "teams/team_123/meetings/22222222-2222-4222-8222-222222222222/assets/11111111-1111-4111-8111-111111111111.wav",
+        recordingId: "44444444-4444-4444-8444-444444444444",
         transcriptJobId: "33333333-3333-4333-8333-333333333333",
       },
     });
@@ -215,43 +221,9 @@ describe("local recorder records", () => {
     ).toBe(false);
   });
 
-  it("completes uploaded local recorder rows without a database transaction", async () => {
-    const updateWhere = vi.fn().mockResolvedValue(undefined);
-    const updateSet = vi.fn(() => ({ where: updateWhere }));
-    const insertMediaOnConflictDoNothing = vi
-      .fn()
-      .mockResolvedValue(undefined);
-    const insertMediaValues = vi.fn(() => ({
-      onConflictDoNothing: insertMediaOnConflictDoNothing,
-    }));
-    const recordingReturning = vi
-      .fn()
-      .mockResolvedValue([{ id: "55555555-5555-4555-8555-555555555555" }]);
-    const recordingOnConflictDoUpdate = vi.fn(() => ({
-      returning: recordingReturning,
-    }));
-    const insertRecordingValues = vi.fn(() => ({
-      onConflictDoUpdate: recordingOnConflictDoUpdate,
-    }));
-    const canonicalRecordingOnConflictDoUpdate = vi
-      .fn()
-      .mockResolvedValue(undefined);
-    const insertCanonicalRecordingValues = vi.fn(() => ({
-      onConflictDoUpdate: canonicalRecordingOnConflictDoUpdate,
-    }));
-    const jobReturning = vi
-      .fn()
-      .mockResolvedValue([{ id: "66666666-6666-4666-8666-666666666666" }]);
-    const insertJobValues = vi.fn(() => ({ returning: jobReturning }));
-
-    db.transaction.mockRejectedValue(new Error("transactions are unavailable"));
-    db.update.mockReturnValue({ set: updateSet });
-    db.insert
-      .mockReturnValueOnce({ values: insertMediaValues })
-      .mockReturnValueOnce({ values: insertRecordingValues })
-      .mockReturnValueOnce({ values: insertCanonicalRecordingValues })
-      .mockReturnValueOnce({ values: insertJobValues });
+  it("commits local recorder completion in one atomic database statement", async () => {
     db.select
+      .mockReturnValueOnce(selectRows([]))
       .mockReturnValueOnce(
         selectRows([
           {
@@ -261,19 +233,15 @@ describe("local recorder records", () => {
             meetingId: "22222222-2222-4222-8222-222222222222",
           },
         ]),
-      )
-      .mockReturnValueOnce(selectRows([]))
-      .mockReturnValueOnce(
-        selectRows([
-          {
-            mediaAssetId: "33333333-3333-4333-8333-333333333333",
-            meetingId: "22222222-2222-4222-8222-222222222222",
-            objectKey:
-              "teams/team_123/meetings/22222222-2222-4222-8222-222222222222/assets/33333333-3333-4333-8333-333333333333.wav",
-            transcriptJobId: null,
-          },
-        ]),
       );
+    databaseSql.mockResolvedValue([
+      {
+        local_recording_id: "55555555-5555-4555-8555-555555555555",
+        media_asset_id: "33333333-3333-4333-8333-333333333333",
+        meeting_id: "22222222-2222-4222-8222-222222222222",
+        transcript_job_id: "66666666-6666-4666-8666-666666666666",
+      },
+    ]);
     getObjectMetadata.mockResolvedValue({
       contentLength: 192044,
       contentType: "audio/wav",
@@ -305,27 +273,81 @@ describe("local recorder records", () => {
       queued: true,
     });
     expect(db.transaction).not.toHaveBeenCalled();
-    expect(insertMediaValues).toHaveBeenCalledOnce();
-    expect(insertMediaOnConflictDoNothing).toHaveBeenCalledOnce();
-    expect(updateSet).toHaveBeenNthCalledWith(
-      1,
-      expect.objectContaining({ attemptState: "uploaded" }),
-    );
-    expect(updateSet).toHaveBeenNthCalledWith(
-      2,
-      expect.objectContaining({
-        status: "processing",
-      }),
-    );
-    expect(insertCanonicalRecordingValues).toHaveBeenCalledWith(
-      expect.objectContaining({
-        durationMs: 60_000,
-        id: "55555555-5555-4555-8555-555555555555",
-        source: "local_recorder",
-      }),
-    );
-    expect(updateWhere).toHaveBeenCalledTimes(2);
+    expect(db.insert).not.toHaveBeenCalled();
+    expect(db.update).not.toHaveBeenCalled();
+    expect(databaseSql).toHaveBeenCalledOnce();
+    const completionSql = databaseSql.mock.calls[0]?.[0].join(" ") ?? "";
+    expect(completionSql).toContain("with valid_attempt as");
+    expect(completionSql).toContain("insert into local_recordings");
+    expect(completionSql).toContain("insert into transcript_jobs");
+    expect(completionSql).toContain("set status = 'processing'");
     expect(inngestSend).toHaveBeenCalledOnce();
+  });
+
+  it("retries transcription dispatch after the atomic completion committed", async () => {
+    db.select
+      .mockReturnValueOnce(selectRows([]))
+      .mockReturnValueOnce(selectRows([uploadableAttempt()]))
+      .mockReturnValueOnce(
+        selectRows([
+          {
+            id: "recording_1",
+            localRecordingAttemptId: "attempt_1",
+            meetingId: "meeting_1",
+          },
+        ]),
+      )
+      .mockReturnValueOnce(
+        selectRows([
+          {
+            attemptState: "uploaded",
+            expiresAt: new Date("2026-07-20T13:00:00.000Z"),
+            id: "attempt_1",
+            meetingId: "meeting_1",
+          },
+        ]),
+      )
+      .mockReturnValueOnce(
+        selectRows([
+          {
+            mediaAssetId: "asset_3",
+            meetingId: "meeting_1",
+            objectKey:
+              "teams/team_123/meetings/meeting_1/assets/asset_3.wav",
+            recordingId: "recording_1",
+            transcriptJobId: "job_1",
+          },
+        ]),
+      );
+    databaseSql.mockResolvedValue([
+      {
+        local_recording_id: "recording_1",
+        media_asset_id: "asset_3",
+        meeting_id: "meeting_1",
+        transcript_job_id: "job_1",
+      },
+    ]);
+    getObjectMetadata.mockResolvedValue({
+      contentLength: 192044,
+      contentType: "audio/wav",
+    });
+    inngestSend
+      .mockRejectedValueOnce(new Error("Inngest unavailable"))
+      .mockResolvedValueOnce(undefined);
+
+    await expect(
+      completeLocalRecorderRecordingUpload(recordingUploadInput()),
+    ).rejects.toThrow("Inngest unavailable");
+    await expect(
+      completeLocalRecorderRecordingUpload(recordingUploadInput()),
+    ).resolves.toEqual({
+      localRecordingId: "recording_1",
+      meetingId: "meeting_1",
+      queued: true,
+    });
+
+    expect(databaseSql).toHaveBeenCalledOnce();
+    expect(inngestSend).toHaveBeenCalledTimes(2);
   });
 
   it("excludes future and unscheduled meetings from the missed recorder lookup", () => {
@@ -437,7 +459,7 @@ describe("local recorder records", () => {
     expect(attemptValues).not.toHaveBeenCalled();
   });
 
-  it("creates one fallback intent for an eligible missed meeting", async () => {
+  it("creates one fallback intent for an eligible Microsoft Teams meeting", async () => {
     const deviceConflict = vi.fn().mockResolvedValue(undefined);
     const attemptValues = vi.fn().mockResolvedValue(undefined);
     db.insert
@@ -450,13 +472,14 @@ describe("local recorder records", () => {
         activeTranscriptJob: false,
         endedAt: new Date("2026-07-01T12:30:00.000Z"),
         id: "meeting_123",
-        meetingUrl: "https://meet.google.com/abc-defg-hij",
+        meetingUrl:
+          "https://teams.microsoft.com/l/meetup-join/19%3ameeting_example%40thread.v2/0",
         recallAudioAsset: false,
         recallBotId: null,
         recallRecordingId: null,
         startedAt: new Date("2026-07-01T12:00:00.000Z"),
         status: "scheduled",
-        title: "Weekly sync",
+        title: "Microsoft Teams sync",
       }]))
       .mockReturnValueOnce(selectRows([]));
 
@@ -472,7 +495,7 @@ describe("local recorder records", () => {
           endsAt: "2026-07-01T12:30:00.000Z",
           startsAt: "2026-07-01T12:00:00.000Z",
         },
-        title: "Weekly sync",
+        title: "Microsoft Teams sync",
       }),
     ]);
     expect(attemptValues).toHaveBeenCalledWith(expect.objectContaining({
@@ -803,12 +826,23 @@ describe("local recorder records", () => {
 
   it("requeues transcription when upload completion is retried", async () => {
     db.select
-      .mockReturnValueOnce(selectRows([uploadableAttempt()]))
-      .mockReturnValueOnce(selectRows([{ id: "recording_1", meetingId: "meeting_1" }]))
+      .mockReturnValueOnce(
+        selectRows([
+          {
+            id: "recording_1",
+            localRecordingAttemptId: "attempt_1",
+            meetingId: "meeting_1",
+          },
+        ]),
+      )
+      .mockReturnValueOnce(
+        selectRows([{ ...uploadableAttempt(), attemptState: "uploaded" }]),
+      )
       .mockReturnValueOnce(selectRows([{
         mediaAssetId: "asset_3",
         meetingId: "meeting_1",
         objectKey: "teams/team_123/meetings/meeting_1/assets/asset_3.wav",
+        recordingId: "recording_1",
         transcriptJobId: "job_1",
       }]));
     inngestSend.mockResolvedValue(undefined);
@@ -828,8 +862,18 @@ describe("local recorder records", () => {
 
   it("rejects an upload retry attached to another meeting", async () => {
     db.select
-      .mockReturnValueOnce(selectRows([uploadableAttempt()]))
-      .mockReturnValueOnce(selectRows([{ id: "recording_1", meetingId: "meeting_2" }]));
+      .mockReturnValueOnce(
+        selectRows([
+          {
+            id: "recording_1",
+            localRecordingAttemptId: "attempt_1",
+            meetingId: "meeting_2",
+          },
+        ]),
+      )
+      .mockReturnValueOnce(
+        selectRows([{ ...uploadableAttempt(), attemptState: "uploaded" }]),
+      );
 
     await expect(
       completeLocalRecorderRecordingUpload(recordingUploadInput()),
@@ -839,8 +883,8 @@ describe("local recorder records", () => {
 
   it("reports missing audio when an uploaded object cannot be read", async () => {
     db.select
-      .mockReturnValueOnce(selectRows([uploadableAttempt()]))
-      .mockReturnValueOnce(selectRows([]));
+      .mockReturnValueOnce(selectRows([]))
+      .mockReturnValueOnce(selectRows([uploadableAttempt()]));
     getObjectMetadata.mockRejectedValue(new Error("not found"));
 
     await expect(
