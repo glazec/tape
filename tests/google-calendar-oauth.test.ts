@@ -168,6 +168,194 @@ describe("Google Calendar OAuth storage", () => {
     });
   });
 
+  it("replaces a disconnected Recall calendar with the stored Google credential", async () => {
+    vi.stubEnv("GOOGLE_CALENDAR_CLIENT_ID", "google-client-id");
+    vi.stubEnv("GOOGLE_CALENDAR_CLIENT_SECRET", "google-client-secret");
+    select.mockReturnValue({
+      from: () => ({
+        where: () => ({
+          limit: vi.fn().mockResolvedValue([
+            {
+              id: "connection_1",
+              oauthRefreshToken: "google-refresh-token",
+              recallCalendarId: "disconnected_calendar",
+              recallCalendarStatus: "disconnected",
+            },
+          ]),
+        }),
+      }),
+    });
+    createRecallCalendar.mockResolvedValue({
+      id: "replacement_calendar",
+      status: "connecting",
+    });
+    const updateReturning = vi.fn().mockResolvedValue([{ id: "connection_1" }]);
+    const updateWhere = vi.fn().mockReturnValue({
+      returning: updateReturning,
+    });
+    const updateSet = vi.fn().mockReturnValue({ where: updateWhere });
+    update.mockReturnValue({ set: updateSet });
+    deleteRecallCalendar.mockResolvedValue({});
+
+    const { replaceDisconnectedRecallCalendarForWorkspace } = await import(
+      "@/lib/google-calendar-oauth"
+    );
+
+    await expect(
+      replaceDisconnectedRecallCalendarForWorkspace({
+        workspace: {
+          userId: "user_1",
+          teamId: "team_1",
+          domain: "example.com",
+        },
+        connectionId: "connection_1",
+        disconnectedCalendarId: "disconnected_calendar",
+      }),
+    ).resolves.toEqual({
+      id: "replacement_calendar",
+      status: "connecting",
+    });
+
+    expect(createRecallCalendar).toHaveBeenCalledWith({
+      oauthClientId: "google-client-id",
+      oauthClientSecret: "google-client-secret",
+      oauthRefreshToken: "google-refresh-token",
+      platform: "google_calendar",
+      metadata: { teamId: "team_1", userId: "user_1" },
+    });
+    expect(updateSet).toHaveBeenCalledWith({
+      recallCalendarId: "replacement_calendar",
+      recallCalendarStatus: "connecting",
+      recallCalendarLastSyncedAt: null,
+      updatedAt: expect.any(Date),
+    });
+    expect(deleteRecallCalendar).toHaveBeenCalledWith({
+      calendarId: "disconnected_calendar",
+    });
+  });
+
+  it("uses the replacement claimed by a concurrent calendar sync", async () => {
+    vi.stubEnv("GOOGLE_CALENDAR_CLIENT_ID", "google-client-id");
+    vi.stubEnv("GOOGLE_CALENDAR_CLIENT_SECRET", "google-client-secret");
+    select
+      .mockReturnValueOnce({
+        from: () => ({
+          where: () => ({
+            limit: vi.fn().mockResolvedValue([
+              {
+                id: "connection_1",
+                oauthRefreshToken: "google-refresh-token",
+                recallCalendarId: "disconnected_calendar",
+                recallCalendarStatus: "disconnected",
+              },
+            ]),
+          }),
+        }),
+      })
+      .mockReturnValueOnce({
+        from: () => ({
+          where: () => ({
+            limit: vi.fn().mockResolvedValue([
+              {
+                id: "connection_1",
+                oauthRefreshToken: "google-refresh-token",
+                recallCalendarId: "winning_calendar",
+                recallCalendarStatus: "connecting",
+              },
+            ]),
+          }),
+        }),
+      });
+    createRecallCalendar.mockResolvedValue({
+      id: "losing_calendar",
+      status: "connecting",
+    });
+    const updateReturning = vi.fn().mockResolvedValue([]);
+    const updateWhere = vi.fn().mockReturnValue({
+      returning: updateReturning,
+    });
+    update.mockReturnValue({
+      set: vi.fn().mockReturnValue({ where: updateWhere }),
+    });
+    deleteRecallCalendar.mockResolvedValue({});
+
+    const { replaceDisconnectedRecallCalendarForWorkspace } = await import(
+      "@/lib/google-calendar-oauth"
+    );
+
+    await expect(
+      replaceDisconnectedRecallCalendarForWorkspace({
+        workspace: {
+          userId: "user_1",
+          teamId: "team_1",
+          domain: "example.com",
+        },
+        connectionId: "connection_1",
+        disconnectedCalendarId: "disconnected_calendar",
+      }),
+    ).resolves.toEqual({
+      id: "winning_calendar",
+      status: "connecting",
+    });
+
+    expect(deleteRecallCalendar).toHaveBeenCalledTimes(1);
+    expect(deleteRecallCalendar).toHaveBeenCalledWith({
+      calendarId: "losing_calendar",
+    });
+  });
+
+  it("cleans up the replacement when claiming it fails", async () => {
+    vi.stubEnv("GOOGLE_CALENDAR_CLIENT_ID", "google-client-id");
+    vi.stubEnv("GOOGLE_CALENDAR_CLIENT_SECRET", "google-client-secret");
+    select.mockReturnValue({
+      from: () => ({
+        where: () => ({
+          limit: vi.fn().mockResolvedValue([
+            {
+              id: "connection_1",
+              oauthRefreshToken: "google-refresh-token",
+              recallCalendarId: "disconnected_calendar",
+              recallCalendarStatus: "disconnected",
+            },
+          ]),
+        }),
+      }),
+    });
+    createRecallCalendar.mockResolvedValue({
+      id: "replacement_calendar",
+      status: "connecting",
+    });
+    const updateError = new Error("database unavailable");
+    update.mockReturnValue({
+      set: vi.fn().mockReturnValue({
+        where: vi.fn().mockReturnValue({
+          returning: vi.fn().mockRejectedValue(updateError),
+        }),
+      }),
+    });
+    deleteRecallCalendar.mockResolvedValue({});
+
+    const { replaceDisconnectedRecallCalendarForWorkspace } = await import(
+      "@/lib/google-calendar-oauth"
+    );
+
+    await expect(
+      replaceDisconnectedRecallCalendarForWorkspace({
+        workspace: {
+          userId: "user_1",
+          teamId: "team_1",
+          domain: "example.com",
+        },
+        connectionId: "connection_1",
+        disconnectedCalendarId: "disconnected_calendar",
+      }),
+    ).rejects.toBe(updateError);
+
+    expect(deleteRecallCalendar).toHaveBeenCalledWith({
+      calendarId: "replacement_calendar",
+    });
+  });
+
   it("exchanges Google authorization codes and rejects invalid token responses", async () => {
     vi.stubEnv("GOOGLE_CALENDAR_CLIENT_ID", "google-client-id");
     vi.stubEnv("GOOGLE_CALENDAR_CLIENT_SECRET", "google-client-secret");

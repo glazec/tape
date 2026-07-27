@@ -173,6 +173,106 @@ export async function disconnectGoogleCalendarForWorkspace(
   return true;
 }
 
+export async function replaceDisconnectedRecallCalendarForWorkspace(
+  input: {
+    workspace: WorkspaceContext;
+    connectionId: string;
+    disconnectedCalendarId: string;
+  },
+) {
+  const existing = await findGoogleCalendarConnectionById(
+    input.workspace,
+    input.connectionId,
+  );
+
+  if (!existing?.recallCalendarId || !existing.oauthRefreshToken) {
+    return null;
+  }
+
+  if (existing.recallCalendarId !== input.disconnectedCalendarId) {
+    return {
+      id: existing.recallCalendarId,
+      status: existing.recallCalendarStatus,
+    };
+  }
+
+  const googleEnv = parseGoogleCalendarOAuthEnv(process.env);
+  const calendar = await createRecallCalendar({
+    oauthClientId: googleEnv.GOOGLE_CALENDAR_CLIENT_ID,
+    oauthClientSecret: googleEnv.GOOGLE_CALENDAR_CLIENT_SECRET,
+    oauthRefreshToken: decryptToken(existing.oauthRefreshToken),
+    platform: "google_calendar",
+    metadata: {
+      teamId: input.workspace.teamId,
+      userId: input.workspace.userId,
+    },
+  });
+  const replacementCalendarId = getString(
+    (calendar as { id?: unknown }).id,
+  );
+
+  if (!replacementCalendarId) {
+    throw new GoogleCalendarOAuthError(
+      "Recall calendar replacement did not return an id",
+    );
+  }
+
+  const status = getString((calendar as { status?: unknown }).status);
+  let updatedConnection: { id: string } | undefined;
+
+  try {
+    [updatedConnection] = await db
+      .update(calendarConnections)
+      .set({
+        recallCalendarId: replacementCalendarId,
+        recallCalendarStatus: status,
+        recallCalendarLastSyncedAt: null,
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(calendarConnections.id, existing.id),
+          eq(
+            calendarConnections.recallCalendarId,
+            input.disconnectedCalendarId,
+          ),
+        ),
+      )
+      .returning({ id: calendarConnections.id });
+  } catch (error) {
+    await deleteRecallCalendar({
+      calendarId: replacementCalendarId,
+    }).catch(() => undefined);
+    throw error;
+  }
+
+  if (!updatedConnection) {
+    await deleteRecallCalendar({
+      calendarId: replacementCalendarId,
+    }).catch(() => undefined);
+    const current = await findGoogleCalendarConnectionById(
+      input.workspace,
+      input.connectionId,
+    );
+
+    return current?.recallCalendarId
+      ? {
+          id: current.recallCalendarId,
+          status: current.recallCalendarStatus,
+        }
+      : null;
+  }
+
+  await deleteRecallCalendar({
+    calendarId: input.disconnectedCalendarId,
+  }).catch(() => undefined);
+
+  return {
+    id: replacementCalendarId,
+    status,
+  };
+}
+
 async function ensureRecallCalendar(input: {
   workspace: WorkspaceContext;
   existing: Awaited<ReturnType<typeof findGoogleCalendarConnection>>;
@@ -276,6 +376,31 @@ async function findGoogleCalendarConnection(workspace: WorkspaceContext) {
         eq(calendarConnections.userId, workspace.userId),
         eq(calendarConnections.provider, "google"),
         eq(calendarConnections.externalCalendarId, "primary"),
+      ),
+    )
+    .limit(1);
+
+  return connection ?? null;
+}
+
+async function findGoogleCalendarConnectionById(
+  workspace: WorkspaceContext,
+  connectionId: string,
+) {
+  const [connection] = await db
+    .select({
+      id: calendarConnections.id,
+      oauthRefreshToken: calendarConnections.oauthRefreshToken,
+      recallCalendarId: calendarConnections.recallCalendarId,
+      recallCalendarStatus: calendarConnections.recallCalendarStatus,
+    })
+    .from(calendarConnections)
+    .where(
+      and(
+        eq(calendarConnections.id, connectionId),
+        eq(calendarConnections.teamId, workspace.teamId),
+        eq(calendarConnections.userId, workspace.userId),
+        eq(calendarConnections.provider, "google"),
       ),
     )
     .limit(1);

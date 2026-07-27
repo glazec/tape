@@ -6,6 +6,7 @@ const {
   insert,
   listRecallCalendarEvents,
   listRecallCalendars,
+  replaceDisconnectedRecallCalendarForWorkspace,
   retrieveRecallCalendar,
   select,
   update,
@@ -16,6 +17,7 @@ const {
     insert: vi.fn(),
     listRecallCalendarEvents: vi.fn(),
     listRecallCalendars: vi.fn(),
+    replaceDisconnectedRecallCalendarForWorkspace: vi.fn(),
     retrieveRecallCalendar: vi.fn(),
     select: vi.fn(),
     update: vi.fn(),
@@ -35,6 +37,10 @@ vi.mock("@/lib/calendar-auto-join", () => ({
   autoJoinCalendarEvent,
 }));
 
+vi.mock("@/lib/google-calendar-oauth", () => ({
+  replaceDisconnectedRecallCalendarForWorkspace,
+}));
+
 vi.mock("@/lib/vendors/recall", () => ({
   listRecallCalendarEvents,
   listRecallCalendars,
@@ -49,6 +55,7 @@ describe("processRecallCalendarWebhook", () => {
     insert.mockReset();
     listRecallCalendarEvents.mockReset();
     listRecallCalendars.mockReset();
+    replaceDisconnectedRecallCalendarForWorkspace.mockReset();
     retrieveRecallCalendar.mockReset();
     select.mockReset();
     update.mockReset();
@@ -294,6 +301,70 @@ describe("processRecallCalendarWebhook", () => {
       }),
       forceBotConfigRefresh: true,
       repairMode: true,
+    });
+  });
+
+  it("replaces a disconnected Recall calendar before syncing meetings", async () => {
+    select.mockReturnValue({
+      from: () => ({
+        where: () => ({
+          limit: vi.fn().mockResolvedValue([
+            {
+              id: "33333333-3333-4333-8333-333333333333",
+              teamId: "22222222-2222-4222-8222-222222222222",
+              userId: "11111111-1111-4111-8111-111111111111",
+              autoJoinEnabled: true,
+              recallCalendarId: "disconnected_calendar",
+              recallCalendarStatus: "connected",
+            },
+          ]),
+        }),
+      }),
+    });
+    retrieveRecallCalendar.mockResolvedValue({
+      id: "disconnected_calendar",
+      status: "disconnected",
+    });
+    replaceDisconnectedRecallCalendarForWorkspace.mockResolvedValue({
+      id: "replacement_calendar",
+      status: "connected",
+    });
+    update.mockReturnValue({
+      set: () => ({
+        where: vi.fn().mockResolvedValue(undefined),
+      }),
+    });
+    listRecallCalendarEvents.mockResolvedValue([]);
+
+    const { syncRecallCalendarEventsForWorkspace } = await import(
+      "@/lib/recall-calendar"
+    );
+    const workspace = {
+      userId: "11111111-1111-4111-8111-111111111111",
+      teamId: "22222222-2222-4222-8222-222222222222",
+      domain: "example.com",
+    };
+
+    await expect(
+      syncRecallCalendarEventsForWorkspace({
+        workspace,
+        autoJoinEnabled: true,
+        now: new Date("2026-06-27T04:00:00.000Z"),
+      }),
+    ).resolves.toEqual({
+      connectionId: "33333333-3333-4333-8333-333333333333",
+      failedEventCount: 0,
+      syncedEventCount: 0,
+    });
+
+    expect(replaceDisconnectedRecallCalendarForWorkspace).toHaveBeenCalledWith({
+      workspace,
+      connectionId: "33333333-3333-4333-8333-333333333333",
+      disconnectedCalendarId: "disconnected_calendar",
+    });
+    expect(listRecallCalendarEvents).toHaveBeenCalledWith({
+      calendarId: "replacement_calendar",
+      startTimeGte: "2026-06-26T04:00:00.000Z",
     });
   });
 

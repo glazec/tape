@@ -5,6 +5,7 @@ import { databaseSql, db } from "@/db/client";
 import { calendarConnections, teams, users } from "@/db/schema";
 import { normalizeEmailDomain } from "@/lib/access";
 import { autoJoinCalendarEvent, type SyncedCalendarEvent } from "@/lib/calendar-auto-join";
+import { replaceDisconnectedRecallCalendarForWorkspace } from "@/lib/google-calendar-oauth";
 import {
   listRecallCalendars,
   listRecallCalendarEvents,
@@ -95,7 +96,39 @@ export async function ensureRecallManagedCalendarConnectionForWorkspace(
       await db
         .update(calendarConnections)
         .set({ recallCalendarStatus: status, updatedAt: new Date() })
-        .where(eq(calendarConnections.id, existing.id));
+        .where(
+          and(
+            eq(calendarConnections.id, existing.id),
+            eq(
+              calendarConnections.recallCalendarId,
+              existing.recallCalendarId,
+            ),
+          ),
+        );
+    }
+
+    if (status === "disconnected") {
+      const replacement = await replaceDisconnectedRecallCalendarForWorkspace({
+        workspace,
+        connectionId: existing.id,
+        disconnectedCalendarId: existing.recallCalendarId,
+      });
+
+      if (replacement) {
+        return {
+          ...existing,
+          recallCalendarId: replacement.id,
+          recallCalendarLastSyncedAt: null,
+          recallCalendarStatus: replacement.status,
+        };
+      }
+
+      return {
+        ...existing,
+        recallCalendarId: null,
+        recallCalendarLastSyncedAt: null,
+        recallCalendarStatus: status,
+      };
     }
 
     return {
@@ -239,10 +272,8 @@ export async function syncRecallCalendarEventsForWorkspace(input: {
   forceBotConfigRefresh?: boolean;
   now?: Date;
 }) {
-  const existingConnection = await findConnectionByWorkspace(input.workspace);
-  const connection = existingConnection?.recallCalendarId
-    ? existingConnection
-    : await ensureRecallManagedCalendarConnectionForWorkspace(input.workspace);
+  const connection =
+    await ensureRecallManagedCalendarConnectionForWorkspace(input.workspace);
 
   if (!connection?.recallCalendarId) {
     throw new RecallCalendarConnectionError();
