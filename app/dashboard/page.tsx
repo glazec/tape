@@ -18,6 +18,7 @@ import {
   MeetingLibrarySkeleton,
 } from "@/components/dashboard-loading";
 import { DashboardWorkflowSummary } from "@/components/dashboard-workflow-summary";
+import { MeetingLibrarySearch } from "@/components/meeting-library-search";
 import { MeetingList } from "@/components/meeting-list";
 import { OnboardingTutorial } from "@/components/onboarding-tutorial";
 import {
@@ -370,72 +371,76 @@ async function DashboardMeetingLibrary({
         </CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col px-0">
-        <MeetingLibraryControls
-          activeViewConfig={activeViewConfig}
-          historyMonths={meetingLibraryPage.historyMonths}
-          hasSavedView={Boolean(savedViewConfig)}
-          isSharedOnly={isSharedOnly}
-          relatedHistoryMonths={meetingLibraryPage.relatedHistoryMonths}
-          syncCalendar={syncCalendar}
-        />
-
-        <MeetingList
-          emptyMessage={
-            isSharedOnly
-              ? "No transcripts have been shared with you yet"
-              : "No meetings found"
+        <MeetingLibrarySearch
+          controls={
+            <MeetingLibraryControls
+              activeViewConfig={activeViewConfig}
+              historyMonths={meetingLibraryPage.historyMonths}
+              hasSavedView={Boolean(savedViewConfig)}
+              isSharedOnly={isSharedOnly}
+              relatedHistoryMonths={meetingLibraryPage.relatedHistoryMonths}
+              syncCalendar={syncCalendar}
+            />
           }
-          meetings={withRelatedHistoryLinks(meetingLibraryPage.meetings, {
-            activeViewConfig,
-            historyMonths: meetingLibraryPage.historyMonths,
-            relatedHistoryMonths: meetingLibraryPage.relatedHistoryMonths,
-            syncCalendar,
-          })}
-          sort={activeViewConfig.sort}
-          sortLinks={getMeetingLibrarySortLinks({
-            activeViewConfig,
-            historyMonths: meetingLibraryPage.historyMonths,
-            relatedHistoryMonths: meetingLibraryPage.relatedHistoryMonths,
-            syncCalendar,
-          })}
-        />
-        <MeetingLibraryPagination
-          className="border-t px-4 py-3 sm:px-5"
-          hasNextPage={meetingLibraryPage.hasNextPage}
-          hasOlderMeetings={meetingLibraryPage.hasOlderMeetings}
-          hasPreviousPage={meetingLibraryPage.hasPreviousPage}
-          historyHref={buildDashboardPageHref({
-            ...activeViewConfig,
-            historyMonths: getNextHistoryMonths(
-              meetingLibraryPage.historyMonths,
-            ),
-            relatedHistoryMonths: Math.max(
-              meetingLibraryPage.relatedHistoryMonths,
-              getNextHistoryMonths(meetingLibraryPage.historyMonths),
-            ),
-            syncCalendar,
-          })}
-          historyMonths={meetingLibraryPage.historyMonths}
-          nextHref={buildDashboardPageHref({
-            ...activeViewConfig,
-            historyMonths: meetingLibraryPage.historyMonths,
-            page: meetingLibraryPage.page + 1,
-            relatedHistoryMonths: meetingLibraryPage.relatedHistoryMonths,
-            syncCalendar,
-          })}
-          page={meetingLibraryPage.page}
-          previousHref={buildDashboardPageHref({
-            ...activeViewConfig,
-            historyMonths: meetingLibraryPage.historyMonths,
-            page: meetingLibraryPage.page - 1,
-            relatedHistoryMonths: meetingLibraryPage.relatedHistoryMonths,
-            syncCalendar,
-          })}
-          resetHistoryHref={buildDashboardPageHref({
-            ...activeViewConfig,
-            syncCalendar,
-          })}
-        />
+        >
+          <MeetingList
+            emptyMessage={
+              isSharedOnly
+                ? "No transcripts have been shared with you yet"
+                : "No meetings found"
+            }
+            meetings={withRelatedHistoryLinks(meetingLibraryPage.meetings, {
+              activeViewConfig,
+              historyMonths: meetingLibraryPage.historyMonths,
+              relatedHistoryMonths: meetingLibraryPage.relatedHistoryMonths,
+              syncCalendar,
+            })}
+            sort={activeViewConfig.sort}
+            sortLinks={getMeetingLibrarySortLinks({
+              activeViewConfig,
+              historyMonths: meetingLibraryPage.historyMonths,
+              relatedHistoryMonths: meetingLibraryPage.relatedHistoryMonths,
+              syncCalendar,
+            })}
+          />
+          <MeetingLibraryPagination
+            className="border-t px-4 py-3 sm:px-5"
+            hasNextPage={meetingLibraryPage.hasNextPage}
+            hasOlderMeetings={meetingLibraryPage.hasOlderMeetings}
+            hasPreviousPage={meetingLibraryPage.hasPreviousPage}
+            historyHref={buildDashboardPageHref({
+              ...activeViewConfig,
+              historyMonths: getNextHistoryMonths(
+                meetingLibraryPage.historyMonths,
+              ),
+              relatedHistoryMonths: Math.max(
+                meetingLibraryPage.relatedHistoryMonths,
+                getNextHistoryMonths(meetingLibraryPage.historyMonths),
+              ),
+              syncCalendar,
+            })}
+            historyMonths={meetingLibraryPage.historyMonths}
+            nextHref={buildDashboardPageHref({
+              ...activeViewConfig,
+              historyMonths: meetingLibraryPage.historyMonths,
+              page: meetingLibraryPage.page + 1,
+              relatedHistoryMonths: meetingLibraryPage.relatedHistoryMonths,
+              syncCalendar,
+            })}
+            page={meetingLibraryPage.page}
+            previousHref={buildDashboardPageHref({
+              ...activeViewConfig,
+              historyMonths: meetingLibraryPage.historyMonths,
+              page: meetingLibraryPage.page - 1,
+              relatedHistoryMonths: meetingLibraryPage.relatedHistoryMonths,
+              syncCalendar,
+            })}
+            resetHistoryHref={buildDashboardPageHref({
+              ...activeViewConfig,
+              syncCalendar,
+            })}
+          />
+        </MeetingLibrarySearch>
       </CardContent>
     </Card>
   );
@@ -636,7 +641,7 @@ function MeetingLibraryControls({
   const syncCalendarValue = getSearchParamValue(syncCalendar);
 
   return (
-    <form className="grid gap-3 border-b bg-muted/20 px-4 py-3 sm:px-5 md:grid-cols-[minmax(12rem,1fr)_10rem_auto] md:items-end">
+    <div className="grid gap-3 border-b bg-muted/20 px-4 py-3 sm:px-5 md:grid-cols-[minmax(12rem,1fr)_10rem_auto] md:items-end">
       {syncCalendarValue ? (
         <input name="syncCalendar" type="hidden" value={syncCalendarValue} />
       ) : null}
@@ -723,7 +728,7 @@ function MeetingLibraryControls({
           </div>
         </div>
       </details>
-    </form>
+    </div>
   );
 }
 
