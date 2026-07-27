@@ -173,6 +173,7 @@ final class RecorderAppModel: NSObject, ObservableObject, UNUserNotificationCent
     private var activeFallbackIntentId: String?
     private var activeRecordingBackend: ActiveRecordingBackend?
     private var isUploadingQueuedRecordings = false
+    private var queuedUploadRetryAfter: Date?
     private var isSilencePromptVisible = false
     private var appActivationObserver: NSObjectProtocol?
     private var levelTestSession: AudioLevelTestSession?
@@ -341,6 +342,9 @@ final class RecorderAppModel: NSObject, ObservableObject, UNUserNotificationCent
         guard !isUploadingQueuedRecordings else {
             return
         }
+        if let queuedUploadRetryAfter, queuedUploadRetryAfter > Date() {
+            return
+        }
 
         let queuedPayloads: [LocalRecordingUploadPayload]
         do {
@@ -366,11 +370,16 @@ final class RecorderAppModel: NSObject, ObservableObject, UNUserNotificationCent
                 try uploadQueue.remove(clientRecordingId: payload.clientRecordingId)
                 cleanupRecordingFiles(for: payload)
             } catch {
-                statusText = "Could not upload saved recording"
+                await handleUploadFailure(
+                    client: client,
+                    payload: payload,
+                    error: error
+                )
                 return
             }
         }
 
+        queuedUploadRetryAfter = nil
         statusText = "Saved recordings uploaded"
     }
 
@@ -1092,6 +1101,7 @@ final class RecorderAppModel: NSObject, ObservableObject, UNUserNotificationCent
         statusText = "Saving recording"
         silencePromptTracker.finishAfterPrompt()
         Task {
+            var stoppedUploadPayload: LocalRecordingUploadPayload?
             defer {
                 isFinishingRecording = false
             }
@@ -1112,6 +1122,7 @@ final class RecorderAppModel: NSObject, ObservableObject, UNUserNotificationCent
                     let result = try await captureController.stop()
                     isRecording = false
                     try uploadQueue.save(result.payload)
+                    stoppedUploadPayload = result.payload
                     guard let client = activeClient else {
                         throw LocalRecorderAPIError.invalidResponse
                     }
@@ -1133,15 +1144,25 @@ final class RecorderAppModel: NSObject, ObservableObject, UNUserNotificationCent
             } catch {
                 await stopRecallSDKLevelMetering()
                 let failedBackend = activeRecordingBackend
+                if let payload = stoppedUploadPayload,
+                   let client = activeClient {
+                    await handleUploadFailure(
+                        client: client,
+                        payload: payload,
+                        error: error
+                    )
+                }
                 isRecording = false
                 activeClient = nil
                 activeFallbackIntentId = nil
                 activeRecordingTitle = nil
                 activeRecordingBackend = nil
                 resetAudioLevels()
-                statusText = failedBackend == .recallDesktopSDK
-                    ? "Could not stop recording"
-                    : "Could not upload recording. Files kept locally."
+                if failedBackend == .recallDesktopSDK {
+                    statusText = "Could not stop recording"
+                } else if stoppedUploadPayload == nil {
+                    statusText = "Could not save recording"
+                }
             }
         }
     }
@@ -1453,8 +1474,14 @@ final class RecorderAppModel: NSObject, ObservableObject, UNUserNotificationCent
                 return
             } catch {
                 lastError = error
-                if attempt < 3 {
-                    try await Task.sleep(for: .seconds(5))
+                switch localRecorderUploadRetryDecision(
+                    error: error,
+                    attempt: attempt
+                ) {
+                case let .retry(afterSeconds):
+                    try await Task.sleep(for: .seconds(afterSeconds))
+                case .wait, .stop:
+                    throw error
                 }
             }
         }
@@ -1472,7 +1499,8 @@ final class RecorderAppModel: NSObject, ObservableObject, UNUserNotificationCent
             do {
                 _ = try await client.completeRecordingUpload(payload: payload)
                 return payload
-            } catch LocalRecorderAPIError.httpStatus(409) {
+            } catch let LocalRecorderAPIError.httpStatus(statusCode, _, _)
+                where statusCode == 409 {
                 payload.uploadAssets = nil
                 try uploadQueue.save(payload)
             }
@@ -1489,11 +1517,52 @@ final class RecorderAppModel: NSObject, ObservableObject, UNUserNotificationCent
         do {
             _ = try await client.completeRecordingUpload(payload: payload)
             return payload
-        } catch LocalRecorderAPIError.httpStatus(409) {
+        } catch let LocalRecorderAPIError.httpStatus(
+            statusCode,
+            message,
+            retryAfterSeconds
+        )
+            where statusCode == 409 {
             payload.uploadAssets = nil
             try uploadQueue.save(payload)
-            throw LocalRecorderAPIError.httpStatus(409)
+            throw LocalRecorderAPIError.httpStatus(
+                statusCode,
+                message: message,
+                retryAfterSeconds: retryAfterSeconds
+            )
         }
+    }
+
+    private func handleUploadFailure(
+        client: LocalRecorderAPIClient,
+        payload: LocalRecordingUploadPayload,
+        error: Error
+    ) async {
+        if case let .wait(retryAfterSeconds) = localRecorderUploadRetryDecision(
+            error: error,
+            attempt: 1
+        ) {
+            queuedUploadRetryAfter = Date().addingTimeInterval(
+                TimeInterval(retryAfterSeconds)
+            )
+            statusText = "Upload paused. Retrying later."
+            return
+        }
+
+        guard isPermanentLocalRecorderUploadError(error) else {
+            statusText = "Could not upload recording. Files kept locally."
+            return
+        }
+
+        let message = localRecorderUploadErrorMessage(error)
+        try? await client.failIntent(
+            fallbackIntentId: payload.fallbackIntentId,
+            errorMessage: message
+        )
+        try? uploadQueue.quarantine(
+            clientRecordingId: payload.clientRecordingId
+        )
+        statusText = "Upload stopped: \(message). Files kept locally."
     }
 }
 

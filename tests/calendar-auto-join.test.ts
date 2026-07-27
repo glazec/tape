@@ -420,7 +420,7 @@ describe("calendar auto join", () => {
     expect(scheduleRecallCalendarEventBot).not.toHaveBeenCalled();
   });
 
-  it("reconciles one overlapping manual recording into a past Microsoft Teams event", async () => {
+  it("reconciles one overlapping SDK fallback recording into a past Microsoft Teams event", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-07-01T13:00:00.000Z"));
     const teamsUrl =

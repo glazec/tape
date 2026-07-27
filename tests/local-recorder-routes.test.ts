@@ -340,18 +340,21 @@ describe("local recorder API routes", () => {
         },
       },
     });
-    expect(prepareLocalRecorderRecordingUpload).toHaveBeenCalledWith({
-      clientRecordingId: "recording_123",
-      deviceId: "mac_123",
-      fallbackIntentId: "intent_123",
-      manifest: { appVersion: "0.1.0" },
-      recordingStartedAt: new Date("2026-06-30T12:02:00.000Z"),
-      recordingStoppedAt: new Date("2026-06-30T13:00:00.000Z"),
-      workspace: {
-        teamId: "team_123",
-        userId: "user_123",
+    expect(prepareLocalRecorderRecordingUpload).toHaveBeenCalledWith(
+      {
+        clientRecordingId: "recording_123",
+        deviceId: "mac_123",
+        fallbackIntentId: "intent_123",
+        manifest: { appVersion: "0.1.0" },
+        recordingStartedAt: new Date("2026-06-30T12:02:00.000Z"),
+        recordingStoppedAt: new Date("2026-06-30T13:00:00.000Z"),
+        workspace: {
+          teamId: "team_123",
+          userId: "user_123",
+        },
       },
-    });
+      { authorizeUpload: expect.any(Function) },
+    );
   });
 
   it("creates a Recall Desktop SDK upload for speaker attributed local recording", async () => {

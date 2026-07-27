@@ -46,6 +46,10 @@ describe("reconcileStaleMeetingJobs", () => {
     const query = new PgDialect().sqlToQuery(execute.mock.calls[0]![0]).sql;
     expect(query).not.toContain("select latest.status");
     expect(query).toContain("from stale_transcript_jobs");
+    expect(query).toContain("stale_local_uploads as");
+    expect(query).toContain("attempt.attempt_state = 'uploading'");
+    expect(query).toContain("local_recording_attempt_id = attempt.id");
+    expect(query).toContain("from stale_local_uploads");
     // Stale jobs are failed unconditionally (no newer-sibling exemption), so
     // zombies never block re-transcription; the meeting is only failed when no
     // live job remains.

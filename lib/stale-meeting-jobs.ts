@@ -25,6 +25,21 @@ export async function reconcileStaleMeetingJobs(
         and updated_at < ${cutoff}
       returning meeting_id
     ),
+    stale_local_uploads as (
+      update local_recording_attempts as attempt
+      set
+        attempt_state = 'failed',
+        error_message = 'Local recording upload timed out',
+        updated_at = ${now}
+      where attempt.attempt_state = 'uploading'
+        and attempt.updated_at < ${cutoff}
+        and not exists (
+          select 1
+          from local_recordings as recording
+          where recording.local_recording_attempt_id = attempt.id
+        )
+      returning attempt.meeting_id
+    ),
     failed_meetings as (
       update meetings as meeting
       set
@@ -33,6 +48,7 @@ export async function reconcileStaleMeetingJobs(
       where meeting.status = 'processing'
         and (
           meeting.id in (select meeting_id from stale_transcript_jobs)
+          or meeting.id in (select meeting_id from stale_local_uploads)
           or (
             meeting.updated_at < ${cutoff}
             and (

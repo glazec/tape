@@ -347,7 +347,7 @@ public struct LocalRecorderAPIClient: Sendable {
         let (data, response) = try await URLSession.shared.data(
             for: missedMeetingsRequest()
         )
-        try validateHTTPResponse(response)
+        try validateHTTPResponse(data: data, response: response)
 
         return try JSONDecoder.localRecorder
             .decode(MissedMeetingsResponse.self, from: data)
@@ -367,7 +367,7 @@ public struct LocalRecorderAPIClient: Sendable {
         let (data, response) = try await URLSession.shared.data(
             for: monitoringRequest()
         )
-        try validateHTTPResponse(response)
+        try validateHTTPResponse(data: data, response: response)
 
         return try JSONDecoder.localRecorder.decode(
             LocalRecorderMonitoringResponse.self,
@@ -388,7 +388,7 @@ public struct LocalRecorderAPIClient: Sendable {
         let (data, response) = try await URLSession.shared.data(
             for: manualIntentRequest()
         )
-        try validateHTTPResponse(response)
+        try validateHTTPResponse(data: data, response: response)
 
         return try JSONDecoder.localRecorder.decode(
             ManualRecordingIntentResponse.self,
@@ -421,7 +421,7 @@ public struct LocalRecorderAPIClient: Sendable {
         let (data, response) = try await URLSession.shared.data(
             for: claimRequest(fallbackIntentId: fallbackIntentId, explicit: explicit)
         )
-        try validateHTTPResponse(response)
+        try validateHTTPResponse(data: data, response: response)
 
         return try JSONDecoder.localRecorder.decode(ClaimIntentResponse.self, from: data)
     }
@@ -452,8 +452,8 @@ public struct LocalRecorderAPIClient: Sendable {
             fallbackIntentId: fallbackIntentId,
             errorMessage: errorMessage
         )
-        let (_, response) = try await URLSession.shared.data(for: request)
-        try validateHTTPResponse(response)
+        let (data, response) = try await URLSession.shared.data(for: request)
+        try validateHTTPResponse(data: data, response: response)
     }
 
     public func prepareUploadRequest(payload: LocalRecordingUploadPayload) throws -> URLRequest {
@@ -474,7 +474,7 @@ public struct LocalRecorderAPIClient: Sendable {
     ) async throws -> PreparedLocalRecordingUploadResponse {
         let request = try prepareUploadRequest(payload: payload)
         let (data, response) = try await URLSession.shared.data(for: request)
-        try validateHTTPResponse(response)
+        try validateHTTPResponse(data: data, response: response)
 
         return try JSONDecoder.localRecorder.decode(
             PreparedLocalRecordingUploadResponse.self,
@@ -510,7 +510,7 @@ public struct LocalRecorderAPIClient: Sendable {
             clientRecordingId: clientRecordingId
         )
         let (data, response) = try await URLSession.shared.data(for: request)
-        try validateHTTPResponse(response)
+        try validateHTTPResponse(data: data, response: response)
 
         return try JSONDecoder.localRecorder.decode(
             RecallSDKUploadResponse.self,
@@ -539,8 +539,8 @@ public struct LocalRecorderAPIClient: Sendable {
         let request = try recallSDKFallbackRequest(
             fallbackIntentId: fallbackIntentId
         )
-        let (_, response) = try await URLSession.shared.data(for: request)
-        try validateHTTPResponse(response)
+        let (data, response) = try await URLSession.shared.data(for: request)
+        try validateHTTPResponse(data: data, response: response)
     }
 
     public func directUploadRequest(
@@ -593,7 +593,7 @@ public struct LocalRecorderAPIClient: Sendable {
     ) async throws -> LocalRecordingUploadResponse {
         let request = try completeUploadRequest(payload: payload)
         let (data, response) = try await URLSession.shared.data(for: request)
-        try validateHTTPResponse(response)
+        try validateHTTPResponse(data: data, response: response)
 
         return try JSONDecoder.localRecorder.decode(
             LocalRecordingUploadResponse.self,
@@ -617,13 +617,13 @@ public struct LocalRecorderAPIClient: Sendable {
         }
     }
 
-    private func validateHTTPResponse(_ response: URLResponse) throws {
+    private func validateHTTPResponse(data: Data, response: URLResponse) throws {
         guard let httpResponse = response as? HTTPURLResponse else {
             throw LocalRecorderAPIError.invalidResponse
         }
 
         guard (200..<300).contains(httpResponse.statusCode) else {
-            throw LocalRecorderAPIError.httpStatus(httpResponse.statusCode)
+            throw localRecorderHTTPError(data: data, response: httpResponse)
         }
     }
 
@@ -635,18 +635,93 @@ public struct LocalRecorderAPIClient: Sendable {
             uploadURL: asset.uploadUrl,
             contentType: asset.contentType
         )
-        let (_, response) = try await URLSession.shared.upload(
+        let (data, response) = try await URLSession.shared.upload(
             for: request,
             fromFile: fileURL
         )
-        try validateHTTPResponse(response)
+        try validateHTTPResponse(data: data, response: response)
     }
 }
 
 public enum LocalRecorderAPIError: Error, Equatable {
     case invalidResponse
-    case httpStatus(Int)
+    case httpStatus(
+        Int,
+        message: String? = nil,
+        retryAfterSeconds: Int? = nil
+    )
     case missingPreparedUpload
+}
+
+func localRecorderHTTPError(
+    data: Data,
+    response: HTTPURLResponse
+) -> LocalRecorderAPIError {
+    let message = try? JSONDecoder().decode(
+        LocalRecorderAPIErrorResponse.self,
+        from: data
+    ).error
+    let retryAfterSeconds = response.value(
+        forHTTPHeaderField: "Retry-After"
+    ).flatMap(Int.init)
+
+    return .httpStatus(
+        response.statusCode,
+        message: message,
+        retryAfterSeconds: retryAfterSeconds
+    )
+}
+
+public enum LocalRecorderUploadRetryDecision: Equatable {
+    case retry(afterSeconds: Int)
+    case wait(retryAfterSeconds: Int)
+    case stop
+}
+
+public func localRecorderUploadRetryDecision(
+    error: Error,
+    attempt: Int
+) -> LocalRecorderUploadRetryDecision {
+    guard case let LocalRecorderAPIError.httpStatus(
+        statusCode,
+        _,
+        retryAfterSeconds
+    ) = error else {
+        return attempt < 3 ? .retry(afterSeconds: 5) : .stop
+    }
+
+    if statusCode == 429 {
+        return .wait(retryAfterSeconds: max(1, retryAfterSeconds ?? 60))
+    }
+
+    if statusCode == 408 || statusCode == 425 || statusCode >= 500 {
+        return attempt < 3 ? .retry(afterSeconds: 5) : .stop
+    }
+
+    return .stop
+}
+
+public func localRecorderUploadErrorMessage(_ error: Error) -> String {
+    guard case let LocalRecorderAPIError.httpStatus(_, message, _) = error else {
+        return "Local recording upload failed"
+    }
+
+    return message ?? "Local recording upload failed"
+}
+
+public func isPermanentLocalRecorderUploadError(_ error: Error) -> Bool {
+    guard case let LocalRecorderAPIError.httpStatus(statusCode, _, _) = error else {
+        return false
+    }
+
+    return (400..<500).contains(statusCode) &&
+        statusCode != 408 &&
+        statusCode != 425 &&
+        statusCode != 429
+}
+
+private struct LocalRecorderAPIErrorResponse: Decodable {
+    var error: String
 }
 
 public enum LocalRecorderLoginCallbackError: Error, Equatable {
@@ -1089,6 +1164,18 @@ public struct LocalRecordingUploadQueue: Sendable {
         }
 
         try FileManager.default.removeItem(at: url)
+    }
+
+    public func quarantine(clientRecordingId: String) throws {
+        let url = itemURL(clientRecordingId: clientRecordingId)
+        guard FileManager.default.fileExists(atPath: url.path) else {
+            return
+        }
+
+        try FileManager.default.moveItem(
+            at: url,
+            to: url.appendingPathExtension("failed-\(UUID().uuidString)")
+        )
     }
 
     private func itemURL(clientRecordingId: String) -> URL {

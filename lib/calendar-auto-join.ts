@@ -917,7 +917,6 @@ async function findMatchingManualLocalRecorderMeeting(input: {
         eq(meetings.ownerUserId, input.ownerUserId),
         eq(meetings.platform, "in_person"),
         isNull(meetings.calendarEventId),
-        eq(localRecordingAttempts.notificationState, "manual"),
         isNotNull(meetings.startedAt),
         lte(meetings.startedAt, windowEnd),
         gte(meetings.startedAt, windowStart),

@@ -789,38 +789,94 @@ describe("local recorder records", () => {
         meetingId: "meeting_1",
       }]))
       .mockReturnValueOnce(selectRows([]));
-    db.update.mockReturnValue({
-      set: vi.fn(() => ({ where: vi.fn().mockResolvedValue(undefined) })),
-    });
+    const updateSet = vi.fn(() => ({
+      where: vi.fn().mockResolvedValue(undefined),
+    }));
+    db.update.mockReturnValue({ set: updateSet });
+    const authorizeUpload = vi.fn().mockResolvedValue(undefined);
     createUploadUrl
       .mockResolvedValueOnce("https://upload/computer")
       .mockResolvedValueOnce("https://upload/microphone")
       .mockResolvedValueOnce("https://upload/synthesized");
 
-    const result = await prepareLocalRecorderRecordingUpload({
-      clientRecordingId: "recording_1",
-      deviceId: "mac_1",
-      fallbackIntentId: "intent_1",
-      manifest: {},
-      recordingStartedAt: new Date("2026-07-20T12:00:00.000Z"),
-      recordingStoppedAt: new Date("2026-07-20T12:10:00.000Z"),
-      workspace: workspace(),
-    });
+    const result = await prepareLocalRecorderRecordingUpload(
+      {
+        clientRecordingId: "recording_1",
+        deviceId: "mac_1",
+        fallbackIntentId: "intent_1",
+        manifest: {},
+        recordingStartedAt: new Date("2026-07-20T12:00:00.000Z"),
+        recordingStoppedAt: new Date("2026-07-20T12:10:00.000Z"),
+        workspace: workspace(),
+      },
+      { authorizeUpload },
+    );
 
     expect(result.assets.computerAudio.uploadUrl).toBe("https://upload/computer");
     expect(result.assets.microphoneAudio.uploadUrl).toBe("https://upload/microphone");
     expect(result.assets.synthesizedAudio.uploadUrl).toBe("https://upload/synthesized");
+    expect(authorizeUpload).toHaveBeenCalledTimes(1);
+    expect(db.update).toHaveBeenCalledTimes(2);
+    expect(updateSet).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({ attemptState: "uploading" }),
+    );
+    expect(updateSet).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({ status: "processing" }),
+    );
     expect(createUploadUrl).toHaveBeenCalledTimes(3);
   });
 
   it("rejects preparing a recording that was already uploaded", async () => {
+    const authorizeUpload = vi.fn().mockResolvedValue(undefined);
     db.select
       .mockReturnValueOnce(selectRows([uploadableAttempt()]))
       .mockReturnValueOnce(selectRows([{ id: "recording_1", meetingId: "meeting_1" }]));
 
     await expect(
-      prepareLocalRecorderRecordingUpload(recordingUploadInput()),
+      prepareLocalRecorderRecordingUpload(
+        recordingUploadInput(),
+        { authorizeUpload },
+      ),
     ).rejects.toThrow("Local recording already uploaded");
+    expect(authorizeUpload).not.toHaveBeenCalled();
+    expect(createUploadUrl).not.toHaveBeenCalled();
+  });
+
+  it("fails a matched attempt whose recording starts after intent expiry", async () => {
+    const updateSet = vi.fn(() => ({
+      where: vi.fn().mockResolvedValue(undefined),
+    }));
+    db.update.mockReturnValue({ set: updateSet });
+    db.select.mockReturnValueOnce(
+      selectRows([
+        {
+          attemptState: "started",
+          expiresAt: new Date("2026-07-20T11:59:00.000Z"),
+          id: "attempt_1",
+          meetingId: "meeting_1",
+        },
+      ]),
+    );
+
+    await expect(
+      prepareLocalRecorderRecordingUpload(recordingUploadInput()),
+    ).rejects.toThrow(
+      "Recording start time does not match the claimed intent",
+    );
+
+    expect(updateSet).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        attemptState: "failed",
+        errorMessage: "Recording start time does not match the claimed intent",
+      }),
+    );
+    expect(updateSet).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({ status: "failed" }),
+    );
     expect(createUploadUrl).not.toHaveBeenCalled();
   });
 

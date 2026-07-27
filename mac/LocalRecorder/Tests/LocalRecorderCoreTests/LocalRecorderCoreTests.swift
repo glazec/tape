@@ -812,6 +812,89 @@ import Testing
     #expect(try queue.load().map(\.clientRecordingId) == ["recording_new"])
 }
 
+@Test func uploadQueueQuarantinesPermanentFailuresWithoutDeletingAudio() throws {
+    let temporaryDirectory = FileManager.default.temporaryDirectory
+        .appending(path: UUID().uuidString, directoryHint: .isDirectory)
+    let queueDirectory = temporaryDirectory.appending(path: "queue", directoryHint: .isDirectory)
+    let recordingDirectory = temporaryDirectory.appending(
+        path: "recording",
+        directoryHint: .isDirectory
+    )
+    try FileManager.default.createDirectory(
+        at: recordingDirectory,
+        withIntermediateDirectories: true
+    )
+    defer {
+        try? FileManager.default.removeItem(at: temporaryDirectory)
+    }
+
+    let queue = LocalRecordingUploadQueue(directoryURL: queueDirectory)
+    let payload = makeUploadPayload(
+        clientRecordingId: "recording_failed",
+        recordingStartedAt: Date(timeIntervalSince1970: 10),
+        directoryURL: recordingDirectory
+    )
+    try Data().write(to: payload.synthesizedAudioURL)
+    try queue.save(payload)
+    try queue.quarantine(clientRecordingId: payload.clientRecordingId)
+
+    #expect(try queue.load().isEmpty)
+    #expect(FileManager.default.fileExists(atPath: payload.synthesizedAudioURL.path))
+    let queueItems = try FileManager.default.contentsOfDirectory(
+        at: queueDirectory,
+        includingPropertiesForKeys: nil
+    )
+    #expect(
+        queueItems.contains {
+            $0.lastPathComponent.hasPrefix("recording_failed.json.failed-")
+        }
+    )
+}
+
+@Test func uploadErrorsPreserveReasonAndRetryAfter() throws {
+    let response = try #require(
+        HTTPURLResponse(
+            url: URL(string: "https://app.example.com")!,
+            statusCode: 429,
+            httpVersion: nil,
+            headerFields: ["Retry-After": "37"]
+        )
+    )
+    let error = localRecorderHTTPError(
+        data: Data(#"{"error":"Too many requests"}"#.utf8),
+        response: response
+    )
+
+    #expect(
+        error == .httpStatus(
+            429,
+            message: "Too many requests",
+            retryAfterSeconds: 37
+        )
+    )
+    #expect(
+        localRecorderUploadRetryDecision(error: error, attempt: 1) ==
+            .wait(retryAfterSeconds: 37)
+    )
+    #expect(!isPermanentLocalRecorderUploadError(error))
+}
+
+@Test func uploadRetryStopsPermanentConflictImmediately() {
+    let error = LocalRecorderAPIError.httpStatus(
+        409,
+        message: "No matching local recording intent"
+    )
+
+    #expect(
+        localRecorderUploadRetryDecision(error: error, attempt: 1) == .stop
+    )
+    #expect(isPermanentLocalRecorderUploadError(error))
+    #expect(
+        localRecorderUploadErrorMessage(error) ==
+            "No matching local recording intent"
+    )
+}
+
 @Test func uploadQueueQuarantinesCorruptItemsAndLoadsValidRecordings() throws {
     let temporaryDirectory = FileManager.default.temporaryDirectory
         .appending(path: UUID().uuidString, directoryHint: .isDirectory)

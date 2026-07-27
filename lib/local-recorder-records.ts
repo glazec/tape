@@ -823,7 +823,10 @@ export async function failLocalRecorderIntent(input: {
     .update(meetings)
     .set({ status: "failed", updatedAt: input.now })
     .where(
-      and(eq(meetings.id, attempt.meetingId), eq(meetings.status, "recording")),
+      and(
+        eq(meetings.id, attempt.meetingId),
+        inArray(meetings.status, ["recording", "processing"]),
+      ),
     );
 
   return { failed: true };
@@ -837,7 +840,9 @@ export async function prepareLocalRecorderRecordingUpload(input: {
   recordingStartedAt: Date;
   recordingStoppedAt: Date;
   workspace: WorkspaceContext;
-}) {
+}, options: {
+  authorizeUpload?: () => Promise<void>;
+} = {}) {
   const now = new Date();
   const attempt = await getUploadableLocalRecorderAttempt(input);
 
@@ -848,10 +853,21 @@ export async function prepareLocalRecorderRecordingUpload(input: {
     throw new LocalRecorderUploadError("Local recording already uploaded");
   }
 
+  await options.authorizeUpload?.();
+
   await db
     .update(localRecordingAttempts)
     .set({ attemptState: "uploading", updatedAt: now })
     .where(eq(localRecordingAttempts.id, attempt.id));
+  await db
+    .update(meetings)
+    .set({ status: "processing", updatedAt: now })
+    .where(
+      and(
+        eq(meetings.id, attempt.meetingId),
+        eq(meetings.status, "recording"),
+      ),
+    );
 
   const assetIds = createLocalRecorderAssetIds();
   const keys = buildLocalRecorderObjectKeys({
@@ -1256,6 +1272,33 @@ async function getUploadableLocalRecorderAttempt(input: {
       recordingStartedAt: input.recordingStartedAt,
     })
   ) {
+    if (
+      ["started", "uploading"].includes(attempt.attemptState) &&
+      input.recordingStartedAt > attempt.expiresAt
+    ) {
+      const now = new Date();
+      const errorMessage =
+        "Recording start time does not match the claimed intent";
+      await db
+        .update(localRecordingAttempts)
+        .set({
+          attemptState: "failed",
+          errorMessage,
+          updatedAt: now,
+        })
+        .where(eq(localRecordingAttempts.id, attempt.id));
+      await db
+        .update(meetings)
+        .set({ status: "failed", updatedAt: now })
+        .where(
+          and(
+            eq(meetings.id, attempt.meetingId),
+            inArray(meetings.status, ["recording", "processing"]),
+          ),
+        );
+      throw new LocalRecorderUploadError(errorMessage);
+    }
+
     throw new LocalRecorderUploadError("No matching local recording intent");
   }
 

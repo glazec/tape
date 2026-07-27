@@ -29,10 +29,6 @@ export async function POST(request: Request) {
 
   try {
     await assertWorkspaceHasProviderCredit(deviceContext.workspace);
-    await assertRequestRateLimit({
-      ...requestRateLimitPolicies.localRecorderProviderUpload,
-      subject: `${deviceContext.workspace.teamId}:${deviceContext.workspace.userId}`,
-    });
     const body = await request.json().catch(() => null);
     const parsed = parseLocalRecorderUploadPrepareRequest(body);
 
@@ -47,6 +43,13 @@ export async function POST(request: Request) {
       ...parsed.value,
       deviceId: deviceContext.deviceId,
       workspace: deviceContext.workspace,
+    }, {
+      authorizeUpload: async () => {
+        await assertRequestRateLimit({
+          ...requestRateLimitPolicies.localRecorderProviderUpload,
+          subject: `${deviceContext.workspace.teamId}:${deviceContext.workspace.userId}`,
+        });
+      },
     });
 
     return Response.json(result);
