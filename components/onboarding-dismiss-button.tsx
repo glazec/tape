@@ -6,13 +6,20 @@ import { Button } from "@/components/ui/button";
 
 const ONE_YEAR_IN_SECONDS = 365 * 24 * 60 * 60;
 
-export function OnboardingDismissButton({ cookieName }: { cookieName: string }) {
+export function OnboardingDismissButton({
+  cookieName,
+  onDismiss,
+}: {
+  cookieName: string;
+  onDismiss?: () => void;
+}) {
   const router = useRouter();
 
   function dismissOnboarding() {
     const secure = window.location.protocol === "https:" ? "; Secure" : "";
     document.cookie = `${cookieName}=1; Path=/; Max-Age=${ONE_YEAR_IN_SECONDS}; SameSite=Lax${secure}`;
-    router.replace("/dashboard");
+    onDismiss?.();
+    router.replace("/dashboard", { scroll: false });
   }
 
   return (

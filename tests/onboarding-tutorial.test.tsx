@@ -1,10 +1,21 @@
+// @vitest-environment happy-dom
+
+import { fireEvent, render, screen } from "@testing-library/react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 
 import { OnboardingTutorial } from "@/components/onboarding-tutorial";
 
 vi.mock("@/components/onboarding-dismiss-button", () => ({
-  OnboardingDismissButton: () => <button type="button">Hide tutorial</button>,
+  OnboardingDismissButton: ({
+    onDismiss,
+  }: {
+    onDismiss?: () => void;
+  }) => (
+    <button onClick={onDismiss} type="button">
+      Hide tutorial
+    </button>
+  ),
 }));
 
 vi.mock("@/components/calendar-sync-button", () => ({
@@ -135,4 +146,27 @@ describe("OnboardingTutorial", () => {
     expect(html).not.toContain("Calendar connected");
   });
 
+  it("shows the dashboard skeleton immediately after dismissal", () => {
+    render(
+      <OnboardingTutorial
+        autoSyncCalendar={false}
+        calendarStatus={{
+          connected: false,
+          autoJoinEnabled: false,
+          recallCalendarLastSyncedAt: null,
+          recallCalendarStatus: null,
+        }}
+        dismissedFallback={<div>Loading dashboard overview</div>}
+        dismissalCookieName="tape_onboarding_hidden_user_team"
+        forceCalendarSync={false}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Hide tutorial" }));
+
+    expect(screen.queryByText("Set up Tape")).toBeNull();
+    expect(screen.getByText("Loading dashboard overview").textContent).toBe(
+      "Loading dashboard overview",
+    );
+  });
 });

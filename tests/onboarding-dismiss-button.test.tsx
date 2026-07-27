@@ -23,11 +23,18 @@ describe("OnboardingDismissButton", () => {
   });
 
   it("persists dismissal and returns to the dashboard", () => {
-    render(<OnboardingDismissButton cookieName={cookieName} />);
+    const onDismiss = vi.fn();
+    render(
+      <OnboardingDismissButton
+        cookieName={cookieName}
+        onDismiss={onDismiss}
+      />,
+    );
 
     fireEvent.click(screen.getByRole("button", { name: "Hide tutorial" }));
 
     expect(document.cookie).toContain(`${cookieName}=1`);
-    expect(replace).toHaveBeenCalledWith("/dashboard");
+    expect(onDismiss).toHaveBeenCalledOnce();
+    expect(replace).toHaveBeenCalledWith("/dashboard", { scroll: false });
   });
 });

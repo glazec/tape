@@ -1,5 +1,7 @@
+"use client";
+
 import { ChevronDown, CheckCircle2, ExternalLink } from "lucide-react";
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 
 import { CalendarSyncButton } from "@/components/calendar-sync-button";
 import { CopyMcpAddressButton } from "@/components/copy-mcp-address-button";
@@ -26,19 +28,26 @@ const MAC_APP_DOWNLOAD_URL =
 export function OnboardingTutorial({
   autoSyncCalendar,
   calendarStatus,
+  dismissedFallback,
   dismissalCookieName,
   forceCalendarSync,
 }: {
   autoSyncCalendar: boolean;
   calendarStatus: CalendarConnectionSummary;
+  dismissedFallback?: ReactNode;
   dismissalCookieName: string;
   forceCalendarSync: boolean;
 }) {
+  const [dismissed, setDismissed] = useState(false);
   const calendarReady =
     !forceCalendarSync &&
     calendarStatus.connected &&
     calendarStatus.autoJoinEnabled &&
     calendarStatus.recallCalendarStatus === "connected";
+
+  if (dismissed) {
+    return dismissedFallback;
+  }
 
   return (
     <Card className="gap-0 py-0 shadow-sm" aria-labelledby="onboarding-title">
@@ -55,7 +64,10 @@ export function OnboardingTutorial({
           Start with automatic capture, then add the tools you need.
         </CardDescription>
         <CardAction>
-          <OnboardingDismissButton cookieName={dismissalCookieName} />
+          <OnboardingDismissButton
+            cookieName={dismissalCookieName}
+            onDismiss={() => setDismissed(true)}
+          />
         </CardAction>
       </CardHeader>
       <CardContent className="px-0">

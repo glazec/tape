@@ -283,6 +283,7 @@ async function DashboardOverview({
         <OnboardingTutorial
           autoSyncCalendar={getSearchParamValue(syncCalendar) === "1"}
           calendarStatus={calendarStatus}
+          dismissedFallback={<DashboardOverviewSkeleton />}
           dismissalCookieName={onboardingHiddenCookieName}
           forceCalendarSync={calendarErrorCode === "sync_failed"}
         />
