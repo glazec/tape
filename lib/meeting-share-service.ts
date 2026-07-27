@@ -1,6 +1,6 @@
 import { and, asc, eq, isNull, or, sql } from "drizzle-orm";
 
-import { db } from "@/db/client";
+import { databaseSql, db } from "@/db/client";
 import {
   meetingAccessExclusions,
   meetingAccessSources,
@@ -17,17 +17,6 @@ export type ActiveMeetingShare = {
   scope: MeetingShareScope;
 };
 
-function postgresArray(values: readonly string[], type: "text" | "uuid") {
-  const elements = sql.join(
-    values.map((value) => sql`${value}`),
-    sql`, `,
-  );
-
-  return type === "text"
-    ? sql`array[${elements}]::text[]`
-    : sql`array[${elements}]::uuid[]`;
-}
-
 export async function createMeetingSharePolicy(input: {
   createdByUserId: string;
   matchKeys: string[];
@@ -39,14 +28,8 @@ export async function createMeetingSharePolicy(input: {
   teamId: string;
 }) {
   const policyId = crypto.randomUUID();
-  const matchKeys = postgresArray(input.matchKeys, "text");
-  const meetingIds = postgresArray(input.meetingIds, "uuid");
-  const result = await db.execute<{ id: string; pending: boolean }>(sql`
-    with cleared_exclusions as (
-      delete from meeting_access_exclusions
-      where meeting_id = any(${meetingIds})
-        and recipient_email = ${input.recipientEmail}
-    ), active_policy as (
+  const result = await databaseSql.transaction((transaction) => [
+    transaction`
       insert into meeting_share_policies (
         id,
         team_id,
@@ -77,100 +60,120 @@ export async function createMeetingSharePolicy(input: {
           created_by_user_id = excluded.created_by_user_id,
           updated_at = now()
       returning id
-    ), new_keys as (
-      insert into meeting_share_policy_keys (policy_id, match_key)
-      select active_policy.id, key
+    `,
+    transaction`
+      with active_policy as (
+        select id
+        from meeting_share_policies
+        where team_id = ${input.teamId}::uuid
+          and owner_user_id = ${input.ownerUserId}::uuid
+          and seed_meeting_id = ${input.seedMeetingId}::uuid
+          and recipient_email = ${input.recipientEmail}
+          and scope = ${input.scope}
+          and revoked_at is null
+      ), cleared_exclusions as (
+        delete from meeting_access_exclusions
+        where meeting_id = any(${input.meetingIds}::uuid[])
+          and recipient_email = ${input.recipientEmail}
+      ), new_keys as (
+        insert into meeting_share_policy_keys (policy_id, match_key)
+        select active_policy.id, key
+        from active_policy
+        cross join unnest(${input.matchKeys}::text[]) as key
+        on conflict (policy_id, match_key) do nothing
+      ), new_sources as (
+        insert into meeting_access_sources (
+          meeting_id,
+          recipient_email,
+          role,
+          source,
+          source_id,
+          created_by_user_id
+        )
+        select
+          meeting_id,
+          ${input.recipientEmail},
+          'shared',
+          'share_policy',
+          active_policy.id::text,
+          ${input.createdByUserId}::uuid
+        from active_policy
+        cross join unnest(${input.meetingIds}::uuid[]) as meeting_id
+        on conflict (meeting_id, recipient_email, source, source_id) do update
+        set role = excluded.role,
+            created_by_user_id = excluded.created_by_user_id,
+            revoked_at = null,
+            updated_at = now()
+      ), access_grants as (
+        insert into meeting_access (
+          meeting_id,
+          user_id,
+          role,
+          source,
+          source_id,
+          created_by_user_id
+        )
+        select
+          meeting_id,
+          app_user.id,
+          'shared',
+          'effective',
+          'materialized',
+          ${input.createdByUserId}::uuid
+        from unnest(${input.meetingIds}::uuid[]) as meeting_id
+        join users as app_user on lower(app_user.email) = ${input.recipientEmail}
+        on conflict (meeting_id, user_id) do update
+        set role = excluded.role,
+            source = 'effective',
+            source_id = 'materialized',
+            created_by_user_id = excluded.created_by_user_id,
+            revoked_at = null,
+            updated_at = now()
+      ), invite_grants as (
+        insert into meeting_share_invites (
+          meeting_id,
+          email,
+          role,
+          created_by_user_id,
+          source,
+          source_id
+        )
+        select
+          meeting_id,
+          ${input.recipientEmail},
+          'shared',
+          ${input.createdByUserId}::uuid,
+          'effective',
+          'materialized'
+        from unnest(${input.meetingIds}::uuid[]) as meeting_id
+        where not exists (
+          select 1 from users where lower(email) = ${input.recipientEmail}
+        )
+        on conflict (meeting_id, email) do update
+        set role = excluded.role,
+            created_by_user_id = excluded.created_by_user_id,
+            source = 'effective',
+            source_id = 'materialized',
+            accepted_at = null,
+            revoked_at = null,
+            updated_at = now()
+      )
+      select
+        active_policy.id,
+        not exists (
+          select 1 from users where lower(email) = ${input.recipientEmail}
+        ) as pending
       from active_policy
-      cross join unnest(${matchKeys}) as key
-      on conflict (policy_id, match_key) do nothing
-    ), new_sources as (
-      insert into meeting_access_sources (
-        meeting_id,
-        recipient_email,
-        role,
-        source,
-        source_id,
-        created_by_user_id
-      )
-      select
-        meeting_id,
-        ${input.recipientEmail},
-        'shared',
-        'share_policy',
-        active_policy.id::text,
-        ${input.createdByUserId}::uuid
-      from active_policy
-      cross join unnest(${meetingIds}) as meeting_id
-      on conflict (meeting_id, recipient_email, source, source_id) do update
-      set role = excluded.role,
-          created_by_user_id = excluded.created_by_user_id,
-          revoked_at = null,
-          updated_at = now()
-    ), access_grants as (
-      insert into meeting_access (
-        meeting_id,
-        user_id,
-        role,
-        source,
-        source_id,
-        created_by_user_id
-      )
-      select
-        meeting_id,
-        app_user.id,
-        'shared',
-        'effective',
-        'materialized',
-        ${input.createdByUserId}::uuid
-      from unnest(${meetingIds}) as meeting_id
-      join users as app_user on lower(app_user.email) = ${input.recipientEmail}
-      on conflict (meeting_id, user_id) do update
-      set role = excluded.role,
-          source = 'effective',
-          source_id = 'materialized',
-          created_by_user_id = excluded.created_by_user_id,
-          revoked_at = null,
-          updated_at = now()
-    ), invite_grants as (
-      insert into meeting_share_invites (
-        meeting_id,
-        email,
-        role,
-        created_by_user_id,
-        source,
-        source_id
-      )
-      select
-        meeting_id,
-        ${input.recipientEmail},
-        'shared',
-        ${input.createdByUserId}::uuid,
-        'effective',
-        'materialized'
-      from unnest(${meetingIds}) as meeting_id
-      where not exists (
-        select 1 from users where lower(email) = ${input.recipientEmail}
-      )
-      on conflict (meeting_id, email) do update
-      set role = excluded.role,
-          created_by_user_id = excluded.created_by_user_id,
-          source = 'effective',
-          source_id = 'materialized',
-          accepted_at = null,
-          revoked_at = null,
-          updated_at = now()
-    )
-    select
-      active_policy.id,
-      not exists (
-        select 1 from users where lower(email) = ${input.recipientEmail}
-      ) as pending
-    from active_policy
-  `);
+    `,
+  ]);
+  const rows = result.at(-1) as
+    | Array<{ id: string; pending: boolean }>
+    | undefined;
+  const row = rows?.[0];
 
   return {
-    id: result.rows[0]?.id ?? policyId,
-    pending: result.rows[0]?.pending ?? true,
+    id: row?.id ?? policyId,
+    pending: row?.pending ?? true,
   };
 }
 

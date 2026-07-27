@@ -1,26 +1,41 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { PgDialect } from "drizzle-orm/pg-core";
 
-const { execute, select } = vi.hoisted(() => ({
+const { execute, select, transaction, txn } = vi.hoisted(() => ({
   execute: vi.fn(),
   select: vi.fn(),
+  transaction: vi.fn(),
+  txn: vi.fn(
+    (strings: TemplateStringsArray, ...params: unknown[]) => ({
+      params,
+      strings: [...strings],
+    }),
+  ),
 }));
 
-vi.mock("@/db/client", () => ({ db: { execute, select } }));
+vi.mock("@/db/client", () => ({
+  databaseSql: { transaction },
+  db: { execute, select },
+}));
 
 describe("meeting share service", () => {
   afterEach(() => {
     vi.resetAllMocks();
   });
 
-  it("creates a policy and all grants in one database statement", async () => {
-    execute.mockResolvedValue({
-      rows: [
-        {
-          id: "55555555-5555-4555-8555-555555555555",
-          pending: false,
-        },
-      ],
+  it("creates a policy and all grants in one database transaction", async () => {
+    transaction.mockImplementation(async (buildQueries) => {
+      const queries = buildQueries(txn);
+
+      return [
+        [{ id: "55555555-5555-4555-8555-555555555555" }],
+        [
+          {
+            id: "55555555-5555-4555-8555-555555555555",
+            pending: false,
+          },
+        ],
+      ].slice(0, queries.length);
     });
     const { createMeetingSharePolicy } = await import(
       "@/lib/meeting-share-service"
@@ -44,24 +59,43 @@ describe("meeting share service", () => {
       id: "55555555-5555-4555-8555-555555555555",
       pending: false,
     });
-    expect(execute).toHaveBeenCalledTimes(1);
-    const query = new PgDialect().sqlToQuery(execute.mock.calls[0][0]).sql;
-    expect(query).toContain("on conflict");
-    expect(query).toContain("where revoked_at is null");
-    expect(query).toMatch(/do update\s+set/);
-    expect(query).toContain("active_policy");
-    expect(query).toContain("delete from meeting_access_exclusions");
-    expect(query).toMatch(/unnest\(array\[\$\d+\]::text\[\]\)/);
-    expect(query).toMatch(
-      /unnest\(array\[\$\d+, \$\d+\]::uuid\[\]\)/,
+    expect(transaction).toHaveBeenCalledTimes(1);
+    expect(txn).toHaveBeenCalledTimes(2);
+    const policyQuery = txn.mock.results[0]?.value;
+    const materializationQuery = txn.mock.results[1]?.value;
+    const policySql = policyQuery?.strings.join(" ") ?? "";
+    const materializationSql =
+      materializationQuery?.strings.join(" ") ?? "";
+    expect(policySql).toContain("insert into meeting_share_policies");
+    expect(policySql).not.toContain("meeting_share_policy_keys");
+    expect(materializationSql).toContain(
+      "from meeting_share_policies",
     );
+    expect(materializationSql).toContain(
+      "insert into meeting_share_policy_keys",
+    );
+    expect(materializationSql).toContain("::text[]");
+    expect(materializationSql).toContain("::uuid[]");
+    expect(materializationQuery?.params).toContainEqual([
+      "title:weekly-sync",
+    ]);
+    expect(materializationQuery?.params).toContainEqual([
+      "22222222-2222-4222-8222-222222222222",
+      "33333333-3333-4333-8333-333333333333",
+    ]);
   });
 
   it("falls back to the generated policy id when the database returns no row", async () => {
     vi.spyOn(globalThis.crypto, "randomUUID").mockReturnValue(
       "55555555-5555-4555-8555-555555555555",
     );
-    execute.mockResolvedValue({ rows: [] });
+    transaction.mockImplementation(async (buildQueries) => {
+      buildQueries(txn);
+      return [
+        [{ id: "55555555-5555-4555-8555-555555555555" }],
+        [],
+      ];
+    });
     const { createMeetingSharePolicy } = await import(
       "@/lib/meeting-share-service"
     );
@@ -81,10 +115,11 @@ describe("meeting share service", () => {
       id: "55555555-5555-4555-8555-555555555555",
       pending: true,
     });
-    const query = new PgDialect().sqlToQuery(execute.mock.calls[0][0]).sql;
-    expect(query).toContain("unnest(array[]::text[])");
-    expect(query).toMatch(/unnest\(array\[\$\d+\]::uuid\[\]\)/);
-    expect(query).not.toContain("unnest(()");
+    const materializationQuery = txn.mock.results[1]?.value;
+    expect(materializationQuery?.params).toContainEqual([]);
+    expect(materializationQuery?.params).toContainEqual([
+      "22222222-2222-4222-8222-222222222222",
+    ]);
   });
 
   it("lists supported active share scopes and their pending state", async () => {
@@ -141,7 +176,9 @@ describe("meeting share service", () => {
     const limit = vi
       .fn()
       .mockResolvedValueOnce([
-        { id: "11111111-1111-4111-8111-111111111111" },
+        {
+          id: "11111111-1111-4111-8111-111111111111",
+        },
       ])
       .mockResolvedValueOnce([]);
     select.mockReturnValue({
