@@ -107,7 +107,7 @@ SQL_SCHEMA = {
             {"name": "id", "type": "uuid", "description": "Meeting id."},
             {"name": "team_id", "type": "uuid", "description": "Workspace team id. Null for shared rows."},
             {"name": "title", "type": "text", "description": "Meeting title."},
-            {"name": "platform", "type": "text", "description": "google_meet, zoom, in_person, or upload."},
+            {"name": "platform", "type": "text", "description": "google_meet, microsoft_teams, zoom, in_person, or upload."},
             {"name": "status", "type": "text", "description": "scheduled, recording, processing, ready, failed, missed, or cancelled. Cancelled rows are excluded."},
             {"name": "access_scope", "type": "text", "description": "workspace or shared."},
             {"name": "meeting_url", "type": "text", "description": "Original meeting URL for workspace scoped rows. Null for shared rows."},

@@ -83,10 +83,15 @@ export default async function MeetingPage({
     scheduledStartedAt: meeting.scheduledStartedAt,
     status: displayStatus,
   });
+  const shouldOfferLocalRecorderGuidance =
+    canManage &&
+    meeting.platform === "microsoft_teams" &&
+    displayStatus === "scheduled";
   const canAddMeetingSource =
     displayStatus === "failed" ||
     displayStatus === "missed" ||
-    (meeting.platform === "in_person" && displayStatus === "scheduled");
+    (meeting.platform === "in_person" && displayStatus === "scheduled") ||
+    shouldOfferLocalRecorderGuidance;
   const shouldCenterMeetingSource =
     canManage &&
     (canAddMeetingSource || shouldOfferBotRecovery) &&
@@ -166,7 +171,28 @@ export default async function MeetingPage({
           <div>
             {shouldCenterMeetingSource ? (
               <div className="mx-auto w-full max-w-2xl py-2 sm:py-6">
-                {shouldOfferBotRecovery ? (
+                {shouldOfferLocalRecorderGuidance ? (
+                  <div className="space-y-4">
+                    <div className="rounded-lg border bg-muted/25 p-5">
+                      <h2 className="text-base font-semibold">
+                        Record this Teams meeting locally
+                      </h2>
+                      <p className="mt-2 text-sm leading-6 text-muted-foreground">
+                        Open Tape for Mac. This meeting appears in Pending
+                        meetings during its recording window, and the app sends
+                        a notification when local capture becomes available.
+                      </p>
+                    </div>
+                    <details className="rounded-lg border bg-muted/20 p-4">
+                      <summary className="cursor-pointer text-sm font-medium outline-none focus-visible:ring-3 focus-visible:ring-ring/50">
+                        Already have a recording or transcript?
+                      </summary>
+                      <div className="mt-4">
+                        <MeetingRecoveryUploadPanel meetingId={meetingId} />
+                      </div>
+                    </details>
+                  </div>
+                ) : shouldOfferBotRecovery ? (
                   <div className="space-y-4">
                     <MeetingBotRecoveryPanel
                       meetingId={meetingId}
@@ -407,6 +433,10 @@ function formatPlatform(platform: string) {
 
   if (platform === "in_person") {
     return "In person";
+  }
+
+  if (platform === "microsoft_teams") {
+    return "Microsoft Teams";
   }
 
   if (platform === "zoom") {

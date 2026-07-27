@@ -295,6 +295,13 @@
       "when": 1786300000000,
       "tag": "0041_mcp_onboarding_usage",
       "breakpoints": true
+    },
+    {
+      "idx": 42,
+      "version": "7",
+      "when": 1786300000001,
+      "tag": "0042_rich_lorna_dane",
+      "breakpoints": true
     }
   ]
 }

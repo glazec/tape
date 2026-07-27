@@ -660,6 +660,26 @@ describe("POST /api/meetings/link", () => {
     expect(createScheduledMeetingBot).not.toHaveBeenCalled();
   });
 
+  it("does not send a bot when a Microsoft Teams link is pasted", async () => {
+    getCurrentUser.mockResolvedValue({
+      id: "user_123",
+      email: "user@example.com",
+      name: null,
+    });
+
+    const response = await postMeetingLink({
+      meetingUrl:
+        "https://teams.microsoft.com/l/meetup-join/19%3ameeting_example%40thread.v2/0",
+    });
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toEqual({
+      error: "Unsupported meeting link",
+    });
+    expect(scheduleRecallBot).not.toHaveBeenCalled();
+    expect(createScheduledMeetingBot).not.toHaveBeenCalled();
+  });
+
   it("returns 502 when Recall scheduling fails", async () => {
     vi.stubEnv("NEXT_PUBLIC_APP_URL", "https://app.example.com");
     getCurrentUser.mockResolvedValue({

@@ -51,6 +51,28 @@ describe("MeetingList", () => {
     expect(html).toContain("1h 30m");
   });
 
+  it("labels Microsoft Teams meetings in the dashboard list", () => {
+    const html = renderToStaticMarkup(
+      <MeetingList
+        meetings={[
+          {
+            id: "11111111-1111-4111-8111-111111111111",
+            title: "Partner sync",
+            platform: "microsoft_teams",
+            startedAt: "2999-01-01T12:00:00.000Z",
+            endedAt: "2999-01-01T12:30:00.000Z",
+            status: "scheduled",
+          },
+        ]}
+      />,
+    );
+
+    expect(html).toContain("Microsoft Teams");
+    expect(html).toContain("Partner sync");
+    expect(html).toContain("Local recording planned");
+    expect(html).not.toContain("No bot linked");
+  });
+
   it("uses transcript timing when a meeting end time is missing", () => {
     const html = renderToStaticMarkup(
       <MeetingList

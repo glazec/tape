@@ -14,7 +14,7 @@ import {
 } from "@/lib/meeting-bot-recovery";
 import {
   buildAppUrl,
-  detectMeetingPlatform,
+  detectBotSupportedMeetingPlatform,
   resolveMeetingJoinUrl,
 } from "@/lib/meeting-links";
 import {
@@ -63,7 +63,7 @@ export async function POST(request: Request) {
     return Response.json({ error: "Invalid meeting link" }, { status: 400 });
   }
 
-  const platform = detectMeetingPlatform(result.data.meetingUrl);
+  const platform = detectBotSupportedMeetingPlatform(result.data.meetingUrl);
 
   if (!platform) {
     return Response.json(

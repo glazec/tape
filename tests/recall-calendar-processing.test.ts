@@ -412,7 +412,14 @@ describe("processRecallCalendarWebhook", () => {
     });
     const repairSql = databaseSql.mock.calls[0]?.[0].join(" ") ?? "";
 
-    expect(repairSql).not.toContain("meeting.id is null");
+    expect(repairSql).toContain("meeting.id is null");
+    expect(repairSql).toContain(
+      "teams[.]microsoft[.]com/(l/meetup-join|meet)/",
+    );
+    expect(repairSql).toContain("teams[.]live[.]com/meet/");
+    expect(repairSql).toContain("meeting.status = 'scheduled'");
+    expect(repairSql).toContain("event.starts_at + interval '1 hour'");
+    expect(repairSql).toContain("<= ");
     expect(repairSql).toContain(
       "meeting.meeting_url is distinct from event.meeting_url",
     );

@@ -148,7 +148,7 @@ The returned URLs require an authenticated application session.
 1. `id`
 2. `team_id` (null for shared rows)
 3. `title`
-4. `platform`
+4. `platform` (`google_meet`, `microsoft_teams`, `zoom`, `in_person`, or `upload`)
 5. `status`
 6. `access_scope`
 7. `meeting_url`

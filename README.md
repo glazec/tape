@@ -4,7 +4,7 @@
 
 # Tape
 
-Tape captures team conversations from Google Meet, Zoom, uploaded media, phone recording, or the macOS recorder and turns them into searchable, shareable meeting records.
+Tape captures team conversations from Google Meet, Zoom, Microsoft Teams through local recording, uploaded media, phone recording, or the macOS recorder and turns them into searchable, shareable meeting records.
 
 This repository is source available for noncommercial use. See [License](#license) before using or redistributing it.
 
@@ -53,7 +53,7 @@ The New meeting page supports four sources:
 3. Pasted transcript text or a TXT, SRT, or VTT file
 4. A focused phone recording flow
 
-Google Calendar can be connected for automatic Recall Calendar V2 capture and repair. The macOS recorder provides a separate fallback for missed cloud recordings.
+Google Calendar can be connected for automatic Recall Calendar V2 capture and repair. Microsoft Teams calendar meetings stay visible in the dashboard and prompt the macOS recorder for local capture instead of scheduling a bot. The recorder also provides a fallback for missed cloud recordings.
 
 ### Review and export
 

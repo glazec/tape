@@ -28,6 +28,7 @@ const timestamps = {
 export const meetingPlatform = pgEnum("meeting_platform", [
   "google_meet",
   "in_person",
+  "microsoft_teams",
   "zoom",
   "upload",
 ]);

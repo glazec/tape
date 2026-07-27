@@ -17,7 +17,7 @@ Turn meetings into dependable team memory. Success means colleagues can understa
 ## Current Workflows
 
 1. Add a Google Meet or Zoom link and send the meeting bot.
-2. Connect Google Calendar for automatic capture and repair.
+2. Connect Google Calendar for automatic Google Meet and Zoom capture and repair, while Microsoft Teams meetings stay visible and prompt local recording.
 3. Upload audio or video, paste a transcript, or record on a phone.
 4. Use the macOS recorder for in-person meetings, ad hoc calls, and any meeting cloud capture misses.
 5. Search the meeting library by title, participant, entity, or transcript text.

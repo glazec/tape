@@ -59,7 +59,7 @@ export function CalendarAutomationPanel({
                 autoJoinActive
                   ? nextJoinTitle
                     ? `Next join: ${nextJoinTitle}`
-                    : "Supported online meetings will be recorded"
+                    : "Meet and Zoom use bots; Teams uses Tape for Mac"
                   : "Sync calendar to enable recording"
               }
             />

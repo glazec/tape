@@ -415,7 +415,7 @@ async function listRecallCalendarRepairEventIds(input: {
   const rows = await databaseSql`
     select distinct event.external_event_id
     from calendar_events as event
-    join meetings as meeting
+    left join meetings as meeting
       on meeting.team_id = event.team_id
       and (
         meeting.calendar_event_id = event.id
@@ -428,6 +428,24 @@ async function listRecallCalendarRepairEventIds(input: {
       and event.starts_at >= ${getRecallCalendarRepairStart(input.now)}
       and (
         (
+          meeting.id is null
+          and (
+            event.meeting_url ~* '^https?://teams[.]microsoft[.]com/(l/meetup-join|meet)/'
+            or event.meeting_url ~* '^https?://teams[.]live[.]com/meet/'
+          )
+        )
+        or (
+          meeting.status = 'scheduled'
+          and coalesce(
+            event.ends_at,
+            event.starts_at + interval '1 hour'
+          ) <= ${input.now}
+          and (
+            event.meeting_url ~* '^https?://teams[.]microsoft[.]com/(l/meetup-join|meet)/'
+            or event.meeting_url ~* '^https?://teams[.]live[.]com/meet/'
+          )
+        )
+        or (
           meeting.status = 'scheduled'
           and meeting.recall_bot_id is not null
           and (

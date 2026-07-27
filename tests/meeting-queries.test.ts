@@ -2259,7 +2259,12 @@ function meetingRow(overrides: {
 function libraryMeeting(overrides: {
   id: string;
   title: string;
-  platform: "google_meet" | "in_person" | "zoom" | "upload";
+  platform:
+    | "google_meet"
+    | "in_person"
+    | "microsoft_teams"
+    | "zoom"
+    | "upload";
   startedAt: string;
   endedAt?: string;
   durationMs?: number;

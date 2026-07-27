@@ -1,15 +1,28 @@
-import { and, eq, isNotNull, ne, or, sql } from "drizzle-orm";
+import {
+  and,
+  asc,
+  eq,
+  gte,
+  isNotNull,
+  isNull,
+  lte,
+  ne,
+  or,
+  sql,
+} from "drizzle-orm";
 
 import { db } from "@/db/client";
 import {
   auditEvents,
   calendarEvents,
+  localRecordingAttempts,
   meetings,
 } from "@/db/schema";
 import { normalizeEmail } from "@/lib/access";
 import {
   buildAppUrl,
   detectMeetingPlatform,
+  type MeetingLinkPlatform,
   type SupportedMeetingPlatform,
 } from "@/lib/meeting-links";
 import { buildSmartMeetingTitle } from "@/lib/meeting-intelligence";
@@ -94,6 +107,7 @@ type RecallBotResponse = {
 };
 
 type MeetingPlatform = typeof meetings.$inferSelect.platform;
+type MeetingStatus = typeof meetings.$inferSelect.status;
 
 type ExistingMeeting = {
   id: string;
@@ -108,7 +122,7 @@ type ExistingMeeting = {
   meetingUrl: string | null;
   startedAt: Date | null;
   endedAt: Date | null;
-  status: string;
+  status: MeetingStatus;
 };
 
 type CalendarEventRow = {
@@ -473,6 +487,22 @@ export async function autoJoinCalendarEvent(input: AutoJoinInput) {
     };
   }
 
+  if (platform === "microsoft_teams") {
+    return syncLocalRecorderCalendarMeeting({
+      attendeeEmails,
+      calendarEvent,
+      connection: input.connection,
+      endsAt,
+      event: input.event,
+      existingMeeting,
+      isPastRepairEvent: Boolean(isPastRepairEvent),
+      meetingUrl,
+      startsAt,
+      teamMeetingKey: activeTeamMeetingKey,
+      title,
+    });
+  }
+
   if (existingMeeting) {
     await cancelLocationRemindersForMeeting(existingMeeting.id);
   }
@@ -690,6 +720,213 @@ export async function autoJoinCalendarEvent(input: AutoJoinInput) {
 
     throw error;
   }
+}
+
+async function syncLocalRecorderCalendarMeeting(input: {
+  attendeeEmails: string[];
+  calendarEvent: CalendarEventRow;
+  connection: CalendarConnection;
+  endsAt: Date | null;
+  event: SyncedCalendarEvent;
+  existingMeeting: ExistingMeeting | null;
+  isPastRepairEvent: boolean;
+  meetingUrl: string;
+  startsAt: Date;
+  teamMeetingKey?: string | null;
+  title: string;
+}) {
+  let meeting = input.existingMeeting;
+  let meetingIdentity: { id: string; ownerUserId: string } | undefined;
+  let reconciledManualRecording = false;
+
+  if (!meeting && input.isPastRepairEvent) {
+    meeting = await findMatchingManualLocalRecorderMeeting({
+      endsAt: input.endsAt,
+      ownerUserId: input.connection.userId,
+      startsAt: input.startsAt,
+      teamId: input.connection.teamId,
+    });
+    reconciledManualRecording = Boolean(meeting);
+  }
+
+  if (
+    meeting &&
+    !reconciledManualRecording &&
+    meeting.status !== "scheduled" &&
+    !shouldRecoverCalendarMeeting({
+      endsAt: input.endsAt,
+      meeting,
+      meetingUrl: input.meetingUrl,
+      startsAt: input.startsAt,
+    })
+  ) {
+    return {
+      action: "skipped" as const,
+      calendarEventId: input.calendarEvent.id,
+      meetingId: meeting.id,
+      meetingUrl: input.meetingUrl,
+      reason: "already_scheduled" as const,
+    };
+  }
+
+  const title = getCalendarMeetingTitle(meeting, input.title);
+  const titleSource = getCalendarMeetingTitleSource(meeting);
+  const status: MeetingStatus = reconciledManualRecording
+    ? meeting?.status ?? "processing"
+    : isPastCalendarEvent({
+          endsAt: input.endsAt,
+          startsAt: input.startsAt,
+        })
+      ? "missed"
+      : "scheduled";
+
+  if (!meeting) {
+    try {
+      meetingIdentity = (
+        await db
+          .insert(meetings)
+          .values({
+            calendarEventId: input.calendarEvent.id,
+            endedAt: input.endsAt,
+            meetingUrl: input.meetingUrl,
+            ownerUserId: input.connection.userId,
+            platform: "microsoft_teams",
+            startedAt: input.startsAt,
+            status,
+            teamId: input.connection.teamId,
+            teamMeetingKey: input.teamMeetingKey,
+            title,
+            titleSource,
+          })
+          .returning({
+            id: meetings.id,
+            ownerUserId: meetings.ownerUserId,
+          })
+      )[0];
+    } catch (error) {
+      if (!isTeamMeetingKeyUniqueConflict(error) || !input.teamMeetingKey) {
+        throw error;
+      }
+
+      meeting = await findExistingMeeting({
+        calendarEventId: input.calendarEvent.id,
+        teamId: input.connection.teamId,
+        teamMeetingKey: input.teamMeetingKey,
+      });
+
+      if (!meeting) {
+        throw error;
+      }
+
+      meetingIdentity = meeting;
+    }
+  } else {
+    meetingIdentity = meeting;
+
+    if (meeting.recallBotId && input.event.recallCalendarEventId) {
+      await deleteRecallCalendarEventBot({
+        calendarEventId: input.event.recallCalendarEventId,
+      });
+    } else if (meeting.recallBotId) {
+      await deleteScheduledRecallBot({ botId: meeting.recallBotId });
+    }
+
+    await updateMeetingFromCalendar({
+      calendarEventId: input.calendarEvent.id,
+      endsAt: input.endsAt,
+      meetingId: meeting.id,
+      meetingUrl: input.meetingUrl,
+      platform: "microsoft_teams",
+      recallBotId: null,
+      startsAt: input.startsAt,
+      status,
+      teamMeetingKey: input.teamMeetingKey,
+      title,
+      titleSource,
+    });
+  }
+
+  if (!meetingIdentity) {
+    throw new Error("Microsoft Teams meeting creation failed");
+  }
+
+  await cancelLocationRemindersForMeeting(meetingIdentity.id);
+  await syncMeetingParticipantAccess({
+    attendeeEmails: input.attendeeEmails,
+    meetingId: meetingIdentity.id,
+    ownerUserId: meetingIdentity.ownerUserId,
+    teamId: input.connection.teamId,
+  });
+
+  if (input.connection.workspaceDomain) {
+    await applyMeetingShareRules({
+      attendeeEmails: input.attendeeEmails,
+      meetingId: meetingIdentity.id,
+      ownerUserId: meetingIdentity.ownerUserId,
+      teamId: input.connection.teamId,
+      title,
+      workspaceDomain: input.connection.workspaceDomain,
+    });
+  }
+
+  return {
+    action: "scheduled" as const,
+    calendarEventId: input.calendarEvent.id,
+    meetingId: meetingIdentity.id,
+    meetingUrl: input.meetingUrl,
+    platform: "microsoft_teams" as const,
+  };
+}
+
+async function findMatchingManualLocalRecorderMeeting(input: {
+  endsAt: Date | null;
+  ownerUserId: string;
+  startsAt: Date;
+  teamId: string;
+}) {
+  const matchPaddingMs = 15 * 60 * 1000;
+  const windowStart = new Date(input.startsAt.getTime() - matchPaddingMs);
+  const windowEnd = new Date(
+    (input.endsAt?.getTime() ??
+      input.startsAt.getTime() + 2 * 60 * 60 * 1000) + matchPaddingMs,
+  );
+  const candidates = await db
+    .select({
+      id: meetings.id,
+      ownerUserId: meetings.ownerUserId,
+      calendarEventId: meetings.calendarEventId,
+      teamMeetingKey: meetings.teamMeetingKey,
+      title: meetings.title,
+      titleSource: meetings.titleSource,
+      platform: meetings.platform,
+      recallBotId: meetings.recallBotId,
+      recallRecordingId: meetings.recallRecordingId,
+      meetingUrl: meetings.meetingUrl,
+      startedAt: meetings.startedAt,
+      endedAt: meetings.endedAt,
+      status: meetings.status,
+    })
+    .from(meetings)
+    .innerJoin(
+      localRecordingAttempts,
+      eq(localRecordingAttempts.meetingId, meetings.id),
+    )
+    .where(
+      and(
+        eq(meetings.teamId, input.teamId),
+        eq(meetings.ownerUserId, input.ownerUserId),
+        eq(meetings.platform, "in_person"),
+        isNull(meetings.calendarEventId),
+        eq(localRecordingAttempts.notificationState, "manual"),
+        isNotNull(meetings.startedAt),
+        lte(meetings.startedAt, windowEnd),
+        gte(meetings.startedAt, windowStart),
+      ),
+    )
+    .orderBy(asc(meetings.startedAt))
+    .limit(2);
+
+  return candidates.length === 1 ? candidates[0] : null;
 }
 
 async function syncLocationCalendarMeeting(input: {
@@ -998,13 +1235,13 @@ async function updateMeetingFromCalendar(input: {
   meetingId: string;
   title: string;
   titleSource: string;
-  platform: SupportedMeetingPlatform;
+  platform: MeetingLinkPlatform;
   meetingUrl: string;
   startsAt: Date;
   endsAt: Date | null;
   teamMeetingKey?: string | null;
   recallBotId?: string | null;
-  status?: "scheduled";
+  status?: MeetingStatus;
 }) {
   const updates = {
     calendarEventId: input.calendarEventId,
@@ -1549,7 +1786,7 @@ function needsUnchangedCalendarEventRepair(input: {
   existingMeeting: ExistingMeeting;
   forceBotConfigRefresh?: boolean;
   meetingUrl: string | null;
-  platform: SupportedMeetingPlatform | null;
+  platform: MeetingLinkPlatform | null;
   startsAt: Date;
   endsAt: Date | null;
   teamMeetingKey?: string | null;
@@ -1572,8 +1809,20 @@ function needsUnchangedCalendarEventRepair(input: {
     }
 
     if (
+      input.platform === "microsoft_teams" &&
       input.existingMeeting.status === "scheduled" &&
-      !input.existingMeeting.recallBotId
+      isPastCalendarEvent({
+        endsAt: input.endsAt,
+        startsAt: input.startsAt,
+      })
+    ) {
+      return true;
+    }
+
+    if (
+      input.existingMeeting.status === "scheduled" &&
+      !input.existingMeeting.recallBotId &&
+      input.platform !== "microsoft_teams"
     ) {
       return true;
     }
@@ -1820,7 +2069,7 @@ function isPastCalendarEvent(input: { startsAt: Date; endsAt: Date | null }) {
 
 function normalizeEventTitle(
   event: SyncedCalendarEvent,
-  platform: SupportedMeetingPlatform | null,
+  platform: MeetingLinkPlatform | null,
   workspaceDomain?: string | null,
   workspaceName?: string | null,
 ) {
@@ -1833,7 +2082,12 @@ function normalizeEventTitle(
 
   return buildSmartMeetingTitle({
     eventTitle:
-      title || (platform === "zoom" ? "Zoom recording" : "Google Meet recording"),
+      title ||
+      (platform === "zoom"
+        ? "Zoom recording"
+        : platform === "microsoft_teams"
+          ? "Microsoft Teams recording"
+          : "Google Meet recording"),
     attendeeEmails: event.attendeeEmails ?? [],
     workspaceDomain: resolvedWorkspaceDomain,
     workspaceName,

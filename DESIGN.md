@@ -116,7 +116,7 @@ The tape scene is the only WebGL layer in the hero. A second pointer-driven flui
 
 Transcription is no longer a differentiator, and neither is bot-free capture. The section order reflects what the category does not yet cover, strongest claim first:
 
-1. `01 · Capture` — calendar bots for scheduled Zoom and Meet calls *and* a local macOS recorder for the room, with speaker separation. Competitors offer one or the other, not both
+1. `01 · Capture` — calendar bots for scheduled Zoom and Meet calls, calendar backed local recording for Microsoft Teams, *and* a local macOS recorder for the room, with speaker separation. Competitors offer one or the other, not both
 2. `02 · Every language` — 30+ languages with the translation kept beside the original line. The bot-free tools are weakest here
 3. `03 · Memory` — recurring calls grouped into one series, detected entities, talk metrics beside the transcript
 4. `04 · Agents` — the archive published over MCP to the assistant the team already uses, rather than another vendor chatbot. Read only and scoped to the caller's access

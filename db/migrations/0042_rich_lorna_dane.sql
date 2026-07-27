@@ -1,0 +1,1 @@
+ALTER TYPE "public"."meeting_platform" ADD VALUE 'microsoft_teams' BEFORE 'zoom';

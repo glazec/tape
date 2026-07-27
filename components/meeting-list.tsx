@@ -34,7 +34,12 @@ import { cn } from "@/lib/utils";
 type MeetingListBaseItem = {
   id: string;
   title: string;
-  platform: "google_meet" | "in_person" | "zoom" | "upload";
+  platform:
+    | "google_meet"
+    | "in_person"
+    | "microsoft_teams"
+    | "zoom"
+    | "upload";
   startedAt: string;
   endedAt?: string | null;
   durationMs?: number | null;
@@ -68,6 +73,7 @@ type MeetingListProps = {
 const platformLabels: Record<MeetingListItem["platform"], string> = {
   google_meet: "Google Meet",
   in_person: "In person",
+  microsoft_teams: "Microsoft Teams",
   zoom: "Zoom",
   upload: "Upload",
 };
@@ -465,6 +471,7 @@ function MeetingTitleCell({
           accessScope={meeting.accessScope}
           displayStatus={displayStatus}
           hasRecallBot={meeting.hasRecallBot}
+          platform={meeting.platform}
         />
       </div>
     </div>
@@ -551,10 +558,12 @@ function MeetingCoverageNote({
   accessScope,
   displayStatus,
   hasRecallBot,
+  platform,
 }: {
   accessScope?: "workspace" | "shared";
   displayStatus: MeetingDisplayStatus;
   hasRecallBot?: boolean;
+  platform: MeetingListBaseItem["platform"];
 }) {
   if (accessScope === "shared") {
     return (
@@ -567,7 +576,11 @@ function MeetingCoverageNote({
   if (displayStatus === "scheduled") {
     return (
       <span className="mt-1 block text-xs text-muted-foreground">
-        {hasRecallBot ? "Bot scheduled" : "No bot linked"}
+        {hasRecallBot
+          ? "Bot scheduled"
+          : platform === "microsoft_teams"
+            ? "Local recording planned"
+            : "No bot linked"}
       </span>
     );
   }
@@ -575,7 +588,9 @@ function MeetingCoverageNote({
   if (displayStatus === "recording") {
     return (
       <span className="mt-1 block text-xs text-muted-foreground">
-        Bot in meeting
+        {platform === "in_person" || platform === "microsoft_teams"
+          ? "Recording locally"
+          : "Bot in meeting"}
       </span>
     );
   }

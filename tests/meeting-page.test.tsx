@@ -185,6 +185,30 @@ describe("meeting page", () => {
     expect(html).toContain("recovery panel");
   });
 
+  it("explains local capture and recovery for scheduled Microsoft Teams meetings", async () => {
+    mocks.getMeeting.mockResolvedValue(
+      meeting({
+        meetingUrl:
+          "https://teams.microsoft.com/l/meetup-join/19%3ameeting_example%40thread.v2/0",
+        platform: "microsoft_teams",
+        segments: [],
+        status: "scheduled",
+        visualAssets: [],
+      }),
+    );
+
+    const html = renderToStaticMarkup(
+      await MeetingPage({
+        params: Promise.resolve({ meetingId: "teams_meeting" }),
+      }),
+    );
+
+    expect(html).toContain("Record this Teams meeting locally");
+    expect(html).toContain("Open Tape for Mac");
+    expect(html).toContain("recovery panel");
+    expect(html).toContain("lg:grid-cols-1");
+  });
+
   it("offers uploads when a manageable meeting has no recording", async () => {
     mocks.getMeeting.mockResolvedValue(
       meeting({

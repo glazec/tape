@@ -94,6 +94,18 @@ vi.mock("@/lib/meeting-bot-profile", () => ({
   }),
 }));
 
+function selectRows(rows: unknown[]) {
+  const chain = {
+    from: vi.fn(() => chain),
+    innerJoin: vi.fn(() => chain),
+    limit: vi.fn().mockResolvedValue(rows),
+    orderBy: vi.fn(() => chain),
+    where: vi.fn(() => chain),
+  };
+
+  return chain;
+}
+
 describe("calendar auto join", () => {
   beforeEach(() => {
     cancelLocationRemindersForMeeting.mockResolvedValue(undefined);
@@ -210,13 +222,14 @@ describe("calendar auto join", () => {
     insert
       .mockReturnValueOnce({ values: calendarEventValues })
       .mockReturnValueOnce({ values: meetingValues });
-    select.mockReturnValue({
-      from: () => ({
-        where: () => ({
-          limit: existingLimit,
-        }),
-      }),
-    });
+    const selectChain = {
+      from: vi.fn(() => selectChain),
+      innerJoin: vi.fn(() => selectChain),
+      limit: existingLimit,
+      orderBy: vi.fn(() => selectChain),
+      where: vi.fn(() => selectChain),
+    };
+    select.mockReturnValue(selectChain);
     update.mockReturnValue({ set: updateSet });
     getMeetingBotProfile.mockResolvedValue({
       botName: "Deal Scribe",
@@ -316,6 +329,295 @@ describe("calendar auto join", () => {
         recallBotId: "bot_123",
       }),
     );
+  });
+
+  it("creates a local recorder meeting for a past Microsoft Teams repair event", async () => {
+    const teamsUrl =
+      "https://teams.microsoft.com/l/meetup-join/19%3ameeting_example%40thread.v2/0";
+    const calendarEventReturning = vi
+      .fn()
+      .mockResolvedValue([{ id: "33333333-3333-4333-8333-333333333333" }]);
+    const calendarEventOnConflictDoUpdate = vi
+      .fn()
+      .mockReturnValue({ returning: calendarEventReturning });
+    const calendarEventValues = vi
+      .fn()
+      .mockReturnValue({ onConflictDoUpdate: calendarEventOnConflictDoUpdate });
+    const meetingReturning = vi.fn().mockResolvedValue([
+      {
+        calendarEventId: "33333333-3333-4333-8333-333333333333",
+        endedAt: new Date("2026-06-30T12:30:00.000Z"),
+        id: "44444444-4444-4444-8444-444444444444",
+        meetingUrl: teamsUrl,
+        ownerUserId: "55555555-5555-4555-8555-555555555555",
+        platform: "microsoft_teams",
+        recallBotId: null,
+        recallRecordingId: null,
+        startedAt: new Date("2026-06-30T12:00:00.000Z"),
+        status: "missed",
+        teamMeetingKey: null,
+        title: "Microsoft Teams sync",
+        titleSource: "calendar",
+      },
+    ]);
+    const meetingValues = vi.fn().mockReturnValue({ returning: meetingReturning });
+    const existingLimit = vi.fn().mockResolvedValue([]);
+
+    insert
+      .mockReturnValueOnce({ values: calendarEventValues })
+      .mockReturnValueOnce({ values: meetingValues });
+    const teamsSelectChain = {
+      from: vi.fn(() => teamsSelectChain),
+      innerJoin: vi.fn(() => teamsSelectChain),
+      limit: existingLimit,
+      orderBy: vi.fn(() => teamsSelectChain),
+      where: vi.fn(() => teamsSelectChain),
+    };
+    select.mockReturnValue(teamsSelectChain);
+
+    const { autoJoinCalendarEvent } = await import("@/lib/calendar-auto-join");
+
+    await expect(
+      autoJoinCalendarEvent({
+        repairMode: true,
+        connection: {
+          id: "11111111-1111-4111-8111-111111111111",
+          teamId: "22222222-2222-4222-8222-222222222222",
+          userId: "55555555-5555-4555-8555-555555555555",
+          autoJoinEnabled: true,
+        },
+        event: {
+          externalEventId: "google_event_teams",
+          title: "Microsoft Teams sync",
+          startsAt: "2026-06-30T12:00:00.000Z",
+          endsAt: "2026-06-30T12:30:00.000Z",
+          meetingUrl: teamsUrl,
+        },
+      }),
+    ).resolves.toEqual({
+      action: "scheduled",
+      calendarEventId: "33333333-3333-4333-8333-333333333333",
+      meetingId: "44444444-4444-4444-8444-444444444444",
+      meetingUrl: teamsUrl,
+      platform: "microsoft_teams",
+    });
+
+    expect(meetingValues).toHaveBeenCalledWith(
+      expect.objectContaining({
+        calendarEventId: "33333333-3333-4333-8333-333333333333",
+        meetingUrl: teamsUrl,
+        platform: "microsoft_teams",
+        status: "missed",
+        title: "Microsoft Teams sync",
+      }),
+    );
+    expect(syncMeetingParticipantAccess).toHaveBeenCalledWith(
+      expect.objectContaining({
+        meetingId: "44444444-4444-4444-8444-444444444444",
+      }),
+    );
+    expect(scheduleRecallBot).not.toHaveBeenCalled();
+    expect(scheduleRecallCalendarEventBot).not.toHaveBeenCalled();
+  });
+
+  it("reconciles one overlapping manual recording into a past Microsoft Teams event", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-07-01T13:00:00.000Z"));
+    const teamsUrl =
+      "https://teams.microsoft.com/l/meetup-join/19%3ameeting_example%40thread.v2/0";
+    const calendarEventReturning = vi
+      .fn()
+      .mockResolvedValue([{ id: "33333333-3333-4333-8333-333333333333" }]);
+    const calendarEventValues = vi.fn(() => ({
+      onConflictDoUpdate: vi.fn(() => ({
+        returning: calendarEventReturning,
+      })),
+    }));
+    const updateWhere = vi.fn().mockResolvedValue(undefined);
+    const updateSet = vi.fn(() => ({ where: updateWhere }));
+    const manualMeeting = {
+      calendarEventId: null,
+      endedAt: null,
+      id: "44444444-4444-4444-8444-444444444444",
+      meetingUrl: null,
+      ownerUserId: "55555555-5555-4555-8555-555555555555",
+      platform: "in_person",
+      recallBotId: null,
+      recallRecordingId: null,
+      startedAt: new Date("2026-07-01T12:05:00.000Z"),
+      status: "recording",
+      teamMeetingKey: null,
+      title: "Manual recording",
+      titleSource: "calendar",
+    };
+
+    insert.mockReturnValueOnce({ values: calendarEventValues });
+    select
+      .mockReturnValueOnce(selectRows([]))
+      .mockReturnValueOnce(selectRows([manualMeeting]));
+    update.mockReturnValue({ set: updateSet });
+
+    const { autoJoinCalendarEvent } = await import("@/lib/calendar-auto-join");
+
+    await expect(
+      autoJoinCalendarEvent({
+        repairMode: true,
+        connection: {
+          autoJoinEnabled: true,
+          id: "11111111-1111-4111-8111-111111111111",
+          teamId: "22222222-2222-4222-8222-222222222222",
+          userId: "55555555-5555-4555-8555-555555555555",
+        },
+        event: {
+          endsAt: "2026-07-01T12:30:00.000Z",
+          externalEventId: "google_event_teams",
+          meetingUrl: teamsUrl,
+          startsAt: "2026-07-01T12:00:00.000Z",
+          title: "Microsoft Teams sync",
+        },
+      }),
+    ).resolves.toMatchObject({
+      action: "scheduled",
+      meetingId: manualMeeting.id,
+      platform: "microsoft_teams",
+    });
+
+    expect(insert).toHaveBeenCalledOnce();
+    expect(updateSet).toHaveBeenCalledWith(
+      expect.objectContaining({
+        calendarEventId: "33333333-3333-4333-8333-333333333333",
+        platform: "microsoft_teams",
+        status: "recording",
+      }),
+    );
+  });
+
+  it("recovers a missed Microsoft Teams meeting when the event is rescheduled", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-07-01T11:00:00.000Z"));
+    const teamsUrl =
+      "https://teams.microsoft.com/l/meetup-join/19%3ameeting_example%40thread.v2/0";
+    const calendarEventValues = vi.fn(() => ({
+      onConflictDoUpdate: vi.fn(() => ({
+        returning: vi.fn().mockResolvedValue([
+          { id: "33333333-3333-4333-8333-333333333333" },
+        ]),
+      })),
+    }));
+    const updateSet = vi.fn(() => ({
+      where: vi.fn().mockResolvedValue(undefined),
+    }));
+
+    insert.mockReturnValueOnce({ values: calendarEventValues });
+    select.mockReturnValueOnce(
+      selectRows([
+        {
+          calendarEventId: "33333333-3333-4333-8333-333333333333",
+          endedAt: new Date("2026-07-01T10:30:00.000Z"),
+          id: "44444444-4444-4444-8444-444444444444",
+          meetingUrl: teamsUrl,
+          ownerUserId: "55555555-5555-4555-8555-555555555555",
+          platform: "microsoft_teams",
+          recallBotId: null,
+          recallRecordingId: null,
+          startedAt: new Date("2026-07-01T10:00:00.000Z"),
+          status: "missed",
+          teamMeetingKey: "old_key",
+          title: "Microsoft Teams sync",
+          titleSource: "calendar",
+        },
+      ]),
+    );
+    update.mockReturnValue({ set: updateSet });
+
+    const { autoJoinCalendarEvent } = await import("@/lib/calendar-auto-join");
+
+    await autoJoinCalendarEvent({
+      connection: {
+        autoJoinEnabled: true,
+        id: "11111111-1111-4111-8111-111111111111",
+        teamId: "22222222-2222-4222-8222-222222222222",
+        userId: "55555555-5555-4555-8555-555555555555",
+      },
+      event: {
+        endsAt: "2026-07-01T12:30:00.000Z",
+        externalEventId: "google_event_teams",
+        meetingUrl: teamsUrl,
+        startsAt: "2026-07-01T12:00:00.000Z",
+        title: "Microsoft Teams sync",
+      },
+    });
+
+    expect(updateSet).toHaveBeenCalledWith(
+      expect.objectContaining({
+        platform: "microsoft_teams",
+        status: "scheduled",
+      }),
+    );
+  });
+
+  it("reloads a Microsoft Teams meeting after a concurrent insert wins", async () => {
+    const teamsUrl =
+      "https://teams.microsoft.com/l/meetup-join/19%3ameeting_example%40thread.v2/0";
+    const calendarEventValues = vi.fn(() => ({
+      onConflictDoUpdate: vi.fn(() => ({
+        returning: vi.fn().mockResolvedValue([
+          { id: "33333333-3333-4333-8333-333333333333" },
+        ]),
+      })),
+    }));
+    const meetingValues = vi.fn(() => ({
+      returning: vi.fn().mockRejectedValue({
+        code: "23505",
+        constraint: "meetings_team_meeting_key_unique",
+      }),
+    }));
+    const concurrentMeeting = {
+      calendarEventId: "33333333-3333-4333-8333-333333333333",
+      endedAt: new Date("2999-01-01T12:30:00.000Z"),
+      id: "44444444-4444-4444-8444-444444444444",
+      meetingUrl: teamsUrl,
+      ownerUserId: "55555555-5555-4555-8555-555555555555",
+      platform: "microsoft_teams",
+      recallBotId: null,
+      recallRecordingId: null,
+      startedAt: new Date("2999-01-01T12:00:00.000Z"),
+      status: "scheduled",
+      teamMeetingKey: "concurrent_key",
+      title: "Microsoft Teams sync",
+      titleSource: "calendar",
+    };
+
+    insert
+      .mockReturnValueOnce({ values: calendarEventValues })
+      .mockReturnValueOnce({ values: meetingValues });
+    select
+      .mockReturnValueOnce(selectRows([]))
+      .mockReturnValueOnce(selectRows([concurrentMeeting]));
+
+    const { autoJoinCalendarEvent } = await import("@/lib/calendar-auto-join");
+
+    await expect(
+      autoJoinCalendarEvent({
+        connection: {
+          autoJoinEnabled: true,
+          id: "11111111-1111-4111-8111-111111111111",
+          teamId: "22222222-2222-4222-8222-222222222222",
+          userId: "55555555-5555-4555-8555-555555555555",
+        },
+        event: {
+          endsAt: "2999-01-01T12:30:00.000Z",
+          externalEventId: "google_event_teams",
+          meetingUrl: teamsUrl,
+          startsAt: "2999-01-01T12:00:00.000Z",
+          title: "Microsoft Teams sync",
+        },
+      }),
+    ).resolves.toMatchObject({
+      action: "scheduled",
+      meetingId: concurrentMeeting.id,
+      platform: "microsoft_teams",
+    });
   });
 
   it("does not rewrite a healthy meeting when the Recall event is unchanged", async () => {

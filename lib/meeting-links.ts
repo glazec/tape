@@ -1,8 +1,15 @@
-export type SupportedMeetingPlatform = "google_meet" | "zoom";
+export type MeetingLinkPlatform =
+  | "google_meet"
+  | "microsoft_teams"
+  | "zoom";
+export type SupportedMeetingPlatform = Exclude<
+  MeetingLinkPlatform,
+  "microsoft_teams"
+>;
 
 export function detectMeetingPlatform(
   meetingUrl: string,
-): SupportedMeetingPlatform | null {
+): MeetingLinkPlatform | null {
   const url = parseMeetingUrl(meetingUrl);
 
   if (!url) {
@@ -22,7 +29,22 @@ export function detectMeetingPlatform(
     return "zoom";
   }
 
+  if (
+    (hostname === "teams.microsoft.com" &&
+      (url.pathname.startsWith("/l/meetup-join/") ||
+        url.pathname.startsWith("/meet/"))) ||
+    (hostname === "teams.live.com" && url.pathname.startsWith("/meet/"))
+  ) {
+    return "microsoft_teams";
+  }
+
   return null;
+}
+
+export function detectBotSupportedMeetingPlatform(meetingUrl: string) {
+  const platform = detectMeetingPlatform(meetingUrl);
+
+  return platform === "microsoft_teams" ? null : platform;
 }
 
 export async function resolveMeetingJoinUrl(meetingUrl: string) {
