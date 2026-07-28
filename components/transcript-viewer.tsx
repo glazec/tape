@@ -880,7 +880,7 @@ export function TranscriptViewer({
             <button
               aria-pressed={speakerApplyScope === "matching_speaker"}
               className={cn(
-                "h-7 rounded px-2 text-xs font-medium outline-none focus-visible:ring-3 focus-visible:ring-ring/50",
+                "h-11 rounded px-2 text-xs font-medium outline-none focus-visible:ring-3 focus-visible:ring-ring/50 sm:h-7",
                 speakerApplyScope === "matching_speaker"
                   ? "bg-muted text-foreground"
                   : "text-muted-foreground hover:text-foreground",
@@ -893,7 +893,7 @@ export function TranscriptViewer({
             <button
               aria-pressed={speakerApplyScope === "segment"}
               className={cn(
-                "h-7 rounded px-2 text-xs font-medium outline-none focus-visible:ring-3 focus-visible:ring-ring/50",
+                "h-11 rounded px-2 text-xs font-medium outline-none focus-visible:ring-3 focus-visible:ring-ring/50 sm:h-7",
                 speakerApplyScope === "segment"
                   ? "bg-muted text-foreground"
                   : "text-muted-foreground hover:text-foreground",
