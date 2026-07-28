@@ -2094,7 +2094,10 @@ describe("getMeetingDashboardSummaryForWorkspace", () => {
         createdAt: new Date("2026-06-27T08:00:00.000Z"),
       },
     ]);
-    const segmentWhere = vi.fn().mockResolvedValue([]);
+    const segmentGroupBy = vi.fn().mockResolvedValue([]);
+    const segmentWhere = vi.fn().mockReturnValue({
+      groupBy: segmentGroupBy,
+    });
 
     select
       .mockReturnValueOnce({
@@ -2139,6 +2142,15 @@ describe("getMeetingDashboardSummaryForWorkspace", () => {
       segmentWhere.mock.calls[0][0],
       "11111111-1111-4111-8111-111111111111",
     );
+    expect(segmentGroupBy).toHaveBeenCalled();
+    expect(select.mock.calls[1][0]).toEqual(
+      expect.objectContaining({
+        meetingId: expect.anything(),
+        userTexts: expect.anything(),
+        totalDurationMs: expect.anything(),
+      }),
+    );
+    expect(select.mock.calls[1][0]).not.toHaveProperty("text");
   });
 
   it("builds user stats from transcript segments", async () => {
@@ -2170,32 +2182,30 @@ describe("getMeetingDashboardSummaryForWorkspace", () => {
       .mockReturnValueOnce({
         from: () => ({
           innerJoin: () => ({
-            where: vi.fn().mockResolvedValue([
-              {
-                meetingId: "11111111-1111-4111-8111-111111111111",
-                speaker: "Test",
-                startMs: 0,
-                endMs: 10000,
-                text: "one two three four",
-                emotionLabel: "chill",
-              },
-              {
-                meetingId: "11111111-1111-4111-8111-111111111111",
-                speaker: "Founder",
-                startMs: 10000,
-                endMs: 30000,
-                text: "one two three four five six",
-                emotionLabel: "hard",
-              },
-              {
-                meetingId: "22222222-2222-4222-8222-222222222222",
-                speaker: "Test",
-                startMs: 0,
-                endMs: 8000,
-                text: "one two",
-                emotionLabel: "neutral",
-              },
-            ]),
+            where: vi.fn().mockReturnValue({
+              groupBy: vi.fn().mockResolvedValue([
+                {
+                  meetingId: "11111111-1111-4111-8111-111111111111",
+                  totalDurationMs: 30000,
+                  userDurationMs: 10000,
+                  userTexts: ["one two three four"],
+                  maxEndMs: 30000,
+                  hardEmotionScore: 20000,
+                  chillEmotionScore: 10000,
+                  neutralEmotionScore: 0,
+                },
+                {
+                  meetingId: "22222222-2222-4222-8222-222222222222",
+                  totalDurationMs: 8000,
+                  userDurationMs: 8000,
+                  userTexts: ["one two"],
+                  maxEndMs: 8000,
+                  hardEmotionScore: 0,
+                  chillEmotionScore: 0,
+                  neutralEmotionScore: 8000,
+                },
+              ]),
+            }),
           }),
         }),
       });

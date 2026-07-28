@@ -3,7 +3,6 @@ import { cookies } from "next/headers";
 import { Suspense } from "react";
 import {
   AlertCircle,
-  CalendarCheck2,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
@@ -14,10 +13,12 @@ import {
 import { AppShell } from "@/components/app-shell";
 import { CalendarAutomationPanel } from "@/components/calendar-automation-panel";
 import {
+  DashboardCalendarSkeleton,
   DashboardOverviewSkeleton,
+  DashboardStatsSkeleton,
   MeetingLibrarySkeleton,
 } from "@/components/dashboard-loading";
-import { DashboardWorkflowSummary } from "@/components/dashboard-workflow-summary";
+import { DashboardStats } from "@/components/dashboard-stats";
 import { MeetingLibrarySearch } from "@/components/meeting-library-search";
 import { MeetingList } from "@/components/meeting-list";
 import { OnboardingTutorial } from "@/components/onboarding-tutorial";
@@ -45,6 +46,8 @@ import {
 } from "@/components/ui/select";
 import { requireCurrentUser } from "@/lib/auth-guards";
 import { getCalendarConnectionSummaryForWorkspace } from "@/lib/calendar-connection-queries";
+import { getCachedDashboardSummaryForWorkspace } from "@/lib/dashboard-summary-cache";
+import type { CachedDashboardSummary } from "@/lib/dashboard-summary-cache-shared";
 import {
   defaultMeetingLibraryViewConfig,
   meetingLibrarySearchScopeLabels,
@@ -59,7 +62,6 @@ import {
 } from "@/lib/meeting-library-view-options";
 import { getDefaultMeetingLibraryView } from "@/lib/meeting-library-views";
 import {
-  getMeetingDashboardSummaryForWorkspace,
   DEFAULT_MEETING_LIBRARY_HISTORY_MONTHS,
   DEFAULT_RELATED_MEETING_HISTORY_MONTHS,
   MAX_MEETING_LIBRARY_HISTORY_MONTHS,
@@ -127,39 +129,44 @@ export default async function DashboardPage({
     sort,
   });
   const workspace = await getOrCreateWorkspaceForSessionUser(user);
+  const canCreateMeetings = workspace.canCreateMeetings !== false;
   const savedViewPromise = getDefaultMeetingLibraryView(workspace);
+  const accessSummaryPromise = getWorkspaceAccessSummary(workspace);
+  const dashboardSummaryPromise = canCreateMeetings
+    ? getCachedDashboardSummaryForWorkspace(workspace, {
+        userEmail: user.email,
+        userName: user.name,
+      })
+    : Promise.resolve(null);
+  const calendarStatusPromise = canCreateMeetings
+    ? getCalendarConnectionSummaryForWorkspace(workspace)
+    : Promise.resolve(null);
+  const creditStatusPromise =
+    canCreateMeetings && workspace.creditLimitUsdMicros !== null
+      ? getWorkspaceProviderCreditStatus(workspace.teamId)
+      : Promise.resolve(null);
 
   void savedViewPromise.catch(() => undefined);
-
-  const accessSummary = await getWorkspaceAccessSummary(workspace);
-  const showMeetingLibrary =
-    accessSummary.isSharedOnly ||
-    accessSummary.hasWorkspaceMeetings ||
-    accessSummary.hasExternalShares ||
-    hasMeetingLibraryRequest({
-      historyMonths: historyMonthsParam,
-      page,
-      q,
-      relatedMonths,
-      scope,
-      sort,
-      status,
-      view,
-    });
+  void accessSummaryPromise.catch(() => undefined);
+  void dashboardSummaryPromise.catch(() => undefined);
+  void calendarStatusPromise.catch(() => undefined);
+  void creditStatusPromise.catch(() => undefined);
 
   return (
     <AppShell
       activeHref="/dashboard"
-      canCreateMeetings={accessSummary.canCreateMeetings}
+      canCreateMeetings={canCreateMeetings}
       oneSignalExternalId={workspace.userId}
     >
       <section className="flex flex-col gap-6">
-        {!accessSummary.isSharedOnly ? (
+        {canCreateMeetings ? (
           <Suspense fallback={<DashboardOverviewSkeleton />}>
             <DashboardOverview
-              accessSummary={accessSummary}
               calendarError={calendarError}
+              calendarStatusPromise={calendarStatusPromise}
               cookieStorePromise={cookieStorePromise}
+              creditStatusPromise={creditStatusPromise}
+              dashboardSummaryPromise={dashboardSummaryPromise}
               setup={setup}
               syncCalendar={syncCalendar}
               user={user}
@@ -168,38 +175,54 @@ export default async function DashboardPage({
           </Suspense>
         ) : null}
 
-        {showMeetingLibrary ? (
-          <Suspense fallback={<MeetingLibrarySkeleton />}>
-            <DashboardMeetingLibrary
-              currentPage={currentPage}
-              historyMonths={historyMonths}
-              isSharedOnly={accessSummary.isSharedOnly}
-              relatedHistoryMonths={relatedHistoryMonths}
-              requestedViewConfig={requestedViewConfig}
-              savedViewPromise={savedViewPromise}
-              searchParams={resolvedSearchParams}
-              syncCalendar={syncCalendar}
-              workspace={workspace}
-            />
-          </Suspense>
-        ) : null}
+        <Suspense fallback={<MeetingLibrarySkeleton />}>
+          <DashboardMeetingLibrarySection
+            accessSummaryPromise={accessSummaryPromise}
+            currentPage={currentPage}
+            hasExplicitRequest={hasMeetingLibraryRequest({
+              historyMonths: historyMonthsParam,
+              page,
+              q,
+              relatedMonths,
+              scope,
+              sort,
+              status,
+              view,
+            })}
+            historyMonths={historyMonths}
+            relatedHistoryMonths={relatedHistoryMonths}
+            requestedViewConfig={requestedViewConfig}
+            savedViewPromise={savedViewPromise}
+            searchParams={resolvedSearchParams}
+            syncCalendar={syncCalendar}
+            workspace={workspace}
+          />
+        </Suspense>
       </section>
     </AppShell>
   );
 }
 
 async function DashboardOverview({
-  accessSummary,
   calendarError,
+  calendarStatusPromise,
   cookieStorePromise,
+  creditStatusPromise,
+  dashboardSummaryPromise,
   setup,
   syncCalendar,
   user,
   workspace,
 }: {
-  accessSummary: Awaited<ReturnType<typeof getWorkspaceAccessSummary>>;
   calendarError?: string | string[];
+  calendarStatusPromise: Promise<
+    Awaited<ReturnType<typeof getCalendarConnectionSummaryForWorkspace>> | null
+  >;
   cookieStorePromise: ReturnType<typeof cookies>;
+  creditStatusPromise: Promise<
+    Awaited<ReturnType<typeof getWorkspaceProviderCreditStatus>> | null
+  >;
+  dashboardSummaryPromise: Promise<CachedDashboardSummary | null>;
   setup?: string | string[];
   syncCalendar?: string | string[];
   user: Awaited<ReturnType<typeof requireCurrentUser>>;
@@ -210,34 +233,61 @@ async function DashboardOverview({
   const cookieStore = await cookieStorePromise;
   const onboardingHiddenInBrowser =
     cookieStore.get(onboardingHiddenCookieName)?.value === "1";
+  const onboardingSetupActivityPromise =
+    !onboardingForced && !onboardingHiddenInBrowser
+      ? getOnboardingSetupActivityForWorkspace(workspace)
+      : Promise.resolve(null);
+
+  void onboardingSetupActivityPromise.catch(() => undefined);
+
+  if (!onboardingForced && onboardingHiddenInBrowser) {
+    return (
+      <>
+        <Suspense fallback={null}>
+          <DashboardCreditAlertSection
+            creditStatusPromise={creditStatusPromise}
+          />
+        </Suspense>
+        <Suspense fallback={null}>
+          <DashboardCalendarErrorSection
+            calendarError={calendarError}
+            calendarStatusPromise={calendarStatusPromise}
+          />
+        </Suspense>
+        <div className="grid gap-4 lg:grid-cols-2">
+          <Suspense fallback={<DashboardStatsSkeleton />}>
+            <DashboardStatsSection
+              dashboardSummaryPromise={dashboardSummaryPromise}
+              user={user}
+            />
+          </Suspense>
+          <Suspense fallback={<DashboardCalendarSkeleton />}>
+            <DashboardCalendarSection
+              calendarStatusPromise={calendarStatusPromise}
+              dashboardSummaryPromise={dashboardSummaryPromise}
+              syncCalendar={syncCalendar}
+              user={user}
+            />
+          </Suspense>
+        </div>
+      </>
+    );
+  }
+
   const [
     dashboardSummary,
     calendarStatus,
     creditStatus,
     onboardingSetupActivity,
   ] = await Promise.all([
-    accessSummary.canCreateMeetings
-      ? getMeetingDashboardSummaryForWorkspace(workspace, {
-          userEmail: user.email,
-          userName: user.name,
-        })
-      : Promise.resolve(null),
-    accessSummary.canCreateMeetings
-      ? getCalendarConnectionSummaryForWorkspace(workspace)
-      : Promise.resolve(null),
-    accessSummary.canCreateMeetings && workspace.creditLimitUsdMicros !== null
-      ? getWorkspaceProviderCreditStatus(workspace.teamId)
-      : Promise.resolve(null),
-    accessSummary.canCreateMeetings &&
-    !onboardingForced &&
-    !onboardingHiddenInBrowser
-      ? getOnboardingSetupActivityForWorkspace(workspace)
-      : Promise.resolve(null),
+    dashboardSummaryPromise,
+    calendarStatusPromise,
+    creditStatusPromise,
+    onboardingSetupActivityPromise,
   ]);
   const calendarErrorCode = getSearchParamValue(calendarError);
   const calendarErrorMessage = getCalendarErrorMessage(calendarErrorCode);
   const showCalendarError =
-    accessSummary.canCreateMeetings &&
     calendarErrorMessage &&
     (calendarErrorCode === "sync_failed" ||
       !isCalendarOperational(calendarStatus));
@@ -248,7 +298,6 @@ async function DashboardOverview({
       ...onboardingSetupActivity,
     });
   const showOnboarding =
-    accessSummary.canCreateMeetings &&
     (onboardingForced ||
       (!onboardingAutomaticallyComplete && !onboardingHiddenInBrowser));
 
@@ -290,24 +339,175 @@ async function DashboardOverview({
         />
       ) : (
         <div className="grid gap-4 lg:grid-cols-2">
-          <DashboardGreetingCard
-            meetingCount={dashboardSummary?.userStats.thisWeekMeetings ?? 0}
-            name={getDashboardFirstName(user.name, user.email)}
-          />
           {dashboardSummary ? (
-            <DashboardWorkflowSummary summary={dashboardSummary} />
+            <DashboardStats
+              initialResult={dashboardSummary}
+              name={getDashboardFirstName(user.name, user.email)}
+            />
           ) : null}
           {calendarStatus ? (
             <CalendarAutomationPanel
               accountLabel={user.email}
               autoSync={getSearchParamValue(syncCalendar) === "1"}
-              nextJoinTitle={dashboardSummary?.nextBotJoin?.title ?? null}
+              nextJoinTitle={
+                dashboardSummary?.summary.nextBotJoin?.title ?? null
+              }
               status={calendarStatus}
             />
           ) : null}
         </div>
       )}
     </>
+  );
+}
+
+async function DashboardStatsSection({
+  dashboardSummaryPromise,
+  user,
+}: {
+  dashboardSummaryPromise: Promise<CachedDashboardSummary | null>;
+  user: Awaited<ReturnType<typeof requireCurrentUser>>;
+}) {
+  const dashboardSummary = await dashboardSummaryPromise;
+
+  return dashboardSummary ? (
+    <DashboardStats
+      initialResult={dashboardSummary}
+      name={getDashboardFirstName(user.name, user.email)}
+    />
+  ) : null;
+}
+
+async function DashboardCalendarSection({
+  calendarStatusPromise,
+  dashboardSummaryPromise,
+  syncCalendar,
+  user,
+}: {
+  calendarStatusPromise: Promise<
+    Awaited<ReturnType<typeof getCalendarConnectionSummaryForWorkspace>> | null
+  >;
+  dashboardSummaryPromise: Promise<CachedDashboardSummary | null>;
+  syncCalendar?: string | string[];
+  user: Awaited<ReturnType<typeof requireCurrentUser>>;
+}) {
+  const [calendarStatus, dashboardSummary] = await Promise.all([
+    calendarStatusPromise,
+    dashboardSummaryPromise,
+  ]);
+
+  return calendarStatus ? (
+    <CalendarAutomationPanel
+      accountLabel={user.email}
+      autoSync={getSearchParamValue(syncCalendar) === "1"}
+      nextJoinTitle={dashboardSummary?.summary.nextBotJoin?.title ?? null}
+      status={calendarStatus}
+    />
+  ) : null;
+}
+
+async function DashboardCreditAlertSection({
+  creditStatusPromise,
+}: {
+  creditStatusPromise: Promise<
+    Awaited<ReturnType<typeof getWorkspaceProviderCreditStatus>> | null
+  >;
+}) {
+  const creditStatus = await creditStatusPromise;
+
+  return creditStatus?.isExhausted ? (
+    <Alert
+      className="px-4 py-4 sm:grid-cols-[auto_minmax(0,1fr)_auto] sm:gap-x-3"
+      variant="destructive"
+    >
+      <AlertCircle />
+      <AlertTitle>Tape credit has been used</AlertTitle>
+      <AlertDescription>
+        New recording, transcription, translation, and assistant actions are
+        paused. Existing meetings remain available.
+      </AlertDescription>
+      <Link
+        className="col-start-2 mt-2 font-medium underline underline-offset-3 hover:text-foreground sm:col-start-3 sm:row-start-1 sm:row-span-2 sm:mt-0 sm:self-center"
+        href="/usage"
+      >
+        View billing details
+      </Link>
+    </Alert>
+  ) : null;
+}
+
+async function DashboardCalendarErrorSection({
+  calendarError,
+  calendarStatusPromise,
+}: {
+  calendarError?: string | string[];
+  calendarStatusPromise: Promise<
+    Awaited<ReturnType<typeof getCalendarConnectionSummaryForWorkspace>> | null
+  >;
+}) {
+  const calendarStatus = await calendarStatusPromise;
+  const calendarErrorCode = getSearchParamValue(calendarError);
+  const calendarErrorMessage = getCalendarErrorMessage(calendarErrorCode);
+  const showCalendarError =
+    calendarErrorMessage &&
+    (calendarErrorCode === "sync_failed" ||
+      !isCalendarOperational(calendarStatus));
+
+  return showCalendarError ? (
+    <Alert variant="destructive">
+      <AlertCircle />
+      <AlertTitle>Calendar setup needs attention</AlertTitle>
+      <AlertDescription>{calendarErrorMessage}</AlertDescription>
+    </Alert>
+  ) : null;
+}
+
+async function DashboardMeetingLibrarySection({
+  accessSummaryPromise,
+  currentPage,
+  hasExplicitRequest,
+  historyMonths,
+  relatedHistoryMonths,
+  requestedViewConfig,
+  savedViewPromise,
+  searchParams,
+  syncCalendar,
+  workspace,
+}: {
+  accessSummaryPromise: ReturnType<typeof getWorkspaceAccessSummary>;
+  currentPage: number;
+  hasExplicitRequest: boolean;
+  historyMonths: number;
+  relatedHistoryMonths: number;
+  requestedViewConfig: MeetingLibraryViewConfig;
+  savedViewPromise: ReturnType<typeof getDefaultMeetingLibraryView>;
+  searchParams: DashboardSearchParams;
+  syncCalendar?: string | string[];
+  workspace: Awaited<ReturnType<typeof getOrCreateWorkspaceForSessionUser>>;
+}) {
+  const accessSummary = await accessSummaryPromise;
+  const showMeetingLibrary =
+    accessSummary.isSharedOnly ||
+    accessSummary.hasWorkspaceMeetings ||
+    accessSummary.hasExternalShares ||
+    hasExplicitRequest;
+
+  if (!showMeetingLibrary) {
+    return null;
+  }
+
+  return (
+    <DashboardMeetingLibrary
+      currentPage={currentPage}
+      historyMonths={historyMonths}
+      isSharedOnly={accessSummary.isSharedOnly}
+      relatedHistoryMonths={relatedHistoryMonths}
+      requestedViewConfig={requestedViewConfig}
+      savedViewPromise={savedViewPromise}
+      searchParams={searchParams}
+      syncCalendar={syncCalendar}
+      workspace={workspace}
+    />
   );
 }
 
@@ -481,33 +681,6 @@ function hasMeetingLibraryRequest(
   );
 }
 
-function DashboardGreetingCard({
-  meetingCount,
-  name,
-}: {
-  meetingCount: number;
-  name: string;
-}) {
-  return (
-    <Card className="relative min-h-36 overflow-hidden lg:row-span-2 lg:min-h-60">
-      <CardContent className="flex flex-1 flex-col justify-center py-6 sm:px-7 sm:py-7">
-        <div className="relative z-10 max-w-sm">
-          <h1 className="text-2xl font-semibold tracking-[-0.015em] sm:text-[1.75rem]">
-            Welcome back, {name}.
-          </h1>
-          <p className="mt-2.5 text-[0.9375rem] leading-[1.6] text-muted-foreground">
-            {formatGreetingSummary(meetingCount)}
-          </p>
-        </div>
-        <CalendarCheck2
-          aria-hidden="true"
-          className="absolute right-6 bottom-6 size-20 text-foreground/[0.06] sm:right-7 sm:bottom-7 sm:size-28"
-        />
-      </CardContent>
-    </Card>
-  );
-}
-
 function getDashboardFirstName(name: string | null, email: string) {
   const firstName = name?.trim().split(/\s+/)[0];
 
@@ -516,12 +689,6 @@ function getDashboardFirstName(name: string | null, email: string) {
   }
 
   return email.split("@")[0] || "there";
-}
-
-function formatGreetingSummary(meetingCount: number) {
-  return meetingCount === 1
-    ? "You had 1 meeting since Monday."
-    : `You had ${meetingCount.toLocaleString()} meetings since Monday.`;
 }
 
 function MeetingLibraryViewBar({

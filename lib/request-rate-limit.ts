@@ -7,6 +7,11 @@ export const requestRateLimitPolicies = {
     scope: "admin_impersonation",
     windowMs: 60 * 60 * 1_000,
   },
+  dashboardSummaryRefresh: {
+    limit: 6,
+    scope: "dashboard_summary_refresh",
+    windowMs: 60 * 1_000,
+  },
   localRecorderProviderUpload: {
     limit: 30,
     scope: "local_recorder_provider_upload",

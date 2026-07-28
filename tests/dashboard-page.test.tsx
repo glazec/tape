@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const {
   cookies,
   getCalendarConnectionSummaryForWorkspace,
+  getCachedDashboardSummaryForWorkspace,
   getDefaultMeetingLibraryView,
   getMeetingDashboardSummaryForWorkspace,
   getOnboardingSetupActivityForWorkspace,
@@ -16,6 +17,7 @@ const {
 } = vi.hoisted(() => ({
   cookies: vi.fn(),
   getCalendarConnectionSummaryForWorkspace: vi.fn(),
+  getCachedDashboardSummaryForWorkspace: vi.fn(),
   getDefaultMeetingLibraryView: vi.fn(),
   getMeetingDashboardSummaryForWorkspace: vi.fn(),
   getOnboardingSetupActivityForWorkspace: vi.fn(),
@@ -64,6 +66,10 @@ vi.mock("@/lib/calendar-connection-queries", () => ({
   getCalendarConnectionSummaryForWorkspace,
 }));
 
+vi.mock("@/lib/dashboard-summary-cache", () => ({
+  getCachedDashboardSummaryForWorkspace,
+}));
+
 vi.mock("@/lib/meeting-queries", () => ({
   DEFAULT_MEETING_LIBRARY_HISTORY_MONTHS: 6,
   DEFAULT_RELATED_MEETING_HISTORY_MONTHS: 2,
@@ -103,15 +109,24 @@ describe("DashboardPage", () => {
     cookies.mockResolvedValue({
       get: () => ({ value: "1" }),
     });
+    getCalendarConnectionSummaryForWorkspace.mockResolvedValue(null);
     getOnboardingSetupActivityForWorkspace.mockResolvedValue({
       desktopAppConnected: false,
       mcpUsed: false,
     });
+    getWorkspaceProviderCreditStatus.mockResolvedValue(null);
+    getCachedDashboardSummaryForWorkspace.mockImplementation(
+      async (...args: Parameters<typeof getMeetingDashboardSummaryForWorkspace>) => ({
+        cachedAt: "2026-07-27T12:00:00.000Z",
+        summary: await getMeetingDashboardSummaryForWorkspace(...args),
+      }),
+    );
   });
 
   afterEach(() => {
     cookies.mockReset();
     getCalendarConnectionSummaryForWorkspace.mockReset();
+    getCachedDashboardSummaryForWorkspace.mockReset();
     getDefaultMeetingLibraryView.mockReset();
     getMeetingDashboardSummaryForWorkspace.mockReset();
     getOnboardingSetupActivityForWorkspace.mockReset();
@@ -123,7 +138,7 @@ describe("DashboardPage", () => {
     vi.resetModules();
   });
 
-  it("starts the saved meeting view query while access summary is loading", async () => {
+  it("returns the dashboard shell while access summary is loading", async () => {
     const workspace = {
       userId: "user_123",
       teamId: "team_123",
@@ -158,13 +173,82 @@ describe("DashboardPage", () => {
       expect(getDefaultMeetingLibraryView).toHaveBeenCalledWith(workspace);
     });
 
+    await expect(pagePromise).resolves.toBeTruthy();
     resolveAccessSummary({
       canCreateMeetings: true,
       hasExternalShares: false,
       hasWorkspaceMeetings: false,
       isSharedOnly: false,
     });
-    await pagePromise;
+  });
+
+  it("streams cached stats before the meeting library resolves", async () => {
+    const workspace = {
+      userId: "user_123",
+      teamId: "team_123",
+      domain: "iosg.vc",
+      canCreateMeetings: true,
+      creditLimitUsdMicros: null,
+    };
+
+    requireCurrentUser.mockResolvedValue({
+      id: "auth_user_123",
+      email: "member@iosg.vc",
+      name: "Tape User",
+    });
+    getWorkspace.mockResolvedValue(workspace);
+    getWorkspaceAccessSummary.mockReturnValue(new Promise(() => {}));
+    getDefaultMeetingLibraryView.mockResolvedValue(null);
+    getMeetingDashboardSummaryForWorkspace.mockResolvedValue({
+      upcomingBotJoins: 0,
+      readyTranscripts: 0,
+      activeWork: 0,
+      failedMeetings: 0,
+      scheduledWithoutBot: 0,
+      overdueScheduled: 0,
+      needsAttention: 0,
+      nextBotJoin: null,
+      userStats: {
+        thisWeekMeetings: 2,
+        lastWeekMeetings: 1,
+        meetingChangePercent: 100,
+        meetingHours: 1,
+        spokenWords: 100,
+        talkSharePercent: 50,
+        dominantEmotion: "chill",
+        dominantEmotionPercent: 60,
+      },
+    });
+    getCalendarConnectionSummaryForWorkspace.mockReturnValue(
+      new Promise(() => {}),
+    );
+
+    const { default: DashboardPage } = await import("@/app/dashboard/page");
+    const page = await DashboardPage({
+      searchParams: Promise.resolve({}),
+    });
+    const stream = await renderToReadableStream(page);
+    const reader = stream.getReader();
+    const decoder = new TextDecoder();
+    let html = "";
+
+    while (
+      !html.includes("You had 2 meetings since Monday.") ||
+      !html.includes('aria-label="Loading meetings"')
+    ) {
+      const chunk = await reader.read();
+
+      if (chunk.done) {
+        break;
+      }
+
+      html += decoder.decode(chunk.value, { stream: true });
+    }
+
+    expect(html).toContain("You had 2 meetings since Monday.");
+    expect(html).toContain('aria-label="Loading meetings"');
+
+    await reader.cancel();
   });
 
   it("streams dashboard section skeletons before their queries finish", async () => {

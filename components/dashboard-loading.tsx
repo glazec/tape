@@ -41,6 +41,16 @@ export function DashboardOverviewSkeleton() {
       className="grid gap-4 lg:grid-cols-2"
       role="status"
     >
+      <DashboardStatsSkeleton />
+      <DashboardCalendarSkeleton />
+      <span className="sr-only">Loading dashboard overview</span>
+    </div>
+  );
+}
+
+export function DashboardStatsSkeleton() {
+  return (
+    <>
       <Card className="min-h-36 lg:row-span-2 lg:min-h-60">
         <CardContent className="flex flex-1 flex-col justify-center py-6 sm:px-7 sm:py-7">
           <Skeleton className="h-8 w-3/5 max-w-72" />
@@ -48,10 +58,12 @@ export function DashboardOverviewSkeleton() {
         </CardContent>
       </Card>
       <DashboardCardSkeleton />
-      <DashboardCardSkeleton compact />
-      <span className="sr-only">Loading dashboard overview</span>
-    </div>
+    </>
   );
+}
+
+export function DashboardCalendarSkeleton() {
+  return <DashboardCardSkeleton compact />;
 }
 
 export function MeetingLibrarySkeleton() {

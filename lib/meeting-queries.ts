@@ -37,8 +37,10 @@ import type {
 } from "@/components/transcript-viewer";
 import type { SessionUser } from "@/lib/auth";
 import {
+  countDashboardTranscriptWords,
+  getDashboardUserSpeakerAliases,
   getDashboardWorkflowSummary,
-  type DashboardWorkflowSegment,
+  type DashboardWorkflowSegmentStats,
   type DashboardWorkflowSummaryModel,
 } from "@/lib/dashboard-workflow-summary";
 import { currentTranscriptJobIdsSubquery } from "@/lib/current-transcript-job";
@@ -1021,6 +1023,13 @@ export async function getMeetingDashboardSummaryForWorkspace(
 ): Promise<DashboardWorkflowSummaryModel> {
   const now = options.now ?? new Date();
   const statsCutoff = new Date(now.getTime() - 14 * 24 * 60 * 60 * 1000);
+  const userAliases = [...getDashboardUserSpeakerAliases(options)];
+  const normalizedSpeaker = sql<string>`lower(regexp_replace(btrim(coalesce(${transcriptSegments.speaker}, '')), '[[:space:]]+', ' ', 'g'))`;
+  const userSpeakerCondition =
+    userAliases.length > 0
+      ? inArray(normalizedSpeaker, userAliases)
+      : sql<boolean>`false`;
+  const segmentDurationMs = sql<number>`greatest(coalesce(${transcriptSegments.endMs}, ${transcriptSegments.startMs}) - ${transcriptSegments.startMs}, 0)`;
   const [rows, segmentRows] = await Promise.all([
     db
       .select({
@@ -1053,11 +1062,13 @@ export async function getMeetingDashboardSummaryForWorkspace(
     db
       .select({
         meetingId: transcriptSegments.meetingId,
-        speaker: transcriptSegments.speaker,
-        startMs: transcriptSegments.startMs,
-        endMs: transcriptSegments.endMs,
-        text: transcriptSegments.text,
-        emotionLabel: transcriptSegments.emotionLabel,
+        totalDurationMs: sql<number>`coalesce(sum(${segmentDurationMs}), 0)::int`,
+        userDurationMs: sql<number>`coalesce(sum(case when ${userSpeakerCondition} then ${segmentDurationMs} else 0 end), 0)::int`,
+        userTexts: sql<string[]>`coalesce(jsonb_agg(${transcriptSegments.text}) filter (where ${userSpeakerCondition}), '[]'::jsonb)`,
+        maxEndMs: sql<number>`coalesce(max(greatest(${transcriptSegments.startMs}, coalesce(${transcriptSegments.endMs}, ${transcriptSegments.startMs}))), 0)::int`,
+        hardEmotionScore: sql<number>`coalesce(sum(case when ${transcriptSegments.emotionLabel} = 'hard' then case when ${segmentDurationMs} > 0 then ${segmentDurationMs} else 1 end else 0 end), 0)::int`,
+        chillEmotionScore: sql<number>`coalesce(sum(case when ${transcriptSegments.emotionLabel} = 'chill' then case when ${segmentDurationMs} > 0 then ${segmentDurationMs} else 1 end else 0 end), 0)::int`,
+        neutralEmotionScore: sql<number>`coalesce(sum(case when ${transcriptSegments.emotionLabel} = 'neutral' then case when ${segmentDurationMs} > 0 then ${segmentDurationMs} else 1 end else 0 end), 0)::int`,
       })
       .from(transcriptSegments)
       .innerJoin(meetings, eq(transcriptSegments.meetingId, meetings.id))
@@ -1073,21 +1084,32 @@ export async function getMeetingDashboardSummaryForWorkspace(
           sql`coalesce(${meetings.startedAt}, ${meetings.createdAt}) >= ${statsCutoff}`,
           sql`coalesce(${meetings.startedAt}, ${meetings.createdAt}) <= ${now}`,
         ),
-      ),
+      )
+      .groupBy(transcriptSegments.meetingId),
   ]);
-  const segmentsByMeetingId = new Map<string, DashboardWorkflowSegment[]>();
-
-  for (const segment of segmentRows) {
-    const meetingSegments = segmentsByMeetingId.get(segment.meetingId) ?? [];
-    meetingSegments.push({
-      speaker: segment.speaker,
-      startMs: segment.startMs,
-      endMs: segment.endMs,
-      text: segment.text,
-      emotionLabel: normalizeEmotionLabel(segment.emotionLabel),
-    });
-    segmentsByMeetingId.set(segment.meetingId, meetingSegments);
-  }
+  const segmentStatsByMeetingId = new Map<
+    string,
+    DashboardWorkflowSegmentStats
+  >(
+    segmentRows.map((segment) => [
+      segment.meetingId,
+      {
+        emotionScores: {
+          hard: segment.hardEmotionScore,
+          chill: segment.chillEmotionScore,
+          neutral: segment.neutralEmotionScore,
+        },
+        maxEndMs: segment.maxEndMs,
+        spokenWords: segment.userTexts.reduce(
+          (wordCount, text) =>
+            wordCount + countDashboardTranscriptWords(text),
+          0,
+        ),
+        totalDurationMs: segment.totalDurationMs,
+        userDurationMs: segment.userDurationMs,
+      },
+    ]),
+  );
 
   return getDashboardWorkflowSummary(
     rows.map((meeting) => ({
@@ -1105,7 +1127,7 @@ export async function getMeetingDashboardSummaryForWorkspace(
         meeting.endedAt?.toISOString() ??
         null,
       durationMs: getTranscriptDurationMs(meeting.recordedDurationMs),
-      segments: segmentsByMeetingId.get(meeting.id) ?? [],
+      segmentStats: segmentStatsByMeetingId.get(meeting.id),
     })),
     now,
     {

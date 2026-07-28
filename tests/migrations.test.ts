@@ -384,6 +384,46 @@ describe("database migrations", () => {
     }
   });
 
+  it("materializes readable meetings once for child table policies", () => {
+    const sql = readFileSync(
+      "db/migrations/0043_dashboard_rls_read_performance.sql",
+      "utf8",
+    ).replace(/\s+/g, " ");
+
+    expect(sql).toContain(
+      "create or replace function app_private.readable_meeting_ids()",
+    );
+    expect(sql).toContain("with current_identity as materialized");
+    expect(sql).toContain(
+      "meeting.owner_user_id = current_identity.user_id",
+    );
+    expect(sql).toContain("membership.role in ('admin', 'owner')");
+    expect(sql).toContain("access_grant.revoked_at is null");
+    expect(sql).toContain(
+      "revoke all on function app_private.readable_meeting_ids() from public",
+    );
+    expect(sql).toContain(
+      "to tape_authenticated, tape_mcp using (meeting_id in (select readable.meeting_id from app_private.readable_meeting_ids() as readable))",
+    );
+
+    for (const table of [
+      "meeting_attendees",
+      "meeting_access_sources",
+      "meeting_access_exclusions",
+      "recordings",
+      "media_assets",
+      "local_recording_attempts",
+      "local_recordings",
+      "transcript_jobs",
+      "transcript_segments",
+      "meeting_entities",
+      "meeting_participant_timeline",
+      "meeting_reminders",
+    ]) {
+      expect(sql).toContain(`'${table}'`);
+    }
+  });
+
   it("keeps operational rate limits private from tenant roles", () => {
     const sql = readFileSync(
       "db/migrations/0039_restrict_rate_limit_table.sql",

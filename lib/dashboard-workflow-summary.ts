@@ -14,6 +14,7 @@ export type DashboardWorkflowMeeting = {
   transcriptJobStatus?: TranscriptJobStatus | null;
   hasRecallBot?: boolean;
   segments?: DashboardWorkflowSegment[];
+  segmentStats?: DashboardWorkflowSegmentStats;
 };
 
 export type DashboardWorkflowSegment = {
@@ -24,12 +25,20 @@ export type DashboardWorkflowSegment = {
   emotionLabel?: DashboardMeetingEmotion | null;
 };
 
+export type DashboardWorkflowSegmentStats = {
+  emotionScores: Record<DashboardMeetingEmotion, number>;
+  maxEndMs: number;
+  spokenWords: number;
+  totalDurationMs: number;
+  userDurationMs: number;
+};
+
 type NextMeeting = {
   title: string;
   startedAt: string;
 };
 
-type DashboardMeetingEmotion = "hard" | "chill" | "neutral";
+export type DashboardMeetingEmotion = "hard" | "chill" | "neutral";
 
 export type DashboardUserStats = {
   thisWeekMeetings: number;
@@ -156,7 +165,7 @@ function getDashboardUserStats(
   const nowTime = now.getTime();
   const currentStartTime = getUtcCalendarWeekStart(now).getTime();
   const previousStartTime = currentStartTime - CALENDAR_WEEK_MS;
-  const userAliases = getUserSpeakerAliases(options);
+  const userAliases = getDashboardUserSpeakerAliases(options);
   const emotionScores: Record<DashboardMeetingEmotion, number> = {
     hard: 0,
     chill: 0,
@@ -192,10 +201,24 @@ function getDashboardUserStats(
       continue;
     }
 
+    if (meeting.segmentStats) {
+      totalDurationMs += meeting.segmentStats.totalDurationMs;
+      userDurationMs += meeting.segmentStats.userDurationMs;
+      spokenWords += meeting.segmentStats.spokenWords;
+
+      for (const emotion of ["hard", "chill", "neutral"] as const) {
+        emotionScores[emotion] +=
+          meeting.segmentStats.emotionScores[emotion];
+      }
+
+      continue;
+    }
+
     for (const segment of meeting.segments ?? []) {
       const durationMs = getSegmentDurationMs(segment);
       const isUserSegment =
-        userAliases.size > 0 && isMatchingUserSpeaker(segment.speaker, userAliases);
+        userAliases.size > 0 &&
+        isDashboardUserSpeaker(segment.speaker, userAliases);
 
       totalDurationMs += durationMs;
 
@@ -207,7 +230,7 @@ function getDashboardUserStats(
         continue;
       }
 
-      spokenWords += countTranscriptWords(segment.text);
+      spokenWords += countDashboardTranscriptWords(segment.text);
       userDurationMs += durationMs;
     }
   }
@@ -257,6 +280,10 @@ function getMeetingDurationMs(meeting: DashboardWorkflowMeeting) {
     return meeting.durationMs;
   }
 
+  if (meeting.segmentStats?.maxEndMs) {
+    return meeting.segmentStats.maxEndMs;
+  }
+
   const segmentDurations = meeting.segments
     ?.map((segment) => segment.endMs ?? 0)
     .filter((endMs) => endMs > 0);
@@ -301,7 +328,9 @@ function getDominantEmotionStats(
   };
 }
 
-function getUserSpeakerAliases(options: DashboardWorkflowSummaryOptions) {
+export function getDashboardUserSpeakerAliases(
+  options: DashboardWorkflowSummaryOptions,
+) {
   const aliases = new Set<string>();
 
   for (const alias of options.userSpeakerAliases ?? []) {
@@ -333,7 +362,7 @@ function addSpeakerAlias(aliases: Set<string>, value?: string | null) {
   }
 }
 
-function isMatchingUserSpeaker(
+export function isDashboardUserSpeaker(
   speaker: string | null,
   userAliases: Set<string>,
 ) {
@@ -346,7 +375,7 @@ function normalizeSpeakerLabel(value?: string | null) {
   return value?.trim().replace(/\s+/g, " ").toLowerCase() ?? "";
 }
 
-function countTranscriptWords(text: string) {
+export function countDashboardTranscriptWords(text: string) {
   const trimmedText = text.trim();
 
   if (!trimmedText) {
