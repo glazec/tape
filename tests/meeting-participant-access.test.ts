@@ -35,6 +35,7 @@ vi.mock("@/lib/meeting-access-grants", () => ({
 import {
   classifyMeetingAttendeeEmails,
   syncMeetingParticipantAccess,
+  syncMeetingParticipantAccessFromCalendar,
 } from "@/lib/meeting-participant-access";
 
 describe("meeting participant access", () => {
@@ -56,6 +57,61 @@ describe("meeting participant access", () => {
       attendeeEmails: ["alice@example.com", "founder@external.com"],
       internalEmails: ["alice@example.com"],
     });
+  });
+
+  it("restores participant access from the linked calendar snapshot", async () => {
+    select
+      .mockReturnValueOnce({
+        from: () => ({
+          innerJoin: () => ({
+            where: () => ({
+              limit: vi.fn().mockResolvedValue([
+                {
+                  attendeeEmails: ["kemi@mpch.com", "yiping@iosg.vc"],
+                  ownerUserId: "owner_123",
+                },
+              ]),
+            }),
+          }),
+        }),
+      })
+      .mockReturnValueOnce({
+        from: () => ({
+          where: vi.fn().mockResolvedValue([{ domain: "iosg.vc" }]),
+        }),
+      })
+      .mockReturnValueOnce({
+        from: () => ({
+          leftJoin: () => ({
+            where: vi.fn().mockResolvedValue([]),
+          }),
+        }),
+      });
+    deleteRows.mockReturnValue({ where });
+    insert.mockReturnValue({ values });
+    values.mockReturnValue({ onConflictDoUpdate });
+    onConflictDoUpdate.mockResolvedValue(undefined);
+    update.mockReturnValue({ set });
+    set.mockReturnValue({ where });
+    where.mockResolvedValue(undefined);
+    grantMeetingAccessByEmail.mockResolvedValue({ pending: false });
+    reconcileEffectiveMeetingAccess.mockResolvedValue(undefined);
+
+    await expect(
+      syncMeetingParticipantAccessFromCalendar({
+        meetingId: "meeting_123",
+        teamId: "team_123",
+      }),
+    ).resolves.toEqual({
+      attendeeCount: 2,
+      internalParticipantCount: 1,
+    });
+    expect(grantMeetingAccessByEmail).toHaveBeenCalledWith(
+      expect.objectContaining({
+        email: "yiping@iosg.vc",
+        meetingId: "meeting_123",
+      }),
+    );
   });
 
   it("does not grant automatic participant access to an external member", async () => {

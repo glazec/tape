@@ -100,18 +100,27 @@ describe("TranscriptViewer interactions", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Edit speaker Speaker 1" }));
     const input = screen.getByLabelText("Speaker name");
-    expect(screen.queryByLabelText("Speaker suggestions")).toBeNull();
-    expect(screen.queryByRole("button", { name: "Alice Smith" })).toBeNull();
+    await screen.findByRole("option", {
+      name: /Alice Smith.*alice@example.com/,
+    });
+    fireEvent.change(input, { target: { value: "Bob" } });
+    expect(
+      screen.queryByRole("option", {
+        name: /Alice Smith.*alice@example.com/,
+      }),
+    ).toBeNull();
+    expect(
+      screen.getByText("No matching participant. You can still use this name."),
+    ).toBeTruthy();
     fireEvent.change(input, { target: { value: "" } });
     fireEvent.click(screen.getByRole("button", { name: "Save speaker" }));
     expect(await screen.findByText("Add a speaker name.")).toBeTruthy();
 
-    fireEvent.click(screen.getByRole("button", { name: "Show suggestions" }));
-    const aliceOption = await screen.findByRole("option", {
+    const restoredAliceOption = await screen.findByRole("option", {
       name: /Alice Smith.*alice@example.com/,
     });
-    fireEvent.pointerDown(aliceOption, { pointerType: "mouse" });
-    fireEvent.click(aliceOption);
+    fireEvent.pointerDown(restoredAliceOption, { pointerType: "mouse" });
+    fireEvent.click(restoredAliceOption);
     fireEvent.click(screen.getByRole("button", { name: "This line" }));
     fireEvent.click(screen.getByRole("button", { name: "Save speaker" }));
     await waitFor(() =>

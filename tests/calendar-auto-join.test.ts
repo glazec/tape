@@ -684,6 +684,7 @@ describe("calendar auto join", () => {
           workspaceDomain: "example.com",
         },
         event: {
+          attendeeEmails: ["kemi@mpch.com", "yiping@iosg.vc"],
           externalEventId: "google_event_123",
           recallCalendarEventId: "66666666-6666-4666-8666-666666666666",
           recallCalendarEventBots: [
@@ -715,7 +716,12 @@ describe("calendar auto join", () => {
     expect(calendarEventOnConflictDoUpdate).toHaveBeenCalledWith(
       expect.objectContaining({ setWhere: expect.anything() }),
     );
-    expect(syncMeetingParticipantAccess).not.toHaveBeenCalled();
+    expect(syncMeetingParticipantAccess).toHaveBeenCalledWith({
+      attendeeEmails: ["kemi@mpch.com", "yiping@iosg.vc"],
+      meetingId: "44444444-4444-4444-8444-444444444444",
+      ownerUserId: "55555555-5555-4555-8555-555555555555",
+      teamId: "22222222-2222-4222-8222-222222222222",
+    });
     expect(applyMeetingShareRules).not.toHaveBeenCalled();
     expect(update).not.toHaveBeenCalled();
   });

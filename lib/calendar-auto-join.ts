@@ -298,6 +298,32 @@ export async function autoJoinCalendarEvent(input: AutoJoinInput) {
     existingMeeting = null;
   }
 
+  if (existingMeeting) {
+    await syncMeetingParticipantAccess({
+      attendeeEmails,
+      meetingId: existingMeeting.id,
+      ownerUserId: existingMeeting.ownerUserId,
+      teamId: input.connection.teamId,
+    });
+    participantAccessSynced = true;
+  }
+
+  if (
+    existingMeeting &&
+    calendarEventChanged &&
+    input.connection.workspaceDomain
+  ) {
+    await applyMeetingShareRules({
+      attendeeEmails,
+      meetingId: existingMeeting.id,
+      ownerUserId: existingMeeting.ownerUserId,
+      teamId: input.connection.teamId,
+      title: getCalendarMeetingTitle(existingMeeting, title),
+      workspaceDomain: input.connection.workspaceDomain,
+    });
+    shareRulesApplied = true;
+  }
+
   if (
     existingMeeting &&
     !calendarEventChanged &&
@@ -322,28 +348,6 @@ export async function autoJoinCalendarEvent(input: AutoJoinInput) {
       meetingUrl: meetingUrl ?? undefined,
       reason: "already_scheduled" as const,
     };
-  }
-
-  if (existingMeeting && calendarEventChanged) {
-    await syncMeetingParticipantAccess({
-      attendeeEmails,
-      meetingId: existingMeeting.id,
-      ownerUserId: existingMeeting.ownerUserId,
-      teamId: input.connection.teamId,
-    });
-    participantAccessSynced = true;
-
-    if (input.connection.workspaceDomain) {
-      await applyMeetingShareRules({
-        attendeeEmails,
-        meetingId: existingMeeting.id,
-        ownerUserId: existingMeeting.ownerUserId,
-        teamId: input.connection.teamId,
-        title: getCalendarMeetingTitle(existingMeeting, title),
-        workspaceDomain: input.connection.workspaceDomain,
-      });
-      shareRulesApplied = true;
-    }
   }
 
   if (!meetingUrl) {

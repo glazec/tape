@@ -31,7 +31,6 @@ import {
 import { Button } from "@/components/ui/button";
 import {
   Combobox,
-  ComboboxContent,
   ComboboxEmpty,
   ComboboxInput,
   ComboboxItem,
@@ -101,6 +100,22 @@ export type EditingSpeaker = {
 };
 
 export type SpeakerApplyScope = "matching_speaker" | "segment";
+
+export function matchesSpeakerSuggestion(
+  suggestion: SpeakerSuggestion,
+  query: string,
+  initialSpeaker: string,
+) {
+  const normalizedQuery = query.trim().toLowerCase();
+
+  return (
+    normalizedQuery.length === 0 ||
+    normalizedQuery === initialSpeaker.trim().toLowerCase() ||
+    [suggestion.name, suggestion.email].some((text) =>
+      text.toLowerCase().includes(normalizedQuery),
+    )
+  );
+}
 
 const WAVEFORM_DESKTOP_BAR_COUNT = 120;
 const WAVEFORM_MOBILE_BAR_COUNT = 56;
@@ -359,6 +374,7 @@ export function TranscriptViewer({
     null,
   );
   const [draftSpeaker, setDraftSpeaker] = useState("");
+  const [initialDraftSpeaker, setInitialDraftSpeaker] = useState("");
   const [speakerApplyScope, setSpeakerApplyScope] =
     useState<SpeakerApplyScope>("matching_speaker");
   const [savingSpeakerKey, setSavingSpeakerKey] = useState<string | null>(null);
@@ -665,7 +681,10 @@ export function TranscriptViewer({
       segmentId: targetSegmentId,
       speakerKey,
     });
-    setDraftSpeaker(speakerStat?.speaker ?? speaker ?? "");
+    const initialSpeaker = speakerStat?.speaker ?? speaker ?? "";
+
+    setDraftSpeaker(initialSpeaker);
+    setInitialDraftSpeaker(initialSpeaker);
     setSpeakerApplyScope("matching_speaker");
     setErrorSpeakerKey(null);
   }
@@ -764,58 +783,66 @@ export function TranscriptViewer({
   }) {
     return (
       <form className="flex w-full max-w-xl flex-col gap-2" onSubmit={saveSpeaker}>
-        <div className="flex min-w-0 items-center gap-1.5">
-          <Combobox<SpeakerSuggestion>
-            autoHighlight
-            filter={(suggestion, query) =>
-              [suggestion.name, suggestion.email].some((text) =>
-                text.toLowerCase().includes(query.trim().toLowerCase()),
-              )
-            }
-            inputValue={draftSpeaker}
-            isItemEqualToValue={(suggestion, value) =>
-              suggestion.email === value.email
-            }
-            items={speakerRenameSuggestions}
-            itemToStringLabel={(suggestion) => suggestion.name}
-            itemToStringValue={(suggestion) => suggestion.name}
-            onInputValueChange={setDraftSpeaker}
-            onValueChange={(suggestion) => {
-              if (suggestion) {
-                setDraftSpeaker(suggestion.name);
+        <div className="flex min-w-0 flex-wrap items-start gap-1.5">
+          <div className="min-w-[min(100%,18rem)] flex-1">
+            <Combobox<SpeakerSuggestion>
+              autoHighlight
+              filter={(suggestion, query) =>
+                matchesSpeakerSuggestion(
+                  suggestion,
+                  query,
+                  initialDraftSpeaker,
+                )
               }
-            }}
-          >
-            <ComboboxInput
-              aria-label="Speaker name"
-              aria-invalid={hasError}
-              autoComplete="off"
-              autoFocus
-              placeholder="Speaker name"
-            />
-            <ComboboxContent>
-              <ComboboxEmpty>
-                No matching participant. You can still use this name.
-              </ComboboxEmpty>
-              <ComboboxList>
-                {(suggestion: SpeakerSuggestion) => (
-                  <ComboboxItem key={suggestion.email} value={suggestion}>
-                    <span className="min-w-0">
-                      <span className="block truncate font-medium">
-                        {suggestion.name}
+              inline
+              inputValue={draftSpeaker}
+              isItemEqualToValue={(suggestion, value) =>
+                suggestion.email === value.email
+              }
+              items={speakerRenameSuggestions}
+              itemToStringLabel={(suggestion) => suggestion.name}
+              itemToStringValue={(suggestion) => suggestion.name}
+              onInputValueChange={setDraftSpeaker}
+              onValueChange={(suggestion) => {
+                if (suggestion) {
+                  setDraftSpeaker(suggestion.name);
+                }
+              }}
+              open
+            >
+              <ComboboxInput
+                aria-label="Speaker name"
+                aria-invalid={hasError}
+                autoComplete="off"
+                autoFocus
+                hideTrigger
+                placeholder="Speaker name"
+              />
+              <div className="mt-1 max-h-44 overflow-y-auto rounded-lg bg-popover shadow-md ring-1 ring-foreground/10">
+                <ComboboxEmpty>
+                  No matching participant. You can still use this name.
+                </ComboboxEmpty>
+                <ComboboxList>
+                  {(suggestion: SpeakerSuggestion) => (
+                    <ComboboxItem key={suggestion.email} value={suggestion}>
+                      <span className="min-w-0">
+                        <span className="block truncate font-medium">
+                          {suggestion.name}
+                        </span>
+                        <span className="block truncate text-xs text-muted-foreground">
+                          {suggestion.email}
+                        </span>
                       </span>
-                      <span className="block truncate text-xs text-muted-foreground">
-                        {suggestion.email}
-                      </span>
-                    </span>
-                  </ComboboxItem>
-                )}
-              </ComboboxList>
-            </ComboboxContent>
-          </Combobox>
+                    </ComboboxItem>
+                  )}
+                </ComboboxList>
+              </div>
+            </Combobox>
+          </div>
           {previewClips.length > 0 && canSeekTranscript ? (
             <Button
               aria-label="Preview speaker voice"
+              className="h-11 sm:h-7"
               disabled={isSaving}
               onClick={() => playSpeakerPreview(previewClips)}
               size="sm"
@@ -829,6 +856,7 @@ export function TranscriptViewer({
           ) : null}
           <Button
             aria-label="Save speaker"
+            className="size-11 sm:size-8"
             disabled={isSaving}
             size="icon"
             type="submit"
@@ -837,6 +865,7 @@ export function TranscriptViewer({
           </Button>
           <Button
             aria-label="Cancel speaker edit"
+            className="size-11 sm:size-8"
             disabled={isSaving}
             onClick={() => setEditingSpeaker(null)}
             size="icon"

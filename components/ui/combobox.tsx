@@ -10,8 +10,9 @@ const Combobox = ComboboxPrimitive.Root;
 
 function ComboboxInput({
   className,
+  hideTrigger = false,
   ...props
-}: ComboboxPrimitive.Input.Props) {
+}: ComboboxPrimitive.Input.Props & { hideTrigger?: boolean }) {
   return (
     <ComboboxPrimitive.InputGroup
       data-slot="combobox-input-group"
@@ -25,13 +26,15 @@ function ComboboxInput({
         className="h-full min-w-0 flex-1 bg-transparent px-2.5 py-1 text-base outline-none placeholder:text-muted-foreground md:text-sm"
         {...props}
       />
-      <ComboboxPrimitive.Trigger
-        aria-label="Show suggestions"
-        data-slot="combobox-trigger"
-        className="flex size-11 shrink-0 items-center justify-center rounded-md text-muted-foreground outline-none transition-colors hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 sm:mr-1 sm:size-7"
-      >
-        <ChevronDownIcon className="size-4 transition-transform group-data-[popup-open]/combobox-input:rotate-180" />
-      </ComboboxPrimitive.Trigger>
+      {hideTrigger ? null : (
+        <ComboboxPrimitive.Trigger
+          aria-label="Show suggestions"
+          data-slot="combobox-trigger"
+          className="flex size-11 shrink-0 items-center justify-center rounded-md text-muted-foreground outline-none transition-colors hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 sm:mr-1 sm:size-7"
+        >
+          <ChevronDownIcon className="size-4 transition-transform group-data-[popup-open]/combobox-input:rotate-180" />
+        </ComboboxPrimitive.Trigger>
+      )}
     </ComboboxPrimitive.InputGroup>
   );
 }

@@ -9,6 +9,7 @@ import {
   transcriptSegments,
 } from "@/db/schema";
 import { parseManualTranscriptText } from "@/lib/manual-transcript-parser";
+import { syncMeetingParticipantAccessFromCalendar } from "@/lib/meeting-participant-access";
 import { getManageableMeetingCondition } from "@/lib/meeting-write-policy";
 import { parseR2Env } from "@/lib/r2";
 import type { WorkspaceContext } from "@/lib/workspace";
@@ -25,6 +26,10 @@ export async function completeMeetingAudioUpload(input: {
   workspace: WorkspaceContext;
 }) {
   await assertCanManageMeeting(input.workspace, input.meetingId);
+  await syncMeetingParticipantAccessFromCalendar({
+    meetingId: input.meetingId,
+    teamId: input.workspace.teamId,
+  });
 
   const env = parseR2Env(process.env);
   const now = new Date();
@@ -87,6 +92,10 @@ export async function completeManualTranscriptUpload(input: {
   workspace: WorkspaceContext;
 }) {
   await assertCanManageMeeting(input.workspace, input.meetingId);
+  await syncMeetingParticipantAccessFromCalendar({
+    meetingId: input.meetingId,
+    teamId: input.workspace.teamId,
+  });
 
   const segments = parseManualTranscriptText(input.transcriptText);
 

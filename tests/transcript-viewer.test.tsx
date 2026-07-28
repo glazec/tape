@@ -6,6 +6,7 @@ import {
   getSpeakerPreviewClips,
   getSpeakerPreviewTransition,
   getSpeakerRenameSuggestions,
+  matchesSpeakerSuggestion,
   getVisualAssetPlacements,
   getWaveformHoverSnapshot,
   MeetingVisualLightbox,
@@ -392,6 +393,23 @@ describe("TranscriptViewer", () => {
 
     expect(getSpeakerRenameSuggestions(suggestions).map((item) => item.name)).toEqual(
       suggestions.map((item) => item.name),
+    );
+  });
+
+  it("shows all participants for an unchanged generic speaker label", () => {
+    const suggestion = {
+      email: "kemi@mpch.com",
+      name: "Kemi",
+    };
+
+    expect(matchesSpeakerSuggestion(suggestion, "Speaker 1", "Speaker 1")).toBe(
+      true,
+    );
+    expect(matchesSpeakerSuggestion(suggestion, "kinga", "Speaker 1")).toBe(
+      false,
+    );
+    expect(matchesSpeakerSuggestion(suggestion, "kemi", "Speaker 1")).toBe(
+      true,
     );
   });
 
