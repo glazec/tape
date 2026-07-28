@@ -56,25 +56,54 @@ function mockSegments(
     translatedText: string | null;
   }> = {},
 ) {
-  const segments = [
-    {
-      id: "segment_1",
-      polishedText: overrides.polishedText ?? null,
-      text: "Um, hello team.",
-      translatedText: overrides.translatedText ?? null,
-    },
-  ];
-  const orderBy = vi.fn().mockResolvedValue(segments);
-  const selectWhere = vi.fn().mockReturnValue({ orderBy });
-  const from = vi.fn().mockReturnValue({ where: selectWhere });
+  const segment = {
+    id: "segment_1",
+    polishedText: overrides.polishedText ?? null,
+    text: "Um, hello team.",
+    translatedText: overrides.translatedText ?? null,
+  };
   const updateWhere = vi.fn().mockResolvedValue(undefined);
-  const set = vi.fn().mockReturnValue({ where: updateWhere });
+  const set = vi.fn().mockImplementation((values) => {
+    if ("polishedText" in values) {
+      segment.polishedText = values.polishedText;
+    }
 
-  select.mockReturnValue({ from });
+    if ("translatedText" in values) {
+      segment.translatedText = values.translatedText;
+    }
+
+    return { where: updateWhere };
+  });
+
+  select.mockImplementation((fields: Record<string, unknown>) => {
+    const selected = Object.fromEntries(
+      Object.keys(fields).map((key) => [
+        key,
+        segment[key as keyof typeof segment],
+      ]),
+    );
+    const resolve = () => Promise.resolve([selected]);
+    const query = {
+      from: () => query,
+      orderBy: resolve,
+      then: (
+        onFulfilled: (value: unknown) => unknown,
+        onRejected?: (reason: unknown) => unknown,
+      ) => resolve().then(onFulfilled, onRejected),
+      where: () => query,
+    };
+
+    return query;
+  });
   update.mockReturnValue({ set });
   getStoredMeetingTranslationLanguage.mockResolvedValue("zh-CN");
+  const run = vi
+    .fn()
+    .mockImplementation(
+      async (_name: string, handler: () => Promise<unknown>) => handler(),
+    );
 
-  return { set };
+  return { run, set };
 }
 
 describe("enrich transcript", () => {
@@ -86,7 +115,7 @@ describe("enrich transcript", () => {
   it(
     "completes translation before polishing and preserves that status if polish fails",
     async () => {
-      const { set } = mockSegments();
+      const { run, set } = mockSegments();
       const polishError = new Error("OpenRouter polish returned no content");
 
       translateTranscriptSegments.mockImplementation(
@@ -109,6 +138,7 @@ describe("enrich transcript", () => {
               translationLanguage: "zh-CN",
             },
           },
+          step: { run },
         }),
       ).rejects.toThrow("OpenRouter polish returned no content");
 
@@ -149,7 +179,7 @@ describe("enrich transcript", () => {
   );
 
   it("keeps translation running while Inngest still has retries", async () => {
-    mockSegments();
+    const { run } = mockSegments();
     const translationError = new Error("OpenRouter translation returned no content");
 
     translateTranscriptSegments.mockRejectedValue(translationError);
@@ -166,6 +196,7 @@ describe("enrich transcript", () => {
             translationLanguage: "zh-CN",
           },
         },
+        step: { run },
       }),
     ).rejects.toThrow("OpenRouter translation returned no content");
 
@@ -177,7 +208,7 @@ describe("enrich transcript", () => {
   });
 
   it("marks translation failed without starting polish when translation fails", async () => {
-    mockSegments();
+    const { run } = mockSegments();
     const translationError = new Error("OpenRouter translation returned no content");
 
     translateTranscriptSegments.mockRejectedValue(translationError);
@@ -194,6 +225,7 @@ describe("enrich transcript", () => {
             translationLanguage: "zh-CN",
           },
         },
+        step: { run },
       }),
     ).rejects.toThrow("OpenRouter translation returned no content");
 
@@ -206,7 +238,7 @@ describe("enrich transcript", () => {
   });
 
   it("does not move a completed translation back to running during a polish retry", async () => {
-    mockSegments({ translatedText: "团队好。" });
+    const { run } = mockSegments({ translatedText: "团队好。" });
     polishTranscriptSegmentsInOriginalLanguage.mockRejectedValue(
       new Error("OpenRouter polish returned no content"),
     );
@@ -222,6 +254,7 @@ describe("enrich transcript", () => {
             translationLanguage: "zh-CN",
           },
         },
+        step: { run },
       }),
     ).rejects.toThrow("OpenRouter polish returned no content");
 
@@ -235,11 +268,15 @@ describe("enrich transcript", () => {
   });
 
   it("replaces translations when the team target language changes", async () => {
-    const { set } = mockSegments({ translatedText: "团队好。" });
+    const { run, set } = mockSegments({ translatedText: "团队好。" });
     getStoredMeetingTranslationLanguage.mockResolvedValue("zh-CN");
-    translateTranscriptSegments.mockResolvedValue([
-      { id: "segment_1", text: "Hello team." },
-    ]);
+    translateTranscriptSegments.mockImplementation(
+      async (_segments, options) => {
+        const translations = [{ id: "segment_1", text: "Hello team." }];
+        await options.onTranslated(translations);
+        return translations;
+      },
+    );
     polishTranscriptSegmentsInOriginalLanguage.mockResolvedValue([
       { id: "segment_1", text: "Hello team." },
     ]);
@@ -254,6 +291,7 @@ describe("enrich transcript", () => {
           translationLanguage: "en",
         },
       },
+      step: { run },
     });
 
     expect(set).toHaveBeenCalledWith({

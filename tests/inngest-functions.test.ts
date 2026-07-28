@@ -9,13 +9,20 @@ const {
   createReadUrl,
   deleteScheduledRecallBot,
   dispatchPendingLocationReminderSchedules,
+  getStoredMeetingTranslationLanguage,
   getMeetingVocabularyKeyterms,
   getTranscriptJobDurationMs,
+  markMeetingTranslationCompleted,
+  markMeetingTranslationFailed,
+  markMeetingTranslationRunning,
   markLocationReminderDeliveryFailed,
+  polishTranscriptSegmentsInOriginalLanguage,
   scheduleRecallBot,
+  select,
   sendScheduledLocationReminder,
   stopBotsForExhaustedWorkspaces,
   syncRecallCalendarEventsForAllConnectedUsers,
+  translateTranscriptSegments,
   update,
 } = vi.hoisted(() => ({
   assertMeetingHasProviderCredit: vi.fn(),
@@ -26,13 +33,20 @@ const {
   createReadUrl: vi.fn(),
   deleteScheduledRecallBot: vi.fn(),
   dispatchPendingLocationReminderSchedules: vi.fn(),
+  getStoredMeetingTranslationLanguage: vi.fn(),
   getMeetingVocabularyKeyterms: vi.fn().mockResolvedValue([]),
   getTranscriptJobDurationMs: vi.fn().mockResolvedValue(30 * 60 * 1_000),
+  markMeetingTranslationCompleted: vi.fn(),
+  markMeetingTranslationFailed: vi.fn(),
+  markMeetingTranslationRunning: vi.fn(),
   markLocationReminderDeliveryFailed: vi.fn(),
+  polishTranscriptSegmentsInOriginalLanguage: vi.fn(),
   scheduleRecallBot: vi.fn(),
+  select: vi.fn(),
   sendScheduledLocationReminder: vi.fn(),
   stopBotsForExhaustedWorkspaces: vi.fn(),
   syncRecallCalendarEventsForAllConnectedUsers: vi.fn(),
+  translateTranscriptSegments: vi.fn(),
   update: vi.fn(),
 }));
 
@@ -44,8 +58,22 @@ vi.mock("@/lib/provider-credit", async (importOriginal) => ({
 
 vi.mock("@/db/client", () => ({
   db: {
+    select,
     update,
   },
+}));
+
+vi.mock("@/lib/meeting-translation-jobs", () => ({
+  getStoredMeetingTranslationLanguage,
+  markMeetingTranslationCompleted,
+  markMeetingTranslationFailed,
+  markMeetingTranslationRunning,
+}));
+
+vi.mock("@/lib/vendors/openrouter", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/vendors/openrouter")>()),
+  polishTranscriptSegmentsInOriginalLanguage,
+  translateTranscriptSegments,
 }));
 
 vi.mock("@/lib/r2", () => ({
@@ -100,7 +128,14 @@ describe("Inngest functions", () => {
     vi.clearAllMocks();
     assertMeetingHasProviderCredit.mockReset();
     assertWorkspaceHasProviderCredit.mockReset();
+    getStoredMeetingTranslationLanguage.mockReset();
     getTranscriptJobDurationMs.mockReset().mockResolvedValue(30 * 60 * 1_000);
+    markMeetingTranslationCompleted.mockReset();
+    markMeetingTranslationFailed.mockReset();
+    markMeetingTranslationRunning.mockReset();
+    polishTranscriptSegmentsInOriginalLanguage.mockReset();
+    select.mockReset();
+    translateTranscriptSegments.mockReset();
     vi.resetModules();
     vi.unstubAllEnvs();
   });
@@ -461,5 +496,111 @@ describe("Inngest functions", () => {
         transcriptJobId: "55555555-5555-4555-8555-555555555555",
       },
     });
+  });
+
+  it("checkpoints long transcript enrichment in durable batches", async () => {
+    const meetingId = "11111111-1111-4111-8111-111111111111";
+    const segments = Array.from({ length: 12 }, (_, index) => ({
+      id: `${String(index + 1).padStart(8, "0")}-1111-4111-8111-111111111111`,
+      text: `Segment ${index + 1}`,
+    }));
+    const selectResponses = [
+      segments,
+      segments.map(() => ({ translatedText: null })),
+      segments.slice(0, 10).map((segment) => ({
+        id: segment.id,
+        translatedText: null,
+      })),
+      segments.slice(10).map((segment) => ({
+        id: segment.id,
+        translatedText: null,
+      })),
+      segments.map(() => ({ translatedText: "translated" })),
+      segments.slice(0, 10).map((segment) => ({
+        id: segment.id,
+        polishedText: null,
+      })),
+      segments.slice(10).map((segment) => ({
+        id: segment.id,
+        polishedText: null,
+      })),
+      segments.map(() => ({ polishedText: "polished" })),
+    ];
+    select.mockImplementation(() => {
+      const consume = () =>
+        Promise.resolve(selectResponses.shift() ?? []);
+      const query = {
+        from: () => query,
+        orderBy: () => consume(),
+        then: (
+          onFulfilled: (value: unknown) => unknown,
+          onRejected?: (reason: unknown) => unknown,
+        ) => consume().then(onFulfilled, onRejected),
+        where: () => query,
+      };
+
+      return query;
+    });
+    const where = vi.fn().mockResolvedValue(undefined);
+    const set = vi.fn().mockReturnValue({ where });
+    update.mockReturnValue({ set });
+    getStoredMeetingTranslationLanguage.mockResolvedValue("zh-CN");
+    translateTranscriptSegments.mockImplementation(
+      async (
+        batch: Array<{ id: string; text: string }>,
+        options: {
+          onTranslated: (
+            rows: Array<{ id: string; text: string }>,
+          ) => Promise<void>;
+        },
+      ) => {
+        const rows = batch.map((segment) => ({
+          id: segment.id,
+          text: `Translated ${segment.text}`,
+        }));
+        await options.onTranslated(rows);
+        return rows;
+      },
+    );
+    polishTranscriptSegmentsInOriginalLanguage.mockImplementation(
+      async (batch: Array<{ id: string; text: string }>) =>
+        batch.map((segment) => ({
+          id: segment.id,
+          text: `Polished ${segment.text}`,
+        })),
+    );
+    const run = vi
+      .fn()
+      .mockImplementation(
+        async (_name: string, handler: () => Promise<unknown>) => handler(),
+      );
+    const { enrichTranscript } = await import("@/inngest/functions");
+
+    await expect(
+      (enrichTranscript as unknown as RunnableInngestFunction).fn({
+        attempt: 0,
+        event: {
+          data: {
+            meetingId,
+            translateTranscript: true,
+            translationLanguage: "zh-CN",
+          },
+        },
+        step: { run },
+      }),
+    ).resolves.toEqual({
+      polishedCount: 12,
+      translatedCount: 12,
+    });
+
+    expect(run.mock.calls.map(([name]) => name)).toEqual([
+      "prepare-transcript-translation",
+      "translate-transcript-batch-0",
+      "translate-transcript-batch-1",
+      "complete-transcript-translation",
+      "polish-transcript-batch-0",
+      "polish-transcript-batch-1",
+      "complete-transcript-polish",
+    ]);
   });
 });

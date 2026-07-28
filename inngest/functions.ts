@@ -262,7 +262,7 @@ export const enrichTranscript = inngest.createFunction(
     retries: ENRICH_TRANSCRIPT_RETRIES,
     triggers: [{ event: "meeting/enrich.transcript" }],
   },
-  async ({ event, attempt = 0 }) => {
+  async ({ event, step, attempt = 0 }) => {
     const data = enrichTranscriptDataSchema.parse(event.data);
     const shouldTranslate =
       data.translateTranscript ?? data.translateToChinese ?? true;
@@ -276,9 +276,7 @@ export const enrichTranscript = inngest.createFunction(
       const segments = await db
         .select({
           id: transcriptSegments.id,
-          polishedText: transcriptSegments.polishedText,
           text: transcriptSegments.text,
-          translatedText: transcriptSegments.translatedText,
         })
         .from(transcriptSegments)
         .where(
@@ -294,15 +292,30 @@ export const enrichTranscript = inngest.createFunction(
       let newTranslatedCount = 0;
 
       if (shouldTranslate) {
-        const storedTranslationLanguage =
-          await getStoredMeetingTranslationLanguage(data.meetingId);
-        const targetLanguageChanged =
-          storedTranslationLanguage !== translationLanguage;
+        await step.run("prepare-transcript-translation", async () => {
+          const storedTranslationLanguage =
+            await getStoredMeetingTranslationLanguage(data.meetingId);
 
-        if (targetLanguageChanged) {
-          await db
-            .update(transcriptSegments)
-            .set({ translatedText: null, updatedAt: new Date() })
+          if (storedTranslationLanguage !== translationLanguage) {
+            await db
+              .update(transcriptSegments)
+              .set({ translatedText: null, updatedAt: new Date() })
+              .where(
+                and(
+                  eq(transcriptSegments.meetingId, data.meetingId),
+                  inArray(
+                    transcriptSegments.jobId,
+                    currentTranscriptJobIdsSubquery(data.meetingId),
+                  ),
+                ),
+              );
+          }
+
+          const currentSegments = await db
+            .select({
+              translatedText: transcriptSegments.translatedText,
+            })
+            .from(transcriptSegments)
             .where(
               and(
                 eq(transcriptSegments.meetingId, data.meetingId),
@@ -312,114 +325,229 @@ export const enrichTranscript = inngest.createFunction(
                 ),
               ),
             );
-        }
 
-        const untranslatedSegments = segments
-          .filter(
-            (segment) =>
-              targetLanguageChanged || !segment.translatedText?.trim(),
-          )
-          .map((segment) => ({
-            id: segment.id,
-            text: segment.text,
-          }));
-
-        if (untranslatedSegments.length > 0) {
-          await markMeetingTranslationRunning(
-            data.meetingId,
-            translationLanguage,
-          );
-        }
+          if (
+            currentSegments.some(
+              (segment) => !segment.translatedText?.trim(),
+            )
+          ) {
+            await markMeetingTranslationRunning(
+              data.meetingId,
+              translationLanguage,
+            );
+          }
+        });
 
         for (
           let index = 0;
-          index < untranslatedSegments.length;
+          index < segments.length;
           index += TRANSLATION_BATCH_SIZE
         ) {
-          const batch = untranslatedSegments.slice(
+          const batch = segments.slice(
             index,
             index + TRANSLATION_BATCH_SIZE,
           );
-          const translations = await translateTranscriptSegments(batch, {
-            batchSize: TRANSLATION_BATCH_SIZE,
-            meetingId: data.meetingId,
-            onTranslated: async (translatedRows) => {
-              for (const translation of translatedRows) {
-                await db
-                  .update(transcriptSegments)
-                  .set({
-                    translatedText: translation.text,
-                    updatedAt: new Date(),
-                  })
-                  .where(eq(transcriptSegments.id, translation.id));
+          const batchNumber = index / TRANSLATION_BATCH_SIZE;
+
+          newTranslatedCount += await step.run(
+            `translate-transcript-batch-${batchNumber}`,
+            async () => {
+              const currentSegments = await db
+                .select({
+                  id: transcriptSegments.id,
+                  translatedText: transcriptSegments.translatedText,
+                })
+                .from(transcriptSegments)
+                .where(
+                  and(
+                    eq(transcriptSegments.meetingId, data.meetingId),
+                    inArray(
+                      transcriptSegments.jobId,
+                      currentTranscriptJobIdsSubquery(data.meetingId),
+                    ),
+                    inArray(
+                      transcriptSegments.id,
+                      batch.map((segment) => segment.id),
+                    ),
+                  ),
+                );
+              const translatedById = new Map(
+                currentSegments.map((segment) => [
+                  segment.id,
+                  segment.translatedText,
+                ]),
+              );
+              const pendingSegments = batch.filter(
+                (segment) => !translatedById.get(segment.id)?.trim(),
+              );
+
+              if (pendingSegments.length === 0) {
+                return 0;
               }
+
+              const translations = await translateTranscriptSegments(
+                pendingSegments,
+                {
+                  batchSize: TRANSLATION_BATCH_SIZE,
+                  meetingId: data.meetingId,
+                  onTranslated: async (translatedRows) => {
+                    for (const translation of translatedRows) {
+                      await db
+                        .update(transcriptSegments)
+                        .set({
+                          translatedText: translation.text,
+                          updatedAt: new Date(),
+                        })
+                        .where(eq(transcriptSegments.id, translation.id));
+                    }
+                  },
+                  targetLanguage: translationLanguage,
+                },
+              );
+
+              return translations.length;
             },
-            targetLanguage: translationLanguage,
-          });
-
-          newTranslatedCount += translations.length;
-        }
-
-        const translatedCount =
-          segments.length - untranslatedSegments.length + newTranslatedCount;
-
-        if (translatedCount < segments.length) {
-          throw new Error(
-            `Translation incomplete: ${translatedCount} of ${segments.length} lines translated`,
           );
         }
 
-        translationFinished = true;
-        await markMeetingTranslationCompleted(
-          data.meetingId,
-          translationLanguage,
+        const translatedCount = await step.run(
+          "complete-transcript-translation",
+          async () => {
+            const currentSegments = await db
+              .select({
+                translatedText: transcriptSegments.translatedText,
+              })
+              .from(transcriptSegments)
+              .where(
+                and(
+                  eq(transcriptSegments.meetingId, data.meetingId),
+                  inArray(
+                    transcriptSegments.jobId,
+                    currentTranscriptJobIdsSubquery(data.meetingId),
+                  ),
+                ),
+              );
+            const completedCount = currentSegments.filter((segment) =>
+              segment.translatedText?.trim(),
+            ).length;
+
+            if (completedCount < segments.length) {
+              throw new Error(
+                `Translation incomplete: ${completedCount} of ${segments.length} lines translated`,
+              );
+            }
+
+            await markMeetingTranslationCompleted(
+              data.meetingId,
+              translationLanguage,
+            );
+            return completedCount;
+          },
         );
+
+        translationFinished = translatedCount >= segments.length;
       }
 
-      const unpolishedSegments = segments
-        .filter((segment) => !segment.polishedText?.trim())
-        .map((segment) => ({
-          id: segment.id,
-          text: segment.text,
-        }));
       let newPolishedCount = 0;
 
       for (
         let index = 0;
-        index < unpolishedSegments.length;
+        index < segments.length;
         index += TRANSLATION_BATCH_SIZE
       ) {
-        const batch = unpolishedSegments.slice(
+        const batch = segments.slice(
           index,
           index + TRANSLATION_BATCH_SIZE,
         );
-        const polishedSegments =
-          await polishTranscriptSegmentsInOriginalLanguage(batch, {
-            batchSize: TRANSLATION_BATCH_SIZE,
-            meetingId: data.meetingId,
-          });
+        const batchNumber = index / TRANSLATION_BATCH_SIZE;
 
-        for (const polishedSegment of polishedSegments) {
-          await db
-            .update(transcriptSegments)
-            .set({
-              polishedText: polishedSegment.text,
-              updatedAt: new Date(),
-            })
-            .where(eq(transcriptSegments.id, polishedSegment.id));
-        }
+        newPolishedCount += await step.run(
+          `polish-transcript-batch-${batchNumber}`,
+          async () => {
+            const currentSegments = await db
+              .select({
+                id: transcriptSegments.id,
+                polishedText: transcriptSegments.polishedText,
+              })
+              .from(transcriptSegments)
+              .where(
+                and(
+                  eq(transcriptSegments.meetingId, data.meetingId),
+                  inArray(
+                    transcriptSegments.jobId,
+                    currentTranscriptJobIdsSubquery(data.meetingId),
+                  ),
+                  inArray(
+                    transcriptSegments.id,
+                    batch.map((segment) => segment.id),
+                  ),
+                ),
+              );
+            const polishedById = new Map(
+              currentSegments.map((segment) => [
+                segment.id,
+                segment.polishedText,
+              ]),
+            );
+            const pendingSegments = batch.filter(
+              (segment) => !polishedById.get(segment.id)?.trim(),
+            );
 
-        newPolishedCount += polishedSegments.length;
-      }
+            if (pendingSegments.length === 0) {
+              return 0;
+            }
 
-      const polishedCount =
-        segments.length - unpolishedSegments.length + newPolishedCount;
+            const polishedSegments =
+              await polishTranscriptSegmentsInOriginalLanguage(
+                pendingSegments,
+                {
+                  batchSize: TRANSLATION_BATCH_SIZE,
+                  meetingId: data.meetingId,
+                },
+              );
 
-      if (polishedCount < segments.length) {
-        throw new Error(
-          `Original polish incomplete: ${polishedCount} of ${segments.length} lines polished`,
+            for (const polishedSegment of polishedSegments) {
+              await db
+                .update(transcriptSegments)
+                .set({
+                  polishedText: polishedSegment.text,
+                  updatedAt: new Date(),
+                })
+                .where(eq(transcriptSegments.id, polishedSegment.id));
+            }
+
+            return polishedSegments.length;
+          },
         );
       }
+
+      await step.run("complete-transcript-polish", async () => {
+        const currentSegments = await db
+          .select({
+            polishedText: transcriptSegments.polishedText,
+          })
+          .from(transcriptSegments)
+          .where(
+            and(
+              eq(transcriptSegments.meetingId, data.meetingId),
+              inArray(
+                transcriptSegments.jobId,
+                currentTranscriptJobIdsSubquery(data.meetingId),
+              ),
+            ),
+          );
+        const polishedCount = currentSegments.filter((segment) =>
+          segment.polishedText?.trim(),
+        ).length;
+
+        if (polishedCount < segments.length) {
+          throw new Error(
+            `Original polish incomplete: ${polishedCount} of ${segments.length} lines polished`,
+          );
+        }
+
+        return polishedCount;
+      });
 
       return {
         polishedCount: newPolishedCount,
