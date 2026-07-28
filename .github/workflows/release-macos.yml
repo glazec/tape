@@ -234,7 +234,7 @@ jobs:
           INSTALL_NOTES="$(cat <<'EOF'
           ## Install on macOS
 
-          This build uses Tape's stable release certificate. It is not signed with an Apple Developer ID and is not notarized by Apple.
+          This build uses the stable Tape Desktop release certificate. It is not signed with an Apple Developer ID and is not notarized by Apple.
 
           1. Download and unzip the `Tape Desktop` ZIP.
           2. Drag `Tape Desktop.app` into `/Applications`.
