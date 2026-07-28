@@ -260,6 +260,10 @@ function isPlausiblePolishLength(source: string, polished: string) {
     return false;
   }
 
+  if (sourceLength <= 12) {
+    return normalizeShortFragment(source) === normalizeShortFragment(polished);
+  }
+
   if (
     polishedLength >
     Math.max(sourceLength * 3, sourceLength + 30)
@@ -275,6 +279,10 @@ function isPlausiblePolishLength(source: string, polished: string) {
 
 function getMeaningfulLength(value: string) {
   return value.replace(/\s+/g, "").length;
+}
+
+function normalizeShortFragment(value: string) {
+  return value.replace(/\s+/g, " ").trim();
 }
 
 function getTranscriptRows(

@@ -186,4 +186,17 @@ describe("meeting translation", () => {
       }),
     ).toEqual([]);
   });
+
+  it("keeps short fragments raw instead of allowing semantic rewrites", () => {
+    expect(
+      parseOriginalTranscriptPolishResponse({
+        content:
+          '{"segments":[{"id":"segment_1","text":"But"},{"id":"segment_2","text":"Yeah."}]}',
+        segments: [
+          { id: "segment_1", text: "Uh-" },
+          { id: "segment_2", text: "Yeah." },
+        ],
+      }),
+    ).toEqual([{ id: "segment_2", text: "Yeah." }]);
+  });
 });
