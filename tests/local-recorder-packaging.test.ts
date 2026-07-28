@@ -140,6 +140,8 @@ describe("local recorder app packaging", () => {
     expect(workflow).toContain(
       'grep -q "<sparkle:shortVersionString>$APP_VERSION</sparkle:shortVersionString>"',
     );
+    expect(workflow).toContain('ARCHIVE_NAME="Tape-Desktop.zip"');
+    expect(workflow).toContain("--latest");
   });
 
   it("signs the desktop app for microphone access", () => {

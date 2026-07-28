@@ -189,7 +189,7 @@ jobs:
           set -euo pipefail
           APP_PATH="$PWD/dist/Tape Desktop.app"
           UPDATES_DIR="$PWD/dist/updates"
-          ARCHIVE_NAME="Tape-Desktop-${APP_VERSION}.zip"
+          ARCHIVE_NAME="Tape-Desktop.zip"
           ARCHIVE_PATH="$UPDATES_DIR/$ARCHIVE_NAME"
           SPARKLE_TOOLS="$PWD/.build/artifacts/sparkle/Sparkle/bin"
 

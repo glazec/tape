@@ -45,7 +45,7 @@ describe("landing page smoke test", () => {
     expect(html).toContain("Nobody wonders what they missed");
     expect(html).toContain('href="/auth/sign-in"');
     expect(html).toContain(
-      'href="https://github.com/glazec/tape/releases/download/mac-v0.2.0/MeetingNoteLocalRecorder-0.2.0.zip"',
+      'href="https://github.com/glazec/tape/releases/latest/download/Tape-Desktop.zip"',
     );
     expect(html).toContain('href="https://github.com/glazec/tape"');
   });

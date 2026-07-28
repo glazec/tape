@@ -3,6 +3,7 @@
 import Image from "next/image";
 
 import macosRecorder from "@/assets/product/macos-recorder.png";
+import { DESKTOP_APP_DOWNLOAD_URL } from "@/lib/desktop-app";
 
 import { SplitSection, Still, type Point } from "./landing-section";
 
@@ -52,7 +53,7 @@ export function LandingCapture() {
       footer={
         <div className="mt-10 flex flex-wrap items-center gap-x-8 gap-y-4">
           <a
-            href="https://github.com/glazec/tape/releases/download/mac-v0.2.0/MeetingNoteLocalRecorder-0.2.0.zip"
+            href={DESKTOP_APP_DOWNLOAD_URL}
             className="inline-flex h-11 items-center rounded-full bg-ink px-6 text-[0.875rem] font-medium text-paper transition-colors hover:bg-graphite focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-4"
           >
             Download for macOS

@@ -16,14 +16,13 @@ import {
 } from "@/components/ui/card";
 import { buttonVariants } from "@/components/ui/button";
 import type { CalendarConnectionSummary } from "@/lib/calendar-connection-queries";
+import { DESKTOP_APP_DOWNLOAD_URL } from "@/lib/desktop-app";
 import { cn } from "@/lib/utils";
 
 const MCP_GUIDE_URL =
   "https://github.com/glazec/tape/blob/main/docs/meeting-note-mcp-api.md";
 const MCP_SERVER_URL =
   "https://meeting-note-mcp-production.up.railway.app/mcp";
-const MAC_APP_DOWNLOAD_URL =
-  "https://github.com/glazec/tape/releases/download/mac-v0.2.0/MeetingNoteLocalRecorder-0.2.0.zip";
 
 export function OnboardingTutorial({
   autoSyncCalendar,
@@ -169,7 +168,7 @@ function DesktopDownloadLink() {
         buttonVariants({ variant: "outline" }),
         "min-h-11 w-full sm:min-h-8 sm:w-auto",
       )}
-      href={MAC_APP_DOWNLOAD_URL}
+      href={DESKTOP_APP_DOWNLOAD_URL}
     >
       Download app
     </a>

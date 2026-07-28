@@ -60,7 +60,7 @@ describe("OnboardingTutorial", () => {
     expect(html).toContain("Connect the MCP server");
     expect(html).toContain("Connect calendar");
     expect(html).toContain(
-      "https://github.com/glazec/tape/releases/download/mac-v0.2.0/MeetingNoteLocalRecorder-0.2.0.zip",
+      "https://github.com/glazec/tape/releases/latest/download/Tape-Desktop.zip",
     );
     expect(html).toContain(
       "https://github.com/glazec/tape/blob/main/docs/meeting-note-mcp-api.md",
@@ -72,7 +72,7 @@ describe("OnboardingTutorial", () => {
     );
     expect(html).toContain("Copy MCP server link");
     expect(html).toContain(
-      'href="https://github.com/glazec/tape/releases/download/mac-v0.2.0/MeetingNoteLocalRecorder-0.2.0.zip"',
+      'href="https://github.com/glazec/tape/releases/latest/download/Tape-Desktop.zip"',
     );
     expect(html).toContain("Download app");
     expect(html).toContain("macOS setup instructions");
