@@ -113,6 +113,9 @@ describe("local recorder app packaging", () => {
       "MACOS_RELEASE_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_RELEASE_CERTIFICATE_PASSWORD }}",
     );
     expect(workflow).toContain('Authority=Tape Desktop Release');
+    expect(workflow).toContain(
+      '"$HOME/Library/Keychains/login.keychain-db"',
+    );
     expect(workflow).toContain("workflow_dispatch:");
     expect(workflow).toContain("Upload release candidate");
     expect(workflow).toContain("if: github.event_name == 'push'");
