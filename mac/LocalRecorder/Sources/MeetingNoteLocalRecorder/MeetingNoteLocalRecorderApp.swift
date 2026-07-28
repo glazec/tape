@@ -3,7 +3,7 @@ import ApplicationServices
 import AVFoundation
 import Foundation
 import LocalRecorderCore
-import ScreenCaptureKit
+@preconcurrency import ScreenCaptureKit
 import ServiceManagement
 import Sparkle
 import SwiftUI
