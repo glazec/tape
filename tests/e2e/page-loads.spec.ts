@@ -3,15 +3,21 @@ import { join, relative, resolve, sep } from "node:path";
 
 import { expect, test } from "@playwright/test";
 
+import { authenticatedDashboardFixture } from "./authenticated-dashboard-fixture";
+import {
+  pageRenderContractRoutes,
+  publicPageRenderHeadings,
+} from "./page-render-contracts";
+
 const appDirectory = resolve(process.cwd(), "app");
 const pageRoutes = discoverPageRoutes(appDirectory);
-const publicPageHeadings: Record<string, string> = {
-  "/privacy": "Your meetings remain your record.",
-  "/terms": "A shared record needs shared responsibility.",
-};
 
-for (const route of pageRoutes) {
-  test(`${route} loads without a server error`, async ({ page }) => {
+test("every web page has a rendering contract", () => {
+  expect(pageRoutes).toEqual(pageRenderContractRoutes);
+});
+
+for (const [route, heading] of Object.entries(publicPageRenderHeadings)) {
+  test(`${route} renders`, async ({ page }) => {
     const pageErrors: string[] = [];
     page.on("pageerror", (error) => pageErrors.push(error.message));
 
@@ -23,18 +29,7 @@ for (const route of pageRoutes) {
       page.getByRole("heading", { name: "Internal Server Error" }),
     ).toHaveCount(0);
     expect(pageErrors).toEqual([]);
-
-    if (route === "/") {
-      await expect(page.getByText("Every conversation,")).toBeVisible();
-    } else if (publicPageHeadings[route]) {
-      await expect(
-        page.getByRole("heading", { name: publicPageHeadings[route] }),
-      ).toBeVisible();
-    } else {
-      await expect(
-        page.getByRole("button", { name: "Continue with Google" }),
-      ).toBeVisible();
-    }
+    await expect(page.getByRole("heading", { name: heading })).toBeVisible();
   });
 }
 
@@ -74,7 +69,7 @@ function materializeRouteSegment(segment: string) {
   }
 
   if (segment === "[meetingId]") {
-    return ["11111111-1111-4111-8111-111111111111"];
+    return [authenticatedDashboardFixture.meetingId];
   }
 
   if (segment.startsWith("[") && segment.endsWith("]")) {
