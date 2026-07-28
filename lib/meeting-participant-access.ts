@@ -10,10 +10,8 @@ import {
 import { db } from "@/db/client";
 import {
   allowedDomains,
-  calendarEvents,
   meetingAccessSources,
   meetingAttendees,
-  meetings,
   teamMemberships,
   users,
 } from "@/db/schema";
@@ -24,37 +22,6 @@ import {
 } from "@/lib/meeting-access-grants";
 
 const participantSourceId = "calendar";
-
-export async function syncMeetingParticipantAccessFromCalendar(input: {
-  meetingId: string;
-  teamId: string;
-}) {
-  const [meeting] = await db
-    .select({
-      attendeeEmails: calendarEvents.attendeeEmails,
-      ownerUserId: meetings.ownerUserId,
-    })
-    .from(meetings)
-    .innerJoin(calendarEvents, eq(calendarEvents.id, meetings.calendarEventId))
-    .where(
-      and(
-        eq(meetings.id, input.meetingId),
-        eq(meetings.teamId, input.teamId),
-      ),
-    )
-    .limit(1);
-
-  if (!meeting) {
-    return null;
-  }
-
-  return syncMeetingParticipantAccess({
-    attendeeEmails: meeting.attendeeEmails,
-    meetingId: input.meetingId,
-    ownerUserId: meeting.ownerUserId,
-    teamId: input.teamId,
-  });
-}
 
 export async function syncMeetingParticipantAccess(input: {
   attendeeEmails: string[];

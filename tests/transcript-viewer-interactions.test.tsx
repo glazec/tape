@@ -149,6 +149,32 @@ describe("TranscriptViewer interactions", () => {
     expect(screen.getByLabelText("Speaker name")).toBeTruthy();
   });
 
+  it("submits the typed speaker name when suggestions are visible", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(new Response(null, { status: 200 }));
+    render(
+      <TranscriptViewer
+        meetingId="meeting"
+        segments={segments}
+        speakerSuggestions={[
+          { email: "alice@example.com", name: "Alice Smith" },
+        ]}
+      />,
+    );
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Edit speaker Speaker 1" }),
+    );
+    const input = screen.getByLabelText("Speaker name");
+    fireEvent.change(input, { target: { value: "Alicia" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+
+    await waitFor(() => expect(fetch).toHaveBeenCalledTimes(1));
+    const [, request] = vi.mocked(fetch).mock.calls[0] ?? [];
+    expect(JSON.parse(String(request?.body))).toMatchObject({
+      speaker: "Alicia",
+    });
+  });
+
   it("queues translation and reports service failures", async () => {
     vi.mocked(fetch).mockResolvedValueOnce(new Response(null, { status: 200 }));
     const summary = { hasTranslations: false, status: "failed" as const, totalSegments: 2, translatedSegments: 0 };

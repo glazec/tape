@@ -786,7 +786,6 @@ export function TranscriptViewer({
         <div className="flex min-w-0 flex-wrap items-start gap-1.5">
           <div className="min-w-[min(100%,18rem)] flex-1">
             <Combobox<SpeakerSuggestion>
-              autoHighlight
               filter={(suggestion, query) =>
                 matchesSpeakerSuggestion(
                   suggestion,
@@ -816,6 +815,16 @@ export function TranscriptViewer({
                 autoComplete="off"
                 autoFocus
                 hideTrigger
+                onKeyDown={(event) => {
+                  if (
+                    event.key === "Enter" &&
+                    !event.nativeEvent.isComposing &&
+                    !event.currentTarget.getAttribute("aria-activedescendant")
+                  ) {
+                    event.preventDefault();
+                    event.currentTarget.form?.requestSubmit();
+                  }
+                }}
                 placeholder="Speaker name"
               />
               <div className="mt-1 max-h-44 overflow-y-auto rounded-lg bg-popover shadow-md ring-1 ring-foreground/10">

@@ -1690,12 +1690,12 @@ async function listMeetingSpeakerSuggestions(
 
 function getMeetingAttendeeEmailsSnapshot() {
   return sql<string[]>`coalesce(
+    ${calendarEvents.attendeeEmails},
     (
       select jsonb_agg(${meetingAttendees.email} order by ${meetingAttendees.email})
       from ${meetingAttendees}
       where ${meetingAttendees.meetingId} = ${meetings.id}
     ),
-    ${calendarEvents.attendeeEmails},
     '[]'::jsonb
   )`;
 }

@@ -932,6 +932,9 @@ describe("listMeetingsForWorkspace", () => {
     const attendeeQuery = toQuery(projection.calendarAttendeeEmails);
     expect(attendeeQuery.sql).toContain('from "meeting_attendees"');
     expect(attendeeQuery.sql).toContain('"calendar_events"."attendee_emails"');
+    expect(
+      attendeeQuery.sql.indexOf('"calendar_events"."attendee_emails"'),
+    ).toBeLessThan(attendeeQuery.sql.indexOf('from "meeting_attendees"'));
     expectUsesCurrentTranscriptJob(projection.recognizedSpeakerCount);
     expectUsesCurrentTranscriptJob(projection.transcriptSegmentCount);
     expectUsesCurrentTranscriptJob(projection.transcriptDurationMs);

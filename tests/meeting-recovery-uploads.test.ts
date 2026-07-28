@@ -167,10 +167,7 @@ describe("meeting recovery uploads", () => {
     expect(set).toHaveBeenCalledWith(
       expect.objectContaining({ status: "processing" }),
     );
-    expect(syncMeetingParticipantAccessFromCalendar).toHaveBeenCalledWith({
-      meetingId: "meeting_123",
-      teamId: "team_123",
-    });
+    expect(syncMeetingParticipantAccessFromCalendar).not.toHaveBeenCalled();
   });
 
   it("replaces transcript segments and marks a manual recovery ready", async () => {
@@ -202,10 +199,7 @@ describe("meeting recovery uploads", () => {
     expect(set).toHaveBeenCalledWith(
       expect.objectContaining({ status: "ready" }),
     );
-    expect(syncMeetingParticipantAccessFromCalendar).toHaveBeenCalledWith({
-      meetingId: "meeting_123",
-      teamId: "team_123",
-    });
+    expect(syncMeetingParticipantAccessFromCalendar).not.toHaveBeenCalled();
   });
 
   it("rejects recovery when the meeting is outside the write boundary", async () => {
