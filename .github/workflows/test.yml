@@ -69,9 +69,12 @@ jobs:
   web:
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    concurrency:
+      group: tape-authenticated-dashboard-database
+      cancel-in-progress: false
     env:
-      DATABASE_AUTHENTICATED_URL: postgresql://ci:ci@127.0.0.1:5432/meeting_note
-      DATABASE_URL: postgresql://ci:ci@127.0.0.1:5432/meeting_note
+      DATABASE_AUTHENTICATED_URL: ${{ secrets.E2E_DATABASE_AUTHENTICATED_URL || 'postgresql://ci:ci@127.0.0.1:5432/meeting_note' }}
+      DATABASE_URL: ${{ secrets.E2E_DATABASE_URL || 'postgresql://ci:ci@127.0.0.1:5432/meeting_note' }}
       NEON_AUTH_JWKS_URL: https://auth.example.com/.well-known/jwks.json
       NEON_AUTH_ISSUER: https://auth.example.com
       NEON_AUTH_COOKIE_SECRET: ci-only-cookie-secret-at-least-32-characters
@@ -87,6 +90,7 @@ jobs:
       INNGEST_EVENT_KEY: ci-event-key
       INNGEST_SIGNING_KEY: ci-signing-key
       NEXT_PUBLIC_APP_URL: https://tape.inevitable.tech
+      PLAYWRIGHT_AUTHENTICATED: ${{ secrets.E2E_DATABASE_URL != '' && secrets.E2E_DATABASE_AUTHENTICATED_URL != '' }}
     steps:
       - uses: actions/checkout@v7.0.0
       - uses: actions/setup-node@v7.0.0
@@ -99,6 +103,9 @@ jobs:
       - run: sudo apt-get update && sudo apt-get install -y ffmpeg
       - run: npm ci
       - run: npx playwright install --with-deps chromium
+      - name: Prepare authenticated browser fixtures
+        if: env.PLAYWRIGHT_AUTHENTICATED == 'true'
+        run: npm run db:migrate && npm run test:e2e:seed
       - run: npm run verify
         env:
           ELEVENLABS_API_KEY: ${{ secrets.ELEVENLABS_API_KEY }}

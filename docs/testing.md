@@ -8,7 +8,7 @@ Tape tests each runtime at the boundary where its behavior can regress. Provider
 | --- | --- | --- |
 | ESLint | TypeScript and React static rules | `npm run lint` |
 | Vitest | Domain rules, access policy, database queries, API routes, Inngest functions, services, and React rendering | `npm run test:coverage` |
-| Playwright | Public navigation, sign in, protected redirects, and desktop and mobile browser flows | `npm run test:e2e` |
+| Playwright | Public navigation, sign in, protected redirects, authenticated page rendering, RLS isolation, and desktop and mobile browser flows | `npm run test:e2e` |
 | Node test runner | Recall desktop SDK sidecar lifecycle and capture fallback | `npm run test:sidecar` |
 | Swift Testing and build | macOS recorder state, permission failures, API requests, scheduling, capture, upload behavior, and executable compilation | `npm run test:swift` |
 | Python unittest | MCP authentication, caller scope, SQL safety, media tools, and read only boundaries | `npm run test:mcp` |
@@ -16,7 +16,45 @@ Tape tests each runtime at the boundary where its behavior can regress. Provider
 
 Playwright starts an isolated Next.js development server on port 3100 unless `PLAYWRIGHT_BASE_URL` points to an existing deployment.
 
-The page load smoke suite discovers every `app/**/page.tsx` route, including Billing and credits, and rejects server errors. Billing and credits also has a direct authenticated rendering test, while the migration integrity job executes its required ledger queries after replaying all migrations.
+The page rendering contract discovers every `app/**/page.tsx` route and compares
+it with the explicit public and authenticated route contracts. Public pages
+must render their own heading. Protected pages run with the authenticated
+fixture and must render their own page heading rather than the sign in page.
+Adding a page without a rendering contract fails Playwright. The migration
+integrity job executes the Billing and credits schema queries after replaying
+all migrations.
+
+GitHub Actions also runs the authenticated page rendering suite when
+`E2E_DATABASE_URL` and `E2E_DATABASE_AUTHENTICATED_URL` are available. The
+owner URL is limited to migration and deterministic fixture setup. The
+application uses the RLS enforced URL. Playwright signs Neon Auth's short lived
+session cache cookie with the CI only cookie secret. Every protected page must
+render its own heading without browser or server errors. The dashboard test
+also verifies that streamed loading completes and a meeting from another
+workspace remains hidden. The suite does not automate Google's interface or add
+an authentication bypass route.
+
+Both database secrets must target the dedicated `tape_ci` database. Fixture
+setup refuses every other database name. To run the same test locally against
+an isolated CI database:
+
+```bash
+PLAYWRIGHT_AUTHENTICATED=true \
+DATABASE_URL='<tape_ci owner URL>' \
+DATABASE_AUTHENTICATED_URL='<tape_ci RLS URL>' \
+NEON_AUTH_COOKIE_SECRET='<local test secret with at least 32 characters>' \
+npm run db:migrate
+
+PLAYWRIGHT_AUTHENTICATED=true \
+DATABASE_URL='<tape_ci owner URL>' \
+npm run test:e2e:seed
+
+PLAYWRIGHT_AUTHENTICATED=true \
+DATABASE_URL='<tape_ci owner URL>' \
+DATABASE_AUTHENTICATED_URL='<tape_ci RLS URL>' \
+NEON_AUTH_COOKIE_SECRET='<local test secret with at least 32 characters>' \
+npm run test:e2e
+```
 
 ## Release Gates
 
@@ -81,7 +119,9 @@ The probe fails when its target email or required credentials are missing. It re
 Pull requests and pushes to `main` run four jobs in `.github/workflows/test.yml`:
 
 1. `migration-integrity` checks migration lineage, detects schema drift, replays every migration on an empty PostgreSQL database, and verifies the billing ledger queries.
-2. `web` runs `npm run verify` and Playwright on Node.js 24 with ffmpeg.
+2. `web` migrates and seeds the isolated authenticated fixture database when
+   its secrets are available, then runs `npm run verify` and Playwright on
+   Node.js 24 with ffmpeg.
 3. `mac-recorder` runs the sidecar and Swift suites on macOS 15.
 4. `mcp` runs the Python suite with local development authentication.
 

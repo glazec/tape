@@ -14,6 +14,9 @@ describe("package scripts", () => {
       ),
       "test:coverage": "vitest run --coverage",
       "test:e2e": "playwright test",
+      "test:e2e:seed": expect.stringContaining(
+        "scripts/seed-authenticated-dashboard-e2e.ts",
+      ),
       "test:mcp": expect.stringContaining("python -m unittest"),
       "test:sidecar": "npm --prefix mac/LocalRecorder/Sidecar test",
       "test:swift": expect.stringContaining(
