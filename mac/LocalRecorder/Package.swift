@@ -22,7 +22,10 @@ let package = Package(
         ),
         .testTarget(
             name: "LocalRecorderCoreTests",
-            dependencies: ["LocalRecorderCore"]
+            dependencies: [
+                "LocalRecorderCore",
+                .product(name: "Sparkle", package: "Sparkle"),
+            ]
         ),
     ]
 )

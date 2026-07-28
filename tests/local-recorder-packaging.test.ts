@@ -105,6 +105,10 @@ describe("local recorder app packaging", () => {
       join(process.cwd(), ".github", "workflows", "release-macos.yml"),
       "utf8",
     );
+    const buildScript = readFileSync(
+      join(packageRoot, "script", "build_and_run.sh"),
+      "utf8",
+    );
 
     expect(workflow).toContain(
       "MACOS_RELEASE_CERTIFICATE: ${{ secrets.MACOS_RELEASE_CERTIFICATE }}",
@@ -122,6 +126,19 @@ describe("local recorder app packaging", () => {
     expect(workflow).not.toContain('CODESIGN_IDENTITY: "-"');
     expect(workflow).not.toContain(
       "The release app must use an ad hoc signature.",
+    );
+    expect(workflow).toContain(
+      'echo "BUILD_VERSION=$(date -u +%Y%m%d%H%M%S)"',
+    );
+    expect(workflow).not.toContain("git rev-list --count");
+    expect(buildScript).toContain(
+      'BUILD_VERSION="${BUILD_VERSION:-$(date -u +%Y%m%d%H%M%S)}"',
+    );
+    expect(workflow).toContain(
+      'grep -q "<sparkle:version>$BUILD_VERSION</sparkle:version>"',
+    );
+    expect(workflow).toContain(
+      'grep -q "<sparkle:shortVersionString>$APP_VERSION</sparkle:shortVersionString>"',
     );
   });
 

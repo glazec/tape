@@ -20,6 +20,8 @@ No Apple Developer or App Store Connect secrets are required for this release mo
 
 The embedded `SPARKLE_FEED_URL` points to the stable `macos-appcast` release in `glazec/tape`. `tests/local-recorder-packaging.test.ts` verifies that this origin stays aligned with the repository URL in `package.json`.
 
+Release and local builds both use a UTC timestamp in `YYYYMMDDHHMMSS` format for `CFBundleVersion`. Sparkle compares this value rather than the displayed semantic version. Do not replace it with a Git commit count or another lower numbering scheme.
+
 ## Publish a release
 
 Create and push a semantic version tag from `main`:
@@ -27,8 +29,8 @@ Create and push a semantic version tag from `main`:
 ```bash
 git switch main
 git pull --ff-only
-git tag mac-v0.3.0
-git push origin mac-v0.3.0
+git tag mac-v0.3.1
+git push origin mac-v0.3.1
 ```
 
 Run the complete repository gate before tagging:
@@ -54,7 +56,7 @@ After the workflow succeeds, verify both the versioned release and the `macos-ap
 
 The workflow refuses malformed tags, tags outside `main`, missing release secrets, ad hoc or inconsistent signatures, and missing Sparkle metadata.
 
-The 0.3.0 release migrates from the changing ad hoc identity used by 0.2.0 to the stable release identity. Existing users must grant Microphone, Screen Recording, Accessibility, and Notifications once after that update. Later updates retain the stable identity.
+The 0.3 release series migrates from the changing ad hoc identity used by 0.2.0 to the stable release identity. Existing users must grant Microphone, Screen Recording, Accessibility, and Notifications once after that update. Later updates retain the stable identity.
 
 ## Install the package without Apple Developer ID signing
 

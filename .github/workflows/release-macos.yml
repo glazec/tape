@@ -9,7 +9,7 @@ on:
       version:
         description: Semantic version for the release candidate
         required: true
-        default: "0.3.0"
+        default: "0.3.1"
 
 permissions:
   contents: write
@@ -73,7 +73,7 @@ jobs:
           fi
 
           echo "APP_VERSION=$APP_VERSION" >> "$GITHUB_ENV"
-          echo "BUILD_VERSION=$(git rev-list --count HEAD)" >> "$GITHUB_ENV"
+          echo "BUILD_VERSION=$(date -u +%Y%m%d%H%M%S)" >> "$GITHUB_ENV"
           echo "RELEASE_TAG=$RELEASE_TAG" >> "$GITHUB_ENV"
           echo "app_version=$APP_VERSION" >> "$GITHUB_OUTPUT"
 
@@ -206,6 +206,8 @@ jobs:
 
           test -s "$UPDATES_DIR/appcast.xml"
           grep -q "sparkle:edSignature=" "$UPDATES_DIR/appcast.xml"
+          grep -q "<sparkle:version>$BUILD_VERSION</sparkle:version>" "$UPDATES_DIR/appcast.xml"
+          grep -q "<sparkle:shortVersionString>$APP_VERSION</sparkle:shortVersionString>" "$UPDATES_DIR/appcast.xml"
           grep -q "$ARCHIVE_NAME" "$UPDATES_DIR/appcast.xml"
           echo "ARCHIVE_PATH=$ARCHIVE_PATH" >> "$GITHUB_ENV"
           echo "CHECKSUM_PATH=$ARCHIVE_PATH.sha256" >> "$GITHUB_ENV"
