@@ -378,13 +378,14 @@ The recorder is a Swift package for macOS 15 or newer.
 ```bash
 cd mac/LocalRecorder
 swift test
+swift build --target MeetingNoteLocalRecorder
 ./script/create_signing_cert.sh
 ./script/build_and_run.sh
 ```
 
 The signing certificate step is needed once for stable microphone and screen recording permissions. Without it, the build script uses ad hoc signing and macOS may ask for permissions again after rebuilding. Configure the server URL and device login in the launched application.
 
-After device login, the recorder immediately requests microphone, screen and system audio, notification, and Accessibility permissions together. All four are required before meeting monitoring or recording begins. If macOS has already denied one, the recorder opens its exact System Settings pane and waits for the grant.
+After device login, the recorder shows Microphone, Accessibility, Notifications, and Screen and System Audio as required setup items. Select `Enable` for each permission. Start at login is optional and uses a separate switch. Monitoring and recording begin after the four required permissions are granted.
 
 ## Verification
 

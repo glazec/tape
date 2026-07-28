@@ -4,6 +4,12 @@ on:
   push:
     tags:
       - "mac-v*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Semantic version for the release candidate
+        required: true
+        default: "0.3.0"
 
 permissions:
   contents: write
@@ -17,6 +23,9 @@ jobs:
     runs-on: macos-15
     timeout-minutes: 30
     env:
+      MANUAL_APP_VERSION: ${{ inputs.version }}
+      MACOS_RELEASE_CERTIFICATE: ${{ secrets.MACOS_RELEASE_CERTIFICATE }}
+      MACOS_RELEASE_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_RELEASE_CERTIFICATE_PASSWORD }}
       SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
     steps:
       - uses: actions/checkout@v7.0.0
@@ -28,18 +37,32 @@ jobs:
           node-version: 24
 
       - name: Validate release tag and secrets
+        id: release_metadata
         shell: bash
         run: |
           set -euo pipefail
-          TAG="${GITHUB_REF_NAME}"
-          APP_VERSION="${TAG#mac-v}"
+          if [[ "$GITHUB_EVENT_NAME" == "push" ]]; then
+            RELEASE_TAG="$GITHUB_REF_NAME"
+            APP_VERSION="${RELEASE_TAG#mac-v}"
+          else
+            APP_VERSION="$MANUAL_APP_VERSION"
+            RELEASE_TAG="mac-v${APP_VERSION}"
+          fi
           if [[ ! "$APP_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            echo "Tag must use mac-vMAJOR.MINOR.PATCH, for example mac-v0.3.0." >&2
+            echo "Version must use MAJOR.MINOR.PATCH, for example 0.3.0." >&2
             exit 1
           fi
 
           if [[ -z "$SPARKLE_PRIVATE_KEY" ]]; then
             echo "Missing GitHub Actions secret: SPARKLE_PRIVATE_KEY" >&2
+            exit 1
+          fi
+          if [[ -z "$MACOS_RELEASE_CERTIFICATE" ]]; then
+            echo "Missing GitHub Actions secret: MACOS_RELEASE_CERTIFICATE" >&2
+            exit 1
+          fi
+          if [[ -z "$MACOS_RELEASE_CERTIFICATE_PASSWORD" ]]; then
+            echo "Missing GitHub Actions secret: MACOS_RELEASE_CERTIFICATE_PASSWORD" >&2
             exit 1
           fi
 
@@ -51,14 +74,56 @@ jobs:
 
           echo "APP_VERSION=$APP_VERSION" >> "$GITHUB_ENV"
           echo "BUILD_VERSION=$(git rev-list --count HEAD)" >> "$GITHUB_ENV"
-          echo "RELEASE_TAG=$TAG" >> "$GITHUB_ENV"
+          echo "RELEASE_TAG=$RELEASE_TAG" >> "$GITHUB_ENV"
+          echo "app_version=$APP_VERSION" >> "$GITHUB_OUTPUT"
 
-      - name: Test and build ad hoc app
+      - name: Import stable release certificate
+        shell: bash
+        run: |
+          set -euo pipefail
+          CERTIFICATE_PATH="$RUNNER_TEMP/tape-release.p12"
+          CERTIFICATE_PEM_PATH="$RUNNER_TEMP/tape-release.pem"
+          KEYCHAIN_PATH="$RUNNER_TEMP/tape-release.keychain-db"
+          KEYCHAIN_PASSWORD="$(openssl rand -base64 32)"
+
+          printf '%s' "$MACOS_RELEASE_CERTIFICATE" | base64 --decode > "$CERTIFICATE_PATH"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security import "$CERTIFICATE_PATH" \
+            -k "$KEYCHAIN_PATH" \
+            -P "$MACOS_RELEASE_CERTIFICATE_PASSWORD" \
+            -T /usr/bin/codesign
+          security find-certificate \
+            -p \
+            -c "Tape Desktop Release" \
+            "$KEYCHAIN_PATH" > "$CERTIFICATE_PEM_PATH"
+          security add-trusted-cert \
+            -p codeSign \
+            -k "$KEYCHAIN_PATH" \
+            "$CERTIFICATE_PEM_PATH"
+          security set-key-partition-list \
+            -S apple-tool:,apple: \
+            -s \
+            -k "$KEYCHAIN_PASSWORD" \
+            "$KEYCHAIN_PATH"
+          security list-keychains -d user -s "$KEYCHAIN_PATH"
+
+          CODESIGN_IDENTITY="$(
+            security find-identity -v -p codesigning "$KEYCHAIN_PATH" |
+              awk '/"Tape Desktop Release"/ { print $2; exit }'
+          )"
+          if [[ -z "$CODESIGN_IDENTITY" ]]; then
+            echo "Tape Desktop Release signing identity was not imported." >&2
+            exit 1
+          fi
+          echo "CODESIGN_IDENTITY=$CODESIGN_IDENTITY" >> "$GITHUB_ENV"
+
+      - name: Test and build stable signed app
         working-directory: mac/LocalRecorder
         shell: bash
         env:
           BUILD_CONFIGURATION: release
-          CODESIGN_IDENTITY: "-"
         run: |
           set -euo pipefail
           npm ci --prefix Sidecar
@@ -66,7 +131,7 @@ jobs:
           swift test
           script/build_and_run.sh --package
 
-          APP_PATH="$PWD/dist/MeetingNoteLocalRecorder.app"
+          APP_PATH="$PWD/dist/Tape Desktop.app"
           test "$(plutil -extract CFBundleShortVersionString raw "$APP_PATH/Contents/Info.plist")" = "$APP_VERSION"
           test "$(plutil -extract CFBundleVersion raw "$APP_PATH/Contents/Info.plist")" = "$BUILD_VERSION"
           test "$(plutil -extract SUEnableAutomaticChecks raw "$APP_PATH/Contents/Info.plist")" = "true"
@@ -75,8 +140,12 @@ jobs:
           test "$(lipo -archs "$APP_PATH/Contents/MacOS/MeetingNoteLocalRecorder")" = "arm64"
 
           APP_SIGNATURE="$(codesign -dvv "$APP_PATH" 2>&1)"
-          if ! grep -q "Signature=adhoc" <<<"$APP_SIGNATURE"; then
-            echo "The release app must use an ad hoc signature." >&2
+          if grep -q "Signature=adhoc" <<<"$APP_SIGNATURE"; then
+            echo "The release app must not use an ad hoc signature." >&2
+            exit 1
+          fi
+          if ! grep -q "Authority=Tape Desktop Release" <<<"$APP_SIGNATURE"; then
+            echo "The release app does not use the stable Tape Desktop certificate." >&2
             exit 1
           fi
           while IFS= read -r -d '' target; do
@@ -86,8 +155,12 @@ jobs:
                 echo "Missing hardened runtime: $target" >&2
                 exit 1
               fi
-              if ! grep -q "TeamIdentifier=not set" <<<"$details"; then
-                echo "Unexpected non ad hoc signature: $target" >&2
+              if grep -q "Signature=adhoc" <<<"$details"; then
+                echo "Unexpected ad hoc signature: $target" >&2
+                exit 1
+              fi
+              if ! grep -q "Authority=Tape Desktop Release" <<<"$details"; then
+                echo "Unexpected signing identity: $target" >&2
                 exit 1
               fi
               codesign --verify --strict "$target"
@@ -103,13 +176,14 @@ jobs:
           fi
 
       - name: Build Sparkle feed and release assets
+        id: release_assets
         working-directory: mac/LocalRecorder
         shell: bash
         run: |
           set -euo pipefail
-          APP_PATH="$PWD/dist/MeetingNoteLocalRecorder.app"
+          APP_PATH="$PWD/dist/Tape Desktop.app"
           UPDATES_DIR="$PWD/dist/updates"
-          ARCHIVE_NAME="MeetingNoteLocalRecorder-${APP_VERSION}.zip"
+          ARCHIVE_NAME="Tape-Desktop-${APP_VERSION}.zip"
           ARCHIVE_PATH="$UPDATES_DIR/$ARCHIVE_NAME"
           SPARKLE_TOOLS="$PWD/.build/artifacts/sparkle/Sparkle/bin"
 
@@ -130,8 +204,22 @@ jobs:
           echo "ARCHIVE_PATH=$ARCHIVE_PATH" >> "$GITHUB_ENV"
           echo "CHECKSUM_PATH=$ARCHIVE_PATH.sha256" >> "$GITHUB_ENV"
           echo "APPCAST_PATH=$UPDATES_DIR/appcast.xml" >> "$GITHUB_ENV"
+          echo "archive_path=$ARCHIVE_PATH" >> "$GITHUB_OUTPUT"
+          echo "checksum_path=$ARCHIVE_PATH.sha256" >> "$GITHUB_OUTPUT"
+          echo "appcast_path=$UPDATES_DIR/appcast.xml" >> "$GITHUB_OUTPUT"
+
+      - name: Upload release candidate
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: Tape-Desktop-${{ steps.release_metadata.outputs.app_version }}
+          path: |
+            ${{ steps.release_assets.outputs.archive_path }}
+            ${{ steps.release_assets.outputs.checksum_path }}
+            ${{ steps.release_assets.outputs.appcast_path }}
+          if-no-files-found: error
 
       - name: Publish GitHub Release and update feed
+        if: github.event_name == 'push'
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
@@ -140,19 +228,21 @@ jobs:
           INSTALL_NOTES="$(cat <<'EOF'
           ## Install on macOS
 
-          This build is ad hoc signed and is not notarized by Apple.
+          This build uses Tape's stable release certificate. It is not signed with an Apple Developer ID and is not notarized by Apple.
 
-          1. Download and unzip the `MeetingNoteLocalRecorder` ZIP.
-          2. Drag `MeetingNoteLocalRecorder.app` into `/Applications`.
+          1. Download and unzip the `Tape Desktop` ZIP.
+          2. Drag `Tape Desktop.app` into `/Applications`.
           3. Open Terminal and run:
 
-             `xattr -dr com.apple.quarantine /Applications/MeetingNoteLocalRecorder.app`
+             `xattr -dr com.apple.quarantine "/Applications/Tape Desktop.app"`
 
           4. Open the app:
 
-             `open /Applications/MeetingNoteLocalRecorder.app`
+             `open "/Applications/Tape Desktop.app"`
 
           5. Grant Microphone, Screen Recording, Accessibility, and Notifications when prompted.
+
+          Updating from 0.2.0 changes the app from an ad hoc identity to the stable release identity. Re-enable the four permissions once after this update. Later updates retain the same identity.
           EOF
           )"
           if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
@@ -164,7 +254,7 @@ jobs:
               --generate-notes \
               --notes "$INSTALL_NOTES" \
               --latest \
-              --title "Meeting Note Recorder ${APP_VERSION}" \
+              --title "Tape Desktop ${APP_VERSION}" \
               --verify-tag
           fi
 

@@ -26,6 +26,13 @@ public enum PermissionSetupState: Sendable {
     case degraded
 }
 
+public enum OperationalPermission: Equatable, Sendable {
+    case microphone
+    case screenCapture
+    case accessibility
+    case notifications
+}
+
 public struct PermissionChecklist: Sendable, Equatable {
     public var microphone: PermissionGrant
     public var screenCapture: PermissionGrant
@@ -56,6 +63,22 @@ public struct PermissionChecklist: Sendable, Equatable {
         canCaptureAudio &&
             accessibility == .granted &&
             notifications == .granted
+    }
+
+    public var nextRequiredPermission: OperationalPermission? {
+        if microphone != .granted {
+            return .microphone
+        }
+        if accessibility != .granted {
+            return .accessibility
+        }
+        if notifications != .granted {
+            return .notifications
+        }
+        if screenCapture != .granted {
+            return .screenCapture
+        }
+        return nil
     }
 
     public var setupState: PermissionSetupState {

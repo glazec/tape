@@ -95,9 +95,83 @@ describe("local recorder app packaging", () => {
     expect(buildScript).toMatch(
       /elif \[\[ "\$CODESIGN_IDENTITY" == "\$LOCAL_CERT_NAME" \]\]; then[\s\S]*?--entitlements "\$ADHOC_APP_ENTITLEMENTS"[\s\S]*?else/,
     );
+    expect(buildScript).toMatch(
+      /else\s+codesign[\s\S]*?--entitlements "\$ADHOC_APP_ENTITLEMENTS"[\s\S]*?--sign "\$CODESIGN_IDENTITY"/,
+    );
   });
 
-  it("requests every operational permission together after login", () => {
+  it("requires the stable certificate for release builds", () => {
+    const workflow = readFileSync(
+      join(process.cwd(), ".github", "workflows", "release-macos.yml"),
+      "utf8",
+    );
+
+    expect(workflow).toContain(
+      "MACOS_RELEASE_CERTIFICATE: ${{ secrets.MACOS_RELEASE_CERTIFICATE }}",
+    );
+    expect(workflow).toContain(
+      "MACOS_RELEASE_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_RELEASE_CERTIFICATE_PASSWORD }}",
+    );
+    expect(workflow).toContain('Authority=Tape Desktop Release');
+    expect(workflow).toContain("workflow_dispatch:");
+    expect(workflow).toContain("Upload release candidate");
+    expect(workflow).toContain("if: github.event_name == 'push'");
+    expect(workflow).not.toContain('CODESIGN_IDENTITY: "-"');
+    expect(workflow).not.toContain(
+      "The release app must use an ad hoc signature.",
+    );
+  });
+
+  it("signs the desktop app for microphone access", () => {
+    const entitlements = readFileSync(
+      join(packageRoot, "Resources", "AdHocApp.entitlements"),
+      "utf8",
+    );
+
+    expect(entitlements).toContain(
+      "<key>com.apple.security.device.audio-input</key>",
+    );
+    expect(entitlements).toMatch(
+      /<key>com\.apple\.security\.device\.audio-input<\/key>\s*<true\/>/,
+    );
+  });
+
+  it("identifies the installed app as Tape Desktop", () => {
+    const buildScript = readFileSync(
+      join(packageRoot, "script", "build_and_run.sh"),
+      "utf8",
+    );
+
+    expect(buildScript).toContain('APP_DISPLAY_NAME="Tape Desktop"');
+    expect(buildScript).toContain(
+      'APP_BUNDLE="$DIST_DIR/$APP_DISPLAY_NAME.app"',
+    );
+    expect(buildScript).toContain("<key>CFBundleDisplayName</key>");
+    expect(buildScript).toContain("<string>$APP_DISPLAY_NAME</string>");
+    expect(buildScript).toContain(
+      "Tape Desktop records your microphone for local meeting recordings.",
+    );
+    expect(buildScript).toContain("<key>NSAudioCaptureUsageDescription</key>");
+  });
+
+  it("resets every signature bound permission when the app signature changes", () => {
+    const buildScript = readFileSync(
+      join(packageRoot, "script", "build_and_run.sh"),
+      "utf8",
+    );
+
+    expect(buildScript).toContain(
+      'tccutil reset Microphone "$BUNDLE_ID"',
+    );
+    expect(buildScript).toContain(
+      'tccutil reset ScreenCapture "$BUNDLE_ID"',
+    );
+    expect(buildScript).toContain(
+      'tccutil reset Accessibility "$BUNDLE_ID"',
+    );
+  });
+
+  it("requests operational permissions only after the user presses the button", () => {
     const appSource = readFileSync(
       join(
         packageRoot,
@@ -107,27 +181,61 @@ describe("local recorder app packaging", () => {
       ),
       "utf8",
     );
-    const requestAllStart = appSource.indexOf(
-      "private func requestAllPermissionsAtStartup() async",
+    const requestNextStart = appSource.indexOf(
+      "func requestNextPermission()",
     );
-    const requestAllEnd = appSource.indexOf(
-      "private func startMonitoring()",
-      requestAllStart,
+    const requestNextEnd = appSource.indexOf(
+      "func startRecording()",
+      requestNextStart,
     );
-    const requestAllSource = appSource.slice(requestAllStart, requestAllEnd);
+    const requestNextSource = appSource.slice(requestNextStart, requestNextEnd);
 
-    expect(requestAllStart).toBeGreaterThan(-1);
-    expect(requestAllSource).toContain("requestMicrophonePermission()");
-    expect(requestAllSource).toContain("requestScreenCapturePermission()");
-    expect(requestAllSource).toContain("requestAccessibilityPermission()");
-    expect(requestAllSource).toContain("requestNotificationPermission()");
-    expect(appSource.match(/await requestAllPermissionsAtStartup\(\)/g)).toHaveLength(3);
+    expect(requestNextStart).toBeGreaterThan(-1);
+    expect(requestNextSource).toContain("requestMicrophonePermission()");
+    expect(requestNextSource).toContain(
+      "await requestScreenCapturePermission()",
+    );
+    expect(requestNextSource).toContain("requestAccessibilityPermission()");
+    expect(requestNextSource).toContain("requestNotificationPermission()");
+    expect(appSource).not.toContain("requestAllPermissionsAtStartup");
     expect(appSource).toMatch(
-      /if !bearerToken\.isEmpty \{[\s\S]*?Task \{\s+await requestAllPermissionsAtStartup\(\)\s+\}\s+Task \{[\s\S]*?await retryQueuedUploadsIfPossible\(\)/,
+      /if !bearerToken\.isEmpty \{\s+statusText = "Finish access setup"\s+Task \{\s+await refreshPermissionsAndStartIfReady\(\)\s+\}\s+Task \{\s+await retryQueuedUploadsIfPossible\(\)/,
+    );
+    expect(appSource).toMatch(
+      /func handleLoginCallback[\s\S]*?statusText = "Finish access setup"\s+Task \{\s+await refreshPermissionsAndStartIfReady\(\)/,
     );
     expect(appSource).toMatch(
       /var nextPermissionStep: RecorderPermissionStep\? \{\s+guard isSignedIn else \{\s+return nil/,
     );
+    expect(appSource).toMatch(
+      /private func requestScreenCapturePermission\(\) async -> PermissionGrant[\s\S]*?SCShareableContent\.excludingDesktopWindows/,
+    );
+  });
+
+  it("makes missing required permissions actionable without requiring start at login", () => {
+    const appSource = readFileSync(
+      join(
+        packageRoot,
+        "Sources",
+        "MeetingNoteLocalRecorder",
+        "MeetingNoteLocalRecorderApp.swift",
+      ),
+      "utf8",
+    );
+
+    expect(appSource).toContain(
+      "requestPermission: model.requestPermission",
+    );
+    expect(appSource).toContain('Button("Enable", action: action)');
+    expect(appSource).toMatch(
+      /title: "Start at login",\s+detail: "Optional",\s+grant: checklist\.startAtLogin,\s+toggle: Binding/,
+    );
+    expect(appSource).toContain(
+      "setStartAtLoginEnabled: model.setStartAtLoginEnabled",
+    );
+    expect(appSource).toContain("try service.register()");
+    expect(appSource).toContain("try service.unregister()");
+    expect(appSource).toContain(".toggleStyle(.switch)");
   });
 });
 

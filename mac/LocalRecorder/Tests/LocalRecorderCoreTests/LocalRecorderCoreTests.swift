@@ -105,6 +105,30 @@ import Testing
     #expect(degraded.setupState == .degraded)
 }
 
+@Test func permissionChecklistSurfacesEveryFailedAccessGrant() {
+    var checklist = PermissionChecklist(
+        microphone: .denied,
+        screenCapture: .unknown,
+        accessibility: .denied,
+        notifications: .unknown,
+        startAtLogin: .denied
+    )
+
+    #expect(checklist.nextRequiredPermission == .microphone)
+
+    checklist.microphone = .granted
+    #expect(checklist.nextRequiredPermission == .accessibility)
+
+    checklist.accessibility = .granted
+    #expect(checklist.nextRequiredPermission == .notifications)
+
+    checklist.notifications = .granted
+    #expect(checklist.nextRequiredPermission == .screenCapture)
+
+    checklist.screenCapture = .granted
+    #expect(checklist.nextRequiredPermission == nil)
+}
+
 @Test func silencePromptAppearsAfterOneMinuteOfSilence() {
     var tracker = SilencePromptTracker()
     let startedAt = Date(timeIntervalSince1970: 100)

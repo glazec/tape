@@ -16,7 +16,9 @@ describe("package scripts", () => {
       "test:e2e": "playwright test",
       "test:mcp": expect.stringContaining("python -m unittest"),
       "test:sidecar": "npm --prefix mac/LocalRecorder/Sidecar test",
-      "test:swift": "swift test --package-path mac/LocalRecorder",
+      "test:swift": expect.stringContaining(
+        "swift build --package-path mac/LocalRecorder --target MeetingNoteLocalRecorder",
+      ),
       verify: expect.stringContaining("npm run test:coverage"),
       "verify:all": expect.stringContaining("npm run test:e2e"),
     });

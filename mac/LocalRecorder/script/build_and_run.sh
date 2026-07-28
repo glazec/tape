@@ -3,6 +3,7 @@ set -euo pipefail
 
 MODE="${1:-run}"
 APP_NAME="MeetingNoteLocalRecorder"
+APP_DISPLAY_NAME="Tape Desktop"
 BUNDLE_ID="tech.inevitable.meeting-note.local-recorder"
 MIN_SYSTEM_VERSION="15.0"
 APP_VERSION="${APP_VERSION:-0.2.0}"
@@ -13,7 +14,8 @@ SPARKLE_PUBLIC_KEY="C+6MwGr+m9w8H9o0A6dX6epFkSNcf5OOdT70ir8SVFA="
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DIST_DIR="$ROOT_DIR/dist"
-APP_BUNDLE="$DIST_DIR/$APP_NAME.app"
+APP_BUNDLE="$DIST_DIR/$APP_DISPLAY_NAME.app"
+LEGACY_APP_BUNDLE="$DIST_DIR/$APP_NAME.app"
 APP_CONTENTS="$APP_BUNDLE/Contents"
 APP_MACOS="$APP_CONTENTS/MacOS"
 APP_RESOURCES="$APP_CONTENTS/Resources"
@@ -36,7 +38,7 @@ BUILD_DIR="$(swift build -c "$BUILD_CONFIGURATION" --show-bin-path)"
 BUILD_BINARY="$BUILD_DIR/$APP_NAME"
 SPARKLE_FRAMEWORK="$BUILD_DIR/Sparkle.framework"
 
-rm -rf "$APP_BUNDLE"
+rm -rf "$APP_BUNDLE" "$LEGACY_APP_BUNDLE"
 mkdir -p "$APP_MACOS" "$APP_RESOURCES" "$APP_FRAMEWORKS"
 cp "$BUILD_BINARY" "$APP_BINARY"
 chmod +x "$APP_BINARY"
@@ -69,8 +71,10 @@ cat >"$INFO_PLIST" <<PLIST
   <string>$APP_NAME</string>
   <key>CFBundleIdentifier</key>
   <string>$BUNDLE_ID</string>
+  <key>CFBundleDisplayName</key>
+  <string>$APP_DISPLAY_NAME</string>
   <key>CFBundleName</key>
-  <string>$APP_NAME</string>
+  <string>$APP_DISPLAY_NAME</string>
   <key>CFBundleShortVersionString</key>
   <string>$APP_VERSION</string>
   <key>CFBundleVersion</key>
@@ -92,9 +96,11 @@ cat >"$INFO_PLIST" <<PLIST
   <key>NSPrincipalClass</key>
   <string>NSApplication</string>
   <key>NSMicrophoneUsageDescription</key>
-  <string>Meeting Note records your microphone for local meeting recordings.</string>
+  <string>Tape Desktop records your microphone for local meeting recordings.</string>
   <key>NSScreenCaptureUsageDescription</key>
-  <string>Meeting Note records meeting audio so local recordings include other speakers.</string>
+  <string>Tape Desktop records meeting audio so local recordings include other speakers.</string>
+  <key>NSAudioCaptureUsageDescription</key>
+  <string>Tape Desktop records meeting audio so local recordings include other speakers.</string>
   <key>CFBundleURLTypes</key>
   <array>
     <dict>
@@ -166,7 +172,14 @@ elif [[ "$CODESIGN_IDENTITY" == "$LOCAL_CERT_NAME" ]]; then
     --sign "$CODESIGN_IDENTITY" \
     "$APP_BUNDLE"
 else
-  codesign --force --deep --options runtime --timestamp --sign "$CODESIGN_IDENTITY" "$APP_BUNDLE"
+  codesign \
+    --force \
+    --deep \
+    --options runtime \
+    --timestamp \
+    --entitlements "$ADHOC_APP_ENTITLEMENTS" \
+    --sign "$CODESIGN_IDENTITY" \
+    "$APP_BUNDLE"
 fi
 codesign --verify --deep --strict --verbose=2 "$APP_BUNDLE"
 
@@ -177,7 +190,7 @@ fi
 
 # Reset stale TCC grants when the signature identity changes, or on every
 # binary change while ad-hoc signed. Otherwise macOS keeps the old grant for
-# the bundle id and silently denies capture instead of prompting again.
+# the bundle id and silently denies capture when the user requests access.
 SIGNATURE_CACHE="$ROOT_DIR/.build/last-app-signature"
 NEW_CDHASH="$(codesign --display -vvv "$APP_BUNDLE" 2>&1 | awk -F= '/^CDHash=/ { print $2 }')"
 if [[ "$CODESIGN_IDENTITY" == "-" ]]; then
@@ -187,9 +200,10 @@ else
 fi
 OLD_SIGNATURE="$(cat "$SIGNATURE_CACHE" 2>/dev/null || true)"
 if [[ -n "$NEW_SIGNATURE" && "$NEW_SIGNATURE" != "$OLD_SIGNATURE" ]]; then
-  echo "App signature changed; resetting microphone and screen capture permissions so macOS prompts again."
+  echo "App signature changed; resetting microphone, screen capture, and accessibility permissions so their buttons can prompt again."
   tccutil reset Microphone "$BUNDLE_ID" >/dev/null 2>&1 || true
   tccutil reset ScreenCapture "$BUNDLE_ID" >/dev/null 2>&1 || true
+  tccutil reset Accessibility "$BUNDLE_ID" >/dev/null 2>&1 || true
 fi
 mkdir -p "$(dirname "$SIGNATURE_CACHE")"
 printf '%s' "$NEW_SIGNATURE" >"$SIGNATURE_CACHE"

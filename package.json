@@ -30,7 +30,7 @@
     "test:e2e": "playwright test",
     "test:mcp": "cd mcp/meeting-note && DISABLE_AUTH=true MCP_ALLOW_DEV_AUTH=true MCP_HOST=127.0.0.1 MCP_DEV_USER_EMAIL=tester@example.com uv run python -m unittest",
     "test:sidecar": "npm --prefix mac/LocalRecorder/Sidecar test",
-    "test:swift": "swift test --package-path mac/LocalRecorder",
+    "test:swift": "swift test --package-path mac/LocalRecorder && swift build --package-path mac/LocalRecorder --target MeetingNoteLocalRecorder",
     "verify": "npm run lint && npm run test:coverage && npm run build && npm run test:sidecar && npm run test:mcp",
     "verify:all": "npm run verify && npm run test:swift && npm run test:e2e"
   },
