@@ -20,18 +20,23 @@ describe("meeting translation", () => {
       {
         role: "system",
         content:
-          "Translate each meeting transcript text into polished, concise Simplified Chinese. Return exactly one nonempty translation for every input text, in the same order. Translate short fragments and filler minimally instead of returning an empty string. Remove filler words such as 然后, then, um, and uh when they do not change meaning. Preserve speaker intent, team tone, product names, company names, numbers, and tickers.",
+          "Translate each meeting transcript segment into polished, concise Simplified Chinese. Return exactly one nonempty translation for every input segment with the same id. Translate each segment from only its own text. Never move, merge, split, or complete content across segment ids, even when a segment is a short fragment. Translate short fragments and filler minimally instead of returning an empty string. Remove filler words such as 然后, then, um, and uh when they do not change meaning. Preserve speaker intent, team tone, product names, company names, numbers, and tickers.",
       },
       {
         role: "user",
         content:
-          '{"texts":["Hello team","We need to check Solana liquidity."]}',
+          '{"segments":[{"id":"segment_1","text":"Hello team"},{"id":"segment_2","text":"We need to check Solana liquidity."}]}',
       },
     ]);
   });
 
-  it("builds a strict compact translation schema for the batch length", () => {
-    expect(buildChineseTranslationJsonSchema(2)).toEqual({
+  it("builds a strict id preserving translation schema", () => {
+    expect(
+      buildChineseTranslationJsonSchema([
+        { id: "segment_1", text: "Hello" },
+        { id: "segment_2", text: "Goodbye" },
+      ]),
+    ).toEqual({
       type: "json_schema",
       json_schema: {
         name: "transcript_translation",
@@ -41,7 +46,18 @@ describe("meeting translation", () => {
           properties: {
             translations: {
               type: "array",
-              items: { type: "string", minLength: 1 },
+              items: {
+                type: "object",
+                properties: {
+                  id: {
+                    type: "string",
+                    enum: ["segment_1", "segment_2"],
+                  },
+                  text: { type: "string", minLength: 1 },
+                },
+                required: ["id", "text"],
+                additionalProperties: false,
+              },
               minItems: 2,
               maxItems: 2,
             },
@@ -60,7 +76,7 @@ describe("meeting translation", () => {
     );
 
     expect(systemMessage.content).toContain(
-      "Translate each meeting transcript text into polished, concise English",
+      "Translate each meeting transcript segment into polished, concise English",
     );
   });
 
@@ -74,7 +90,7 @@ describe("meeting translation", () => {
       {
         role: "system",
         content:
-          "Polish meeting transcript segments in their original language. Do not translate. Keep Chinese segments in Chinese and English segments in English. Remove filler words, hesitation, repeated starts, and phrases that do not carry meaning, such as 然后, then, um, uh, you know, kind of, and sort of. When a speaker corrects a fact or number, keep only the final corrected value, for example 2018, oh 2019 becomes 2019. Make each line concise and smooth while preserving speaker intent, team tone, product names, company names, numbers, tickers, and sentence structure. Keep readable sentences, not bullet points, summaries, or action items. Return only JSON. Do not wrap the JSON in markdown fences.",
+          "Polish meeting transcript segments in their original language. Do not translate. Keep Chinese segments in Chinese and English segments in English. Revise every segment using only the text with that same id. Never move, merge, split, or complete content across segment ids, even when a segment is a short fragment. Remove filler words, hesitation, repeated starts, and phrases that do not carry meaning, such as 然后, then, um, uh, you know, kind of, and sort of. When a speaker corrects a fact or number, keep only the final corrected value, for example 2018, oh 2019 becomes 2019. Make each line concise and smooth while preserving speaker intent, team tone, product names, company names, numbers, tickers, and sentence structure. Keep readable sentences, not bullet points, summaries, or action items. Return only JSON. Do not wrap the JSON in markdown fences.",
       },
       {
         role: "user",
@@ -84,10 +100,11 @@ describe("meeting translation", () => {
     ]);
   });
 
-  it("maps compact positional translations back to segment ids", () => {
+  it("maps explicit translation ids back to segment ids", () => {
     expect(
       parseChineseTranslationResponse({
-        content: '{"translations":["大家好","检查流动性"]}',
+        content:
+          '{"translations":[{"id":"segment_2","text":"检查流动性"},{"id":"segment_1","text":"大家好"}]}',
         segments: [
           { id: "segment_1", text: "Hello team" },
           { id: "segment_2", text: "Check liquidity" },
@@ -102,7 +119,8 @@ describe("meeting translation", () => {
   it("parses JSON translations wrapped in a markdown code fence", () => {
     expect(
       parseChineseTranslationResponse({
-        content: '```json\n{"translations":["你好。"]}\n```',
+        content:
+          '```json\n{"translations":[{"id":"segment_1","text":"你好。"}]}\n```',
         segments: [{ id: "segment_1", text: "Hello" }],
       }),
     ).toEqual([{ id: "segment_1", text: "你好。" }]);
@@ -111,7 +129,8 @@ describe("meeting translation", () => {
   it("preserves valid translations while identifying blank or missing positions", () => {
     expect(
       parseChineseTranslationResponse({
-        content: '{"translations":["你好。","",null]}',
+        content:
+          '{"translations":[{"id":"segment_1","text":"你好。"},{"id":"segment_2","text":""}]}',
         segments: [
           { id: "segment_1", text: "Hello" },
           { id: "segment_2", text: "Um" },
@@ -119,6 +138,23 @@ describe("meeting translation", () => {
         ],
       }),
     ).toEqual([{ id: "segment_1", text: "你好。" }]);
+  });
+
+  it("rejects implausible content moved onto another segment", () => {
+    expect(
+      parseChineseTranslationResponse({
+        content:
+          '{"translations":[{"id":"segment_1","text":"这是一段明显属于相邻长句而不是简短确认词的错误翻译内容。"},{"id":"segment_2","text":"这是需要保留的完整长句翻译。"}]}',
+        segments: [
+          { id: "segment_1", text: "Yeah." },
+          {
+            id: "segment_2",
+            text:
+              "This is a complete long statement that needs to remain attached to its own transcript segment.",
+          },
+        ],
+      }),
+    ).toEqual([{ id: "segment_2", text: "这是需要保留的完整长句翻译。" }]);
   });
 
   it("parses original-language polish rows with the shared response shape", () => {
@@ -139,5 +175,15 @@ describe("meeting translation", () => {
         segmentIds: ["segment_1", "segment_2"],
       }),
     ).toEqual([{ id: "segment_2", text: "Review API cost." }]);
+  });
+
+  it("falls back when polish moves a long sentence onto a short fragment", () => {
+    expect(
+      parseOriginalTranscriptPolishResponse({
+        content:
+          '{"segments":[{"id":"segment_1","text":"This sentence belongs to the next speaker and must not replace a short acknowledgment."}]}',
+        segments: [{ id: "segment_1", text: "Yeah." }],
+      }),
+    ).toEqual([]);
   });
 });

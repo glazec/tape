@@ -1260,7 +1260,11 @@ export async function getMeetingTranscriptForWorkspace(
           ),
         ),
       )
-      .orderBy(asc(transcriptSegments.startMs)),
+      .orderBy(
+        asc(transcriptSegments.startMs),
+        asc(transcriptSegments.endMs),
+        asc(transcriptSegments.id),
+      ),
     canManage
       ? listMeetingSpeakerSuggestions(
           meeting.id,

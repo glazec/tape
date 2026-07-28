@@ -156,7 +156,11 @@ export const transcribeAudio = inngest.createFunction(
       ) {
         await db
           .update(transcriptJobs)
-          .set({ status: "running", updatedAt: new Date() })
+          .set({
+            billingKeytermsUsed: keyterms.length > 0,
+            status: "running",
+            updatedAt: new Date(),
+          })
           .where(eq(transcriptJobs.id, data.transcriptJobId));
 
         return step.sendEvent("queue-chunked-transcription", {
@@ -288,7 +292,11 @@ export const enrichTranscript = inngest.createFunction(
             ),
           ),
         )
-        .orderBy(asc(transcriptSegments.startMs));
+        .orderBy(
+          asc(transcriptSegments.startMs),
+          asc(transcriptSegments.endMs),
+          asc(transcriptSegments.id),
+        );
       let newTranslatedCount = 0;
 
       if (shouldTranslate) {

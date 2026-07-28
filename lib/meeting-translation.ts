@@ -26,12 +26,12 @@ export function buildTranslationMessages(
   return [
     {
       role: "system" as const,
-      content: `Translate each meeting transcript text into polished, concise ${language}. Return exactly one nonempty translation for every input text, in the same order. Translate short fragments and filler minimally instead of returning an empty string. Remove filler words such as 然后, then, um, and uh when they do not change meaning. Preserve speaker intent, team tone, product names, company names, numbers, and tickers.`,
+      content: `Translate each meeting transcript segment into polished, concise ${language}. Return exactly one nonempty translation for every input segment with the same id. Translate each segment from only its own text. Never move, merge, split, or complete content across segment ids, even when a segment is a short fragment. Translate short fragments and filler minimally instead of returning an empty string. Remove filler words such as 然后, then, um, and uh when they do not change meaning. Preserve speaker intent, team tone, product names, company names, numbers, and tickers.`,
     },
     {
       role: "user" as const,
       content: JSON.stringify({
-        texts: segments.map((segment) => segment.text),
+        segments,
       }),
     },
   ];
@@ -43,7 +43,9 @@ export function buildChineseTranslationMessages(
   return buildTranslationMessages(segments, "zh-CN");
 }
 
-export function buildTranslationJsonSchema(itemCount: number) {
+export function buildTranslationJsonSchema(
+  segments: SegmentForTranslation[],
+) {
   return {
     type: "json_schema" as const,
     json_schema: {
@@ -54,9 +56,20 @@ export function buildTranslationJsonSchema(itemCount: number) {
         properties: {
           translations: {
             type: "array",
-            items: { type: "string", minLength: 1 },
-            minItems: itemCount,
-            maxItems: itemCount,
+            items: {
+              type: "object",
+              properties: {
+                id: {
+                  type: "string",
+                  enum: segments.map((segment) => segment.id),
+                },
+                text: { type: "string", minLength: 1 },
+              },
+              required: ["id", "text"],
+              additionalProperties: false,
+            },
+            minItems: segments.length,
+            maxItems: segments.length,
           },
         },
         required: ["translations"],
@@ -75,7 +88,7 @@ export function buildOriginalTranscriptPolishMessages(
     {
       role: "system" as const,
       content:
-        "Polish meeting transcript segments in their original language. Do not translate. Keep Chinese segments in Chinese and English segments in English. Remove filler words, hesitation, repeated starts, and phrases that do not carry meaning, such as 然后, then, um, uh, you know, kind of, and sort of. When a speaker corrects a fact or number, keep only the final corrected value, for example 2018, oh 2019 becomes 2019. Make each line concise and smooth while preserving speaker intent, team tone, product names, company names, numbers, tickers, and sentence structure. Keep readable sentences, not bullet points, summaries, or action items. Return only JSON. Do not wrap the JSON in markdown fences.",
+        "Polish meeting transcript segments in their original language. Do not translate. Keep Chinese segments in Chinese and English segments in English. Revise every segment using only the text with that same id. Never move, merge, split, or complete content across segment ids, even when a segment is a short fragment. Remove filler words, hesitation, repeated starts, and phrases that do not carry meaning, such as 然后, then, um, uh, you know, kind of, and sort of. When a speaker corrects a fact or number, keep only the final corrected value, for example 2018, oh 2019 becomes 2019. Make each line concise and smooth while preserving speaker intent, team tone, product names, company names, numbers, tickers, and sentence structure. Keep readable sentences, not bullet points, summaries, or action items. Return only JSON. Do not wrap the JSON in markdown fences.",
     },
     {
       role: "user" as const,
@@ -96,19 +109,52 @@ export function parseTranslationResponse(input: {
   try {
     const parsedJson = JSON.parse(extractJsonObject(input.content));
     const parsedObject = z
-      .object({ translations: z.array(z.unknown()) })
+      .object({
+        translations: z.array(
+          z.object({
+            id: z.string().min(1),
+            text: z.string(),
+          }),
+        ),
+      })
       .parse(parsedJson);
+    const sourceById = new Map(
+      input.segments.map((segment) => [segment.id, segment.text]),
+    );
+    const seenIds = new Set<string>();
+    const translatedById = new Map<string, string>();
 
-    return input.segments.flatMap((segment, index) => {
-      const translatedText = parsedObject.translations[index];
+    for (const translation of parsedObject.translations) {
+      const source = sourceById.get(translation.id);
+      const text = translation.text.trim();
 
-      if (typeof translatedText !== "string" || !translatedText.trim()) {
-        return [];
+      if (source === undefined || seenIds.has(translation.id)) {
+        throw new TranslationResponseError(
+          "Translation response contained an unknown or duplicate segment id",
+        );
       }
 
-      return [{ id: segment.id, text: translatedText.trim() }];
+      seenIds.add(translation.id);
+
+      if (
+        text &&
+        (input.segments.length === 1 ||
+          isPlausibleTranslationLength(source, text))
+      ) {
+        translatedById.set(translation.id, text);
+      }
+    }
+
+    return input.segments.flatMap((segment) => {
+      const text = translatedById.get(segment.id);
+
+      return text ? [{ id: segment.id, text }] : [];
     });
   } catch (error) {
+    if (error instanceof TranslationResponseError) {
+      throw error;
+    }
+
     throw new TranslationResponseError("Invalid translation JSON response", {
       cause: error,
     });
@@ -119,9 +165,30 @@ export const parseChineseTranslationResponse = parseTranslationResponse;
 
 export function parseOriginalTranscriptPolishResponse(input: {
   content: string;
-  segmentIds: string[];
+  segmentIds?: string[];
+  segments?: SegmentForTranslation[];
 }) {
-  return parseTranscriptTextRows({ ...input, allowBlankText: true });
+  const segmentIds =
+    input.segments?.map((segment) => segment.id) ?? input.segmentIds ?? [];
+  const rows = parseTranscriptTextRows({
+    content: input.content,
+    segmentIds,
+    allowBlankText: true,
+  });
+
+  if (!input.segments) {
+    return rows;
+  }
+
+  const sourceById = new Map(
+    input.segments.map((segment) => [segment.id, segment.text]),
+  );
+
+  return rows.filter((row) => {
+    const source = sourceById.get(row.id);
+
+    return source !== undefined && isPlausiblePolishLength(source, row.text);
+  });
 }
 
 function parseTranscriptTextRows(input: {
@@ -162,6 +229,52 @@ function extractJsonObject(content: string) {
   }
 
   return trimmedContent;
+}
+
+function isPlausibleTranslationLength(source: string, translated: string) {
+  const sourceLength = getMeaningfulLength(source);
+  const translatedLength = getMeaningfulLength(translated);
+
+  if (sourceLength === 0 || translatedLength === 0) {
+    return false;
+  }
+
+  if (
+    sourceLength <= 40 &&
+    translatedLength > Math.max(24, sourceLength * 4)
+  ) {
+    return false;
+  }
+
+  return !(
+    sourceLength >= 100 &&
+    translatedLength < Math.max(4, Math.floor(sourceLength * 0.06))
+  );
+}
+
+function isPlausiblePolishLength(source: string, polished: string) {
+  const sourceLength = getMeaningfulLength(source);
+  const polishedLength = getMeaningfulLength(polished);
+
+  if (sourceLength === 0 || polishedLength === 0) {
+    return false;
+  }
+
+  if (
+    polishedLength >
+    Math.max(sourceLength * 3, sourceLength + 30)
+  ) {
+    return false;
+  }
+
+  return !(
+    sourceLength >= 120 &&
+    polishedLength < Math.max(8, Math.floor(sourceLength * 0.15))
+  );
+}
+
+function getMeaningfulLength(value: string) {
+  return value.replace(/\s+/g, "").length;
 }
 
 function getTranscriptRows(

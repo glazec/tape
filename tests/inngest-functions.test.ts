@@ -432,6 +432,7 @@ describe("Inngest functions", () => {
     expect(createReadUrl).not.toHaveBeenCalled();
     expect(createElevenLabsTranscriptJob).not.toHaveBeenCalled();
     expect(set).toHaveBeenCalledWith({
+      billingKeytermsUsed: true,
       status: "running",
       updatedAt: expect.any(Date),
     });

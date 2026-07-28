@@ -320,7 +320,7 @@ async function translateBatchWithRecovery(
         maxTokens: 3000,
         plugins: [{ id: "response-healing" }],
         provider: { require_parameters: true },
-        responseFormat: buildTranslationJsonSchema(batch.length),
+        responseFormat: buildTranslationJsonSchema(batch),
         temperature: 0,
         usageContext: {
           category: "translation",
@@ -464,7 +464,7 @@ export async function polishTranscriptSegmentsInOriginalLanguage(
     const polishedTextById = new Map(
       parseOriginalTranscriptPolishResponse({
         content,
-        segmentIds: batch.map((segment) => segment.id),
+        segments: batch,
       }).map((segment) => [segment.id, segment.text]),
     );
 
