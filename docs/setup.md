@@ -378,12 +378,13 @@ The recorder is a Swift package for macOS 15 or newer.
 ```bash
 cd mac/LocalRecorder
 swift test
-swift build --target MeetingNoteLocalRecorder
 ./script/create_signing_cert.sh
-./script/build_and_run.sh
+./script/build_and_run.sh --verify
 ```
 
-The signing certificate step is needed once for stable microphone and screen recording permissions. Without it, the build script uses ad hoc signing and macOS may ask for permissions again after rebuilding. Configure the server URL and device login in the launched application.
+The build script creates and opens `dist/Tape Desktop.app`. The signing certificate step is needed once for stable microphone and screen recording permissions. Without it, the build script uses ad hoc signing and macOS may ask for permissions again after rebuilding.
+
+Tape Desktop initially connects to `https://tape.inevitable.tech`. Select `Sign in` to finish device login in the browser. For local development, expand `Advanced` and replace the server URL with the local Tape origin before signing in.
 
 After device login, the recorder shows Microphone, Accessibility, Notifications, and Screen and System Audio as required setup items. Select `Enable` for each permission. Start at login is optional and uses a separate switch. Monitoring and recording begin after the four required permissions are granted.
 

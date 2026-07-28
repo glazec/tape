@@ -76,7 +76,11 @@ describe("OnboardingTutorial", () => {
     );
     expect(html).toContain("Download app");
     expect(html).toContain("macOS setup instructions");
-    expect(html).toContain("xattr -dr com.apple.quarantine");
+    expect(html).toContain("Tape Desktop.app");
+    expect(html).toContain(
+      "xattr -dr com.apple.quarantine &quot;/Applications/Tape Desktop.app&quot;",
+    );
+    expect(html).not.toContain("MeetingNoteLocalRecorder.app");
     expect(html.indexOf("Copy MCP server link")).toBeLessThan(
       html.indexOf("MCP server link</p>"),
     );

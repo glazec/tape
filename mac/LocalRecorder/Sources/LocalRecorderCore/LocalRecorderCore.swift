@@ -851,6 +851,12 @@ public struct LocalRecorderCredentials: Codable, Equatable, Sendable {
     }
 }
 
+public func initialLocalRecorderServerURLText(
+    credentials: LocalRecorderCredentials?
+) -> String {
+    credentials?.serverURLText ?? "https://tape.inevitable.tech"
+}
+
 public enum LocalRecorderKeychainCredentialStoreError: Error, Equatable {
     case invalidKeychainData
     case keychainStatus(OSStatus)

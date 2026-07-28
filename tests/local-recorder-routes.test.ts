@@ -719,11 +719,11 @@ describe("local recorder API routes", () => {
     expect(response.headers.get("content-type")).toContain("text/html");
 
     const body = await response.text();
-    expect(body).toContain("Opening Tape recorder");
+    expect(body).toContain("Opening Tape Desktop");
     expect(body).toContain(
-      "Sign in is complete. You can close this page after the recorder opens.",
+      "Sign in is complete. You can close this page after Tape Desktop opens.",
     );
-    expect(body).toContain("Open Tape recorder");
+    expect(body).toContain("Open Tape Desktop");
     expect(body).toContain(
       "meetingnote-local-recorder://login?token=token_123&amp;server=https%3A%2F%2Fapp.example.com",
     );

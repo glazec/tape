@@ -176,6 +176,19 @@ describe("local recorder app packaging", () => {
     expect(buildScript).toContain("<key>NSAudioCaptureUsageDescription</key>");
   });
 
+  it("documents the Tape Desktop build entrypoint", () => {
+    const setupGuide = readFileSync(
+      join(process.cwd(), "docs", "setup.md"),
+      "utf8",
+    );
+
+    expect(setupGuide).toContain("./script/build_and_run.sh --verify");
+    expect(setupGuide).toContain("dist/Tape Desktop.app");
+    expect(setupGuide).not.toContain(
+      "swift build --target MeetingNoteLocalRecorder",
+    );
+  });
+
   it("resets every signature bound permission when the app signature changes", () => {
     const buildScript = readFileSync(
       join(packageRoot, "script", "build_and_run.sh"),

@@ -190,14 +190,13 @@ function DesktopSetupSteps() {
       <ol className="mt-2 max-w-xl space-y-2 text-sm leading-6 text-muted-foreground">
         <li>1. Download and unzip the app.</li>
         <li>
-          2. Move <code>MeetingNoteLocalRecorder.app</code> to Applications.
+          2. Move <code>Tape Desktop.app</code> to Applications.
         </li>
         <li>
           3. Because the app is not notarized, remove quarantine from this app
           in Terminal:
           <code className="mt-1 block overflow-x-auto rounded-md bg-muted px-2 py-1 text-xs text-foreground">
-            xattr -dr com.apple.quarantine
-            /Applications/MeetingNoteLocalRecorder.app
+            {`xattr -dr com.apple.quarantine "/Applications/Tape Desktop.app"`}
           </code>
         </li>
         <li>

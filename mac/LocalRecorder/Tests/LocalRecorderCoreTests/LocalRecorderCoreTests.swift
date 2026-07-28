@@ -746,6 +746,30 @@ import Testing
     )
 }
 
+@Test func initialServerURLUsesTapeProductionAndPreservesSavedCredentials() throws {
+    let initialServerURLText = initialLocalRecorderServerURLText(credentials: nil)
+    let initialServerURL = try #require(URL(string: initialServerURLText))
+    let browserLoginURL = try #require(
+        makeLocalRecorderBrowserLoginURL(
+            serverURL: initialServerURL,
+            deviceId: "device_123"
+        )
+    )
+
+    #expect(
+        initialServerURLText == "https://tape.inevitable.tech"
+    )
+    #expect(browserLoginURL.host == "tape.inevitable.tech")
+    #expect(
+        initialLocalRecorderServerURLText(
+            credentials: LocalRecorderCredentials(
+                serverURLText: "http://localhost:3000",
+                bearerToken: "token_123"
+            )
+        ) == "http://localhost:3000"
+    )
+}
+
 @Test func failIntentRequestIncludesRecorderHeadersAndReason() throws {
     let client = LocalRecorderAPIClient(
         serverURL: URL(string: "https://app.example.com")!,

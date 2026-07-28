@@ -98,13 +98,13 @@ function buildRecorderHandoffResponse(redirectUrl: string) {
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Opening Tape recorder</title>
+  <title>Opening Tape Desktop</title>
 </head>
 <body style="margin:0;min-height:100vh;display:grid;place-items:center;background:#ffffff;color:#111827;font-family:system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;">
   <main style="max-width:32rem;padding:2rem;text-align:center;">
-    <h1 style="font-size:1.5rem;line-height:2rem;margin:0 0 0.75rem;">Opening Tape recorder</h1>
-    <p style="margin:0 0 1.25rem;color:#4b5563;">Sign in is complete. You can close this page after the recorder opens.</p>
-    <a href="${href}" style="display:inline-block;border-radius:0.5rem;background:#111827;color:#ffffff;padding:0.625rem 1rem;text-decoration:none;font-weight:600;">Open Tape recorder</a>
+    <h1 style="font-size:1.5rem;line-height:2rem;margin:0 0 0.75rem;">Opening Tape Desktop</h1>
+    <p style="margin:0 0 1.25rem;color:#4b5563;">Sign in is complete. You can close this page after Tape Desktop opens.</p>
+    <a href="${href}" style="display:inline-block;border-radius:0.5rem;background:#111827;color:#ffffff;padding:0.625rem 1rem;text-decoration:none;font-weight:600;">Open Tape Desktop</a>
   </main>
   <script>window.location.href = ${scriptUrl};</script>
 </body>

@@ -146,7 +146,6 @@ struct MeetingNoteLocalRecorderApp: App {
 @MainActor
 final class RecorderAppModel: NSObject, ObservableObject, UNUserNotificationCenterDelegate {
     private static let audioLevelSampleCount = 36
-    private static let defaultServerURLText = "http://localhost:3000"
 
     @Published var audioLevels = Array(repeating: Float(0), count: audioLevelSampleCount)
     @Published var activeRecordingTitle: String?
@@ -206,7 +205,7 @@ final class RecorderAppModel: NSObject, ObservableObject, UNUserNotificationCent
         self.uploadQueue = LocalRecordingUploadQueue(
             directoryURL: LocalRecorderFileLocations.uploadQueueDirectoryURL()
         )
-        self.serverURLText = credentials?.serverURLText ?? Self.defaultServerURLText
+        self.serverURLText = initialLocalRecorderServerURLText(credentials: credentials)
         self.bearerToken = credentials?.bearerToken ?? ""
         super.init()
         recallSDKController.onUnexpectedTermination = { [weak self] in
