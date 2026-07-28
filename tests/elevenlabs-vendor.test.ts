@@ -96,4 +96,40 @@ describe("ElevenLabs vendor", () => {
       'ElevenLabs transcript job failed with 400 Bad Request: {"detail":{"message":"source_url could not be fetched"}}',
     );
   });
+
+  it("uploads prepared audio chunks synchronously without a webhook", async () => {
+    vi.stubEnv("ELEVENLABS_API_KEY", "eleven-key");
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          text: "Chunk transcript",
+          transcription_id: "chunk_123",
+          words: [],
+        }),
+        {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        },
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const { transcribeElevenLabsAudioFile } = await import(
+      "@/lib/vendors/elevenlabs"
+    );
+
+    await expect(
+      transcribeElevenLabsAudioFile({
+        audio: new Uint8Array([1, 2, 3]),
+        fileName: "meeting-part-1.mp3",
+        keyterms: ["IOSG"],
+      }),
+    ).resolves.toMatchObject({ transcription_id: "chunk_123" });
+
+    const [, init] = fetchMock.mock.calls[0];
+    const body = init.body as FormData;
+
+    expect(body.get("file")).toBeInstanceOf(Blob);
+    expect(body.get("webhook")).toBeNull();
+    expect(body.getAll("keyterms")).toEqual(["IOSG"]);
+  });
 });

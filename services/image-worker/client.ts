@@ -8,6 +8,7 @@ const optionalSecret = z.preprocess(
 );
 
 const environmentSchema = z.object({
+  ELEVENLABS_API_KEY: optionalSecret,
   INNGEST_BASE_URL: optionalSecret,
   INNGEST_EVENT_KEY: optionalSecret,
   INNGEST_SIGNING_KEY: optionalSecret,
@@ -24,6 +25,13 @@ export function buildImageWorkerClientOptions(
     !environment.INNGEST_SIGNING_KEY
   ) {
     throw new Error("INNGEST_SIGNING_KEY is required in production");
+  }
+
+  if (
+    environment.NODE_ENV === "production" &&
+    !environment.ELEVENLABS_API_KEY
+  ) {
+    throw new Error("ELEVENLABS_API_KEY is required in production");
   }
 
   const options: ClientOptions = { id: "meeting-image-worker" };

@@ -79,11 +79,11 @@ Team settings shows remaining workspace credit plus current month personal and o
 | Tenant isolation | Forced PostgreSQL RLS for signed in web and MCP reads |
 | Media | Cloudflare R2 with authenticated application routes |
 | Cloud meeting capture | Recall.ai bots and Calendar V2 |
-| Transcription | ElevenLabs Speech to Text using `scribe_v2` |
+| Transcription | ElevenLabs Speech to Text using `scribe_v2`, with Railway chunking for recordings over 60 minutes |
 | Translation and live answers | OpenRouter, with optional Exa web search for live answers |
 | Provider usage accounting | Idempotent per meeting cost events with personal and organization summaries |
 | Background work | Self hosted Inngest on Railway for transcription, scheduling, translation, reminders, and repair |
-| Screen share extraction | A Railway Node worker using ffmpeg and ffprobe |
+| Heavy media processing | A Railway Node worker for screen share extraction and long recording transcription chunks |
 | Notifications | Optional OneSignal browser and mobile push |
 | Vocabulary enrichment | Optional Twenty CRM names and companies for the IOSG workspace only |
 | Agent access | A separate FastMCP server with caller scoped read only tools |
@@ -130,7 +130,7 @@ npm run setup:check
 
 The web application deploys to Vercel. Its production build validates required configuration and migration lineage, applies pending migrations, and then builds the application. Preview builds do not mutate the production database.
 
-The Inngest engine, its authenticated gateway, MCP, and optional image worker run as separate services in one Railway project named `tape`. Inngest uses dedicated PostgreSQL and Redis services. The gateway keeps the engine private, exposes machine endpoints to the SDK, protects the dashboard with a seven day cookie session, and protects `/mcp` with separate credentials for bearer capable clients and Claude custom connector URLs. The image worker accepts Inngest requests at `/api/inngest` and exposes `/health` for service health checks.
+The Inngest engine, its authenticated gateway, MCP, and media worker run as separate services in one Railway project named `tape`. Inngest uses dedicated PostgreSQL and Redis services. The gateway keeps the engine private, exposes machine endpoints to the SDK, protects the dashboard with a seven day cookie session, and protects `/mcp` with separate credentials for bearer capable clients and Claude custom connector URLs. The worker accepts Inngest requests at `/api/inngest`, handles screen share extraction and recordings over 60 minutes, and exposes `/health` for service health checks.
 
 ```bash
 npm run build:image-worker

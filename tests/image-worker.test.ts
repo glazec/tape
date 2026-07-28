@@ -1,8 +1,22 @@
 import type { AddressInfo } from "node:net";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-const { persistRecallMeetingVideoFrames, serve } = vi.hoisted(() => ({
+const {
+  cleanupCompletedTranscriptChunks,
+  markChunkedTranscriptJobFailed,
+  persistCompletedTranscriptChunks,
+  persistRecallMeetingVideoFrames,
+  prepareTranscriptAudioChunks,
+  queueChunkedTranscriptEnrichment,
+  serve,
+  transcribePreparedTranscriptChunk,
+} = vi.hoisted(() => ({
+  cleanupCompletedTranscriptChunks: vi.fn(),
+  markChunkedTranscriptJobFailed: vi.fn(),
+  persistCompletedTranscriptChunks: vi.fn(),
   persistRecallMeetingVideoFrames: vi.fn(),
+  prepareTranscriptAudioChunks: vi.fn(),
+  queueChunkedTranscriptEnrichment: vi.fn(),
   serve: vi.fn(() => (_request: unknown, response: {
     end: (body: string) => void;
     writeHead: (status: number, headers?: Record<string, string>) => void;
@@ -10,10 +24,20 @@ const { persistRecallMeetingVideoFrames, serve } = vi.hoisted(() => ({
     response.writeHead(200, { "content-type": "application/json" });
     response.end(JSON.stringify({ inngest: true }));
   }),
+  transcribePreparedTranscriptChunk: vi.fn(),
 }));
 
 vi.mock("@/lib/meeting-video-frames", () => ({
   persistRecallMeetingVideoFrames,
+}));
+
+vi.mock("@/lib/transcript-chunk-worker", () => ({
+  cleanupCompletedTranscriptChunks,
+  markChunkedTranscriptJobFailed,
+  persistCompletedTranscriptChunks,
+  prepareTranscriptAudioChunks,
+  queueChunkedTranscriptEnrichment,
+  transcribePreparedTranscriptChunk,
 }));
 
 vi.mock("inngest/node", () => ({ serve }));
@@ -25,6 +49,12 @@ type RunnableInngestFunction = {
 describe("image worker", () => {
   afterEach(() => {
     persistRecallMeetingVideoFrames.mockReset();
+    cleanupCompletedTranscriptChunks.mockReset();
+    markChunkedTranscriptJobFailed.mockReset();
+    persistCompletedTranscriptChunks.mockReset();
+    prepareTranscriptAudioChunks.mockReset();
+    queueChunkedTranscriptEnrichment.mockReset();
+    transcribePreparedTranscriptChunk.mockReset();
     serve.mockClear();
     vi.resetModules();
   });
@@ -37,8 +67,15 @@ describe("image worker", () => {
     expect(() =>
       buildImageWorkerClientOptions({ NODE_ENV: "production" }),
     ).toThrow("INNGEST_SIGNING_KEY");
+    expect(() =>
+      buildImageWorkerClientOptions({
+        NODE_ENV: "production",
+        INNGEST_SIGNING_KEY: "signkey-prod-worker",
+      }),
+    ).toThrow("ELEVENLABS_API_KEY");
     expect(
       buildImageWorkerClientOptions({
+        ELEVENLABS_API_KEY: "eleven-key",
         NODE_ENV: "production",
         INNGEST_BASE_URL: "https://inngest.example.com",
         INNGEST_SIGNING_KEY: "signkey-prod-worker",
@@ -50,15 +87,21 @@ describe("image worker", () => {
     });
   });
 
-  it("registers one serialized extraction function with two retries", async () => {
+  it("registers serialized media functions with two retries", async () => {
     const { functions } = await import("@/services/image-worker/functions");
 
-    expect(functions).toHaveLength(1);
+    expect(functions).toHaveLength(2);
     expect(functions[0].opts).toMatchObject({
       concurrency: 1,
       id: "extract-meeting-video-frames",
       retries: 2,
       triggers: [{ event: "meeting/extract.video-frames" }],
+    });
+    expect(functions[1].opts).toMatchObject({
+      concurrency: 1,
+      id: "transcribe-meeting-in-chunks",
+      retries: 2,
+      triggers: [{ event: "meeting/transcribe.audio-in-chunks" }],
     });
   });
 
@@ -118,6 +161,89 @@ describe("image worker", () => {
       }),
     ).rejects.toThrow();
     expect(persistRecallMeetingVideoFrames).not.toHaveBeenCalled();
+  });
+
+  it("checkpoints every long transcript chunk before one merge", async () => {
+    const chunks = [
+      {
+        audioObjectKey: "chunk-0.mp3",
+        plan: {
+          endMs: 3_600_000,
+          index: 0,
+          ownershipEndMs: 3_595_000,
+          ownershipStartMs: 0,
+          startMs: 0,
+        },
+      },
+      {
+        audioObjectKey: "chunk-1.mp3",
+        plan: {
+          endMs: 4_000_000,
+          index: 1,
+          ownershipEndMs: 4_000_000,
+          ownershipStartMs: 3_595_000,
+          startMs: 3_590_000,
+        },
+      },
+    ];
+    const completed = chunks.map((chunk) => ({
+      ...chunk,
+      transcriptObjectKey: `${chunk.audioObjectKey}.json`,
+      transcriptionId: `transcript_${chunk.plan.index}`,
+    }));
+    const stepNames: string[] = [];
+    const run = vi.fn(
+      async (name: string, handler: () => Promise<unknown>) => {
+        stepNames.push(name);
+        return handler();
+      },
+    );
+    prepareTranscriptAudioChunks.mockResolvedValue(chunks);
+    transcribePreparedTranscriptChunk
+      .mockResolvedValueOnce(completed[0])
+      .mockResolvedValueOnce(completed[1]);
+    persistCompletedTranscriptChunks.mockResolvedValue({
+      maxEndMs: 4_000_000,
+      segmentCount: 320,
+      translateTranscript: true,
+      translationLanguage: "zh-CN",
+    });
+    queueChunkedTranscriptEnrichment.mockResolvedValue({ ids: ["enrich"] });
+    cleanupCompletedTranscriptChunks.mockResolvedValue(undefined);
+    const { transcribeMeetingInChunks } = await import(
+      "@/services/image-worker/functions"
+    );
+    const data = {
+      keyterms: ["IOSG"],
+      meetingId: "22222222-2222-4222-8222-222222222222",
+      objectKey: "users/user_123/uploads/long.mp3",
+      recordingId: "33333333-3333-4333-8333-333333333333",
+      transcriptJobId: "44444444-4444-4444-8444-444444444444",
+    };
+
+    await expect(
+      (transcribeMeetingInChunks as unknown as RunnableInngestFunction).fn({
+        attempt: 0,
+        event: { data },
+        step: { run },
+      }),
+    ).resolves.toMatchObject({ segmentCount: 320 });
+
+    expect(stepNames).toEqual([
+      "prepare-audio-chunks",
+      "transcribe-audio-chunk-0",
+      "transcribe-audio-chunk-1",
+      "persist-chunked-transcript",
+      "queue-chunked-transcript-enrichment",
+      "cleanup-transcript-chunks",
+    ]);
+    expect(persistCompletedTranscriptChunks).toHaveBeenCalledWith({
+      chunks: completed,
+      meetingId: data.meetingId,
+      recordingId: data.recordingId,
+      transcriptJobId: data.transcriptJobId,
+    });
+    expect(markChunkedTranscriptJobFailed).not.toHaveBeenCalled();
   });
 
   it("serves health and Inngest while returning 404 elsewhere", async () => {

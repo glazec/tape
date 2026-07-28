@@ -10,6 +10,7 @@ const {
   deleteScheduledRecallBot,
   dispatchPendingLocationReminderSchedules,
   getMeetingVocabularyKeyterms,
+  getTranscriptJobDurationMs,
   markLocationReminderDeliveryFailed,
   scheduleRecallBot,
   sendScheduledLocationReminder,
@@ -26,6 +27,7 @@ const {
   deleteScheduledRecallBot: vi.fn(),
   dispatchPendingLocationReminderSchedules: vi.fn(),
   getMeetingVocabularyKeyterms: vi.fn().mockResolvedValue([]),
+  getTranscriptJobDurationMs: vi.fn().mockResolvedValue(30 * 60 * 1_000),
   markLocationReminderDeliveryFailed: vi.fn(),
   scheduleRecallBot: vi.fn(),
   sendScheduledLocationReminder: vi.fn(),
@@ -85,6 +87,10 @@ vi.mock("@/lib/team-vocabulary", () => ({
   getMeetingVocabularyKeyterms,
 }));
 
+vi.mock("@/lib/transcription-duration", () => ({
+  getTranscriptJobDurationMs,
+}));
+
 type RunnableInngestFunction = {
   fn: (input?: unknown) => Promise<unknown>;
 };
@@ -94,6 +100,7 @@ describe("Inngest functions", () => {
     vi.clearAllMocks();
     assertMeetingHasProviderCredit.mockReset();
     assertWorkspaceHasProviderCredit.mockReset();
+    getTranscriptJobDurationMs.mockReset().mockResolvedValue(30 * 60 * 1_000);
     vi.resetModules();
     vi.unstubAllEnvs();
   });
@@ -362,6 +369,41 @@ describe("Inngest functions", () => {
         "Your Tape credit has been used. You can still review existing meetings.",
       status: "failed",
       updatedAt: expect.any(Date),
+    });
+  });
+
+  it("routes recordings over sixty minutes to the media worker", async () => {
+    const where = vi.fn().mockResolvedValue(undefined);
+    const set = vi.fn().mockReturnValue({ where });
+    const sendEvent = vi.fn().mockResolvedValue({ ids: ["chunk_event"] });
+    update.mockReturnValue({ set });
+    getTranscriptJobDurationMs.mockResolvedValue(61 * 60 * 1_000);
+    getMeetingVocabularyKeyterms.mockResolvedValue(["IOSG"]);
+    const { transcribeAudio } = await import("@/inngest/functions");
+    const data = {
+      meetingId: "11111111-1111-4111-8111-111111111111",
+      objectKey: "users/user_123/uploads/long-audio.mp3",
+      recordingId: "33333333-3333-4333-8333-333333333333",
+      transcriptJobId: "22222222-2222-4222-8222-222222222222",
+    };
+
+    await expect(
+      (transcribeAudio as unknown as RunnableInngestFunction).fn({
+        event: { data },
+        step: { sendEvent },
+      }),
+    ).resolves.toEqual({ ids: ["chunk_event"] });
+
+    expect(createReadUrl).not.toHaveBeenCalled();
+    expect(createElevenLabsTranscriptJob).not.toHaveBeenCalled();
+    expect(set).toHaveBeenCalledWith({
+      status: "running",
+      updatedAt: expect.any(Date),
+    });
+    expect(sendEvent).toHaveBeenCalledWith("queue-chunked-transcription", {
+      id: `chunked-transcription:${data.transcriptJobId}`,
+      name: "meeting/transcribe.audio-in-chunks",
+      data: { ...data, keyterms: ["IOSG"] },
     });
   });
 

@@ -34,6 +34,12 @@ npm run verify:all
 
 Run a focused suite while developing, then run the applicable release gate before handing off the change.
 
+For long recording transcription changes, verify the 60 minute routing boundary, overlap ownership, synchronous ElevenLabs file upload, web fan out, and Railway worker checkpoints:
+
+```bash
+npx vitest run tests/transcript-chunking.test.ts tests/transcript-chunk-worker.test.ts tests/elevenlabs-vendor.test.ts tests/inngest-functions.test.ts tests/image-worker.test.ts
+```
+
 For telemetry changes, run the deterministic signal, redaction, browser intake,
 and server exporter tests:
 

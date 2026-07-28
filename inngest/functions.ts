@@ -13,6 +13,10 @@ import {
   sendScheduledLocationReminder,
 } from "@/lib/location-reminders";
 import { getMeetingVocabularyKeyterms } from "@/lib/team-vocabulary";
+import {
+  shouldChunkTranscription,
+} from "@/lib/transcript-chunking";
+import { getTranscriptJobDurationMs } from "@/lib/transcription-duration";
 import { completeUploadedVideoConversion } from "@/lib/transcription-records";
 import { createElevenLabsTranscriptJob } from "@/lib/vendors/elevenlabs";
 import {
@@ -135,18 +139,41 @@ export const transcribeAudio = inngest.createFunction(
     retries: TRANSCRIBE_AUDIO_RETRIES,
     triggers: [{ event: "meeting/transcribe.audio" }],
   },
-  async ({ event, attempt = 0 }) => {
+  async ({ event, step, attempt = 0 }) => {
     const data = transcribeAudioDataSchema.parse(event.data);
 
     try {
       await assertMeetingHasProviderCredit(data.meetingId);
+
+      const keyterms = await getMeetingVocabularyKeyterms(data.meetingId);
+      const durationMs = data.transcriptJobId
+        ? await getTranscriptJobDurationMs(data.transcriptJobId)
+        : null;
+
+      if (
+        data.transcriptJobId &&
+        shouldChunkTranscription(durationMs)
+      ) {
+        await db
+          .update(transcriptJobs)
+          .set({ status: "running", updatedAt: new Date() })
+          .where(eq(transcriptJobs.id, data.transcriptJobId));
+
+        return step.sendEvent("queue-chunked-transcription", {
+          id: `chunked-transcription:${data.transcriptJobId}`,
+          name: "meeting/transcribe.audio-in-chunks",
+          data: {
+            ...data,
+            keyterms,
+          },
+        });
+      }
 
       const appUrl = getAppUrl();
       const audioUrl =
         "audioUrl" in data
           ? data.audioUrl
           : await createReadUrl({ key: data.objectKey });
-      const keyterms = await getMeetingVocabularyKeyterms(data.meetingId);
 
       const response = await createElevenLabsTranscriptJob({
         audioUrl,

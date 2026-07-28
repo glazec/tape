@@ -54,6 +54,7 @@ const elevenLabsTranscriptInputSchema = z.object({
 const elevenLabsApiEnvSchema = z.object({
   ELEVENLABS_API_KEY: z.string().trim().min(1),
 });
+const ELEVENLABS_TRANSCRIPTION_TIMEOUT_MS = 2 * 60 * 60 * 1_000;
 
 export function normalizeElevenLabsWebhook(payload: unknown) {
   const realPayload = elevenLabsWebhookSchema.safeParse(payload);
@@ -143,6 +144,43 @@ export async function createElevenLabsTranscriptJob(input: {
       "xi-api-key": env.ELEVENLABS_API_KEY,
     },
     body,
+    signal: AbortSignal.timeout(ELEVENLABS_TRANSCRIPTION_TIMEOUT_MS),
+  });
+
+  if (!response.ok) {
+    throw new Error(await buildElevenLabsErrorMessage(response));
+  }
+
+  return response.json();
+}
+
+export async function transcribeElevenLabsAudioFile(input: {
+  audio: Uint8Array;
+  fileName: string;
+  keyterms?: string[];
+}) {
+  const env = elevenLabsApiEnvSchema.parse(process.env);
+  const body = new FormData();
+  const audioBytes = new ArrayBuffer(input.audio.byteLength);
+  new Uint8Array(audioBytes).set(input.audio);
+  const audio = new Blob([audioBytes], { type: "audio/mpeg" });
+
+  body.append("model_id", "scribe_v2");
+  body.append("file", audio, input.fileName);
+  body.append("diarize", "true");
+  body.append("entity_detection", "all");
+  body.append("timestamps_granularity", "word");
+  for (const keyterm of buildTranscriptionKeyterms(input.keyterms ?? [])) {
+    body.append("keyterms", keyterm);
+  }
+
+  const response = await fetch("https://api.elevenlabs.io/v1/speech-to-text", {
+    method: "POST",
+    headers: {
+      "xi-api-key": env.ELEVENLABS_API_KEY,
+    },
+    body,
+    signal: AbortSignal.timeout(ELEVENLABS_TRANSCRIPTION_TIMEOUT_MS),
   });
 
   if (!response.ok) {

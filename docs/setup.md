@@ -236,14 +236,16 @@ After the first successful deployment:
    translation language, meeting bot identity, optional sharing group, and transcription vocabulary.
 6. Verify `/api/health/dashboard` before inviting the team.
 
-## Deploy the image worker
+## Deploy the media worker
 
-Screen share extraction runs as an optional service in the same Railway project as the Tape MCP. Name the Railway project `tape` and keep the MCP and image worker as separate services so each runtime retains its own build, variables, health checks, and scaling. The Vercel application emits an Inngest event after Recall recording completion. The worker downloads fresh Recall artifacts, runs ffmpeg and ffprobe, stores stable screen share frames in R2, and writes their metadata to Neon.
+Screen share extraction and long recording transcription run in a dedicated service in the same Railway project as the Tape MCP. Name the Railway project `tape` and keep the MCP and media worker as separate services so each runtime retains its own build, variables, health checks, and scaling. The Vercel application emits Inngest events after recording completion. The worker downloads the media, runs ffmpeg and ffprobe, and stores stable screen share frames in R2. Recordings over 60 minutes are converted into overlapping audio chunks no longer than 60 minutes. Every chunk is transcribed and checkpointed independently, then merged by timestamp before one canonical transcript and one translation job are published.
 
 Configure these variables on the Railway service:
 
 ```text
 DATABASE_URL
+DATABASE_AUTHENTICATED_URL
+ELEVENLABS_API_KEY
 FFMPEG_PATH=/usr/bin/ffmpeg
 FFPROBE_PATH=/usr/bin/ffprobe
 INNGEST_EVENT_KEY
@@ -266,7 +268,7 @@ PORT=3001 npm run start:image-worker
 curl --fail http://127.0.0.1:3001/health
 ```
 
-Railway uses `Dockerfile.image-worker` and `railway.json`. After assigning the service a public HTTPS origin, register its Inngest endpoint:
+Railway uses `Dockerfile.image-worker` and `railway.json`. The historical file and service names remain `image-worker`, but the runtime is the Tape media worker. After assigning the service a public HTTPS origin, register its Inngest endpoint:
 
 ```bash
 IMAGE_WORKER_URL=https://your-worker.example npm run inngest:sync:image-worker
@@ -414,4 +416,4 @@ See [testing architecture](testing.md) for the individual suites, coverage thres
 6. Restrict OneSignal allowed origins to the deployed application.
 7. Confirm Recall.ai and ElevenLabs webhook signature verification with real test deliveries.
 8. Keep `.env.local`, provider exports, meeting media, and logs outside Git.
-9. If the image worker is enabled, verify its `/health` route and Inngest registration separately from the web application.
+9. Verify the media worker `/health` route and Inngest registration separately from the web application. Confirm both `extract-meeting-video-frames` and `transcribe-meeting-in-chunks` are registered.
