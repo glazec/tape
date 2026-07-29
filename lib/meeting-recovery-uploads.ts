@@ -1,12 +1,12 @@
 import { and, eq } from "drizzle-orm";
+import { randomUUID } from "node:crypto";
 
-import { db } from "@/db/client";
+import { databaseSql, db } from "@/db/client";
 import {
   mediaAssets,
   meetings,
   recordings,
   transcriptJobs,
-  transcriptSegments,
 } from "@/db/schema";
 import { parseManualTranscriptText } from "@/lib/manual-transcript-parser";
 import { getManageableMeetingCondition } from "@/lib/meeting-write-policy";
@@ -95,40 +95,71 @@ export async function completeManualTranscriptUpload(input: {
   }
 
   const now = new Date();
-  const [job] = await db
-    .insert(transcriptJobs)
-    .values({
-      meetingId: input.meetingId,
-      provider: "manual",
-      status: "completed",
-    })
-    .returning({ id: transcriptJobs.id });
+  const transcriptJobId = randomUUID();
+  const segmentRows = segments.map((segment) => ({
+    end_ms: segment.endMs ?? null,
+    speaker: segment.speaker,
+    start_ms: segment.startMs,
+    text: segment.text,
+  }));
 
-  await db
-    .delete(transcriptSegments)
-    .where(eq(transcriptSegments.meetingId, input.meetingId));
-  await db.insert(transcriptSegments).values(
-    segments.map((segment) => ({
-      jobId: job.id,
-      meetingId: input.meetingId,
-      speaker: segment.speaker,
-      endMs: segment.endMs,
-      startMs: segment.startMs,
-      text: segment.text,
-    })),
-  );
-  await db
-    .update(meetings)
-    .set({
-      status: "ready",
-      updatedAt: now,
-    })
-    .where(eq(meetings.id, input.meetingId));
+  await databaseSql.transaction((txn) => [
+    txn`
+      insert into transcript_jobs (
+        id,
+        meeting_id,
+        provider,
+        status,
+        created_at,
+        updated_at
+      )
+      values (
+        ${transcriptJobId}::uuid,
+        ${input.meetingId}::uuid,
+        'manual',
+        'completed',
+        ${now},
+        ${now}
+      )
+    `,
+    txn`
+      delete from transcript_segments
+      where meeting_id = ${input.meetingId}::uuid
+    `,
+    txn`
+      insert into transcript_segments (
+        meeting_id,
+        job_id,
+        speaker,
+        start_ms,
+        end_ms,
+        text
+      )
+      select
+        ${input.meetingId}::uuid,
+        ${transcriptJobId}::uuid,
+        segment.speaker,
+        segment.start_ms,
+        segment.end_ms,
+        segment.text
+      from jsonb_to_recordset(${JSON.stringify(segmentRows)}::jsonb) as segment(
+        speaker text,
+        start_ms integer,
+        end_ms integer,
+        text text
+      )
+    `,
+    txn`
+      update meetings
+      set status = 'ready', updated_at = ${now}
+      where id = ${input.meetingId}::uuid
+    `,
+  ]);
 
   return {
     meetingId: input.meetingId,
     segmentCount: segments.length,
-    transcriptJobId: job.id,
+    transcriptJobId,
   };
 }
 

@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const getCurrentUser = vi.fn();
 const getMeetingBotProfile = vi.fn();
 const scheduleRecallBot = vi.fn();
+const retireScheduledRecallBot = vi.fn();
 const createScheduledMeetingBot = vi.fn();
 const findScheduledMeetingBotCalendarCandidates = vi.fn();
 const joinScheduledMeetingBotNow = vi.fn();
@@ -17,6 +18,10 @@ vi.mock("@/lib/auth", () => ({
 
 vi.mock("@/lib/vendors/recall", () => ({
   scheduleRecallBot,
+}));
+
+vi.mock("@/lib/meeting-bot-retirement", () => ({
+  retireScheduledRecallBot,
 }));
 
 vi.mock("@/lib/meeting-bot-profile", () => ({
@@ -81,6 +86,7 @@ describe("POST /api/meetings/link", () => {
     getCurrentUser.mockReset();
     getMeetingBotProfile.mockReset();
     scheduleRecallBot.mockReset();
+    retireScheduledRecallBot.mockReset();
     createScheduledMeetingBot.mockReset();
     joinScheduledMeetingBotNow.mockReset();
     markMeetingBotFailed.mockReset();
@@ -702,6 +708,33 @@ describe("POST /api/meetings/link", () => {
     await expect(response.json()).resolves.toEqual({
       error: "Meeting bot unavailable",
     });
+    expect(markMeetingBotFailed).toHaveBeenCalledWith({
+      meetingId: "11111111-1111-4111-8111-111111111111",
+    });
+  });
+
+  it("deletes a Recall bot when storing its id fails", async () => {
+    vi.stubEnv("NEXT_PUBLIC_APP_URL", "https://app.example.com");
+    getCurrentUser.mockResolvedValue({
+      id: "user_123",
+      email: "user@example.com",
+      name: null,
+    });
+    createScheduledMeetingBot.mockResolvedValue({
+      meetingId: "11111111-1111-4111-8111-111111111111",
+      teamId: "22222222-2222-4222-8222-222222222222",
+    });
+    scheduleRecallBot.mockResolvedValue({ id: "orphan_candidate" });
+    markMeetingBotScheduled.mockRejectedValue(new Error("database unavailable"));
+    retireScheduledRecallBot.mockResolvedValue(undefined);
+    markMeetingBotFailed.mockResolvedValue(undefined);
+
+    const response = await postMeetingLink({
+      meetingUrl: "https://meet.google.com/abc-defg-hij",
+    });
+
+    expect(response.status).toBe(502);
+    expect(retireScheduledRecallBot).toHaveBeenCalledWith("orphan_candidate");
     expect(markMeetingBotFailed).toHaveBeenCalledWith({
       meetingId: "11111111-1111-4111-8111-111111111111",
     });

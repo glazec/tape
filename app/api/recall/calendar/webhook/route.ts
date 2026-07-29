@@ -6,6 +6,7 @@ import {
   markVendorWebhookEventProcessed,
   MissingWebhookIdempotencyKeyError,
   recordVendorWebhookEvent,
+  releaseVendorWebhookEventClaim,
 } from "@/lib/vendor-webhook-events";
 import {
   verifyRecallWebhook,
@@ -41,10 +42,12 @@ export async function POST(request: Request) {
     return Response.json({ error: "Invalid webhook payload" }, { status: 400 });
   }
 
+  const idempotencyKey = getRecallCalendarWebhookIdempotencyKey(
+    request.headers,
+  );
+  let processingStartedAt: Date | null = null;
+
   try {
-    const idempotencyKey = getRecallCalendarWebhookIdempotencyKey(
-      request.headers,
-    );
     const recorded = await recordVendorWebhookEvent({
       provider: "recall",
       eventType: event.eventType,
@@ -66,6 +69,11 @@ export async function POST(request: Request) {
     }
 
     if (recorded.shouldProcess) {
+      if (!recorded.processingStartedAt) {
+        throw new Error("Recall calendar webhook processing claim is missing");
+      }
+
+      processingStartedAt = recorded.processingStartedAt;
       result = await processRecallCalendarWebhook(event);
       await markVendorWebhookEventProcessed({
         provider: "recall",
@@ -77,6 +85,14 @@ export async function POST(request: Request) {
 
     return Response.json({ received: true, result });
   } catch (error) {
+    if (idempotencyKey && processingStartedAt) {
+      await releaseVendorWebhookEventClaim({
+        provider: "recall",
+        idempotencyKey,
+        processingStartedAt,
+      }).catch(() => undefined);
+    }
+
     if (error instanceof MissingWebhookIdempotencyKeyError) {
       return Response.json(
         { error: "Invalid webhook payload" },
@@ -86,7 +102,7 @@ export async function POST(request: Request) {
 
     logWebhookProcessingError("Recall calendar webhook processing failed", {
       eventType: event.eventType,
-      idempotencyKey: getRecallCalendarWebhookIdempotencyKey(request.headers),
+      idempotencyKey,
       error,
     });
 

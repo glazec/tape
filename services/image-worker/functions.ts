@@ -55,6 +55,7 @@ export const transcribeMeetingInChunks = imageWorkerInngest.createFunction(
   },
   async ({ event, step, attempt = 0 }) => {
     const data = chunkedTranscriptionDataSchema.parse(event.data);
+    let transcriptPersisted = false;
 
     try {
       const chunks = await step.run("prepare-audio-chunks", () =>
@@ -83,6 +84,7 @@ export const transcribeMeetingInChunks = imageWorkerInngest.createFunction(
           transcriptJobId: data.transcriptJobId,
         }),
       );
+      transcriptPersisted = true;
 
       await step.run("queue-chunked-transcript-enrichment", () =>
         queueChunkedTranscriptEnrichment({
@@ -97,7 +99,10 @@ export const transcribeMeetingInChunks = imageWorkerInngest.createFunction(
 
       return result;
     } catch (error) {
-      if (attempt >= CHUNKED_TRANSCRIPTION_RETRIES) {
+      if (
+        attempt >= CHUNKED_TRANSCRIPTION_RETRIES &&
+        !transcriptPersisted
+      ) {
         await markChunkedTranscriptJobFailed({
           error,
           meetingId: data.meetingId,

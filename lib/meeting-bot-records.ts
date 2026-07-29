@@ -179,7 +179,7 @@ export async function markMeetingBotScheduled(input: {
   meetingId: string;
   recallBotId: string;
 }) {
-  await db
+  const result = await db
     .update(meetings)
     .set({
       recallBotId: input.recallBotId,
@@ -187,6 +187,10 @@ export async function markMeetingBotScheduled(input: {
       updatedAt: new Date(),
     })
     .where(eq(meetings.id, input.meetingId));
+
+  if (result?.rowCount === 0) {
+    throw new Error("Meeting bot association failed");
+  }
 }
 
 export async function markMeetingBotFailed(input: { meetingId: string }) {

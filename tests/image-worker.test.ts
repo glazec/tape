@@ -246,6 +246,68 @@ describe("image worker", () => {
     expect(markChunkedTranscriptJobFailed).not.toHaveBeenCalled();
   });
 
+  it.each([
+    ["enrichment dispatch", "queue-chunked-transcript-enrichment"],
+    ["chunk cleanup", "cleanup-transcript-chunks"],
+  ])(
+    "does not fail a persisted transcript when %s fails",
+    async (_failure, failingStep) => {
+      const chunk = {
+        audioObjectKey: "chunk-0.mp3",
+        plan: {
+          endMs: 60_000,
+          index: 0,
+          ownershipEndMs: 60_000,
+          ownershipStartMs: 0,
+          startMs: 0,
+        },
+      };
+      const completed = {
+        ...chunk,
+        transcriptObjectKey: "chunk-0.json",
+        transcriptionId: "transcript_0",
+      };
+      prepareTranscriptAudioChunks.mockResolvedValue([chunk]);
+      transcribePreparedTranscriptChunk.mockResolvedValue(completed);
+      persistCompletedTranscriptChunks.mockResolvedValue({
+        maxEndMs: 60_000,
+        segmentCount: 4,
+        translateTranscript: false,
+        translationLanguage: "en",
+      });
+      queueChunkedTranscriptEnrichment.mockResolvedValue({ ids: ["enrich"] });
+      cleanupCompletedTranscriptChunks.mockResolvedValue(undefined);
+      const run = vi.fn(
+        async (name: string, handler: () => Promise<unknown>) => {
+          if (name === failingStep) {
+            throw new Error(`${failingStep} unavailable`);
+          }
+
+          return handler();
+        },
+      );
+      const { transcribeMeetingInChunks } = await import(
+        "@/services/image-worker/functions"
+      );
+      const data = {
+        keyterms: [],
+        meetingId: "22222222-2222-4222-8222-222222222222",
+        objectKey: "users/user_123/uploads/long.mp3",
+        transcriptJobId: "44444444-4444-4444-8444-444444444444",
+      };
+
+      await expect(
+        (transcribeMeetingInChunks as unknown as RunnableInngestFunction).fn({
+          attempt: 2,
+          event: { data },
+          step: { run },
+        }),
+      ).rejects.toThrow(`${failingStep} unavailable`);
+      expect(persistCompletedTranscriptChunks).toHaveBeenCalledOnce();
+      expect(markChunkedTranscriptJobFailed).not.toHaveBeenCalled();
+    },
+  );
+
   it("serves health and Inngest while returning 404 elsewhere", async () => {
     const { createImageWorkerServer } = await import(
       "@/services/image-worker/server"

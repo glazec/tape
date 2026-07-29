@@ -5,7 +5,11 @@ import { mediaAssets, meetings, recordings, transcriptJobs } from "@/db/schema";
 import type { SessionUser } from "@/lib/auth";
 import { reconcileMeetingSharingForMeeting } from "@/lib/meeting-share-rules";
 import { recordRecallRecordingUsage } from "@/lib/provider-usage";
-import { buildMeetingObjectKey, getObjectMetadata, parseR2Env } from "@/lib/r2";
+import {
+  buildMeetingObjectKey,
+  getObjectMetadata,
+  parseR2Env,
+} from "@/lib/r2";
 import {
   assertCanCreateMeetings,
   getOrCreateWorkspaceForSessionUser,
@@ -86,6 +90,7 @@ export async function createUploadedAudioTranscription(
     .values({
       meetingId: meeting.id,
       mediaAssetId: asset.id,
+      recordingId: recording.id,
       provider: "elevenlabs",
       status: "queued",
     })
@@ -148,23 +153,23 @@ export async function createUploadedVideoTranscription(
     })
     .returning({ id: mediaAssets.id });
 
-  const audioMediaAssetId = crypto.randomUUID();
+  const [job] = await db
+    .insert(transcriptJobs)
+    .values({
+      meetingId: meeting.id,
+      mediaAssetId: null,
+      recordingId: recording.id,
+      provider: "elevenlabs",
+      status: "queued",
+    })
+    .returning({ id: transcriptJobs.id });
+  const audioMediaAssetId = job.id;
   const audioObjectKey = buildMeetingObjectKey({
     teamId: workspace.teamId,
     meetingId: meeting.id,
     assetId: audioMediaAssetId,
     extension: "mp3",
   });
-
-  const [job] = await db
-    .insert(transcriptJobs)
-    .values({
-      meetingId: meeting.id,
-      mediaAssetId: null,
-      provider: "elevenlabs",
-      status: "queued",
-    })
-    .returning({ id: transcriptJobs.id });
 
   return {
     meetingId: meeting.id,

@@ -6,6 +6,7 @@ import {
   markVendorWebhookEventProcessed,
   MissingWebhookIdempotencyKeyError,
   recordVendorWebhookEvent,
+  releaseVendorWebhookEventClaim,
 } from "@/lib/vendor-webhook-events";
 import {
   verifyRecallRealtimeWebhook,
@@ -41,6 +42,7 @@ export async function handleRecallRealtimeWebhook(request: Request) {
   }
 
   const eventType = getEventType(body);
+  let processingStartedAt: Date | null = null;
 
   if (!eventType) {
     return Response.json({ error: "Invalid webhook payload" }, { status: 400 });
@@ -75,6 +77,11 @@ export async function handleRecallRealtimeWebhook(request: Request) {
       });
     }
 
+    if (!recorded.processingStartedAt) {
+      throw new Error("Recall realtime webhook processing claim is missing");
+    }
+
+    processingStartedAt = recorded.processingStartedAt;
     const identity = getRecallWebhookBotIdentity(body);
 
     if (identity && !(await isRecallBotAccepted(identity))) {
@@ -103,6 +110,14 @@ export async function handleRecallRealtimeWebhook(request: Request) {
 
     return Response.json({ received: true, result });
   } catch (error) {
+    if (idempotencyKey && processingStartedAt) {
+      await releaseVendorWebhookEventClaim({
+        provider: "recall",
+        idempotencyKey,
+        processingStartedAt,
+      }).catch(() => undefined);
+    }
+
     if (error instanceof MissingWebhookIdempotencyKeyError) {
       return Response.json(
         { error: "Invalid webhook payload" },

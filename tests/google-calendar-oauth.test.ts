@@ -120,6 +120,96 @@ describe("Google Calendar OAuth storage", () => {
     );
   });
 
+  it("deletes a newly created Recall calendar when connection storage fails", async () => {
+    vi.stubEnv("GOOGLE_CALENDAR_CLIENT_ID", "google-client-id");
+    vi.stubEnv("GOOGLE_CALENDAR_CLIENT_SECRET", "google-client-secret");
+    const insertError = new Error("database unavailable");
+    select.mockReturnValue({
+      from: () => ({
+        where: () => ({
+          limit: vi.fn().mockResolvedValue([]),
+        }),
+      }),
+    });
+    createRecallCalendar.mockResolvedValue({
+      id: "44444444-4444-4444-8444-444444444444",
+      status: "connecting",
+    });
+    insert.mockReturnValue({
+      values: vi.fn().mockReturnValue({
+        returning: vi.fn().mockRejectedValue(insertError),
+      }),
+    });
+    deleteRecallCalendar.mockResolvedValue({});
+    const { storeGoogleCalendarTokens } = await import(
+      "@/lib/google-calendar-oauth"
+    );
+
+    await expect(
+      storeGoogleCalendarTokens({
+        workspace: {
+          userId: "11111111-1111-4111-8111-111111111111",
+          teamId: "22222222-2222-4222-8222-222222222222",
+          domain: "example.com",
+        },
+        accessToken: "google-access-token",
+        accessTokenExpiresAt: new Date("2026-06-30T12:00:00.000Z"),
+        refreshToken: "google-refresh-token",
+      }),
+    ).rejects.toBe(insertError);
+    expect(deleteRecallCalendar).toHaveBeenCalledWith({
+      calendarId: "44444444-4444-4444-8444-444444444444",
+    });
+  });
+
+  it("deletes a new Recall calendar when its existing connection disappears", async () => {
+    vi.stubEnv("GOOGLE_CALENDAR_CLIENT_ID", "google-client-id");
+    vi.stubEnv("GOOGLE_CALENDAR_CLIENT_SECRET", "google-client-secret");
+    select.mockReturnValue({
+      from: () => ({
+        where: () => ({
+          limit: vi.fn().mockResolvedValue([
+            {
+              id: "connection_1",
+              oauthRefreshToken: "legacy-refresh-token",
+              recallCalendarId: null,
+              recallCalendarStatus: null,
+            },
+          ]),
+        }),
+      }),
+    });
+    createRecallCalendar.mockResolvedValue({
+      id: "new_calendar",
+      status: "connecting",
+    });
+    update.mockReturnValue({
+      set: vi.fn().mockReturnValue({
+        where: vi.fn().mockResolvedValue({ rowCount: 0 }),
+      }),
+    });
+    deleteRecallCalendar.mockResolvedValue({});
+    const { storeGoogleCalendarTokens } = await import(
+      "@/lib/google-calendar-oauth"
+    );
+
+    await expect(
+      storeGoogleCalendarTokens({
+        workspace: {
+          userId: "user_1",
+          teamId: "team_1",
+          domain: "example.com",
+        },
+        accessToken: "new-access-token",
+        accessTokenExpiresAt: new Date("2026-07-20T13:00:00.000Z"),
+        refreshToken: null,
+      }),
+    ).rejects.toThrow("Calendar connection failed");
+    expect(deleteRecallCalendar).toHaveBeenCalledWith({
+      calendarId: "new_calendar",
+    });
+  });
+
   it("deletes the Recall calendar and clears stored credentials on disconnect", async () => {
     const updateWhere = vi.fn().mockResolvedValue(undefined);
     const updateSet = vi.fn().mockReturnValue({ where: updateWhere });

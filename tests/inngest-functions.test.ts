@@ -7,6 +7,7 @@ const {
   completeUploadedVideoConversion,
   convertVideoObjectToAudio,
   createReadUrl,
+  deleteRecallCalendarEventBot,
   deleteScheduledRecallBot,
   dispatchPendingLocationReminderSchedules,
   getStoredMeetingTranslationLanguage,
@@ -31,6 +32,7 @@ const {
   completeUploadedVideoConversion: vi.fn(),
   convertVideoObjectToAudio: vi.fn(),
   createReadUrl: vi.fn(),
+  deleteRecallCalendarEventBot: vi.fn(),
   deleteScheduledRecallBot: vi.fn(),
   dispatchPendingLocationReminderSchedules: vi.fn(),
   getStoredMeetingTranslationLanguage: vi.fn(),
@@ -93,6 +95,7 @@ vi.mock("@/lib/vendors/elevenlabs", () => ({
 }));
 
 vi.mock("@/lib/vendors/recall", () => ({
+  deleteRecallCalendarEventBot,
   deleteScheduledRecallBot,
   scheduleRecallBot,
 }));
@@ -156,6 +159,10 @@ describe("Inngest functions", () => {
       {
         id: "delete-recall-bot",
         triggers: [{ event: "meeting/delete.recall-bot" }],
+      },
+      {
+        id: "delete-recall-calendar-event-bot",
+        triggers: [{ event: "meeting/delete.recall-calendar-event-bot" }],
       },
       {
         id: "transcribe-audio",
@@ -358,6 +365,12 @@ describe("Inngest functions", () => {
             transcriptJobId: "22222222-2222-4222-8222-222222222222",
           },
         },
+        step: {
+          run: vi.fn(
+            async (_name: string, handler: () => Promise<unknown>) =>
+              handler(),
+          ),
+        },
       }),
     ).rejects.toThrow("ElevenLabs transcript job failed with 400 Bad Request");
 
@@ -367,6 +380,48 @@ describe("Inngest functions", () => {
       updatedAt: expect.any(Date),
     });
     expect(where).toHaveBeenCalledTimes(1);
+  });
+
+  it("checkpoints provider submission before persisting its job id", async () => {
+    const where = vi.fn().mockResolvedValue(undefined);
+    const set = vi.fn().mockReturnValue({ where });
+    const run = vi.fn(
+      async (_name: string, handler: () => Promise<unknown>) => handler(),
+    );
+    update.mockReturnValue({ set });
+    createReadUrl.mockResolvedValue("https://cdn.example.com/audio.mp3");
+    createElevenLabsTranscriptJob.mockResolvedValue({
+      request_id: "provider_job_123",
+    });
+    vi.stubEnv("NEXT_PUBLIC_APP_URL", "https://app.example.com");
+    const { transcribeAudio } = await import("@/inngest/functions");
+
+    await expect(
+      (transcribeAudio as unknown as RunnableInngestFunction).fn({
+        event: {
+          data: {
+            meetingId: "11111111-1111-4111-8111-111111111111",
+            objectKey: "users/user_123/uploads/audio.mp3",
+            transcriptJobId: "22222222-2222-4222-8222-222222222222",
+          },
+        },
+        step: { run },
+      }),
+    ).resolves.toEqual({ request_id: "provider_job_123" });
+
+    expect(run).toHaveBeenCalledWith(
+      "create-elevenlabs-transcript-job",
+      expect.any(Function),
+    );
+    expect(run.mock.invocationCallOrder[0]).toBeLessThan(
+      set.mock.invocationCallOrder[0],
+    );
+    expect(set).toHaveBeenCalledWith({
+      billingKeytermsUsed: false,
+      providerJobId: "provider_job_123",
+      status: "running",
+      updatedAt: expect.any(Date),
+    });
   });
 
   it("does not start transcription after the workspace credit is exhausted", async () => {
@@ -488,6 +543,7 @@ describe("Inngest functions", () => {
       transcriptJobId: "55555555-5555-4555-8555-555555555555",
     });
     expect(send).toHaveBeenCalledWith("queue-audio-transcription", {
+      id: "upload-transcription:55555555-5555-4555-8555-555555555555",
       name: "meeting/transcribe.audio",
       data: {
         meetingId: "22222222-2222-4222-8222-222222222222",

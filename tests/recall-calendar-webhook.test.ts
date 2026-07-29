@@ -8,6 +8,7 @@ const {
   normalizeRecallCalendarWebhook,
   processRecallCalendarWebhook,
   recordVendorWebhookEvent,
+  releaseVendorWebhookEventClaim,
 } = vi.hoisted(() => ({
   MissingWebhookIdempotencyKeyError: class MissingWebhookIdempotencyKeyError extends Error {
     constructor() {
@@ -29,6 +30,7 @@ const {
   }),
   processRecallCalendarWebhook: vi.fn(),
   recordVendorWebhookEvent: vi.fn(),
+  releaseVendorWebhookEventClaim: vi.fn(),
 }));
 
 vi.mock("@/lib/recall-calendar", () => ({
@@ -40,6 +42,7 @@ vi.mock("@/lib/vendor-webhook-events", () => ({
   MissingWebhookIdempotencyKeyError,
   markVendorWebhookEventProcessed,
   recordVendorWebhookEvent,
+  releaseVendorWebhookEventClaim,
 }));
 
 const recallWebhookSecret = "whsec_cmVjYWxsLXdlYmhvb2stc2VjcmV0";
@@ -81,13 +84,17 @@ async function postRecallCalendarWebhook(body: unknown, signed = true) {
 }
 
 describe("POST /api/recall/calendar/webhook", () => {
+  const processingStartedAt = new Date("2026-07-22T18:04:25.000Z");
+
   beforeEach(() => {
     recordVendorWebhookEvent.mockResolvedValue({
       inserted: true,
+      processingStartedAt,
       shouldProcess: true,
     });
     markVendorWebhookEventProcessed.mockResolvedValue(undefined);
     processRecallCalendarWebhook.mockResolvedValue({ action: "synced", count: 1 });
+    releaseVendorWebhookEventClaim.mockResolvedValue(undefined);
   });
 
   afterEach(() => {
@@ -95,6 +102,7 @@ describe("POST /api/recall/calendar/webhook", () => {
     recordVendorWebhookEvent.mockReset();
     normalizeRecallCalendarWebhook.mockClear();
     processRecallCalendarWebhook.mockReset();
+    releaseVendorWebhookEventClaim.mockReset();
     vi.unstubAllEnvs();
     vi.resetModules();
   });
@@ -199,6 +207,11 @@ describe("POST /api/recall/calendar/webhook", () => {
         error: "Webhook processing failed",
       });
       expect(markVendorWebhookEventProcessed).not.toHaveBeenCalled();
+      expect(releaseVendorWebhookEventClaim).toHaveBeenCalledWith({
+        provider: "recall",
+        idempotencyKey: "msg_calendar_sync",
+        processingStartedAt,
+      });
       expect(consoleError).toHaveBeenCalledWith(
         "Recall calendar webhook processing failed",
         expect.objectContaining({
@@ -214,6 +227,7 @@ describe("POST /api/recall/calendar/webhook", () => {
   it("retries duplicate Recall calendar webhooks when the previous attempt did not finish processing", async () => {
     recordVendorWebhookEvent.mockResolvedValue({
       inserted: false,
+      processingStartedAt,
       shouldProcess: true,
     });
 

@@ -9,6 +9,7 @@ const {
   persistRecallRealtimeParticipantTimelineEvent,
   markVendorWebhookEventProcessed,
   recordVendorWebhookEvent,
+  releaseVendorWebhookEventClaim,
   MissingWebhookIdempotencyKeyError,
 } = vi.hoisted(() => ({
   answerRecallChatMessage: vi.fn(),
@@ -17,6 +18,7 @@ const {
   persistRecallRealtimeParticipantTimelineEvent: vi.fn(),
   markVendorWebhookEventProcessed: vi.fn(),
   recordVendorWebhookEvent: vi.fn(),
+  releaseVendorWebhookEventClaim: vi.fn(),
   MissingWebhookIdempotencyKeyError: class MissingWebhookIdempotencyKeyError extends Error {
     constructor() {
       super("Missing webhook idempotency key");
@@ -37,6 +39,7 @@ vi.mock("@/lib/vendor-webhook-events", () => ({
   MissingWebhookIdempotencyKeyError,
   markVendorWebhookEventProcessed,
   recordVendorWebhookEvent,
+  releaseVendorWebhookEventClaim,
 }));
 
 vi.mock("@/lib/meeting-participant-timeline", () => ({
@@ -168,9 +171,12 @@ const chatPayload = {
 };
 
 describe("POST /api/recall/chat/webhook", () => {
+  const processingStartedAt = new Date("2026-07-22T18:04:25.000Z");
+
   beforeEach(() => {
     recordVendorWebhookEvent.mockResolvedValue({
       inserted: true,
+      processingStartedAt,
       shouldProcess: true,
     });
     markVendorWebhookEventProcessed.mockResolvedValue(undefined);
@@ -194,6 +200,7 @@ describe("POST /api/recall/chat/webhook", () => {
         startMs: 12500,
       },
     });
+    releaseVendorWebhookEventClaim.mockResolvedValue(undefined);
   });
 
   afterEach(() => {
@@ -203,6 +210,7 @@ describe("POST /api/recall/chat/webhook", () => {
     getRecallWebhookBotIdentity.mockReset();
     isRecallBotAccepted.mockReset();
     persistRecallRealtimeParticipantTimelineEvent.mockReset();
+    releaseVendorWebhookEventClaim.mockReset();
     vi.unstubAllEnvs();
     vi.resetModules();
   });
@@ -320,6 +328,11 @@ describe("POST /api/recall/chat/webhook", () => {
         error: "Webhook processing failed",
       });
       expect(markVendorWebhookEventProcessed).not.toHaveBeenCalled();
+      expect(releaseVendorWebhookEventClaim).toHaveBeenCalledWith({
+        provider: "recall",
+        idempotencyKey: "msg_chat",
+        processingStartedAt,
+      });
       expect(consoleError).toHaveBeenCalledWith(
         "Recall realtime webhook processing failed",
         expect.objectContaining({

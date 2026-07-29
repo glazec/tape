@@ -8,6 +8,8 @@ const {
   returning,
   set,
   syncMeetingParticipantAccessFromCalendar,
+  transaction,
+  txn,
   values,
   where,
 } = vi.hoisted(() => ({
@@ -16,11 +18,14 @@ const {
   returning: vi.fn(),
   set: vi.fn(),
   syncMeetingParticipantAccessFromCalendar: vi.fn(),
+  transaction: vi.fn(),
+  txn: vi.fn((strings: TemplateStringsArray) => strings),
   values: vi.fn(),
   where: vi.fn(),
 }));
 
 vi.mock("@/db/client", () => ({
+  databaseSql: { transaction },
   db: {
     delete: () => ({ where }),
     insert,
@@ -172,11 +177,7 @@ describe("meeting recovery uploads", () => {
 
   it("replaces transcript segments and marks a manual recovery ready", async () => {
     limit.mockResolvedValue([{ id: "meeting_123" }]);
-    values.mockReturnValue({ returning });
-    insert.mockReturnValue({ values });
-    returning.mockResolvedValueOnce([{ id: "job_123" }]);
-    set.mockReturnValue({ where });
-    where.mockResolvedValue(undefined);
+    transaction.mockImplementation(async (buildQueries) => buildQueries(txn));
     const { completeManualTranscriptUpload } = await import(
       "@/lib/meeting-recovery-uploads"
     );
@@ -190,15 +191,17 @@ describe("meeting recovery uploads", () => {
     ).resolves.toEqual({
       meetingId: "meeting_123",
       segmentCount: 2,
-      transcriptJobId: "job_123",
+      transcriptJobId: expect.any(String),
     });
-    expect(values).toHaveBeenCalledWith([
-      expect.objectContaining({ speaker: "Alice", text: "Hello" }),
-      expect.objectContaining({ speaker: "Bob", text: "Hi" }),
-    ]);
-    expect(set).toHaveBeenCalledWith(
-      expect.objectContaining({ status: "ready" }),
+    expect(transaction).toHaveBeenCalledOnce();
+    expect(txn).toHaveBeenCalledTimes(4);
+    expect(txn.mock.calls[1]?.[0].join(" ")).toContain(
+      "delete from transcript_segments",
     );
+    expect(txn.mock.calls[2]?.[0].join(" ")).toContain(
+      "insert into transcript_segments",
+    );
+    expect(txn.mock.calls[3]?.[0].join(" ")).toContain("status = 'ready'");
     expect(syncMeetingParticipantAccessFromCalendar).not.toHaveBeenCalled();
   });
 

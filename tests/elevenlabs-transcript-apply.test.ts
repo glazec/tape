@@ -1,18 +1,17 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-const { deleteRows, execute, insert, select, update } = vi.hoisted(() => ({
-  deleteRows: vi.fn(),
+const { execute, select, transaction, txn, update } = vi.hoisted(() => ({
   execute: vi.fn(),
-  insert: vi.fn(),
   select: vi.fn(),
+  transaction: vi.fn(),
+  txn: vi.fn((strings: TemplateStringsArray) => strings),
   update: vi.fn(),
 }));
 
 vi.mock("@/db/client", () => ({
+  databaseSql: { transaction },
   db: {
-    delete: deleteRows,
     execute,
-    insert,
     select,
     update,
   },
@@ -33,9 +32,9 @@ vi.mock("@/lib/provider-usage", () => ({
 describe("applyElevenLabsTranscriptEvent", () => {
   afterEach(() => {
     select.mockReset();
-    deleteRows.mockReset();
     execute.mockReset();
-    insert.mockReset();
+    transaction.mockReset();
+    txn.mockClear();
     update.mockReset();
     vi.resetModules();
   });
@@ -130,8 +129,7 @@ describe("applyElevenLabsTranscriptEvent", () => {
     expect(update).not.toHaveBeenCalled();
   });
 
-  it("persists transcript segments before marking the job completed", async () => {
-    const operations: string[] = [];
+  it("atomically replaces transcript segments before completing the job", async () => {
     execute
       .mockResolvedValueOnce({
         rows: [
@@ -191,28 +189,7 @@ describe("applyElevenLabsTranscriptEvent", () => {
           }),
         }),
       });
-    deleteRows.mockReturnValue({
-      where: vi.fn().mockImplementation(async () => {
-        operations.push("delete");
-      }),
-    });
-    insert.mockReturnValue({
-      values: vi.fn().mockImplementation(() => ({
-        returning: vi.fn().mockImplementation(async () => {
-          operations.push("insert");
-          return [{ id: "55555555-5555-4555-8555-555555555555" }];
-        }),
-      })),
-    });
-    update.mockReturnValue({
-      set: vi.fn().mockImplementation((values: { status?: string }) => ({
-        where: vi.fn().mockImplementation(async () => {
-          operations.push(
-            values.status === "completed" ? "complete-job" : "update-meeting",
-          );
-        }),
-      })),
-    });
+    transaction.mockImplementation(async (buildQueries) => buildQueries(txn));
     const { applyElevenLabsTranscriptEvent } =
       await import("@/lib/elevenlabs-transcripts");
 
@@ -231,9 +208,16 @@ describe("applyElevenLabsTranscriptEvent", () => {
       },
     });
 
-    expect(operations.indexOf("insert")).toBeGreaterThanOrEqual(0);
-    expect(operations.indexOf("complete-job")).toBeGreaterThan(
-      operations.indexOf("insert"),
+    expect(transaction).toHaveBeenCalledOnce();
+    expect(txn).toHaveBeenCalledTimes(7);
+    expect(txn.mock.calls[1]?.[0].join(" ")).toContain(
+      "delete from transcript_segments",
+    );
+    expect(txn.mock.calls[2]?.[0].join(" ")).toContain(
+      "insert into transcript_segments",
+    );
+    expect(txn.mock.calls[6]?.[0].join(" ")).toContain(
+      "update transcript_jobs",
     );
   });
 });

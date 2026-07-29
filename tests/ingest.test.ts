@@ -705,6 +705,47 @@ describe("vendor webhook normalization", () => {
     }
   });
 
+  it("releases the ElevenLabs processing claim when transcript persistence fails", async () => {
+    const consoleError = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => undefined);
+    const processingStartedAt = new Date("2026-07-22T18:04:25.000Z");
+    recordVendorWebhookEvent.mockResolvedValueOnce({
+      inserted: true,
+      processingStartedAt,
+      shouldProcess: true,
+    });
+    applyElevenLabsTranscriptEvent.mockRejectedValueOnce(
+      new Error("transcript write failed"),
+    );
+
+    try {
+      const response = await postElevenLabsWebhook({
+        type: "speech_to_text_transcription",
+        data: {
+          request_id: "req_123",
+          webhook_metadata: {
+            meetingId: "11111111-1111-4111-8111-111111111111",
+            transcriptJobId: "22222222-2222-4222-8222-222222222222",
+          },
+          transcription: {
+            text: "Transcript text",
+          },
+        },
+      });
+
+      expect(response.status).toBe(500);
+      expect(releaseVendorWebhookEventClaim).toHaveBeenCalledWith({
+        provider: "elevenlabs",
+        idempotencyKey: "req_123",
+        processingStartedAt,
+      });
+      expect(markVendorWebhookEventProcessed).not.toHaveBeenCalled();
+    } finally {
+      consoleError.mockRestore();
+    }
+  });
+
   it("rejects unsigned ElevenLabs webhook requests", async () => {
     const response = await postElevenLabsWebhook(
       {

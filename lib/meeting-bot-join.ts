@@ -2,9 +2,9 @@ import { and, eq } from "drizzle-orm";
 
 import { db } from "@/db/client";
 import { calendarConnections, calendarEvents, meetings } from "@/db/schema";
-import { inngest } from "@/inngest/client";
 import type { SessionUser } from "@/lib/auth";
 import { markMeetingBotScheduled } from "@/lib/meeting-bot-records";
+import { retireScheduledRecallBot } from "@/lib/meeting-bot-retirement";
 import {
   getMeetingBotMetadata,
   getMeetingBotProfile,
@@ -12,7 +12,6 @@ import {
 } from "@/lib/meeting-bot-profile";
 import { buildAppUrl } from "@/lib/meeting-links";
 import {
-  deleteScheduledRecallBot,
   listRecallCalendarEvents,
   scheduleRecallBot,
   scheduleRecallCalendarEventBot,
@@ -111,11 +110,11 @@ export async function joinScheduledMeetingBotNow(input: {
           recallBotId: botId,
         });
       } catch (error) {
-        await deleteScheduledRecallBot({ botId }).catch(() => undefined);
+        await retireScheduledRecallBot(botId).catch(() => undefined);
         throw error;
       }
       activeBotId = botId;
-      await retireRecallBot(meeting.recallBotId);
+      await retireScheduledRecallBot(meeting.recallBotId);
     }
   } else {
     const response = (await scheduleRecallBot({
@@ -135,39 +134,14 @@ export async function joinScheduledMeetingBotNow(input: {
         recallBotId: response.id,
       });
     } catch (error) {
-      await deleteScheduledRecallBot({ botId: response.id }).catch(
-        () => undefined,
-      );
+      await retireScheduledRecallBot(response.id).catch(() => undefined);
       throw error;
     }
     activeBotId = response.id;
-    await retireRecallBot(meeting.recallBotId);
+    await retireScheduledRecallBot(meeting.recallBotId);
   }
 
   return { botId: activeBotId, meetingId: meeting.id };
-}
-
-async function retireRecallBot(botId: string) {
-  let retryQueued = false;
-
-  try {
-    await inngest.send({
-      id: `delete-recall-bot:${botId}`,
-      name: "meeting/delete.recall-bot",
-      data: { botId },
-    });
-    retryQueued = true;
-  } catch {
-    // The direct delete below is still authoritative when queueing is down.
-  }
-
-  try {
-    await deleteScheduledRecallBot({ botId });
-  } catch (error) {
-    if (!retryQueued) {
-      throw error;
-    }
-  }
 }
 
 async function findRecallCalendarEventId(input: {

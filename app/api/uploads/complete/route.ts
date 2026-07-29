@@ -118,10 +118,15 @@ export async function POST(request: Request) {
         mimeType: objectMetadata.contentType,
       });
 
-      await inngest.send({
-        name: "meeting/transcribe.audio",
-        data: { objectKey: key, ...transcription },
-      });
+      try {
+        await inngest.send({
+          id: `upload-transcription:${transcription.transcriptJobId}`,
+          name: "meeting/transcribe.audio",
+          data: { objectKey: key, ...transcription },
+        });
+      } catch (error) {
+        logUploadDispatchDelay(error, transcription.meetingId);
+      }
 
       revalidatePath("/dashboard");
 
@@ -146,18 +151,23 @@ export async function POST(request: Request) {
       mimeType: objectMetadata.contentType,
     });
 
-    await inngest.send({
-      name: "meeting/convert.video-to-audio",
-      data: {
-        meetingId: transcription.meetingId,
-        sourceMediaAssetId: transcription.sourceMediaAssetId,
-        sourceObjectKey: key,
-        audioMediaAssetId: transcription.audioMediaAssetId,
-        audioObjectKey: transcription.audioObjectKey,
-        transcriptJobId: transcription.transcriptJobId,
-        recordingId: transcription.recordingId,
-      },
-    });
+    try {
+      await inngest.send({
+        id: `upload-video-conversion:${transcription.transcriptJobId}`,
+        name: "meeting/convert.video-to-audio",
+        data: {
+          meetingId: transcription.meetingId,
+          sourceMediaAssetId: transcription.sourceMediaAssetId,
+          sourceObjectKey: key,
+          audioMediaAssetId: transcription.audioMediaAssetId,
+          audioObjectKey: transcription.audioObjectKey,
+          transcriptJobId: transcription.transcriptJobId,
+          recordingId: transcription.recordingId,
+        },
+      });
+    } catch (error) {
+      logUploadDispatchDelay(error, transcription.meetingId);
+    }
 
     revalidatePath("/dashboard");
 
@@ -200,4 +210,11 @@ export async function POST(request: Request) {
       { status: 500 },
     );
   }
+}
+
+function logUploadDispatchDelay(error: unknown, meetingId: string) {
+  console.error("upload_dispatch_delayed", {
+    errorMessage: error instanceof Error ? error.message : "Unknown error",
+    meetingId,
+  });
 }

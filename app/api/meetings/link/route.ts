@@ -23,6 +23,7 @@ import {
   getMeetingBotRecallCreateInput,
 } from "@/lib/meeting-bot-profile";
 import { scheduleRecallBot } from "@/lib/vendors/recall";
+import { retireScheduledRecallBot } from "@/lib/meeting-bot-retirement";
 import { SharedOnlyAccessError } from "@/lib/access-errors";
 import { providerCreditErrorResponse } from "@/lib/provider-credit";
 
@@ -87,6 +88,8 @@ export async function POST(request: Request) {
     resumeRecording?: boolean;
   };
   let skipUnconfirmedCalendarMatch = false;
+
+  let scheduledRecallBotId: string | null = null;
 
   try {
     if (!hasMeetingChoice) {
@@ -226,10 +229,12 @@ export async function POST(request: Request) {
       throw new Error("Recall bot response missing id");
     }
 
+    scheduledRecallBotId = bot.id;
     await markMeetingBotScheduled({
       meetingId: scheduledMeeting.meetingId,
       recallBotId: bot.id,
     });
+    scheduledRecallBotId = null;
 
     return Response.json({
       botId: bot.id,
@@ -239,6 +244,12 @@ export async function POST(request: Request) {
       status: isRecovery ? "joining" : "scheduled",
     });
   } catch (error) {
+    if (scheduledRecallBotId) {
+      await retireScheduledRecallBot(scheduledRecallBotId).catch(
+        () => undefined,
+      );
+    }
+
     console.error("meeting_link_scheduling_failure", {
       errorMessage: getErrorMessage(error),
       meetingId: scheduledMeeting.meetingId,

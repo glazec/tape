@@ -17,6 +17,8 @@ const {
   scheduleRecallBot,
   select,
   syncMeetingParticipantAccess,
+  retireRecallCalendarEventBot,
+  retireScheduledRecallBot,
   update,
   updateScheduledRecallBot,
 } = vi.hoisted(() => ({
@@ -32,12 +34,19 @@ const {
   scheduleRecallBot: vi.fn(),
   select: vi.fn(),
   syncMeetingParticipantAccess: vi.fn(),
+  retireRecallCalendarEventBot: vi.fn(),
+  retireScheduledRecallBot: vi.fn(),
   update: vi.fn(),
   updateScheduledRecallBot: vi.fn(),
 }));
 
 vi.mock("@/lib/meeting-share-rules", () => ({
   applyMeetingShareRules,
+}));
+
+vi.mock("@/lib/meeting-bot-retirement", () => ({
+  retireRecallCalendarEventBot,
+  retireScheduledRecallBot,
 }));
 
 vi.mock("@/lib/location-reminders", () => ({
@@ -108,6 +117,8 @@ function selectRows(rows: unknown[]) {
 
 describe("calendar auto join", () => {
   beforeEach(() => {
+    deleteRecallCalendarEventBot.mockResolvedValue({});
+    deleteScheduledRecallBot.mockResolvedValue({});
     cancelLocationRemindersForMeeting.mockResolvedValue(undefined);
     hasUndispatchedLocationReminder.mockResolvedValue(false);
     scheduleLocationReminder.mockResolvedValue({
@@ -118,6 +129,8 @@ describe("calendar auto join", () => {
       attendeeCount: 0,
       internalParticipantCount: 0,
     });
+    retireRecallCalendarEventBot.mockResolvedValue(undefined);
+    retireScheduledRecallBot.mockResolvedValue(undefined);
     getMeetingBotProfile.mockResolvedValue({
       botName: "IOSG Old Friend",
       avatarJpegBase64: null,
@@ -137,6 +150,8 @@ describe("calendar auto join", () => {
     scheduleRecallBot.mockReset();
     select.mockReset();
     syncMeetingParticipantAccess.mockReset();
+    retireRecallCalendarEventBot.mockReset();
+    retireScheduledRecallBot.mockReset();
     update.mockReset();
     updateScheduledRecallBot.mockReset();
     vi.unstubAllEnvs();
@@ -1324,6 +1339,63 @@ describe("calendar auto join", () => {
       }),
     );
     consoleError.mockRestore();
+  });
+
+  it("deletes a newly scheduled bot when the meeting update fails", async () => {
+    vi.stubEnv("NEXT_PUBLIC_APP_URL", "https://app.example.com");
+    const calendarEventReturning = vi
+      .fn()
+      .mockResolvedValue([{ id: "33333333-3333-4333-8333-333333333333" }]);
+    const calendarEventValues = vi.fn().mockReturnValue({
+      onConflictDoUpdate: vi.fn().mockReturnValue({
+        returning: calendarEventReturning,
+      }),
+    });
+    const meetingValues = vi.fn().mockReturnValue({
+      returning: vi.fn().mockResolvedValue([
+        {
+          id: "44444444-4444-4444-8444-444444444444",
+          ownerUserId: "55555555-5555-4555-8555-555555555555",
+        },
+      ]),
+    });
+    const auditValues = vi.fn().mockResolvedValue(undefined);
+    insert
+      .mockReturnValueOnce({ values: calendarEventValues })
+      .mockReturnValueOnce({ values: meetingValues })
+      .mockReturnValueOnce({ values: auditValues });
+    select.mockReturnValue(selectRows([]));
+    update
+      .mockReturnValueOnce({
+        set: vi.fn().mockReturnValue({
+          where: vi.fn().mockResolvedValue({ rowCount: 0 }),
+        }),
+      })
+      .mockReturnValueOnce({
+        set: vi.fn().mockReturnValue({
+          where: vi.fn().mockResolvedValue(undefined),
+        }),
+      });
+    scheduleRecallBot.mockResolvedValue({ id: "orphan_candidate" });
+    const { autoJoinCalendarEvent } = await import("@/lib/calendar-auto-join");
+
+    await expect(
+      autoJoinCalendarEvent({
+        connection: {
+          id: "11111111-1111-4111-8111-111111111111",
+          teamId: "22222222-2222-4222-8222-222222222222",
+          userId: "55555555-5555-4555-8555-555555555555",
+          autoJoinEnabled: true,
+        },
+        event: {
+          externalEventId: "google_event_123",
+          title: "Partner sync",
+          startsAt: "2026-06-30T12:00:00.000Z",
+          meetingUrl: "https://meet.google.com/abc-defg-hij",
+        },
+      }),
+    ).rejects.toThrow("Calendar meeting update failed");
+    expect(retireScheduledRecallBot).toHaveBeenCalledWith("orphan_candidate");
   });
 
   it("retries Recall scheduling for an existing calendar meeting without a bot", async () => {

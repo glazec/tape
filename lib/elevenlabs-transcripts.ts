@@ -1,14 +1,12 @@
-import { and, eq, isNull, sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
+import { randomUUID } from "node:crypto";
 
-import { db } from "@/db/client";
+import { databaseSql, db } from "@/db/client";
 import {
   calendarEvents,
   localRecordings,
-  meetingEntities,
   meetings,
-  recordings,
   transcriptJobs,
-  transcriptSegments,
   users,
 } from "@/db/schema";
 import { normalizeEmailDomain } from "@/lib/access";
@@ -267,100 +265,138 @@ export async function applyElevenLabsTranscriptEvent(
   );
   const segmentOffsetMs = getTranscriptSegmentOffsetMs(applicationContext);
 
-  if (applicationContext.mode === "replace" && !persistence.recordingId) {
-    await db
-      .delete(meetingEntities)
-      .where(eq(meetingEntities.meetingId, persistence.meetingId));
-    await db
-      .delete(transcriptSegments)
-      .where(eq(transcriptSegments.meetingId, persistence.meetingId));
-  } else {
-    await db
-      .delete(transcriptSegments)
-      .where(eq(transcriptSegments.jobId, persistence.transcriptJobId));
-  }
-
-  const insertedSegments = await db
-    .insert(transcriptSegments)
-    .values(
-      persistence.segments.map((segment) => ({
-        meetingId: persistence.meetingId,
-        jobId: persistence.transcriptJobId,
-        speaker: segment.speaker,
-        startMs: segment.startMs + segmentOffsetMs,
-        endMs: segment.endMs === null ? null : segment.endMs + segmentOffsetMs,
-        text: segment.text,
-        emotionLabel: segment.emotionLabel,
-        emotionReason: segment.emotionReason,
-      })),
-    )
-    .returning({ id: transcriptSegments.id });
+  const replaceMeetingTranscript =
+    applicationContext.mode === "replace" && !persistence.recordingId;
+  const segmentRows = persistence.segments.map((segment) => ({
+    emotion_label: segment.emotionLabel ?? null,
+    emotion_reason: segment.emotionReason ?? null,
+    end_ms:
+      segment.endMs === null ? null : segment.endMs + segmentOffsetMs,
+    id: randomUUID(),
+    speaker: segment.speaker,
+    start_ms: segment.startMs + segmentOffsetMs,
+    text: segment.text,
+  }));
   const segmentIdByReference = new Map(
-    insertedSegments.map((segment, index) => [`segment_${index}`, segment.id]),
+    segmentRows.map((segment, index) => [`segment_${index}`, segment.id]),
   );
-
-  if (persistence.entities.length > 0) {
-    await db
-      .insert(meetingEntities)
-      .values(
-        persistence.entities.map((entity) => ({
-          meetingId: persistence.meetingId,
-          aliases: entity.aliases,
-          segmentId: entity.segmentId
-            ? (segmentIdByReference.get(entity.segmentId) ?? null)
-            : null,
-          source: entity.source,
-          type: entity.type,
-          value: entity.value,
-          normalizedValue: entity.normalizedValue,
-        })),
-      )
-      .onConflictDoNothing({
-        target: [
-          meetingEntities.meetingId,
-          meetingEntities.type,
-          meetingEntities.normalizedValue,
-        ],
-      });
-  }
+  const entityRows = persistence.entities.map((entity) => ({
+    aliases: entity.aliases,
+    normalized_value: entity.normalizedValue,
+    segment_id: entity.segmentId
+      ? (segmentIdByReference.get(entity.segmentId) ?? null)
+      : null,
+    source: entity.source,
+    type: entity.type,
+    value: entity.value,
+  }));
 
   const transcriptDurationMs = persistence.segments.reduce(
     (maximum, segment) => Math.max(maximum, segment.endMs ?? segment.startMs),
     0,
   );
 
-  if (persistence.recordingId && transcriptDurationMs > 0) {
-    await db
-      .update(recordings)
-      .set({ durationMs: transcriptDurationMs, updatedAt: now })
-      .where(
-        and(
-          eq(recordings.id, persistence.recordingId),
-          isNull(recordings.durationMs),
+  await databaseSql.transaction((txn) => [
+    txn`
+      delete from meeting_entities
+      where ${replaceMeetingTranscript}
+        and meeting_id = ${persistence.meetingId}::uuid
+    `,
+    txn`
+      delete from transcript_segments
+      where (
+        ${replaceMeetingTranscript}
+        and meeting_id = ${persistence.meetingId}::uuid
+      ) or (
+        not ${replaceMeetingTranscript}
+        and job_id = ${persistence.transcriptJobId}::uuid
+      )
+    `,
+    txn`
+      insert into transcript_segments (
+        id,
+        meeting_id,
+        job_id,
+        speaker,
+        start_ms,
+        end_ms,
+        text,
+        emotion_label,
+        emotion_reason
+      )
+      select
+        segment.id,
+        ${persistence.meetingId}::uuid,
+        ${persistence.transcriptJobId}::uuid,
+        segment.speaker,
+        segment.start_ms,
+        segment.end_ms,
+        segment.text,
+        segment.emotion_label,
+        segment.emotion_reason
+      from jsonb_to_recordset(${JSON.stringify(segmentRows)}::jsonb) as segment(
+        id uuid,
+        speaker text,
+        start_ms integer,
+        end_ms integer,
+        text text,
+        emotion_label text,
+        emotion_reason text
+      )
+    `,
+    txn`
+      insert into meeting_entities (
+        meeting_id,
+        segment_id,
+        type,
+        value,
+        normalized_value,
+        aliases,
+        source
+      )
+      select
+        ${persistence.meetingId}::uuid,
+        entity.segment_id,
+        entity.type,
+        entity.value,
+        entity.normalized_value,
+        entity.aliases,
+        entity.source
+      from jsonb_to_recordset(${JSON.stringify(entityRows)}::jsonb) as entity(
+        segment_id uuid,
+        type text,
+        value text,
+        normalized_value text,
+        aliases jsonb,
+        source text
+      )
+      on conflict (meeting_id, type, normalized_value) do nothing
+    `,
+    txn`
+      update recordings
+      set duration_ms = ${transcriptDurationMs}, updated_at = ${now}
+      where id = ${persistence.recordingId ?? null}::uuid
+        and ${transcriptDurationMs} > 0
+        and duration_ms is null
+    `,
+    txn`
+      update meetings
+      set status = 'ready', updated_at = ${now}
+      where id = ${persistence.meetingId}::uuid
+        and status = 'processing'
+    `,
+    txn`
+      update transcript_jobs
+      set
+        provider_job_id = coalesce(
+          ${persistence.providerJobId ?? null}::text,
+          provider_job_id
         ),
-      );
-  }
-
-  await db
-    .update(meetings)
-    .set({ status: "ready", updatedAt: now })
-    .where(
-      and(
-        eq(meetings.id, persistence.meetingId),
-        eq(meetings.status, "processing"),
-      ),
-    );
-
-  await db
-    .update(transcriptJobs)
-    .set({
-      ...(persistence.providerJobId
-        ? { providerJobId: persistence.providerJobId }
-        : {}),
-      status: "completed",
-      updatedAt: now,
-    })
-    .where(eq(transcriptJobs.id, persistence.transcriptJobId));
+        status = 'completed',
+        updated_at = ${now}
+      where id = ${persistence.transcriptJobId}::uuid
+    `,
+  ]);
 
   await recordElevenLabsTranscriptUsage({
     fallbackDurationMs: transcriptDurationMs,

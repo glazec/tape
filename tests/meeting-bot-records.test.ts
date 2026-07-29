@@ -126,6 +126,24 @@ describe("meeting bot records", () => {
     expect(update).not.toHaveBeenCalled();
   });
 
+  it("rejects a bot association when the meeting row no longer exists", async () => {
+    update.mockReturnValue({
+      set: vi.fn().mockReturnValue({
+        where: vi.fn().mockResolvedValue({ rowCount: 0 }),
+      }),
+    });
+    const { markMeetingBotScheduled } = await import(
+      "@/lib/meeting-bot-records"
+    );
+
+    await expect(
+      markMeetingBotScheduled({
+        meetingId: "44444444-4444-4444-8444-444444444444",
+        recallBotId: "bot_123",
+      }),
+    ).rejects.toThrow("Meeting bot association failed");
+  });
+
   it("includes a meeting running late but excludes a distant meeting", async () => {
     getOrCreateWorkspaceForSessionUser.mockResolvedValue({
       teamId: "22222222-2222-4222-8222-222222222222",

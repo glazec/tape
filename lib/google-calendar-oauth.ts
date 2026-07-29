@@ -106,41 +106,55 @@ export async function storeGoogleCalendarTokens(input: {
         : null),
   });
 
-  if (existing) {
-    await db
-      .update(calendarConnections)
-      .set({
+  try {
+    if (existing) {
+      const updateResult = await db
+        .update(calendarConnections)
+        .set({
+          autoJoinEnabled: true,
+          oauthAccessToken: encryptedAccessToken,
+          oauthRefreshToken: encryptedRefreshToken,
+          oauthAccessTokenExpiresAt: input.accessTokenExpiresAt,
+          recallCalendarId: recallCalendar.id ?? existing.recallCalendarId,
+          recallCalendarStatus:
+            recallCalendar.status ?? existing.recallCalendarStatus,
+          updatedAt: new Date(),
+        })
+        .where(eq(calendarConnections.id, existing.id));
+
+      if (updateResult?.rowCount === 0) {
+        throw new GoogleCalendarOAuthError();
+      }
+
+      return existing.id;
+    }
+
+    const [connection] = await db
+      .insert(calendarConnections)
+      .values({
+        teamId: input.workspace.teamId,
+        userId: input.workspace.userId,
+        provider: "google",
+        externalCalendarId: "primary",
         autoJoinEnabled: true,
         oauthAccessToken: encryptedAccessToken,
         oauthRefreshToken: encryptedRefreshToken,
         oauthAccessTokenExpiresAt: input.accessTokenExpiresAt,
-        recallCalendarId: recallCalendar.id ?? existing.recallCalendarId,
-        recallCalendarStatus:
-          recallCalendar.status ?? existing.recallCalendarStatus,
-        updatedAt: new Date(),
+        recallCalendarId: recallCalendar.id,
+        recallCalendarStatus: recallCalendar.status,
       })
-      .where(eq(calendarConnections.id, existing.id));
+      .returning({ id: calendarConnections.id });
 
-    return existing.id;
+    return connection.id;
+  } catch (error) {
+    if (recallCalendar.created && recallCalendar.id) {
+      await deleteRecallCalendar({
+        calendarId: recallCalendar.id,
+      }).catch(() => undefined);
+    }
+
+    throw error;
   }
-
-  const [connection] = await db
-    .insert(calendarConnections)
-    .values({
-      teamId: input.workspace.teamId,
-      userId: input.workspace.userId,
-      provider: "google",
-      externalCalendarId: "primary",
-      autoJoinEnabled: true,
-      oauthAccessToken: encryptedAccessToken,
-      oauthRefreshToken: encryptedRefreshToken,
-      oauthAccessTokenExpiresAt: input.accessTokenExpiresAt,
-      recallCalendarId: recallCalendar.id,
-      recallCalendarStatus: recallCalendar.status,
-    })
-    .returning({ id: calendarConnections.id });
-
-  return connection.id;
 }
 
 export async function disconnectGoogleCalendarForWorkspace(
@@ -280,6 +294,7 @@ async function ensureRecallCalendar(input: {
 }) {
   if (!input.refreshToken) {
     return {
+      created: false,
       id: input.existing?.recallCalendarId ?? null,
       status: input.existing?.recallCalendarStatus ?? null,
     };
@@ -299,6 +314,7 @@ async function ensureRecallCalendar(input: {
     });
 
     return {
+      created: false,
       id:
         getString((calendar as { id?: unknown }).id) ??
         input.existing.recallCalendarId,
@@ -317,6 +333,7 @@ async function ensureRecallCalendar(input: {
   });
 
   return {
+    created: true,
     id: getString((calendar as { id?: unknown }).id),
     status: getString((calendar as { status?: unknown }).status),
   };

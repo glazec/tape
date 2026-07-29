@@ -6,6 +6,7 @@ import {
   markVendorWebhookEventProcessed,
   MissingWebhookIdempotencyKeyError,
   recordVendorWebhookEvent,
+  releaseVendorWebhookEventClaim,
 } from "@/lib/vendor-webhook-events";
 import { applyElevenLabsTranscriptEvent } from "@/lib/elevenlabs-transcripts";
 import { inngest } from "@/inngest/client";
@@ -42,8 +43,10 @@ export async function POST(request: Request) {
     return Response.json({ error: "Invalid webhook payload" }, { status: 400 });
   }
 
+  const idempotencyKey = getElevenLabsWebhookIdempotencyKey(event) ?? "";
+  let processingStartedAt: Date | null = null;
+
   try {
-    const idempotencyKey = getElevenLabsWebhookIdempotencyKey(event) ?? "";
     const recorded = await recordVendorWebhookEvent({
       provider: "elevenlabs",
       eventType: event.eventType,
@@ -62,6 +65,11 @@ export async function POST(request: Request) {
     }
 
     if (recorded.shouldProcess) {
+      if (!recorded.processingStartedAt) {
+        throw new Error("ElevenLabs webhook processing claim is missing");
+      }
+
+      processingStartedAt = recorded.processingStartedAt;
       const persistence = await applyElevenLabsTranscriptEvent(event);
 
       if (persistence.action === "complete") {
@@ -106,6 +114,14 @@ export async function POST(request: Request) {
 
     return Response.json({ received: true, event });
   } catch (error) {
+    if (idempotencyKey && processingStartedAt) {
+      await releaseVendorWebhookEventClaim({
+        provider: "elevenlabs",
+        idempotencyKey,
+        processingStartedAt,
+      }).catch(() => undefined);
+    }
+
     if (error instanceof MissingWebhookIdempotencyKeyError) {
       return Response.json(
         { error: "Invalid webhook payload" },
@@ -115,7 +131,7 @@ export async function POST(request: Request) {
 
     logWebhookProcessingError("ElevenLabs webhook processing failed", {
       eventType: event.eventType,
-      idempotencyKey: getElevenLabsWebhookIdempotencyKey(event) ?? "",
+      idempotencyKey,
       error,
     });
 

@@ -182,6 +182,7 @@ describe("POST /api/uploads/audio", () => {
       mimeType: "audio/mpeg",
     });
     expect(send).toHaveBeenCalledWith({
+      id: "upload-transcription:44444444-4444-4444-8444-444444444444",
       name: "meeting/transcribe.audio",
       data: {
         meetingId: "22222222-2222-4222-8222-222222222222",
@@ -192,6 +193,44 @@ describe("POST /api/uploads/audio", () => {
       },
     });
     expect(revalidatePath).toHaveBeenCalledWith("/dashboard");
+  });
+
+  it("keeps a persisted upload queued when immediate dispatch fails", async () => {
+    vi.spyOn(crypto, "randomUUID").mockReturnValue(
+      "11111111-1111-4111-8111-111111111111",
+    );
+    getCurrentUser.mockResolvedValue({
+      id: "user_123",
+      email: "user@example.com",
+      name: null,
+    });
+    putObject.mockResolvedValue(undefined);
+    createUploadedAudioTranscription.mockResolvedValue({
+      meetingId: "22222222-2222-4222-8222-222222222222",
+      mediaAssetId: "33333333-3333-4333-8333-333333333333",
+      transcriptJobId: "44444444-4444-4444-8444-444444444444",
+    });
+    send.mockRejectedValue(new Error("Inngest unavailable"));
+    const consoleError = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => undefined);
+
+    try {
+      const response = await postAudioUpload(
+        new File(["fake mp3"], "sample.mp3", { type: "audio/mpeg" }),
+      );
+
+      expect(response.status).toBe(202);
+      expect(revalidatePath).toHaveBeenCalledWith("/dashboard");
+      expect(consoleError).toHaveBeenCalledWith(
+        "upload_dispatch_delayed",
+        expect.objectContaining({
+          meetingId: "22222222-2222-4222-8222-222222222222",
+        }),
+      );
+    } finally {
+      consoleError.mockRestore();
+    }
   });
 
   it("rejects oversized fallback uploads before buffering the file", async () => {
@@ -394,6 +433,7 @@ describe("POST /api/uploads/audio", () => {
       mimeType: "video/mp4",
     });
     expect(send).toHaveBeenCalledWith({
+      id: "upload-video-conversion:55555555-5555-4555-8555-555555555555",
       name: "meeting/convert.video-to-audio",
       data: {
         meetingId: "22222222-2222-4222-8222-222222222222",

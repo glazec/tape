@@ -35,12 +35,14 @@ import {
   translationLanguageSchema,
 } from "@/lib/meeting-translation-language";
 import {
+  deleteRecallCalendarEventBot,
   deleteScheduledRecallBot,
   scheduleRecallBot,
 } from "@/lib/vendors/recall";
 import { syncRecallCalendarEventsForAllConnectedUsers } from "@/lib/recall-calendar-bulk-sync";
 import { reconcileStaleMeetingJobs } from "@/lib/stale-meeting-jobs";
 import { stopBotsForExhaustedWorkspaces } from "@/lib/provider-credit-enforcement";
+import { dispatchQueuedUploadTranscriptions } from "@/lib/upload-transcription-dispatch";
 import {
   assertMeetingHasProviderCredit,
   assertWorkspaceHasProviderCredit,
@@ -56,6 +58,9 @@ const scheduleMeetingBotDataSchema = z.object({
 });
 const deleteRecallBotDataSchema = z.object({
   botId: z.string().trim().min(1),
+});
+const deleteRecallCalendarEventBotDataSchema = z.object({
+  calendarEventId: z.string().trim().min(1),
 });
 
 const transcribeAudioDataSchema = z.union([
@@ -133,6 +138,21 @@ export const deleteRecallBot = inngest.createFunction(
   },
 );
 
+export const deleteRecallCalendarEventBotJob = inngest.createFunction(
+  {
+    id: "delete-recall-calendar-event-bot",
+    retries: 4,
+    triggers: [{ event: "meeting/delete.recall-calendar-event-bot" }],
+  },
+  async ({ event }) => {
+    const data = deleteRecallCalendarEventBotDataSchema.parse(event.data);
+
+    return deleteRecallCalendarEventBot({
+      calendarEventId: data.calendarEventId,
+    });
+  },
+);
+
 export const transcribeAudio = inngest.createFunction(
   {
     id: "transcribe-audio",
@@ -179,12 +199,16 @@ export const transcribeAudio = inngest.createFunction(
           ? data.audioUrl
           : await createReadUrl({ key: data.objectKey });
 
-      const response = await createElevenLabsTranscriptJob({
-        audioUrl,
-        webhookUrl: `${appUrl}/api/elevenlabs/webhook`,
-        keyterms,
-        metadata: buildTranscriptMetadata(data),
-      });
+      const response = await step.run(
+        "create-elevenlabs-transcript-job",
+        () =>
+          createElevenLabsTranscriptJob({
+            audioUrl,
+            webhookUrl: `${appUrl}/api/elevenlabs/webhook`,
+            keyterms,
+            metadata: buildTranscriptMetadata(data),
+          }),
+      );
 
       const providerJobId = getProviderJobId(response);
 
@@ -245,6 +269,7 @@ export const convertVideoToAudio = inngest.createFunction(
       });
 
       return step.sendEvent("queue-audio-transcription", {
+        id: `upload-transcription:${data.transcriptJobId}`,
         name: "meeting/transcribe.audio",
         data: transcription,
       });
@@ -645,12 +670,18 @@ const reconcileStaleJobs = inngest.createFunction(
     id: "reconcile-stale-meeting-jobs",
     triggers: [{ cron: "*/15 * * * *" }],
   },
-  async () => reconcileStaleMeetingJobs(),
+  async () => {
+    const dispatch = await dispatchQueuedUploadTranscriptions();
+    const reconciliation = await reconcileStaleMeetingJobs();
+
+    return { ...dispatch, ...reconciliation };
+  },
 );
 
 export const functions = [
   scheduleMeetingBot,
   deleteRecallBot,
+  deleteRecallCalendarEventBotJob,
   transcribeAudio,
   convertVideoToAudio,
   enrichTranscript,
