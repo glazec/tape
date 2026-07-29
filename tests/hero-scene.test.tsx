@@ -8,6 +8,7 @@ const {
   envMapDispose,
   pmremDispose,
   pmremFromScene,
+  rendererConstructorFails,
   rendererDispose,
   rendererRender,
   rendererSetSize,
@@ -16,6 +17,7 @@ const {
   envMapDispose: vi.fn(),
   pmremDispose: vi.fn(),
   pmremFromScene: vi.fn(),
+  rendererConstructorFails: vi.fn(),
   rendererDispose: vi.fn(),
   rendererRender: vi.fn(),
   rendererSetSize: vi.fn(),
@@ -35,6 +37,12 @@ vi.mock("three", async (importOriginal) => {
     shadowMap = { enabled: false, type: 0 };
     toneMapping: unknown;
     toneMappingExposure = 1;
+
+    constructor() {
+      if (rendererConstructorFails()) {
+        throw new Error("Error creating WebGL context.");
+      }
+    }
 
     dispose = rendererDispose;
     render = rendererRender;
@@ -75,6 +83,8 @@ describe("HeroScene", () => {
     envMapDispose.mockReset();
     pmremDispose.mockReset();
     pmremFromScene.mockReset();
+    rendererConstructorFails.mockReset();
+    rendererConstructorFails.mockReturnValue(false);
     roomEnvironmentDispose.mockReset();
     pmremFromScene.mockReturnValue({
       texture: { dispose: envMapDispose },
@@ -181,6 +191,18 @@ describe("HeroScene", () => {
 
     unmount();
     expect(rendererDispose).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps the landing page usable when WebGL is unavailable", () => {
+    rendererConstructorFails.mockReturnValue(true);
+    const harness = createProgressHarness(0);
+
+    expect(() =>
+      render(<HeroScene progress={harness.progress} />),
+    ).not.toThrow();
+
+    expect(rendererRender).not.toHaveBeenCalled();
+    expect(requestAnimationFrame).not.toHaveBeenCalled();
   });
 });
 
