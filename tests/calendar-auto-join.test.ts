@@ -212,6 +212,229 @@ describe("calendar auto join", () => {
     ).toBeNull();
   });
 
+  it("identifies Luma and Partiful imports without using the event title", async () => {
+    const { getIgnoredCalendarEventSource } = await import(
+      "@/lib/calendar-auto-join"
+    );
+    const event = {
+      externalEventId: "google_event_123",
+      title: "Build Your First App with Replit Workshop",
+      startsAt: "2026-08-01T16:00:00.000Z",
+    };
+
+    expect(
+      getIgnoredCalendarEventSource({
+        ...event,
+        description:
+          "For the latest information, visit: https://luma.com/event/evt-example",
+      }),
+    ).toBe("luma");
+    expect(
+      getIgnoredCalendarEventSource({
+        ...event,
+        location: "https://lu.ma/example",
+      }),
+    ).toBe("luma");
+    expect(
+      getIgnoredCalendarEventSource({
+        ...event,
+        description: "https://partiful.com/e/601HMiX2MyXcqNSetMPK",
+      }),
+    ).toBe("partiful");
+    expect(getIgnoredCalendarEventSource(event)).toBeNull();
+    expect(
+      getIgnoredCalendarEventSource({
+        ...event,
+        description:
+          "Partner meeting agenda\nDiscuss https://luma.com/event/evt-example",
+      }),
+    ).toBeNull();
+  });
+
+  it("cancels an active Luma bot and stale reminder when auto join is disabled", async () => {
+    const calendarEventReturning = vi
+      .fn()
+      .mockResolvedValue([
+        {
+          id: "33333333-3333-4333-8333-333333333333",
+          teamMeetingKey: null,
+        },
+      ]);
+    const calendarEventOnConflictDoUpdate = vi
+      .fn()
+      .mockReturnValue({ returning: calendarEventReturning });
+    const calendarEventValues = vi
+      .fn()
+      .mockReturnValue({ onConflictDoUpdate: calendarEventOnConflictDoUpdate });
+    const existingLimit = vi.fn().mockResolvedValue([
+      {
+        id: "44444444-4444-4444-8444-444444444444",
+        ownerUserId: "55555555-5555-4555-8555-555555555555",
+        calendarEventId: "33333333-3333-4333-8333-333333333333",
+        teamMeetingKey: "old_location_key",
+        title: "Build Your First App with Replit Workshop",
+        titleSource: "calendar",
+        platform: "google_meet",
+        recallBotId: "active_bot",
+        recallRecordingId: null,
+        meetingUrl: "https://meet.google.com/abc-defg-hij",
+        startedAt: new Date("2026-08-01T16:00:00.000Z"),
+        endedAt: new Date("2026-08-01T17:00:00.000Z"),
+        status: "recording",
+      },
+    ]);
+    const updateWhere = vi.fn().mockResolvedValue(undefined);
+    const updateSet = vi.fn().mockReturnValue({ where: updateWhere });
+
+    insert.mockReturnValueOnce({ values: calendarEventValues });
+    select.mockReturnValue({
+      from: () => ({
+        where: () => ({
+          limit: existingLimit,
+        }),
+      }),
+    });
+    update.mockReturnValue({ set: updateSet });
+
+    const { autoJoinCalendarEvent } = await import("@/lib/calendar-auto-join");
+
+    await expect(
+      autoJoinCalendarEvent({
+        connection: {
+          id: "11111111-1111-4111-8111-111111111111",
+          teamId: "22222222-2222-4222-8222-222222222222",
+          userId: "55555555-5555-4555-8555-555555555555",
+          autoJoinEnabled: false,
+        },
+        event: {
+          externalEventId: "google_event_123",
+          recallCalendarEventId: "66666666-6666-4666-8666-666666666666",
+          title: "Build Your First App with Replit Workshop",
+          startsAt: "2026-08-01T16:00:00.000Z",
+          endsAt: "2026-08-01T17:00:00.000Z",
+          meetingUrl: "https://meet.google.com/abc-defg-hij",
+          location: "Online",
+          description:
+            "For the latest information, visit: https://luma.com/event/evt-example",
+        },
+      }),
+    ).resolves.toEqual({
+      action: "skipped",
+      calendarEventId: "33333333-3333-4333-8333-333333333333",
+      meetingId: "44444444-4444-4444-8444-444444444444",
+      reason: "ignored_event",
+    });
+
+    expect(calendarEventValues).toHaveBeenCalledWith(
+      expect.objectContaining({
+        meetingUrl: null,
+        teamMeetingKey: null,
+      }),
+    );
+    const conflictUpdate =
+      calendarEventOnConflictDoUpdate.mock.calls[0]?.[0] as {
+        set: { teamMeetingKey: unknown };
+        setWhere: Parameters<PgDialect["sqlToQuery"]>[0];
+      };
+    expect(conflictUpdate.set.teamMeetingKey).toBeNull();
+    expect(new PgDialect().sqlToQuery(conflictUpdate.setWhere).sql).toContain(
+      "is distinct from excluded.team_meeting_key",
+    );
+    expect(cancelLocationRemindersForMeeting).toHaveBeenCalledWith(
+      "44444444-4444-4444-8444-444444444444",
+    );
+    expect(retireRecallCalendarEventBot).toHaveBeenCalledWith({
+      botId: "active_bot",
+      calendarEventId: "66666666-6666-4666-8666-666666666666",
+    });
+    expect(deleteRecallCalendarEventBot).not.toHaveBeenCalled();
+    expect(deleteScheduledRecallBot).not.toHaveBeenCalled();
+    expect(updateSet).toHaveBeenCalledWith(
+      expect.objectContaining({
+        status: "cancelled",
+        teamMeetingKey: null,
+      }),
+    );
+    expect(scheduleLocationReminder).not.toHaveBeenCalled();
+    expect(scheduleRecallCalendarEventBot).not.toHaveBeenCalled();
+    expect(scheduleRecallBot).not.toHaveBeenCalled();
+    expect(syncMeetingParticipantAccess).not.toHaveBeenCalled();
+    expect(applyMeetingShareRules).not.toHaveBeenCalled();
+  });
+
+  it("preserves completed recordings for newly ignored event imports", async () => {
+    const calendarEventReturning = vi
+      .fn()
+      .mockResolvedValue([
+        {
+          id: "33333333-3333-4333-8333-333333333333",
+          teamMeetingKey: null,
+        },
+      ]);
+    const calendarEventOnConflictDoUpdate = vi
+      .fn()
+      .mockReturnValue({ returning: calendarEventReturning });
+    const calendarEventValues = vi
+      .fn()
+      .mockReturnValue({ onConflictDoUpdate: calendarEventOnConflictDoUpdate });
+    const existingLimit = vi.fn().mockResolvedValue([
+      {
+        id: "44444444-4444-4444-8444-444444444444",
+        ownerUserId: "55555555-5555-4555-8555-555555555555",
+        calendarEventId: "33333333-3333-4333-8333-333333333333",
+        recallBotId: "recorded_bot",
+        recallRecordingId: "recording_123",
+        meetingUrl: "https://meet.google.com/abc-defg-hij",
+        status: "ready",
+      },
+    ]);
+
+    insert.mockReturnValueOnce({ values: calendarEventValues });
+    select.mockReturnValue({
+      from: () => ({
+        where: () => ({
+          limit: existingLimit,
+        }),
+      }),
+    });
+
+    const { autoJoinCalendarEvent } = await import("@/lib/calendar-auto-join");
+
+    await expect(
+      autoJoinCalendarEvent({
+        connection: {
+          id: "11111111-1111-4111-8111-111111111111",
+          teamId: "22222222-2222-4222-8222-222222222222",
+          userId: "55555555-5555-4555-8555-555555555555",
+          autoJoinEnabled: true,
+        },
+        event: {
+          externalEventId: "google_event_123",
+          title: "Build Your First App with Replit Workshop",
+          startsAt: "2026-07-01T16:00:00.000Z",
+          endsAt: "2026-07-01T17:00:00.000Z",
+          meetingUrl: "https://meet.google.com/abc-defg-hij",
+          description:
+            "For the latest information, visit: https://partiful.com/e/601HMiX2MyXcqNSetMPK",
+        },
+      }),
+    ).resolves.toEqual({
+      action: "skipped",
+      calendarEventId: "33333333-3333-4333-8333-333333333333",
+      meetingId: "44444444-4444-4444-8444-444444444444",
+      reason: "ignored_event",
+    });
+
+    expect(deleteRecallCalendarEventBot).not.toHaveBeenCalled();
+    expect(deleteScheduledRecallBot).not.toHaveBeenCalled();
+    expect(cancelLocationRemindersForMeeting).toHaveBeenCalledWith(
+      "44444444-4444-4444-8444-444444444444",
+    );
+    expect(syncMeetingParticipantAccess).not.toHaveBeenCalled();
+    expect(applyMeetingShareRules).not.toHaveBeenCalled();
+    expect(update).not.toHaveBeenCalled();
+  });
+
   it("schedules Recall for an auto join event with a meeting link and no location", async () => {
     vi.stubEnv("NEXT_PUBLIC_APP_URL", "https://app.example.com");
 

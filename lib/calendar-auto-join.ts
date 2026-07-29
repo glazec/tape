@@ -170,16 +170,60 @@ export function findCalendarMeetingUrl(event: SyncedCalendarEvent) {
   );
 }
 
+export function getIgnoredCalendarEventSource(
+  event: SyncedCalendarEvent,
+): "luma" | "partiful" | null {
+  const urls = [
+    event.meetingUrl,
+    event.location,
+    getCalendarImportDescriptionHeader(event.description),
+    event.hangoutLink,
+    ...getConferenceEntryPointUris(event),
+  ].flatMap((value) => extractUrls(value));
+
+  for (const value of urls) {
+    try {
+      const url = new URL(value);
+      const hostname = url.hostname.toLowerCase();
+
+      if (
+        url.pathname !== "/" &&
+        (matchesHostname(hostname, "luma.com") ||
+          matchesHostname(hostname, "lu.ma"))
+      ) {
+        return "luma";
+      }
+
+      if (
+        /^\/e\/[^/]+/i.test(url.pathname) &&
+        matchesHostname(hostname, "partiful.com")
+      ) {
+        return "partiful";
+      }
+    } catch {
+      continue;
+    }
+  }
+
+  return null;
+}
+
 export async function autoJoinCalendarEvent(input: AutoJoinInput) {
   const attendeeEmails = getCalendarAttendeeEmails(input.event);
   const canonicalAttendeeEmails = [...attendeeEmails].sort();
   const declinedByExternalAttendees =
     isDeclinedByAllExternalAttendees(input);
+  const ignoredCalendarEventSource = input.event.isDeleted
+    ? null
+    : getIgnoredCalendarEventSource(input.event);
+  const ignoredImportedEvent = ignoredCalendarEventSource !== null;
+  const autoJoinSuppressed =
+    declinedByExternalAttendees || ignoredImportedEvent;
   const meetingUrl = input.event.isDeleted
     ? null
-    : declinedByExternalAttendees
+    : autoJoinSuppressed
       ? null
-    : findCalendarMeetingUrl(input.event);
+      : findCalendarMeetingUrl(input.event);
   const platform = meetingUrl ? detectMeetingPlatform(meetingUrl) : null;
   const title = normalizeEventTitle(
     { ...input.event, attendeeEmails: canonicalAttendeeEmails },
@@ -198,13 +242,23 @@ export async function autoJoinCalendarEvent(input: AutoJoinInput) {
           startsAt,
           meetingUrl,
         })
-      : location && !input.event.isDeleted && !declinedByExternalAttendees
+      : location && !input.event.isDeleted && !autoJoinSuppressed
         ? buildLocationMeetingKey({
             teamId: input.connection.teamId,
             startsAt,
             location,
           })
       : null;
+  const teamMeetingKeyUpdate = ignoredImportedEvent
+    ? null
+    : teamMeetingKey ??
+      sql`coalesce(${calendarEvents.teamMeetingKey}, excluded.team_meeting_key)`;
+  const teamMeetingKeyComparison = ignoredImportedEvent
+    ? sql`excluded.team_meeting_key`
+    : sql`coalesce(
+        excluded.team_meeting_key,
+        ${calendarEvents.teamMeetingKey}
+      )`;
   const [persistedCalendarEvent] = await db
     .insert(calendarEvents)
     .values({
@@ -225,9 +279,7 @@ export async function autoJoinCalendarEvent(input: AutoJoinInput) {
       target: [calendarEvents.connectionId, calendarEvents.externalEventId],
       set: {
         title,
-        teamMeetingKey:
-          teamMeetingKey ??
-          sql`coalesce(${calendarEvents.teamMeetingKey}, excluded.team_meeting_key)`,
+        teamMeetingKey: teamMeetingKeyUpdate,
         meetingUrl,
         location,
         description,
@@ -252,10 +304,7 @@ export async function autoJoinCalendarEvent(input: AutoJoinInput) {
         excluded.starts_at,
         excluded.ends_at,
         excluded.attendee_emails
-      ) or ${calendarEvents.teamMeetingKey} is distinct from coalesce(
-        excluded.team_meeting_key,
-        ${calendarEvents.teamMeetingKey}
-      )`,
+      ) or ${calendarEvents.teamMeetingKey} is distinct from ${teamMeetingKeyComparison}`,
     })
     .returning({
       id: calendarEvents.id,
@@ -275,7 +324,7 @@ export async function autoJoinCalendarEvent(input: AutoJoinInput) {
   const activeTeamMeetingKey =
     teamMeetingKey ?? calendarEvent.teamMeetingKey ?? null;
 
-  if (!input.connection.autoJoinEnabled) {
+  if (!input.connection.autoJoinEnabled && !ignoredImportedEvent) {
     return {
       action: "skipped" as const,
       calendarEventId: calendarEvent.id,
@@ -295,14 +344,14 @@ export async function autoJoinCalendarEvent(input: AutoJoinInput) {
     input.repairMode && isPastCalendarEvent({ startsAt, endsAt });
   const hasSchedulableNextOccurrence = Boolean(
     (meetingUrl && platform) ||
-      (location && !input.event.isDeleted && !declinedByExternalAttendees),
+      (location && !input.event.isDeleted && !autoJoinSuppressed),
   );
   const locationReminderNeedsRepair = Boolean(
     existingMeeting &&
       location &&
       !meetingUrl &&
       !input.event.isDeleted &&
-      !declinedByExternalAttendees &&
+      !autoJoinSuppressed &&
       (await hasUndispatchedLocationReminder({
         meetingId: existingMeeting.id,
         userId: input.connection.userId,
@@ -337,7 +386,7 @@ export async function autoJoinCalendarEvent(input: AutoJoinInput) {
       }),
   );
 
-  if (existingMeeting) {
+  if (existingMeeting && !ignoredImportedEvent) {
     await syncMeetingParticipantAccess({
       attendeeEmails,
       meetingId: existingMeeting.id,
@@ -349,6 +398,7 @@ export async function autoJoinCalendarEvent(input: AutoJoinInput) {
 
   if (
     existingMeeting &&
+    !ignoredImportedEvent &&
     calendarEventChanged &&
     input.connection.workspaceDomain
   ) {
@@ -375,6 +425,7 @@ export async function autoJoinCalendarEvent(input: AutoJoinInput) {
 
   if (
     existingMeeting &&
+    !ignoredImportedEvent &&
     !calendarEventChanged &&
     !locationReminderNeedsRepair &&
     !needsUnchangedCalendarEventRepair({
@@ -409,7 +460,7 @@ export async function autoJoinCalendarEvent(input: AutoJoinInput) {
       };
     }
 
-    if (location && !input.event.isDeleted && !declinedByExternalAttendees) {
+    if (location && !input.event.isDeleted && !autoJoinSuppressed) {
       return syncLocationCalendarMeeting({
         connection: input.connection,
         calendarEvent,
@@ -423,7 +474,22 @@ export async function autoJoinCalendarEvent(input: AutoJoinInput) {
       });
     }
 
-    if (declinedByExternalAttendees) {
+    if (autoJoinSuppressed) {
+      if (
+        ignoredImportedEvent &&
+        existingMeeting &&
+        shouldPreserveIgnoredCalendarMeeting(existingMeeting)
+      ) {
+        await cancelLocationRemindersForMeeting(existingMeeting.id);
+
+        return {
+          action: "skipped" as const,
+          calendarEventId: calendarEvent.id,
+          meetingId: existingMeeting.id,
+          reason: "ignored_event" as const,
+        };
+      }
+
       if (existingMeeting) {
         await cancelScheduledMeetingBotFromCalendar({
           botId: existingMeeting.recallBotId,
@@ -435,20 +501,29 @@ export async function autoJoinCalendarEvent(input: AutoJoinInput) {
           startsAt,
           title: getCalendarMeetingTitle(existingMeeting, title),
           titleSource: getCalendarMeetingTitleSource(existingMeeting),
+          durableBotCleanup: ignoredImportedEvent,
         });
+
+        if (ignoredImportedEvent) {
+          await cancelLocationRemindersForMeeting(existingMeeting.id);
+        }
 
         return {
           action: "skipped" as const,
           calendarEventId: calendarEvent.id,
           meetingId: existingMeeting.id,
-          reason: "missing_meeting_link" as const,
+          reason: ignoredImportedEvent
+            ? ("ignored_event" as const)
+            : ("missing_meeting_link" as const),
         };
       }
 
       return {
         action: "skipped" as const,
         calendarEventId: calendarEvent.id,
-        reason: "missing_meeting_link" as const,
+        reason: ignoredImportedEvent
+          ? ("ignored_event" as const)
+          : ("missing_meeting_link" as const),
       };
     }
 
@@ -1665,8 +1740,18 @@ async function markMeetingMissedFromCalendar(input: {
   await cancelLocationRemindersForMeeting(input.meetingId);
 }
 
+function shouldPreserveIgnoredCalendarMeeting(meeting: ExistingMeeting) {
+  return (
+    meeting.status === "processing" ||
+    meeting.status === "ready" ||
+    meeting.status === "missed" ||
+    meeting.status === "cancelled"
+  );
+}
+
 async function cancelScheduledMeetingBotFromCalendar(input: {
   botId?: string | null;
+  durableBotCleanup?: boolean;
   meetingId: string;
   title: string;
   titleSource?: string | null;
@@ -1679,6 +1764,17 @@ async function cancelScheduledMeetingBotFromCalendar(input: {
 }) {
   if (input.skipVendorDelete) {
     // Recall Calendar V2 automatically removes scheduled bots for deleted events.
+  } else if (
+    input.durableBotCleanup &&
+    input.botId &&
+    input.recallCalendarEventId
+  ) {
+    await retireRecallCalendarEventBot({
+      botId: input.botId,
+      calendarEventId: input.recallCalendarEventId,
+    });
+  } else if (input.durableBotCleanup && input.botId) {
+    await retireScheduledRecallBot(input.botId);
   } else if (input.botId && input.recallCalendarEventId) {
     await deleteRecallCalendarEventBot({
       calendarEventId: input.recallCalendarEventId,
@@ -2227,6 +2323,14 @@ function extractUrls(value?: string | null) {
   }
 
   return Array.from(urls);
+}
+
+function getCalendarImportDescriptionHeader(value?: string | null) {
+  return value?.trimStart().split(/\r?\n/, 1)[0]?.slice(0, 500) ?? null;
+}
+
+function matchesHostname(hostname: string, domain: string) {
+  return hostname === domain || hostname.endsWith(`.${domain}`);
 }
 
 function trimUrlPunctuation(value: string) {
