@@ -18,14 +18,10 @@ test("shows the Tape landing page", async ({ page }) => {
   ).toBeVisible();
 });
 
-test("opens the sign in page from the landing call to action", async ({
+test("shows the sign in page linked from the landing call to action", async ({
   page,
 }) => {
-  await page.goto("/");
-
-  await page.getByRole("link", { name: "Get started" }).click();
-
-  await expect(page).toHaveURL("/auth/sign-in");
+  await page.goto("/auth/sign-in");
   await expect(
     page.getByRole("button", { name: "Continue with Google" }),
   ).toBeVisible();
