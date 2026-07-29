@@ -424,6 +424,30 @@ describe("database migrations", () => {
     }
   });
 
+  it("scopes dashboard transcript stats to readable meetings", () => {
+    const sql = readFileSync(
+      "db/migrations/0044_dashboard_transcript_stats.sql",
+      "utf8",
+    ).replace(/\s+/g, " ");
+
+    expect(sql).toContain(
+      "create or replace function app_private.meeting_library_transcript_stats( target_meeting_ids uuid[] )",
+    );
+    expect(sql).toContain("security definer");
+    expect(sql).toContain(
+      "inner join app_private.readable_meeting_ids() as readable using (meeting_id)",
+    );
+    expect(sql).toContain("job.status = 'completed'");
+    expect(sql).toContain("job.mode = 'replace'");
+    expect(sql).toContain("job.mode = 'append'");
+    expect(sql).toContain(
+      "revoke all on function app_private.meeting_library_transcript_stats(uuid[]) from public",
+    );
+    expect(sql).toContain(
+      "grant execute on function app_private.meeting_library_transcript_stats(uuid[]) to tape_authenticated, tape_mcp",
+    );
+  });
+
   it("keeps operational rate limits private from tenant roles", () => {
     const sql = readFileSync(
       "db/migrations/0039_restrict_rate_limit_table.sql",

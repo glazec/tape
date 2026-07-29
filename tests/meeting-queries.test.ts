@@ -1,8 +1,9 @@
 import type { SQL } from "drizzle-orm";
 import { PgDialect } from "drizzle-orm/pg-core";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const { getWorkspace, select } = vi.hoisted(() => ({
+const { databaseSql, getWorkspace, select } = vi.hoisted(() => ({
+  databaseSql: vi.fn(),
   getWorkspace: vi.fn(),
   select: vi.fn(),
 }));
@@ -12,6 +13,7 @@ vi.mock("@/lib/workspace", () => ({
 }));
 
 vi.mock("@/db/client", () => ({
+  databaseSql,
   db: {
     select,
   },
@@ -738,59 +740,63 @@ describe("listMeetingDetailRelatedMeetingsForWorkspace", () => {
 });
 
 describe("listMeetingsForWorkspace", () => {
+  beforeEach(() => {
+    databaseSql.mockResolvedValue([]);
+    select.mockImplementation(() => ({
+      from: () => ({
+        where: () => ({
+          groupBy: vi.fn().mockResolvedValue([]),
+          orderBy: vi.fn().mockResolvedValue([]),
+        }),
+      }),
+    }));
+  });
+
   afterEach(() => {
+    databaseSql.mockReset();
     getWorkspace.mockReset();
     select.mockReset();
     vi.resetModules();
   });
 
-  it("decodes recording timestamps before formatting dashboard rows", async () => {
+  it("uses recording timestamps when formatting dashboard rows", async () => {
     select
-      .mockImplementationOnce((selection: unknown) => {
-        const projection = selection as {
-          recordedEndedAt: {
-            decoder: { mapFromDriverValue(value: string): Date | null };
-          };
-          recordedStartedAt: {
-            decoder: { mapFromDriverValue(value: string): Date | null };
-          };
-        };
-
-        return {
-          from: () => ({
-            leftJoin: () => ({
-              where: () => ({
-                orderBy: vi.fn().mockResolvedValue([
-                  {
-                    canManage: true,
-                    id: "33333333-3333-4333-8333-333333333333",
-                    teamId: "team_123",
-                    title: "Recorded meeting",
-                    platform: "upload",
-                    status: "ready",
-                    transcriptJobStatus: "completed",
-                    recallBotId: null,
-                    recordedStartedAt:
-                      projection.recordedStartedAt.decoder.mapFromDriverValue(
-                        "2026-07-22T12:05:00.000Z",
-                      ),
-                    recordedEndedAt:
-                      projection.recordedEndedAt.decoder.mapFromDriverValue(
-                        "2026-07-22T12:35:00.000Z",
-                      ),
-                    createdAt: new Date("2026-07-22T12:00:00.000Z"),
-                    calendarAttendeeEmails: [],
-                  },
-                ]),
-              }),
+      .mockReturnValueOnce({
+        from: () => ({
+          leftJoin: () => ({
+            where: () => ({
+              orderBy: vi.fn().mockResolvedValue([
+                {
+                  canManage: true,
+                  id: "33333333-3333-4333-8333-333333333333",
+                  teamId: "team_123",
+                  title: "Recorded meeting",
+                  platform: "upload",
+                  status: "ready",
+                  transcriptJobStatus: "completed",
+                  recallBotId: null,
+                  startedAt: null,
+                  endedAt: null,
+                  createdAt: new Date("2026-07-22T12:00:00.000Z"),
+                  calendarAttendeeEmails: [],
+                },
+              ]),
             }),
           }),
-        };
+        }),
       })
       .mockReturnValueOnce({
         from: () => ({
           where: () => ({
-            orderBy: vi.fn().mockResolvedValue([]),
+            orderBy: vi.fn().mockResolvedValue([
+              {
+                meetingId: "33333333-3333-4333-8333-333333333333",
+                durationMs: null,
+                startedAt: new Date("2026-07-22T12:05:00.000Z"),
+                endedAt: new Date("2026-07-22T12:35:00.000Z"),
+                createdAt: new Date("2026-07-22T12:05:00.000Z"),
+              },
+            ]),
           }),
         }),
       });
@@ -875,6 +881,15 @@ describe("listMeetingsForWorkspace", () => {
   });
 
   it("uses recognized transcript speakers as ready meeting participants", async () => {
+    databaseSql.mockResolvedValue([
+      {
+        duration_ms: null,
+        meeting_id: "44444444-4444-4444-8444-444444444444",
+        recognized_speaker_count: 2,
+        segment_count: 12,
+      },
+    ]);
+
     select
       .mockReturnValueOnce({
         from: () => ({
@@ -893,10 +908,16 @@ describe("listMeetingsForWorkspace", () => {
                   endedAt: new Date("2026-06-27T12:45:00.000Z"),
                   createdAt: new Date("2026-06-27T11:59:00.000Z"),
                   calendarAttendeeEmails: null,
-                  recognizedSpeakerCount: 2,
                 },
               ]),
             }),
+          }),
+        }),
+      })
+      .mockReturnValueOnce({
+        from: () => ({
+          where: () => ({
+            orderBy: vi.fn().mockResolvedValue([]),
           }),
         }),
       })
@@ -925,9 +946,6 @@ describe("listMeetingsForWorkspace", () => {
 
     const projection = select.mock.calls[0][0] as {
       calendarAttendeeEmails: SQL;
-      recognizedSpeakerCount: SQL;
-      transcriptDurationMs: SQL;
-      transcriptSegmentCount: SQL;
     };
     const attendeeQuery = toQuery(projection.calendarAttendeeEmails);
     expect(attendeeQuery.sql).toContain('from "meeting_attendees"');
@@ -935,12 +953,22 @@ describe("listMeetingsForWorkspace", () => {
     expect(
       attendeeQuery.sql.indexOf('"calendar_events"."attendee_emails"'),
     ).toBeLessThan(attendeeQuery.sql.indexOf('from "meeting_attendees"'));
-    expectUsesCurrentTranscriptJob(projection.recognizedSpeakerCount);
-    expectUsesCurrentTranscriptJob(projection.transcriptSegmentCount);
-    expectUsesCurrentTranscriptJob(projection.transcriptDurationMs);
+    expect(databaseSql.mock.calls[0]?.[0].join(" ")).toContain(
+      "app_private.meeting_library_transcript_stats",
+    );
+    expect(databaseSql.mock.calls[0]?.[0].join(" ")).toContain("::uuid[]");
   });
 
   it("prefers current transcript speakers over calendar attendees for ready meetings", async () => {
+    databaseSql.mockResolvedValue([
+      {
+        duration_ms: null,
+        meeting_id: "2702fadb-cdf7-4d99-89ca-416eaa5bf640",
+        recognized_speaker_count: 4,
+        segment_count: 259,
+      },
+    ]);
+
     select
       .mockReturnValueOnce({
         from: () => ({
@@ -965,11 +993,16 @@ describe("listMeetingsForWorkspace", () => {
                     "test@iosg.vc",
                     "reviewer@iosg.vc",
                   ],
-                  recognizedSpeakerCount: 4,
-                  transcriptSegmentCount: 259,
                 },
               ]),
             }),
+          }),
+        }),
+      })
+      .mockReturnValueOnce({
+        from: () => ({
+          where: () => ({
+            orderBy: vi.fn().mockResolvedValue([]),
           }),
         }),
       })
@@ -1030,6 +1063,15 @@ describe("listMeetingsForWorkspace", () => {
   });
 
   it("counts an unlabeled ready transcript as one participant", async () => {
+    databaseSql.mockResolvedValue([
+      {
+        duration_ms: null,
+        meeting_id: "55555555-5555-4555-8555-555555555555",
+        recognized_speaker_count: 0,
+        segment_count: 1,
+      },
+    ]);
+
     select
       .mockReturnValueOnce({
         from: () => ({
@@ -1048,11 +1090,16 @@ describe("listMeetingsForWorkspace", () => {
                   endedAt: null,
                   createdAt: new Date("2026-06-24T06:13:00.000Z"),
                   calendarAttendeeEmails: null,
-                  recognizedSpeakerCount: 0,
-                  transcriptSegmentCount: 1,
                 },
               ]),
             }),
+          }),
+        }),
+      })
+      .mockReturnValueOnce({
+        from: () => ({
+          where: () => ({
+            orderBy: vi.fn().mockResolvedValue([]),
           }),
         }),
       })
@@ -1081,6 +1128,15 @@ describe("listMeetingsForWorkspace", () => {
   });
 
   it("uses transcript segment timing as upload duration", async () => {
+    databaseSql.mockResolvedValue([
+      {
+        duration_ms: 1478342,
+        meeting_id: "66666666-6666-4666-8666-666666666666",
+        recognized_speaker_count: 2,
+        segment_count: 237,
+      },
+    ]);
+
     select
       .mockReturnValueOnce({
         from: () => ({
@@ -1099,12 +1155,16 @@ describe("listMeetingsForWorkspace", () => {
                   endedAt: null,
                   createdAt: new Date("2026-06-27T23:10:00.000Z"),
                   calendarAttendeeEmails: null,
-                  recognizedSpeakerCount: 2,
-                  transcriptSegmentCount: 237,
-                  transcriptDurationMs: 1478342,
                 },
               ]),
             }),
+          }),
+        }),
+      })
+      .mockReturnValueOnce({
+        from: () => ({
+          where: () => ({
+            orderBy: vi.fn().mockResolvedValue([]),
           }),
         }),
       })
@@ -1162,6 +1222,140 @@ describe("listMeetingsForWorkspace", () => {
     });
 
     expect(orderBy.mock.calls[0]).toHaveLength(3);
+  });
+
+  it("enriches only 50 visible table rows out of 206 matches", async () => {
+    const matchingRows = Array.from({ length: 206 }, (_, index) => {
+      const id = `00000000-0000-4000-8000-${String(index + 1).padStart(12, "0")}`;
+      const startedAt = new Date(
+        Date.UTC(2026, 6, 28, 12, 0) - index * 60_000,
+      ).toISOString();
+
+      return meetingRow({
+        id,
+        title: `Meeting ${index + 1}`,
+        status: "ready",
+        startedAt,
+      });
+    });
+    const visibleMeetingIds = matchingRows
+      .slice(0, 50)
+      .map((meeting) => meeting.id);
+    const hiddenMeetingId = matchingRows[50].id;
+    const recordingWhere = vi.fn(() => ({
+      orderBy: vi.fn().mockResolvedValue([]),
+    }));
+
+    select
+      .mockReturnValueOnce({
+        from: () => ({
+          leftJoin: () => ({
+            where: () => ({
+              orderBy: vi.fn().mockResolvedValue(matchingRows),
+            }),
+          }),
+        }),
+      })
+      .mockReturnValueOnce({
+        from: () => ({
+          where: recordingWhere,
+        }),
+      });
+    const { listMeetingLibraryPageForWorkspace } = await import(
+      "@/lib/meeting-queries"
+    );
+
+    const page = await listMeetingLibraryPageForWorkspace(
+      {
+        teamId: "team_123",
+        userId: "user_123",
+        domain: "iosg.vc",
+        canCreateMeetings: true,
+      },
+    );
+
+    expect(page.meetings.map((meeting) => meeting.id)).toEqual(
+      visibleMeetingIds,
+    );
+    expect(databaseSql.mock.calls[0]?.[1]).toEqual(visibleMeetingIds);
+    expect(toQuery(recordingWhere.mock.calls[0][0]).params).toContain(
+      visibleMeetingIds[0],
+    );
+    expect(toQuery(recordingWhere.mock.calls[0][0]).params).not.toContain(
+      hiddenMeetingId,
+    );
+  });
+
+  it("loads ranking stats for all matches when sorting by duration", async () => {
+    const shorterMeetingId = "11111111-1111-4111-8111-111111111111";
+    const longerMeetingId = "22222222-2222-4222-8222-222222222222";
+
+    databaseSql.mockResolvedValue([
+      {
+        duration_ms: 10_000,
+        meeting_id: shorterMeetingId,
+        recognized_speaker_count: 1,
+        segment_count: 1,
+      },
+      {
+        duration_ms: 20_000,
+        meeting_id: longerMeetingId,
+        recognized_speaker_count: 1,
+        segment_count: 1,
+      },
+    ]);
+    select
+      .mockReturnValueOnce({
+        from: () => ({
+          leftJoin: () => ({
+            where: () => ({
+              orderBy: vi.fn().mockResolvedValue([
+                meetingRow({
+                  id: shorterMeetingId,
+                  title: "Shorter meeting",
+                  status: "ready",
+                  startedAt: "2026-07-28T12:00:00.000Z",
+                }),
+                meetingRow({
+                  id: longerMeetingId,
+                  title: "Longer meeting",
+                  status: "ready",
+                  startedAt: "2026-07-27T12:00:00.000Z",
+                }),
+              ]),
+            }),
+          }),
+        }),
+      })
+      .mockReturnValueOnce({
+        from: () => ({
+          where: () => ({
+            orderBy: vi.fn().mockResolvedValue([]),
+          }),
+        }),
+      });
+    const { listMeetingLibraryPageForWorkspace } = await import(
+      "@/lib/meeting-queries"
+    );
+
+    const page = await listMeetingLibraryPageForWorkspace(
+      {
+        teamId: "team_123",
+        userId: "user_123",
+        domain: "iosg.vc",
+        canCreateMeetings: true,
+      },
+      { pageSize: 1, sort: "duration_desc" },
+    );
+
+    expect(page.meetings.map((meeting) => meeting.id)).toEqual([
+      longerMeetingId,
+    ]);
+    expect(databaseSql.mock.calls[0]?.[1]).toEqual([
+      shorterMeetingId,
+      longerMeetingId,
+    ]);
+    expect(select).toHaveBeenCalledTimes(2);
   });
 
   it("shows past in person meetings and only the next 3 scheduled bot meetings", async () => {
@@ -1380,7 +1574,7 @@ describe("listMeetingsForWorkspace", () => {
     ]);
   });
 
-  it("surfaces detected entities without grouping by entity alone", async () => {
+  it("does not load detected entities for dashboard table rows", async () => {
     select
       .mockReturnValueOnce({
         from: () => ({
@@ -1419,48 +1613,7 @@ describe("listMeetingsForWorkspace", () => {
       .mockReturnValueOnce({
         from: () => ({
           where: () => ({
-            orderBy: vi.fn().mockResolvedValue([
-              {
-                meetingId: "11111111-1111-4111-8111-111111111111",
-                type: "name",
-                normalizedValue: "darko",
-              },
-              {
-                meetingId: "11111111-1111-4111-8111-111111111111",
-                type: "money",
-                normalizedValue: "20 million",
-              },
-              {
-                meetingId: "11111111-1111-4111-8111-111111111111",
-                type: "organization",
-                normalizedValue: "iosg",
-              },
-              {
-                meetingId: "11111111-1111-4111-8111-111111111111",
-                type: "organization",
-                normalizedValue: "nascent",
-              },
-              {
-                meetingId: "22222222-2222-4222-8222-222222222222",
-                type: "name",
-                normalizedValue: "reviewer",
-              },
-              {
-                meetingId: "22222222-2222-4222-8222-222222222222",
-                type: "organization",
-                normalizedValue: "iosg",
-              },
-              {
-                meetingId: "22222222-2222-4222-8222-222222222222",
-                type: "meeting_link",
-                normalizedValue: "zoom.us/j/1234567890",
-              },
-              {
-                meetingId: "22222222-2222-4222-8222-222222222222",
-                type: "organization",
-                normalizedValue: "nascent",
-              },
-            ]),
+            orderBy: vi.fn().mockResolvedValue([]),
           }),
         }),
       });
@@ -1476,15 +1629,16 @@ describe("listMeetingsForWorkspace", () => {
     ).resolves.toMatchObject([
       expect.objectContaining({
         id: "22222222-2222-4222-8222-222222222222",
-        primaryEntity: "nascent",
         relatedMeetings: [],
       }),
       expect.objectContaining({
         id: "11111111-1111-4111-8111-111111111111",
-        primaryEntity: "nascent",
         relatedMeetings: [],
       }),
     ]);
+    expect(select).toHaveBeenCalledTimes(2);
+    expect(select.mock.calls[1][0]).not.toHaveProperty("normalizedValue");
+    expect(select.mock.calls[1][0]).not.toHaveProperty("type");
   });
 });
 
