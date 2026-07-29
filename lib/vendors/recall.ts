@@ -828,20 +828,47 @@ export async function updateScheduledRecallBot(input: {
 export async function deleteScheduledRecallBot(input: { botId: string }) {
   const parsedInput = recallBotDeleteInputSchema.parse(input);
   const env = recallApiEnvSchema.parse(process.env);
-
-  const response = await fetch(
-    buildRecallApiUrl(
-      env,
-      `/api/v1/bot/${encodeURIComponent(parsedInput.botId)}/`,
-    ),
-    {
-      method: "DELETE",
-      headers: {
-        Authorization: `Token ${env.RECALL_API_KEY}`,
-        Accept: "application/json",
-      },
-    },
+  const headers = {
+    Authorization: `Token ${env.RECALL_API_KEY}`,
+    Accept: "application/json",
+  };
+  const botUrl = buildRecallApiUrl(
+    env,
+    `/api/v1/bot/${encodeURIComponent(parsedInput.botId)}/`,
   );
+
+  let response = await fetch(botUrl, {
+    method: "DELETE",
+    headers,
+  });
+
+  if (response.status === 405) {
+    const leaveResponse = await fetch(
+      buildRecallApiUrl(
+        env,
+        `/api/v1/bot/${encodeURIComponent(parsedInput.botId)}/leave_call/`,
+      ),
+      {
+        method: "POST",
+        headers,
+      },
+    );
+
+    if (
+      !leaveResponse.ok &&
+      leaveResponse.status !== 400 &&
+      leaveResponse.status !== 404
+    ) {
+      throw new Error(
+        `Recall bot leave call failed with ${leaveResponse.status} ${leaveResponse.statusText}`,
+      );
+    }
+
+    response = await fetch(botUrl, {
+      method: "DELETE",
+      headers,
+    });
+  }
 
   if (response.status === 404) {
     return {};

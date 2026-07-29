@@ -1624,13 +1624,14 @@ describe("vendor job creation", () => {
     vi.stubEnv("RECALL_API_KEY", "recall-key\n");
     const fetchMock = vi
       .fn()
-      .mockResolvedValue(new Response(null, { status: 204 }));
+      .mockResolvedValueOnce(new Response(null, { status: 204 }));
     vi.stubGlobal("fetch", fetchMock);
 
     await expect(
       deleteScheduledRecallBot({ botId: "bot_123" }),
     ).resolves.toEqual({});
 
+    expect(fetchMock).toHaveBeenCalledOnce();
     expect(fetchMock).toHaveBeenCalledWith(
       "https://us-east-1.recall.ai/api/v1/bot/bot_123/",
       {

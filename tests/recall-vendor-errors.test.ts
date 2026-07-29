@@ -98,22 +98,53 @@ describe("Recall vendor failure contracts", () => {
     await expect(deleteScheduledRecallBot({ botId: "bot_1" })).resolves.toEqual({ deleted: true });
   });
 
-  it("does not remove an active bot through scheduled deletion", async () => {
-    const fetchMock = vi.fn().mockResolvedValue(
-      new Response(null, {
-        status: 405,
-        statusText: "Method Not Allowed",
-      }),
-    );
+  it("reports a leave failure when an active bot cannot leave", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(null, {
+          status: 405,
+          statusText: "Method Not Allowed",
+        }),
+      )
+      .mockResolvedValueOnce(
+        new Response(null, { status: 503, statusText: "Unavailable" }),
+      );
     vi.stubGlobal("fetch", fetchMock);
 
     await expect(
       deleteScheduledRecallBot({ botId: "bot_1" }),
-    ).rejects.toThrow(
-      "Recall bot deletion failed with 405 Method Not Allowed",
+    ).rejects.toThrow("Recall bot leave call failed with 503 Unavailable");
+  });
+
+  it("removes an active bot from the call after deletion is rejected", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(null, {
+          status: 405,
+          statusText: "Method Not Allowed",
+        }),
+      )
+      .mockResolvedValueOnce(new Response(null, { status: 200 }))
+      .mockResolvedValueOnce(new Response(null, { status: 204 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(
+      deleteScheduledRecallBot({ botId: "bot_1" }),
+    ).resolves.toEqual({});
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      1,
+      "https://us-east-1.recall.ai/api/v1/bot/bot_1/",
+      expect.objectContaining({ method: "DELETE" }),
     );
-    expect(fetchMock).toHaveBeenCalledOnce();
-    expect(fetchMock).toHaveBeenCalledWith(
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      "https://us-east-1.recall.ai/api/v1/bot/bot_1/leave_call/",
+      expect.objectContaining({ method: "POST" }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      3,
       "https://us-east-1.recall.ai/api/v1/bot/bot_1/",
       expect.objectContaining({ method: "DELETE" }),
     );

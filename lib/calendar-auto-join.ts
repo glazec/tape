@@ -46,6 +46,7 @@ import {
 import {
   deleteRecallCalendarEventBot,
   deleteScheduledRecallBot,
+  retrieveRecallBot,
   scheduleRecallCalendarEventBot,
   scheduleRecallBot,
   updateScheduledRecallBot,
@@ -132,6 +133,8 @@ type ExistingMeeting = {
   id: string;
   ownerUserId: string;
   calendarEventId?: string | null;
+  linkedCalendarEventMeetingUrl?: string | null;
+  linkedCalendarEventTeamMeetingKey?: string | null;
   teamMeetingKey?: string | null;
   title: string;
   titleSource: string | null;
@@ -283,6 +286,7 @@ export async function autoJoinCalendarEvent(input: AutoJoinInput) {
   let existingMeeting: ExistingMeeting | null = await findExistingMeeting({
     teamId: input.connection.teamId,
     calendarEventId: calendarEvent.id,
+    externalEventId: input.event.externalEventId,
     teamMeetingKey: activeTeamMeetingKey,
   });
   let participantAccessSynced = false;
@@ -316,6 +320,22 @@ export async function autoJoinCalendarEvent(input: AutoJoinInput) {
   ) {
     existingMeeting = null;
   }
+  const recoverRescheduledRecording = existingMeeting
+    ? await canSafelyRecoverRescheduledRecording({
+        endsAt,
+        meeting: existingMeeting,
+        meetingUrl,
+        startsAt,
+      })
+    : false;
+  const ownedByActiveSiblingCalendarEvent = Boolean(
+    existingMeeting &&
+      isMeetingOwnedByActiveSiblingCalendarEvent({
+        currentCalendarEventId: calendarEvent.id,
+        meeting: existingMeeting,
+        teamMeetingKey: activeTeamMeetingKey,
+      }),
+  );
 
   if (existingMeeting) {
     await syncMeetingParticipantAccess({
@@ -343,6 +363,16 @@ export async function autoJoinCalendarEvent(input: AutoJoinInput) {
     shareRulesApplied = true;
   }
 
+  if (existingMeeting && ownedByActiveSiblingCalendarEvent) {
+    return {
+      action: "skipped" as const,
+      calendarEventId: calendarEvent.id,
+      meetingId: existingMeeting.id,
+      meetingUrl: meetingUrl ?? undefined,
+      reason: "already_scheduled" as const,
+    };
+  }
+
   if (
     existingMeeting &&
     !calendarEventChanged &&
@@ -354,6 +384,7 @@ export async function autoJoinCalendarEvent(input: AutoJoinInput) {
       forceBotConfigRefresh: input.forceBotConfigRefresh,
       meetingUrl,
       platform,
+      recoverRescheduledRecording,
       startsAt,
       endsAt,
       teamMeetingKey: activeTeamMeetingKey,
@@ -585,6 +616,7 @@ export async function autoJoinCalendarEvent(input: AutoJoinInput) {
       creditLimitUsdMicros: input.connection.creditLimitUsdMicros,
       teamMeetingKey: activeTeamMeetingKey,
       forceScheduleBot: input.forceBotConfigRefresh,
+      recoverRescheduledRecording,
     });
   }
 
@@ -618,6 +650,7 @@ export async function autoJoinCalendarEvent(input: AutoJoinInput) {
       existingMeeting = await findExistingMeeting({
         teamId: input.connection.teamId,
         calendarEventId: calendarEvent.id,
+        externalEventId: input.event.externalEventId,
         teamMeetingKey: activeTeamMeetingKey,
       });
 
@@ -643,6 +676,7 @@ export async function autoJoinCalendarEvent(input: AutoJoinInput) {
       creditLimitUsdMicros: input.connection.creditLimitUsdMicros,
       teamMeetingKey: activeTeamMeetingKey,
       forceScheduleBot: true,
+      recoverRescheduledRecording,
     });
   }
 
@@ -847,6 +881,7 @@ async function syncLocalRecorderCalendarMeeting(input: {
 
       meeting = await findExistingMeeting({
         calendarEventId: input.calendarEvent.id,
+        externalEventId: input.event.externalEventId,
         teamId: input.connection.teamId,
         teamMeetingKey: input.teamMeetingKey,
       });
@@ -1097,8 +1132,21 @@ async function syncExistingCalendarMeeting(input: {
   creditLimitUsdMicros?: number | null;
   teamMeetingKey?: string | null;
   forceScheduleBot?: boolean;
+  recoverRescheduledRecording?: boolean;
 }) {
-  const canRecoverCalendarMeeting = shouldRecoverCalendarMeeting(input);
+  const canRecoverCalendarMeeting =
+    input.recoverRescheduledRecording ||
+    shouldRecoverCalendarMeeting(input);
+  const ownedByActiveSiblingCalendarEvent =
+    isMeetingOwnedByActiveSiblingCalendarEvent({
+      currentCalendarEventId: input.calendarEvent.id,
+      meeting: input.meeting,
+      teamMeetingKey: input.teamMeetingKey,
+    });
+  const canonicalCalendarEventId =
+    ownedByActiveSiblingCalendarEvent && input.meeting.calendarEventId
+      ? input.meeting.calendarEventId
+      : input.calendarEvent.id;
 
   if (input.meeting.status !== "scheduled" && !canRecoverCalendarMeeting) {
     return {
@@ -1121,10 +1169,11 @@ async function syncExistingCalendarMeeting(input: {
     });
   const shouldLinkRecallCalendarEvent = Boolean(
     input.event.recallCalendarEventId &&
-      input.meeting.calendarEventId !== input.calendarEvent.id,
+      input.meeting.calendarEventId !== canonicalCalendarEventId,
   );
   const shouldReplaceRecallCalendarEventBot = Boolean(
     input.event.recallCalendarEventId &&
+      !ownedByActiveSiblingCalendarEvent &&
       (isExistingBotOutsideRecallCalendarEvent(
         input.event,
         input.meeting.recallBotId,
@@ -1135,11 +1184,12 @@ async function syncExistingCalendarMeeting(input: {
         )),
   );
   const shouldScheduleBot =
-    input.forceScheduleBot ||
-    shouldUpdateBot ||
-    shouldLinkRecallCalendarEvent ||
-    shouldReplaceRecallCalendarEventBot ||
-    canRecoverCalendarMeeting;
+    !ownedByActiveSiblingCalendarEvent &&
+    (input.forceScheduleBot ||
+      shouldUpdateBot ||
+      shouldLinkRecallCalendarEvent ||
+      shouldReplaceRecallCalendarEventBot ||
+      canRecoverCalendarMeeting);
   let recallBotId = input.meeting.recallBotId;
   let botCleanup: ScheduledRecallBot["cleanup"] = null;
 
@@ -1170,6 +1220,14 @@ async function syncExistingCalendarMeeting(input: {
       if (botCleanup?.kind === "calendar_event" && recallBotId) {
         botCleanup = { ...botCleanup, botId: recallBotId };
       }
+
+      if (
+        input.meeting.status === "recording" &&
+        input.meeting.recallBotId &&
+        recallBotId !== input.meeting.recallBotId
+      ) {
+        await retireScheduledRecallBot(input.meeting.recallBotId);
+      }
     }
 
     const title = getCalendarMeetingTitle(input.meeting, input.title);
@@ -1178,7 +1236,7 @@ async function syncExistingCalendarMeeting(input: {
     if (
       canRecoverCalendarMeeting ||
       hasCalendarMeetingRecordChange(input.meeting, {
-        calendarEventId: input.calendarEvent.id,
+        calendarEventId: canonicalCalendarEventId,
         endedAt: input.endsAt,
         meetingUrl: input.meetingUrl,
         platform: input.platform,
@@ -1191,7 +1249,7 @@ async function syncExistingCalendarMeeting(input: {
       })
     ) {
       await updateMeetingFromCalendar({
-        calendarEventId: input.calendarEvent.id,
+        calendarEventId: canonicalCalendarEventId,
         meetingId: input.meeting.id,
         title,
         titleSource,
@@ -1250,9 +1308,10 @@ async function syncExistingCalendarMeeting(input: {
   }
 
   if (
-    shouldLinkRecallCalendarEvent ||
-    input.forceScheduleBot ||
-    canRecoverCalendarMeeting
+    !ownedByActiveSiblingCalendarEvent &&
+    (shouldLinkRecallCalendarEvent ||
+      input.forceScheduleBot ||
+      canRecoverCalendarMeeting)
   ) {
     return {
       action: "scheduled" as const,
@@ -1327,13 +1386,33 @@ function getCalendarMeetingTitleSource(
 async function findExistingMeeting(input: {
   teamId: string;
   calendarEventId: string;
+  externalEventId: string;
   teamMeetingKey?: string | null;
 }) {
+  const matchesSiblingCalendarCopy = sql<boolean>`exists (
+    select 1
+    from ${calendarEvents} as sibling_calendar_event
+    where sibling_calendar_event.id = ${meetings.calendarEventId}
+      and sibling_calendar_event.team_id = ${input.teamId}
+      and sibling_calendar_event.external_event_id = ${input.externalEventId}
+  )`;
   const existing = await db
     .select({
       id: meetings.id,
       ownerUserId: meetings.ownerUserId,
       calendarEventId: meetings.calendarEventId,
+      linkedCalendarEventMeetingUrl: sql<string | null>`(
+        select linked_calendar_event.meeting_url
+        from ${calendarEvents} as linked_calendar_event
+        where linked_calendar_event.id = ${meetings.calendarEventId}
+        limit 1
+      )`,
+      linkedCalendarEventTeamMeetingKey: sql<string | null>`(
+        select linked_calendar_event.team_meeting_key
+        from ${calendarEvents} as linked_calendar_event
+        where linked_calendar_event.id = ${meetings.calendarEventId}
+        limit 1
+      )`,
       teamMeetingKey: meetings.teamMeetingKey,
       title: meetings.title,
       titleSource: meetings.titleSource,
@@ -1347,18 +1426,16 @@ async function findExistingMeeting(input: {
     })
     .from(meetings)
     .where(
-      input.teamMeetingKey
-        ? and(
-            eq(meetings.teamId, input.teamId),
-            or(
-              eq(meetings.calendarEventId, input.calendarEventId),
-              eq(meetings.teamMeetingKey, input.teamMeetingKey),
-            ),
-          )
-        : and(
-            eq(meetings.teamId, input.teamId),
-            eq(meetings.calendarEventId, input.calendarEventId),
-          ),
+      and(
+        eq(meetings.teamId, input.teamId),
+        or(
+          eq(meetings.calendarEventId, input.calendarEventId),
+          matchesSiblingCalendarCopy,
+          ...(input.teamMeetingKey
+            ? [eq(meetings.teamMeetingKey, input.teamMeetingKey)]
+            : []),
+        ),
+      ),
     )
     .limit(25);
 
@@ -1863,6 +1940,21 @@ function hasScheduledBotChange(
   );
 }
 
+function isMeetingOwnedByActiveSiblingCalendarEvent(input: {
+  currentCalendarEventId: string;
+  meeting: ExistingMeeting;
+  teamMeetingKey?: string | null;
+}) {
+  return Boolean(
+    input.teamMeetingKey &&
+      input.meeting.calendarEventId &&
+      input.meeting.calendarEventId !== input.currentCalendarEventId &&
+      input.meeting.linkedCalendarEventTeamMeetingKey ===
+        input.teamMeetingKey &&
+      isSupportedMeetingUrl(input.meeting.linkedCalendarEventMeetingUrl),
+  );
+}
+
 function needsUnchangedCalendarEventRepair(input: {
   calendarEventId: string;
   event: SyncedCalendarEvent;
@@ -1870,17 +1962,26 @@ function needsUnchangedCalendarEventRepair(input: {
   forceBotConfigRefresh?: boolean;
   meetingUrl: string | null;
   platform: MeetingLinkPlatform | null;
+  recoverRescheduledRecording?: boolean;
   startsAt: Date;
   endsAt: Date | null;
   teamMeetingKey?: string | null;
   title: string;
 }) {
-  if (input.forceBotConfigRefresh) {
+  const ownedByActiveSiblingCalendarEvent =
+    isMeetingOwnedByActiveSiblingCalendarEvent({
+      currentCalendarEventId: input.calendarEventId,
+      meeting: input.existingMeeting,
+      teamMeetingKey: input.teamMeetingKey,
+    });
+
+  if (input.forceBotConfigRefresh && !ownedByActiveSiblingCalendarEvent) {
     return true;
   }
 
   if (input.meetingUrl && input.platform) {
     if (
+      input.recoverRescheduledRecording ||
       shouldRecoverCalendarMeeting({
         endsAt: input.endsAt,
         meeting: input.existingMeeting,
@@ -1917,6 +2018,7 @@ function needsUnchangedCalendarEventRepair(input: {
 
     if (
       input.event.recallCalendarEventId &&
+      !ownedByActiveSiblingCalendarEvent &&
       (input.existingMeeting.calendarEventId !== input.calendarEventId ||
         isExistingBotOutsideRecallCalendarEvent(
           input.event,
@@ -1936,7 +2038,11 @@ function needsUnchangedCalendarEventRepair(input: {
   }
 
   return hasCalendarMeetingRecordChange(input.existingMeeting, {
-    calendarEventId: input.calendarEventId,
+    calendarEventId:
+      ownedByActiveSiblingCalendarEvent &&
+      input.existingMeeting.calendarEventId
+        ? input.existingMeeting.calendarEventId
+        : input.calendarEventId,
     endedAt: input.endsAt,
     meetingUrl: input.meetingUrl,
     platform: input.platform ?? input.existingMeeting.platform,
@@ -2000,6 +2106,71 @@ function shouldRecoverCalendarMeeting(input: {
       startsAt: input.startsAt,
     })
   );
+}
+
+async function canSafelyRecoverRescheduledRecording(input: {
+  endsAt: Date | null;
+  meeting: ExistingMeeting;
+  meetingUrl: string | null;
+  startsAt: Date;
+}) {
+  if (
+    input.meeting.status !== "recording" ||
+    input.meeting.recallRecordingId ||
+    !input.meeting.recallBotId ||
+    !input.meetingUrl ||
+    !isCalendarOccurrenceActiveOrUpcoming(input.startsAt, input.endsAt) ||
+    !hasScheduledBotChange(input.meeting, {
+      meetingUrl: input.meetingUrl,
+      startsAt: input.startsAt,
+    })
+  ) {
+    return false;
+  }
+
+  try {
+    const bot = await retrieveRecallBot(input.meeting.recallBotId);
+
+    if (!bot || typeof bot !== "object") {
+      return false;
+    }
+
+    const candidate = bot as {
+      recordings?: unknown;
+      status_changes?: unknown;
+    };
+    if (Array.isArray(candidate.recordings) && candidate.recordings.length > 0) {
+      return false;
+    }
+
+    const statusCodes = Array.isArray(candidate.status_changes)
+      ? candidate.status_changes
+          .map((status) => {
+            if (!status || typeof status !== "object") {
+              return null;
+            }
+
+            const code = (status as { code?: unknown }).code;
+            return typeof code === "string" ? code.toLowerCase() : null;
+          })
+          .filter((code): code is string => Boolean(code))
+      : [];
+    const latestStatus = statusCodes.at(-1);
+
+    return Boolean(
+      latestStatus &&
+        !statusCodes.includes("in_call_recording") &&
+        new Set([
+          "joining_call",
+          "in_waiting_room",
+          "call_ended",
+          "done",
+          "fatal",
+        ]).has(latestStatus),
+    );
+  } catch {
+    return false;
+  }
 }
 
 function shouldCreateNewRecordedMeetingOccurrence(input: {
