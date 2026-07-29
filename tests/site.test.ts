@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { REPOSITORY_URL, SITE_NAME, siteUrl } from "@/lib/site";
+import { REPOSITORY_URL, SITE_NAME, siteOrigin, siteUrl } from "@/lib/site";
 
 describe("site metadata", () => {
   afterEach(() => {
@@ -10,6 +10,7 @@ describe("site metadata", () => {
   it("uses the configured application origin", () => {
     vi.stubEnv("NEXT_PUBLIC_APP_URL", "https://meetings.example.com");
 
+    expect(siteOrigin()).toBe("https://meetings.example.com");
     expect(siteUrl("/pricing")).toBe("https://meetings.example.com/pricing");
   });
 

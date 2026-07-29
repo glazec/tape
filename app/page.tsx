@@ -9,6 +9,7 @@ import { LandingEnterprise } from "@/components/landing/landing-enterprise";
 import { LandingFaq } from "@/components/landing/landing-faq";
 import { LandingHero } from "@/components/landing/landing-hero";
 import { LandingLanguages } from "@/components/landing/landing-languages";
+import { LandingLaunchFilm } from "@/components/landing/landing-launch-film";
 import { LandingMemory } from "@/components/landing/landing-memory";
 import { LandingNav } from "@/components/landing/landing-nav";
 import { LandingPartners } from "@/components/landing/landing-partners";
@@ -100,6 +101,7 @@ export default async function LandingPage() {
       />
       <LandingNav />
       <LandingHero />
+      <LandingLaunchFilm />
       <LandingPartners />
       <LandingMemory />
       <LandingLanguages />

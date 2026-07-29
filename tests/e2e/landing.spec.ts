@@ -11,6 +11,20 @@ test("shows the Tape landing page", async ({ page }) => {
   await expect(
     page.getByRole("link", { name: "Sign in to Tape" }).first(),
   ).toHaveAttribute("href", "/auth/sign-in");
+  const launchFilm = page.getByLabel("Tape product launch film");
+  await expect(launchFilm).toBeVisible();
+  await expect(launchFilm).toHaveAttribute(
+    "poster",
+    "/media/tape-launch-v4-poster.jpg",
+  );
+  await expect(launchFilm.locator("source")).toHaveAttribute(
+    "src",
+    "/media/tape-launch-v4.mp4",
+  );
+  await expect(launchFilm.locator("track")).toHaveAttribute(
+    "src",
+    "/media/tape-launch-v4-en.vtt",
+  );
   await expect(page.getByText("01 · Memory")).toBeVisible();
   await expect(page.getByText("Google Meet", { exact: true })).toBeVisible();
   await expect(

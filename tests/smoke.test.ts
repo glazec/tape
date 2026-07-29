@@ -34,6 +34,8 @@ describe("landing page smoke test", () => {
 
     expect(html).toContain("tape-lockup.svg");
     expect(html).toContain("Every conversation,");
+    expect(html).toContain("/media/tape-launch-v4.mp4");
+    expect(html).toContain("/media/tape-launch-v4-en.vtt");
     expect(html).toContain("01 · Memory");
     expect(html).toContain("02 · Every language");
     expect(html).toContain("03 · Agents");
