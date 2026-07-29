@@ -1164,7 +1164,7 @@ describe("listMeetingsForWorkspace", () => {
     expect(orderBy.mock.calls[0]).toHaveLength(3);
   });
 
-  it("shows only the next 3 scheduled meetings that have a bot", async () => {
+  it("shows past in person meetings and only the next 3 scheduled bot meetings", async () => {
     select
       .mockReturnValueOnce({
         from: () => ({
@@ -1212,6 +1212,14 @@ describe("listMeetingsForWorkspace", () => {
                   recallBotId: null,
                   startedAt: "2026-06-28T13:00:00.000Z",
                 }),
+                meetingRow({
+                  id: "77777777-7777-4777-8777-777777777777",
+                  title: "In person meeting",
+                  platform: "in_person",
+                  status: "scheduled",
+                  recallBotId: null,
+                  startedAt: "2026-06-27T13:00:00.000Z",
+                }),
               ]),
             }),
           }),
@@ -1241,6 +1249,7 @@ describe("listMeetingsForWorkspace", () => {
       expect.objectContaining({ title: "Next bot join" }),
       expect.objectContaining({ title: "Second bot join" }),
       expect.objectContaining({ title: "Third bot join" }),
+      expect.objectContaining({ title: "In person meeting" }),
       expect.objectContaining({ title: "Ready transcript" }),
     ]);
   });
@@ -2245,6 +2254,7 @@ describe("getMeetingDashboardSummaryForWorkspace", () => {
 function meetingRow(overrides: {
   id: string;
   title: string;
+  platform?: "google_meet" | "in_person";
   status:
     | "scheduled"
     | "recording"
@@ -2259,7 +2269,7 @@ function meetingRow(overrides: {
     id: overrides.id,
     teamId: "team_123",
     title: overrides.title,
-    platform: "google_meet",
+    platform: overrides.platform ?? "google_meet",
     status: overrides.status,
     transcriptJobStatus: null,
     recallBotId: overrides.recallBotId ?? null,

@@ -511,7 +511,9 @@ function shouldShowMeetingInLibrary(
   scheduledBotMeetingIds: Set<string>,
 ) {
   return (
-    meeting.status !== "scheduled" || scheduledBotMeetingIds.has(meeting.id)
+    meeting.status !== "scheduled" ||
+    meeting.platform === "in_person" ||
+    scheduledBotMeetingIds.has(meeting.id)
   );
 }
 
