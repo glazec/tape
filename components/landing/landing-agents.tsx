@@ -12,15 +12,15 @@ import {
 const POINTS: readonly Point[] = [
   {
     title: "Your assistant, not ours",
-    body: "Tape publishes your archive over MCP, so Claude, Cursor, or whatever you already work in can query it directly. Read only, and scoped to what you are allowed to see.",
+    body: "Tape publishes your archive over MCP, so Claude, Cursor, or whatever you already work in can query it directly. Read only, and no chatbot of ours to learn.",
+  },
+  {
+    title: "It only sees what you can see",
+    body: "The permission boundary is enforced by the database itself, not by the wording of a prompt. An assistant connected to Tape reaches exactly the meetings you could open by hand, and nothing beyond them.",
   },
   {
     title: "Search that reaches every word",
-    body: "Full text across transcripts, speakers, titles, and detected entities on the web too, with the recording one click from any result.",
-  },
-  {
-    title: "Yours to keep",
-    body: "Recordings, transcripts, and audio stay in your workspace. Exportable whenever you want them, and never used to train public models.",
+    body: "Full text across transcripts, speakers, titles, and detected entities, with the recording one click from any result.",
   },
 ];
 
@@ -32,11 +32,11 @@ const RESULTS = [
 
 export function LandingAgents() {
   return (
-    <section id="agents" className="border-b border-ink/8 bg-paper">
+    <section id="agents" className="border-b border-ink/8 bg-mist/70">
       <Container className="py-20 lg:py-28">
         <div className="grid items-end gap-x-16 gap-y-10 [&>*]:min-w-0 lg:grid-cols-[minmax(0,30rem)_minmax(0,1fr)]">
           <FadeIn>
-            <SectionLabel>04 · Agents</SectionLabel>
+            <SectionLabel>03 · Agents</SectionLabel>
             <SectionHeading>
               Your archive,
               <br />
@@ -49,7 +49,7 @@ export function LandingAgents() {
             </Lede>
           </FadeIn>
           <FadeIn delay={0.1}>
-            <div className="rounded-xl border border-ink/10 bg-mist/70 p-6 font-mono text-[0.8125rem] leading-6 sm:p-7">
+            <div className="rounded-xl border border-ink/10 bg-paper p-6 font-mono text-[0.8125rem] leading-6 shadow-[0_20px_48px_-32px_oklch(0.195_0.012_30/0.22)] sm:p-7">
               <p className="text-graphite">
                 <span className="text-brand-ink">you</span> · ask your assistant
               </p>

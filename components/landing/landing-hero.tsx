@@ -94,10 +94,10 @@ export function LandingHero() {
                 <em className="italic text-brand">on the record.</em>
               </h1>
               <p className="mt-7 max-w-[46ch] text-lede text-pretty text-graphite">
-                Bots join your Zoom and Meet calls. A local recorder covers the
-                room you are actually in. Every word comes back transcribed,
-                translated, and searchable, by your team or by your AI
-                assistant.
+                Nothing to pick before the call, nothing to file after it. Every
+                conversation comes back transcribed in the language it happened
+                in, readable in Chinese or English, and open to the AI
+                assistant you already work in.
               </p>
               <div className="mt-9 flex flex-wrap items-center gap-x-8 gap-y-4">
                 <Link
@@ -107,8 +107,8 @@ export function LandingHero() {
                   Sign in to Tape
                 </Link>
                 <a
-                  href="#capture"
-                  className="text-[0.9375rem] text-graphite decoration-ink/25 underline-offset-[6px] transition-colors hover:text-ink hover:decoration-ink underline"
+                  href="#memory"
+                  className="rounded-sm text-[0.9375rem] text-graphite underline decoration-ink/25 underline-offset-[6px] transition-colors hover:text-ink hover:decoration-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-4"
                 >
                   See how it works
                 </a>

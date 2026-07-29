@@ -9,16 +9,24 @@ const POINTS: readonly Point[] = [
     body: "Each team gets its own archive, its own members, and its own calendar connections. Nothing leaks sideways.",
   },
   {
-    title: "Nobody wonders what they missed",
-    body: "Share a recurring series once and a colleague receives every future instance of it, without having to ask again.",
-  },
-  {
     title: "Access that matches the room",
     body: "Members see their team's meetings. External readers see only what was handed to them, and nothing else in the archive.",
   },
   {
     title: "Links that stop working",
     body: "Send a transcript outside the workspace with a link that expires. Access ends when you decide it ends.",
+  },
+  {
+    title: "Nobody wonders what they missed",
+    body: "Share a recurring series once and a colleague receives every future instance of it, without having to ask again.",
+  },
+  {
+    title: "Your transcripts leave whenever you want",
+    body: "Take any meeting out as plain text and its audio as an mp3, whenever you like. Reading your own record is not something we would put behind a plan.",
+  },
+  {
+    title: "Never training a public model",
+    body: "Recordings, transcripts, and audio sit in a database you control and are not handed to third parties to train on. The source is on GitHub if you would rather check than trust.",
   },
 ];
 

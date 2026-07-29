@@ -5,16 +5,16 @@ import { SplitSection, type Point } from "./landing-section";
 
 const POINTS: readonly Point[] = [
   {
-    title: "Thirty languages, transcribed properly",
-    body: "Mandarin, Japanese, Korean, German, Spanish, and more come back as clean text rather than phonetic guesswork, including calls where two languages trade off mid-sentence.",
+    title: "Nothing to set before the call",
+    body: "Other tools make you name the language first and mangle the meeting when you guess wrong. Tape picks it up from the audio, so a sentence that starts in English and finishes in Mandarin still arrives as one clean line.",
   },
   {
-    title: "Translation next to the original",
-    body: "Every line keeps its source text beside the translation, so you can read at speed and still check exactly what was said.",
+    title: "Chinese and English, line for line",
+    body: "Every line keeps its original text beside the translation, so you can read at speed and still check exactly what was said.",
   },
   {
-    title: "One archive, whatever the language",
-    body: "Search in the language you think in and find the meeting that happened in another. Speakers, timestamps, and audio stay attached either way.",
+    title: "Fix a word and it stays fixed",
+    body: "Names and jargon that came back wrong are yours to correct. The edit holds for everyone reading the meeting afterwards.",
   },
 ];
 
@@ -25,9 +25,9 @@ export function LandingLanguages() {
       label="02 · Every language"
       heading={
         <>
-          Read it in
+          Two languages,
           <br />
-          <em className="italic text-graphite">your language.</em>
+          <em className="italic text-graphite">one transcript.</em>
         </>
       }
       points={POINTS}

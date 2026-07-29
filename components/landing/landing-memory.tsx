@@ -6,7 +6,7 @@ import { SplitSection, type Point } from "./landing-section";
 const POINTS: readonly Point[] = [
   {
     title: "Recurring calls become one thread",
-    body: "Tape groups a series on its own, so a weekly sync reads as a single running conversation instead of forty unrelated files.",
+    body: "Tape groups a series as the meetings arrive, so a weekly sync reads as a single running conversation instead of forty unrelated files. There are no folders to keep tidy.",
   },
   {
     title: "People, companies, and numbers, picked out",
@@ -22,7 +22,7 @@ export function LandingMemory() {
   return (
     <SplitSection
       id="memory"
-      label="03 · Memory"
+      label="01 · Memory"
       heading={
         <>
           Context that

@@ -9,16 +9,16 @@ import { SplitSection, Still, type Point } from "./landing-section";
 
 const POINTS: readonly Point[] = [
   {
-    title: "Bots cover the scheduled calls",
-    body: "Connect a calendar and Tape joins your Zoom and Google Meet meetings on its own. Nothing to install, no invite to remember, no host to nudge.",
+    title: "No bot in the room",
+    body: "The macOS app records your microphone and system audio on your own machine. Nothing joins the call, nothing announces itself, and the conversation in front of you lands in the same archive as everything else.",
   },
   {
-    title: "A local recorder covers the room",
-    body: "The macOS app records your microphone and system audio on your own machine, so in-person conversations and ad hoc calls land in the same archive as everything else.",
+    title: "Or let it cover the calendar for you",
+    body: "Connect a calendar and Tape can join your Zoom and Google Meet meetings on its own. Useful when you are double booked, and entirely optional.",
   },
   {
     title: "Speakers separated, then named",
-    body: "Local recordings are split by voice and matched to the people in the room, so every line arrives attached to whoever said it.",
+    body: "Recordings are split by voice and matched to the people in the room, so every line arrives attached to whoever said it.",
   },
 ];
 
@@ -26,7 +26,7 @@ export function LandingCapture() {
   return (
     <SplitSection
       id="capture"
-      label="01 · Capture"
+      label="04 · Capture"
       heading={
         <>
           It records
@@ -37,7 +37,6 @@ export function LandingCapture() {
       points={POINTS}
       flip
       stillWidth="narrow"
-      surface="mist"
       still={
         <Still className="mx-auto max-w-[22rem] rounded-[1.75rem] bg-paper">
           <Image
