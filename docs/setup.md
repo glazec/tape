@@ -37,7 +37,7 @@ Fill these values in `.env.local` for the complete application:
 | Database | `DATABASE_URL`, `DATABASE_AUTHENTICATED_URL` |
 | Neon Auth | `NEON_AUTH_JWKS_URL`, `NEON_AUTH_ISSUER`, `NEON_AUTH_COOKIE_SECRET` |
 | R2 storage | `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET` |
-| Recall.ai | `RECALL_API_KEY`, `RECALL_API_BASE_URL`, `RECALL_WEBHOOK_SECRET` |
+| Recall.ai | `RECALL_API_KEY`, `RECALL_API_BASE_URL`, `RECALL_WEBHOOK_SECRET`, `RECALL_REALTIME_WEBHOOK_URL` |
 | ElevenLabs | `ELEVENLABS_API_KEY`, `ELEVENLABS_WEBHOOK_SECRET` |
 | OpenRouter | `OPENROUTER_API_KEY`, `OPENROUTER_MODEL` |
 | Inngest | `INNGEST_EVENT_KEY`, `INNGEST_SIGNING_KEY` |
@@ -49,7 +49,9 @@ Generate the Neon Auth cookie secret locally:
 openssl rand -base64 32
 ```
 
-`RECALL_API_BASE_URL` must match the region of the Recall.ai API key. `RECALL_WEBHOOK_SECRET` must begin with `whsec_`. For local browser access, use `NEXT_PUBLIC_APP_URL=http://localhost:3000` until webhook testing requires a public origin.
+`RECALL_API_BASE_URL` must match the region of the Recall.ai API key. `RECALL_WEBHOOK_SECRET` must begin with `whsec_`. `RECALL_REALTIME_WEBHOOK_URL` must be the durable HTTPS route that receives cloud bot events, such as `https://tape.example.com/api/recall/realtime/webhook`. Keep it pointed at the hosted application even when `NEXT_PUBLIC_APP_URL` uses localhost or a temporary development tunnel. This prevents local calendar syncs from replacing Zoom and Google Meet bot callbacks with an unavailable local route.
+
+For local browser access, use `NEXT_PUBLIC_APP_URL=http://localhost:3000` until other webhook testing requires a public origin.
 
 `DATABASE_URL` is the Neon owner connection used only by migrations and
 privileged background jobs. `DATABASE_AUTHENTICATED_URL` must use a separate
@@ -163,12 +165,12 @@ background reconciliation removes scheduled bots for exhausted workspaces.
 
 ## Public callbacks
 
-Recall.ai, ElevenLabs, Google Calendar OAuth, and Inngest require a stable public HTTPS application origin. Configure these routes against `NEXT_PUBLIC_APP_URL`:
+Recall.ai, ElevenLabs, Google Calendar OAuth, and Inngest require a stable public HTTPS application origin. Configure the Recall realtime route with `RECALL_REALTIME_WEBHOOK_URL`. Configure the remaining routes against `NEXT_PUBLIC_APP_URL`:
 
 | Provider | Route |
 | --- | --- |
 | Recall.ai bot status | `/api/recall/webhook` |
-| Recall.ai realtime events | `/api/recall/realtime/webhook` |
+| Recall.ai realtime events | `RECALL_REALTIME_WEBHOOK_URL` |
 | Recall.ai Calendar V2 | `/api/recall/calendar/webhook` |
 | ElevenLabs transcription | `/api/elevenlabs/webhook` |
 | Google Calendar OAuth | `/api/calendar/oauth/callback` |
@@ -180,7 +182,7 @@ For the repository tunnel script, install `cloudflared`, set `CLOUDFLARED_TOKEN`
 ./scripts/dev-tunnel.sh
 ```
 
-Update `NEXT_PUBLIC_APP_URL` to that HTTPS origin and restart the development server. Sync Inngest after the public route is reachable:
+Update `NEXT_PUBLIC_APP_URL` to that HTTPS origin and restart the development server only when testing the other callbacks through the tunnel. Keep `RECALL_REALTIME_WEBHOOK_URL` on the durable hosted route when local and production use the same Recall.ai account. Sync Inngest after the public route is reachable:
 
 ```bash
 npm run inngest:sync
@@ -408,7 +410,7 @@ See [testing architecture](testing.md) for the individual suites, coverage thres
 
 ## Production checklist
 
-1. Use production credentials and a production `NEXT_PUBLIC_APP_URL`.
+1. Use production credentials, a production `NEXT_PUBLIC_APP_URL`, and a durable production `RECALL_REALTIME_WEBHOOK_URL`.
 2. Confirm the production build passed its migration lineage check and applied pending migrations.
 3. Register every callback route with its provider.
 4. Configure the R2 CORS origin.

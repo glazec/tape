@@ -1266,6 +1266,57 @@ describe("vendor job creation", () => {
     });
   });
 
+  it.each([
+    {
+      localAppUrl: "https://meeting-note-dev.inevitable.tech",
+      meetingUrl: "https://zoom.us/j/123456789",
+      platform: "Zoom while local is running",
+    },
+    {
+      localAppUrl: "",
+      meetingUrl: "https://meet.google.com/abc-defg-hij",
+      platform: "Google Meet while local is offline",
+    },
+  ])(
+    "keeps $platform chat on the durable Recall webhook",
+    async ({ localAppUrl, meetingUrl }) => {
+      vi.stubEnv("RECALL_API_KEY", "recall-key\n");
+      vi.stubEnv("NEXT_PUBLIC_APP_URL", localAppUrl);
+      vi.stubEnv(
+        "RECALL_REALTIME_WEBHOOK_URL",
+        "https://tape.example.com/api/recall/realtime/webhook",
+      );
+      const fetchMock = vi.fn().mockResolvedValue(
+        new Response(JSON.stringify({ id: "bot_123" }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+      );
+      vi.stubGlobal("fetch", fetchMock);
+
+      await scheduleRecallBot({
+        meetingUrl,
+        webhookUrl: "https://tape.example.com/api/recall/webhook",
+      });
+
+      const [, init] = fetchMock.mock.calls[0];
+      const body = JSON.parse(String(init.body));
+
+      expect(body.meeting_url).toBe(meetingUrl);
+      expect(body.recording_config.realtime_endpoints).toEqual([
+        {
+          type: "webhook",
+          url: "https://tape.example.com/api/recall/realtime/webhook",
+          events: [
+            "participant_events.chat_message",
+            "participant_events.speech_on",
+            "participant_events.speech_off",
+          ],
+        },
+      ]);
+    },
+  );
+
   it("creates Recall Desktop SDK uploads with participant realtime events", async () => {
     vi.stubEnv("RECALL_API_KEY", "recall-key\n");
     vi.stubEnv("RECALL_WEBHOOK_SECRET", recallWebhookSecret);
@@ -1407,9 +1458,16 @@ describe("vendor job creation", () => {
     );
   });
 
-  it("updates a scheduled Recall bot with changed calendar meeting details", async () => {
+  it("keeps local calendar bot updates on the durable Recall webhook", async () => {
     vi.stubEnv("RECALL_API_KEY", "recall-key\n");
-    vi.stubEnv("NEXT_PUBLIC_APP_URL", "https://app.example.com");
+    vi.stubEnv(
+      "NEXT_PUBLIC_APP_URL",
+      "https://meeting-note-dev.inevitable.tech",
+    );
+    vi.stubEnv(
+      "RECALL_REALTIME_WEBHOOK_URL",
+      "https://tape.example.com/api/recall/realtime/webhook",
+    );
     const fetchMock = vi.fn().mockResolvedValue(
       new Response(JSON.stringify({ id: "bot_123" }), {
         status: 200,
@@ -1463,7 +1521,7 @@ describe("vendor job creation", () => {
         realtime_endpoints: [
           {
             type: "webhook",
-            url: "https://app.example.com/api/recall/realtime/webhook",
+            url: "https://tape.example.com/api/recall/realtime/webhook",
             events: [
               "participant_events.chat_message",
               "participant_events.speech_on",

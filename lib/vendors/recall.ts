@@ -189,6 +189,12 @@ const optionalRecallApiBaseUrl = z.preprocess(
   z.string().trim().url().optional(),
 );
 
+const optionalRecallRealtimeWebhookUrl = z.preprocess(
+  (value) =>
+    typeof value === "string" && value.trim() === "" ? undefined : value,
+  z.string().trim().url().optional(),
+);
+
 const recallApiEnvSchema = z.object({
   RECALL_API_KEY: z.string().trim().min(1),
   RECALL_API_BASE_URL: optionalRecallApiBaseUrl,
@@ -196,6 +202,10 @@ const recallApiEnvSchema = z.object({
 
 const recallApiBaseUrlEnvSchema = z.object({
   RECALL_API_BASE_URL: optionalRecallApiBaseUrl,
+});
+
+const recallRealtimeWebhookEnvSchema = z.object({
+  RECALL_REALTIME_WEBHOOK_URL: optionalRecallRealtimeWebhookUrl,
 });
 
 const DEFAULT_RECALL_API_BASE_URL = "https://us-east-1.recall.ai";
@@ -251,22 +261,40 @@ function buildRecallRealtimeWebhookUrl(
   sourceUrl?: string,
   options?: { desktopSdk?: boolean },
 ) {
-  const baseUrl = sourceUrl ?? process.env.NEXT_PUBLIC_APP_URL?.trim();
+  const configuredUrl = recallRealtimeWebhookEnvSchema.parse(
+    process.env,
+  ).RECALL_REALTIME_WEBHOOK_URL;
+  const baseUrl =
+    configuredUrl ?? sourceUrl ?? process.env.NEXT_PUBLIC_APP_URL?.trim();
 
   if (!baseUrl) {
-    throw new Error("NEXT_PUBLIC_APP_URL is required");
+    throw new Error(
+      "RECALL_REALTIME_WEBHOOK_URL or NEXT_PUBLIC_APP_URL is required",
+    );
   }
 
-  const url = new URL(
-    options?.desktopSdk
-      ? `${RECALL_REALTIME_WEBHOOK_PATH}/`
-      : RECALL_REALTIME_WEBHOOK_PATH,
-    baseUrl,
-  );
+  const url = configuredUrl
+    ? new URL(configuredUrl)
+    : new URL(RECALL_REALTIME_WEBHOOK_PATH, baseUrl);
+
+  if (
+    configuredUrl &&
+    url.pathname.replace(/\/$/, "") !== RECALL_REALTIME_WEBHOOK_PATH
+  ) {
+    throw new Error(
+      `RECALL_REALTIME_WEBHOOK_URL must use ${RECALL_REALTIME_WEBHOOK_PATH}`,
+    );
+  }
 
   if (options?.desktopSdk) {
+    url.pathname = `${RECALL_REALTIME_WEBHOOK_PATH}/`;
     url.searchParams.set("token", createRecallDesktopRealtimeWebhookToken());
+  } else {
+    url.pathname = RECALL_REALTIME_WEBHOOK_PATH;
+    url.search = "";
   }
+
+  url.hash = "";
 
   return url.toString();
 }

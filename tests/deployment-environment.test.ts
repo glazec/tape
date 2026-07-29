@@ -6,9 +6,16 @@ import {
 } from "@/scripts/check-deployment-env.mjs";
 
 function validEnvironment() {
-  return Object.fromEntries(
-    requiredDeploymentVariables.map((name) => [name, `${name.toLowerCase()}_value`]),
-  ) as Record<string, string>;
+  return {
+    ...Object.fromEntries(
+      requiredDeploymentVariables.map((name) => [
+        name,
+        `${name.toLowerCase()}_value`,
+      ]),
+    ),
+    RECALL_REALTIME_WEBHOOK_URL:
+      "https://meetings.example.com/api/recall/realtime/webhook",
+  } as Record<string, string>;
 }
 
 describe("deployment environment", () => {
@@ -58,6 +65,43 @@ describe("deployment environment", () => {
       "NEXT_PUBLIC_APP_URL must use HTTPS in production",
       "NEXT_PUBLIC_ONESIGNAL_APP_ID and ONESIGNAL_REST_API_KEY must be configured together",
     ]);
+  });
+
+  it("requires a durable HTTPS Recall realtime webhook route", () => {
+    const insecureEnvironment = {
+      ...validEnvironment(),
+      DATABASE_AUTHENTICATED_URL:
+        "postgresql://app:password@db.example.com/tape",
+      DATABASE_URL: "postgresql://user:password@db.example.com/tape",
+      NEON_AUTH_ISSUER: "https://auth.example.com",
+      NEON_AUTH_JWKS_URL: "https://auth.example.com/.well-known/jwks.json",
+      NEON_AUTH_COOKIE_SECRET: "a".repeat(32),
+      NEXT_PUBLIC_APP_URL: "https://meetings.example.com",
+      RECALL_API_BASE_URL: "https://us-east-1.recall.ai",
+      RECALL_REALTIME_WEBHOOK_URL:
+        "http://localhost:3000/api/recall/realtime/webhook",
+      RECALL_WEBHOOK_SECRET: "whsec_example",
+    };
+    const wrongRouteEnvironment = {
+      ...insecureEnvironment,
+      RECALL_REALTIME_WEBHOOK_URL:
+        "https://meetings.example.com/api/recall/webhook?source=local",
+    };
+
+    expect(
+      getDeploymentEnvironmentIssues(insecureEnvironment, {
+        production: true,
+      }),
+    ).toContain(
+      "RECALL_REALTIME_WEBHOOK_URL must use HTTPS in production",
+    );
+    expect(
+      getDeploymentEnvironmentIssues(wrongRouteEnvironment, {
+        production: true,
+      }),
+    ).toContain(
+      "RECALL_REALTIME_WEBHOOK_URL must use /api/recall/realtime/webhook without a query or fragment",
+    );
   });
 
   it("rejects an authenticated connection using the owner role", () => {

@@ -124,6 +124,69 @@ describe("answerRecallChatMessage", () => {
     });
   });
 
+  it.each([
+    {
+      label: "Google Meet direct chat",
+      payload: directMessagePayload,
+      recipient: "16778240",
+    },
+    {
+      label: "Zoom room chat",
+      payload: {
+        ...directMessagePayload,
+        data: {
+          ...directMessagePayload.data,
+          data: {
+            ...directMessagePayload.data.data,
+            data: {
+              text: "@Tape Notetaker what is the latest market data?",
+              to: "everyone",
+            },
+          },
+        },
+      },
+      recipient: "everyone",
+    },
+  ])(
+    "sends a visible retry message when answering fails in $label",
+    async ({ payload, recipient }) => {
+      const consoleError = vi
+        .spyOn(console, "error")
+        .mockImplementation(() => undefined);
+      generateOpenRouterChatReply.mockRejectedValue(
+        new Error("OpenRouter unavailable"),
+      );
+      const event = normalizeRecallChatWebhook(payload);
+
+      try {
+        await expect(
+          answerRecallChatMessage(event, {
+            idempotencyKey: "msg_current",
+          }),
+        ).resolves.toEqual({
+          action: "failed",
+          reason: "answer_unavailable",
+          reply: "I couldn’t answer that just now. Please try again.",
+        });
+        expect(sendRecallChatMessage).toHaveBeenCalledWith({
+          botId: "bot_123",
+          message: "I couldn’t answer that just now. Please try again.",
+          to: recipient,
+        });
+        expect(consoleError).toHaveBeenCalledWith(
+          "Recall chat answer generation failed",
+          expect.objectContaining({
+            botId: "bot_123",
+            meetingId: "11111111-1111-4111-8111-111111111111",
+            participantId: "16778240",
+          }),
+        );
+      } finally {
+        consoleError.mockRestore();
+      }
+    },
+  );
+
   it("feeds the previous five chats to OpenRouter in chronological order", async () => {
     listRecentRecallChatWebhookPayloads.mockResolvedValue(
       Array.from({ length: 5 }, (_, index) => ({

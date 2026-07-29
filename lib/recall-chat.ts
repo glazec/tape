@@ -54,6 +54,9 @@ export function normalizeRecallChatWebhook(payload: unknown) {
 
 export type RecallChatMessage = ReturnType<typeof normalizeRecallChatWebhook>;
 
+const RECALL_CHAT_UNAVAILABLE_REPLY =
+  "I couldn’t answer that just now. Please try again.";
+
 export function shouldAnswerRecallChatMessage(event: RecallChatMessage):
   | { shouldAnswer: true; question: string }
   | {
@@ -122,27 +125,49 @@ export async function answerRecallChatMessage(
     }
   }
 
-  const recentMessages = await getRecentRecallChatMessages({
-    botId: event.botId,
-    directMessageParticipantId:
-      event.to === "only_bot" ? String(event.participant.id) : null,
-    excludeIdempotencyKey: context.idempotencyKey,
-  });
-  const reply = await generateOpenRouterChatReply({
-    botName: getEventBotName(event),
-    meetingId,
-    question: decision.question,
-    participantName: event.participant.name,
-    recentMessages,
-  });
+  const replyTarget =
+    event.to === "only_bot" ? String(event.participant.id) : "everyone";
+  let reply: string;
+
+  try {
+    const recentMessages = await getRecentRecallChatMessages({
+      botId: event.botId,
+      directMessageParticipantId:
+        event.to === "only_bot" ? String(event.participant.id) : null,
+      excludeIdempotencyKey: context.idempotencyKey,
+    });
+    reply = await generateOpenRouterChatReply({
+      botName: getEventBotName(event),
+      meetingId,
+      question: decision.question,
+      participantName: event.participant.name,
+      recentMessages,
+    });
+  } catch (error) {
+    console.error("Recall chat answer generation failed", {
+      botId: event.botId,
+      error,
+      meetingId,
+      participantId: String(event.participant.id),
+    });
+
+    await sendRecallChatMessage({
+      botId: event.botId,
+      message: RECALL_CHAT_UNAVAILABLE_REPLY,
+      to: replyTarget,
+    });
+
+    return {
+      action: "failed" as const,
+      reason: "answer_unavailable" as const,
+      reply: RECALL_CHAT_UNAVAILABLE_REPLY,
+    };
+  }
 
   await sendRecallChatMessage({
     botId: event.botId,
     message: reply,
-    to:
-      event.to === "only_bot"
-        ? String(event.participant.id)
-        : "everyone",
+    to: replyTarget,
   });
 
   return { action: "replied" as const, reply };

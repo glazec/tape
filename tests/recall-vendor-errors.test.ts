@@ -98,6 +98,27 @@ describe("Recall vendor failure contracts", () => {
     await expect(deleteScheduledRecallBot({ botId: "bot_1" })).resolves.toEqual({ deleted: true });
   });
 
+  it("does not remove an active bot through scheduled deletion", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(null, {
+        status: 405,
+        statusText: "Method Not Allowed",
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(
+      deleteScheduledRecallBot({ botId: "bot_1" }),
+    ).rejects.toThrow(
+      "Recall bot deletion failed with 405 Method Not Allowed",
+    );
+    expect(fetchMock).toHaveBeenCalledOnce();
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://us-east-1.recall.ai/api/v1/bot/bot_1/",
+      expect.objectContaining({ method: "DELETE" }),
+    );
+  });
+
   it("returns null for malformed recording media collections", () => {
     expect(findRecallRecordingMediaUrl(null)).toBeNull();
     expect(findRecallRecordingMediaUrl({ recordings: "invalid" })).toBeNull();

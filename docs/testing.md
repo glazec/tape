@@ -85,6 +85,19 @@ and server exporter tests:
 npx vitest run tests/telemetry-config.test.ts tests/telemetry-client.test.ts tests/telemetry-route.test.ts tests/telemetry-server.test.ts
 ```
 
+For Recall bot scheduling or meeting chat changes, verify Zoom and Google Meet
+callback routing, mention handling, visible provider failure replies, signed
+route processing, and OpenRouter tool use:
+
+```bash
+npx vitest run tests/deployment-environment.test.ts tests/ingest.test.ts tests/recall-calendar.test.ts tests/recall-chat.test.ts tests/recall-chat-answer.test.ts tests/recall-chat-route.test.ts tests/openrouter-chat.test.ts
+```
+
+These tests must keep `RECALL_REALTIME_WEBHOOK_URL` stable when
+`NEXT_PUBLIC_APP_URL` points at a development tunnel or is empty. Provider
+answer failures must produce a visible retry message in the same direct or room
+chat and a structured server error log.
+
 After deployment, generate one page view and one safe test error. In SigNoz,
 filter logs by resource attribute `service.name = tape-web`, then confirm
 `frontend.page_view` and the test error are present. Confirm a Next.js request

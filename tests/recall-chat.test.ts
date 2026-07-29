@@ -117,4 +117,38 @@ describe("Recall chat messages", () => {
       question: "what did we decide?",
     });
   });
+
+  it.each([
+    ["Zoom", "zoom"],
+    ["Google Meet", "google_meet"],
+  ])("answers the exact custom bot mention from %s chat", (_label, platform) => {
+    const customMention = normalizeRecallChatWebhook({
+      ...chatPayload,
+      data: {
+        ...chatPayload.data,
+        data: {
+          ...chatPayload.data.data,
+          participant: {
+            ...chatPayload.data.data.participant,
+            platform,
+          },
+          data: {
+            text: "@IOSG Old Friends what i the sk hynix price?",
+            to: "everyone",
+          },
+        },
+        bot: {
+          id: "bot_123",
+          metadata: {
+            botName: "IOSG Old Friends",
+          },
+        },
+      },
+    });
+
+    expect(shouldAnswerRecallChatMessage(customMention)).toEqual({
+      shouldAnswer: true,
+      question: "what i the sk hynix price?",
+    });
+  });
 });

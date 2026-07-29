@@ -88,7 +88,7 @@ Team settings shows remaining workspace credit plus current month personal and o
 | Vocabulary enrichment | Optional Twenty CRM names and companies for the IOSG workspace only |
 | Agent access | A separate FastMCP server with caller scoped read only tools |
 
-The database is the source of truth for meetings, access, jobs, and transcript records. Vendor payloads and media URLs do not replace local access checks.
+The database is the source of truth for meetings, access, jobs, and transcript records. Vendor payloads and media URLs do not replace local access checks. Recall cloud bots use the dedicated `RECALL_REALTIME_WEBHOOK_URL` so Zoom and Google Meet chat delivery remains on the hosted application when a local development tunnel starts or stops.
 
 ## Documentation
 
@@ -139,7 +139,7 @@ curl --fail http://127.0.0.1:3001/health
 IMAGE_WORKER_URL=https://your-worker.example npm run inngest:sync:image-worker
 ```
 
-After deploying or changing `NEXT_PUBLIC_APP_URL`, register the provider callbacks and sync the web Inngest application:
+After deploying or changing `NEXT_PUBLIC_APP_URL` or `RECALL_REALTIME_WEBHOOK_URL`, register the provider callbacks and sync the web Inngest application:
 
 ```bash
 npm run inngest:sync

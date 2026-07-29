@@ -14,6 +14,7 @@ export const requiredDeploymentVariables = [
   "RECALL_API_KEY",
   "RECALL_API_BASE_URL",
   "RECALL_WEBHOOK_SECRET",
+  "RECALL_REALTIME_WEBHOOK_URL",
   "ELEVENLABS_API_KEY",
   "ELEVENLABS_WEBHOOK_SECRET",
   "OPENROUTER_API_KEY",
@@ -35,6 +36,7 @@ export function getDeploymentEnvironmentIssues(
     "NEON_AUTH_JWKS_URL",
     "NEON_AUTH_ISSUER",
     "RECALL_API_BASE_URL",
+    "RECALL_REALTIME_WEBHOOK_URL",
     "NEXT_PUBLIC_APP_URL",
   ]) {
     const value = source[name]?.trim();
@@ -46,6 +48,11 @@ export function getDeploymentEnvironmentIssues(
 
   const appUrl = source.NEXT_PUBLIC_APP_URL?.trim();
   const parsedAppUrl = appUrl ? parseHttpUrl(appUrl) : null;
+  const recallRealtimeWebhookUrl =
+    source.RECALL_REALTIME_WEBHOOK_URL?.trim();
+  const parsedRecallRealtimeWebhookUrl = recallRealtimeWebhookUrl
+    ? parseHttpUrl(recallRealtimeWebhookUrl)
+    : null;
 
   if (
     production &&
@@ -56,10 +63,32 @@ export function getDeploymentEnvironmentIssues(
   }
 
   if (
+    production &&
+    parsedRecallRealtimeWebhookUrl &&
+    parsedRecallRealtimeWebhookUrl.protocol !== "https:"
+  ) {
+    issues.push(
+      "RECALL_REALTIME_WEBHOOK_URL must use HTTPS in production",
+    );
+  }
+
+  if (
     parsedAppUrl &&
     (parsedAppUrl.pathname !== "/" || parsedAppUrl.search || parsedAppUrl.hash)
   ) {
     issues.push("NEXT_PUBLIC_APP_URL must be an origin without a path or query");
+  }
+
+  if (
+    parsedRecallRealtimeWebhookUrl &&
+    (parsedRecallRealtimeWebhookUrl.pathname.replace(/\/$/, "") !==
+      "/api/recall/realtime/webhook" ||
+      parsedRecallRealtimeWebhookUrl.search ||
+      parsedRecallRealtimeWebhookUrl.hash)
+  ) {
+    issues.push(
+      "RECALL_REALTIME_WEBHOOK_URL must use /api/recall/realtime/webhook without a query or fragment",
+    );
   }
 
   const databaseUrl = source.DATABASE_URL?.trim();

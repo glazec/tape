@@ -266,6 +266,30 @@ describe("POST /api/recall/chat/webhook", () => {
     expect(markVendorWebhookEventProcessed).not.toHaveBeenCalled();
   });
 
+  it("marks a visible answer failure as processed instead of retrying silently", async () => {
+    answerRecallChatMessage.mockResolvedValue({
+      action: "failed",
+      reason: "answer_unavailable",
+      reply: "I couldn’t answer that just now. Please try again.",
+    });
+
+    const response = await postRecallRealtimeWebhook(chatPayload);
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({
+      received: true,
+      result: {
+        action: "failed",
+        reason: "answer_unavailable",
+        reply: "I couldn’t answer that just now. Please try again.",
+      },
+    });
+    expect(markVendorWebhookEventProcessed).toHaveBeenCalledWith({
+      provider: "recall",
+      idempotencyKey: "msg_chat",
+    });
+  });
+
   it("ignores realtime events from a displaced meeting bot", async () => {
     isRecallBotAccepted.mockResolvedValue(false);
 

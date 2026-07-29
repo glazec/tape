@@ -195,7 +195,14 @@ describe("Recall Calendar V2 adapter", () => {
 
   it("schedules a Recall bot for a Calendar V2 event", async () => {
     vi.stubEnv("RECALL_API_KEY", "recall-key\n");
-    vi.stubEnv("NEXT_PUBLIC_APP_URL", "https://app.example.com");
+    vi.stubEnv(
+      "NEXT_PUBLIC_APP_URL",
+      "https://meeting-note-dev.inevitable.tech",
+    );
+    vi.stubEnv(
+      "RECALL_REALTIME_WEBHOOK_URL",
+      "https://tape.example.com/api/recall/realtime/webhook",
+    );
     const fetchMock = vi.fn().mockResolvedValue(
       new Response(
         JSON.stringify({
@@ -279,7 +286,7 @@ describe("Recall Calendar V2 adapter", () => {
           realtime_endpoints: [
             {
               type: "webhook",
-              url: "https://app.example.com/api/recall/realtime/webhook",
+              url: "https://tape.example.com/api/recall/realtime/webhook",
               events: [
                 "participant_events.chat_message",
                 "participant_events.speech_on",
