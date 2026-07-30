@@ -176,6 +176,24 @@ describe("local recorder app packaging", () => {
     expect(buildScript).toContain("<key>NSAudioCaptureUsageDescription</key>");
   });
 
+  it("uses the Tape icon and name in the recorder header", () => {
+    const appSource = readFileSync(
+      join(
+        packageRoot,
+        "Sources",
+        "MeetingNoteLocalRecorder",
+        "MeetingNoteLocalRecorderApp.swift",
+      ),
+      "utf8",
+    );
+
+    expect(appSource).toContain(
+      "Image(nsImage: NSApplication.shared.applicationIconImage)",
+    );
+    expect(appSource).toContain('Text("Tape")');
+    expect(appSource).not.toContain('Text("Meeting Note")');
+  });
+
   it("documents the Tape Desktop build entrypoint", () => {
     const setupGuide = readFileSync(
       join(process.cwd(), "docs", "setup.md"),

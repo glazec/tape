@@ -1613,9 +1613,14 @@ struct RecorderMenuView: View {
     }
 
     private var header: some View {
-        HStack(alignment: .center) {
+        HStack(alignment: .center, spacing: 10) {
+            Image(nsImage: NSApplication.shared.applicationIconImage)
+                .resizable()
+                .interpolation(.none)
+                .frame(width: 32, height: 32)
+                .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 2) {
-                Text("Meeting Note")
+                Text("Tape")
                     .font(.headline)
                 Text("Local recorder")
                     .font(.caption)
