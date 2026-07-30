@@ -844,6 +844,7 @@ function getMeetingLibrarySearchCondition(
       and ${transcriptSegments.jobId} in ${currentTranscriptJobIdsSubquery(meetings.id)}
       and (
         ${transcriptSegments.text} ilike ${pattern}
+        or ${transcriptSegments.translatedText} ilike ${pattern}
         or ${transcriptSegments.speaker} ilike ${pattern}
       )
   )`;

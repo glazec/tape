@@ -34,6 +34,18 @@ function expectUsesCurrentTranscriptJob(condition: SQL) {
   expect(query.sql).toContain("current_jobs.mode = 'append'");
 }
 
+function expectSearchesTranslatedTranscriptText(condition: SQL, search: string) {
+  const query = toQuery(condition);
+  const sql = query.sql.replace(/\s+/g, " ");
+
+  // Translated text sits in the same `or` group as the source text, so a
+  // segment that only matches after translation is still returned.
+  expect(sql).toMatch(
+    /"transcript_segments"\."text" ilike \$\d+ or "transcript_segments"\."translated_text" ilike \$\d+ or "transcript_segments"\."speaker" ilike \$\d+/,
+  );
+  expect(query.params).toContain(`%${search}%`);
+}
+
 function expectScopesDashboardToUser(condition: SQL, userId: string) {
   const query = toQuery(condition);
 
@@ -1060,6 +1072,75 @@ describe("listMeetingsForWorkspace", () => {
     );
 
     expectUsesCurrentTranscriptJob(meetingWhere.mock.calls[0][0]);
+  });
+
+  it("searches translated transcript text in the transcript scope", async () => {
+    const meetingWhere = vi.fn((condition: SQL) => {
+      void condition;
+
+      return {
+        orderBy: vi.fn().mockResolvedValue([]),
+      };
+    });
+
+    select.mockReturnValueOnce({
+      from: () => ({
+        leftJoin: () => ({
+          where: meetingWhere,
+        }),
+      }),
+    });
+    const { listMeetingsForWorkspace } = await import("@/lib/meeting-queries");
+
+    await listMeetingsForWorkspace(
+      {
+        teamId: "team_123",
+        userId: "user_123",
+        domain: "iosg.vc",
+        canCreateMeetings: true,
+      },
+      "valuation",
+      { searchScope: "transcript" },
+    );
+
+    expectSearchesTranslatedTranscriptText(
+      meetingWhere.mock.calls[0][0],
+      "valuation",
+    );
+  });
+
+  it("searches translated transcript text without a scope", async () => {
+    const meetingWhere = vi.fn((condition: SQL) => {
+      void condition;
+
+      return {
+        orderBy: vi.fn().mockResolvedValue([]),
+      };
+    });
+
+    select.mockReturnValueOnce({
+      from: () => ({
+        leftJoin: () => ({
+          where: meetingWhere,
+        }),
+      }),
+    });
+    const { listMeetingsForWorkspace } = await import("@/lib/meeting-queries");
+
+    await listMeetingsForWorkspace(
+      {
+        teamId: "team_123",
+        userId: "user_123",
+        domain: "iosg.vc",
+        canCreateMeetings: true,
+      },
+      "valuation",
+    );
+
+    expectSearchesTranslatedTranscriptText(
+      meetingWhere.mock.calls[0][0],
+      "valuation",
+    );
   });
 
   it("counts an unlabeled ready transcript as one participant", async () => {
