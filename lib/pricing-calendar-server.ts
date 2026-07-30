@@ -17,7 +17,7 @@ import {
 
 export type PricingCalendarEstimateResult =
   | { status: "ready"; payload: CalendarEstimatePayload }
-  | { status: "error"; message: string };
+  | { status: "error"; message: string; retryable?: boolean };
 
 /**
  * Reads the visitor's recent calendar once, while the landing page renders, and
@@ -44,17 +44,22 @@ export async function readPricingCalendarEstimate(): Promise<PricingCalendarEsti
   );
 
   try {
-    const [organizerEmail, rawEvents] = await Promise.all([
+    const [organizerEmail, calendarResult] = await Promise.all([
       fetchGoogleAccountEmail(accessToken),
       fetchGoogleCalendarEvents({ accessToken, timeMin, timeMax }),
     ]);
+
+    const lookbackDays = calendarResult.truncated
+      ? (calendarResult.eventDateSpanDays ?? 1)
+      : CALENDAR_LOOKBACK_DAYS;
 
     return {
       status: "ready",
       payload: buildCalendarEstimatePayload({
         organizerEmail,
-        rawEvents,
-        lookbackDays: CALENDAR_LOOKBACK_DAYS,
+        rawEvents: calendarResult.events,
+        lookbackDays,
+        eventLimitReached: calendarResult.truncated,
       }),
     };
   } catch (error) {

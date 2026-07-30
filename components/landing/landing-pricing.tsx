@@ -1,20 +1,34 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  type Dispatch,
+  type SetStateAction,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
 
-import { Slider } from "@/components/ui/slider";
+import {
+  Alert,
+  AlertDescription,
+  AlertTitle,
+} from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import {
   CALENDAR_LOOKBACK_DAYS,
-  summarizeCalendarUsage,
+  summarizeConnectedCalendar,
   type CalendarEstimatePayload,
+  type ConnectedCalendarSummary,
 } from "@/lib/pricing-calendar-estimate";
 import {
   CALCULATOR_RATES_SNAPSHOT_DATE,
   comparisonQuotes,
   comparisonTotalUsdMicros,
   computeCostFromHours,
-  computeMonthlyCost,
   databaseProviders,
+  estimateMonthlyUsage,
   recordingProviders,
   sttProviders,
   type DatabaseProviderId,
@@ -46,15 +60,59 @@ function formatUsdMicros(costUsdMicros: number) {
 
 type Mode = "manual" | "calendar";
 
+type UsageAssumptionValues = {
+  teamSize: string;
+  meetingHoursPerPersonPerWeek: string;
+  avgTapeUsersPerMeeting: string;
+  recordingCoveragePercent: string;
+};
+
+type UsageAssumptionKey = keyof UsageAssumptionValues;
+
+const MANUAL_ASSUMPTIONS: UsageAssumptionValues = {
+  teamSize: "10",
+  meetingHoursPerPersonPerWeek: "7.5",
+  avgTapeUsersPerMeeting: "2",
+  recordingCoveragePercent: "100",
+};
+
 type CalendarState =
   | { status: "idle" }
   | { status: "ready"; payload: CalendarEstimatePayload }
-  | { status: "error"; message: string };
+  | { status: "error"; message: string; retryable?: boolean };
 
 /** What the server produced for a `?calendar=connected` return, if anything. */
 export type CalendarEstimateResult =
   | { status: "ready"; payload: CalendarEstimatePayload }
-  | { status: "error"; message: string };
+  | { status: "error"; message: string; retryable?: boolean };
+
+function asEditableNumber(value: number, fractionDigits = 1) {
+  return String(Number(value.toFixed(fractionDigits)));
+}
+
+function calendarAssumptionValues(
+  summary: ConnectedCalendarSummary | null,
+): UsageAssumptionValues {
+  if (!summary) {
+    return MANUAL_ASSUMPTIONS;
+  }
+
+  return {
+    teamSize: String(summary.inferredTeamSize),
+    meetingHoursPerPersonPerWeek: asEditableNumber(
+      summary.observedMeetingHoursPerWeek,
+    ),
+    // Google exposes company attendees, not the future Tape user roster.
+    avgTapeUsersPerMeeting: "1",
+    recordingCoveragePercent: "100",
+  };
+}
+
+function parseAssumption(value: string) {
+  const parsed = Number(value);
+
+  return Number.isFinite(parsed) ? parsed : 0;
+}
 
 function PickerGroup<T extends string>({
   label,
@@ -159,100 +217,180 @@ function ModeToggle({
       {options.map((option) => {
         const active = option.id === mode;
         return (
-          <button
+          <Button
             key={option.id}
             type="button"
             aria-pressed={active}
             onClick={() => onChange(option.id)}
+            variant={active ? "default" : "ghost"}
             className={cn(
-              "rounded-full px-4 py-1.5 text-[0.8125rem] font-medium leading-5 transition-colors",
+              "h-11 rounded-full border-0 px-4 text-[0.8125rem] leading-5 shadow-none sm:h-8",
               active
                 ? "bg-brand-ink text-paper"
                 : "text-graphite hover:text-ink",
             )}
           >
             {option.label}
-          </button>
+          </Button>
         );
       })}
     </div>
   );
 }
 
-function PeoplePicker({
-  payload,
-  selectedEmails,
-  onToggle,
-  onSelectAll,
-  onSelectNone,
+function AssumptionField({
+  id,
+  label,
+  value,
+  suffix,
+  help,
+  min,
+  max,
+  step,
+  integer = false,
+  onChange,
+  onCommit,
 }: {
-  payload: CalendarEstimatePayload;
-  selectedEmails: readonly string[];
-  onToggle: (email: string) => void;
-  onSelectAll: () => void;
-  onSelectNone: () => void;
+  id: string;
+  label: string;
+  value: string;
+  suffix: string;
+  help: string;
+  min: number;
+  max: number;
+  step: number;
+  integer?: boolean;
+  onChange: (value: string) => void;
+  onCommit?: (value: string) => void;
 }) {
-  const selected = new Set(selectedEmails);
+  const helpId = `${id}-help`;
 
   return (
     <div>
-      <div className="flex items-baseline justify-between gap-4">
-        <p className="font-mono text-label uppercase tracking-[0.2em] text-graphite">
-          Your team at {payload.organizerDomain}
-        </p>
-        <div className="flex gap-3 text-[0.8125rem]">
-          <button
-            type="button"
-            onClick={onSelectAll}
-            className="text-brand-ink hover:underline"
-          >
-            All
-          </button>
-          <button
-            type="button"
-            onClick={onSelectNone}
-            className="text-graphite hover:underline"
-          >
-            None
-          </button>
-        </div>
+      <Label htmlFor={id} className="text-[0.875rem] leading-5 text-ink">
+        {label}
+      </Label>
+      <div className="relative mt-2">
+        <Input
+          id={id}
+          type="number"
+          inputMode="decimal"
+          min={min}
+          max={max}
+          step={step}
+          value={value}
+          aria-describedby={helpId}
+          onChange={(event) => onChange(event.currentTarget.value)}
+          onBlur={(event) => {
+            const parsed = Number(event.currentTarget.value);
+            const bounded = Number.isFinite(parsed)
+              ? Math.min(max, Math.max(min, parsed))
+              : min;
+            const normalized = String(integer ? Math.round(bounded) : bounded);
+            (onCommit ?? onChange)(normalized);
+          }}
+          className="h-11 border-ink/15 bg-paper pr-20 text-[0.9375rem] text-ink shadow-none tabular-nums focus-visible:border-brand-ink focus-visible:ring-brand/20"
+        />
+        <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-[0.75rem] text-ash">
+          {suffix}
+        </span>
       </div>
-      <div className="mt-3 max-h-72 overflow-y-auto rounded-lg border border-ink/10">
-        {payload.people.map((person) => {
-          const active = selected.has(person.email);
-          return (
-            <label
-              key={person.email}
-              className="flex cursor-pointer items-center gap-3 border-b border-ink/8 px-4 py-2.5 last:border-0 hover:bg-mist/50"
-            >
-              <input
-                type="checkbox"
-                checked={active}
-                onChange={() => onToggle(person.email)}
-                className="size-4 shrink-0 accent-brand-ink"
-              />
-              <span className="min-w-0 flex-1">
-                <span className="block truncate text-[0.875rem] text-ink">
-                  {person.name ?? person.email}
-                  {person.isSelf ? (
-                    <span className="ml-2 text-[0.75rem] text-ash">you</span>
-                  ) : null}
-                </span>
-                {person.name ? (
-                  <span className="block truncate text-[0.75rem] text-ash">
-                    {person.email}
-                  </span>
-                ) : null}
-              </span>
-              <span className="shrink-0 tabular-nums text-[0.75rem] text-ash">
-                {person.meetingCount}{" "}
-                {person.meetingCount === 1 ? "meeting" : "meetings"}
-              </span>
-            </label>
-          );
-        })}
-      </div>
+      <p id={helpId} className="mt-2 text-[0.75rem] leading-5 text-ash">
+        {help}
+      </p>
     </div>
+  );
+}
+
+function AssumptionFields({
+  values,
+  calendarSummary,
+  onChange,
+  onTeamSizeCommit,
+}: {
+  values: UsageAssumptionValues;
+  calendarSummary?: ConnectedCalendarSummary | null;
+  onChange: (key: UsageAssumptionKey, value: string) => void;
+  onTeamSizeCommit: (value: string) => void;
+}) {
+  return (
+    <fieldset>
+      <legend className="font-mono text-label uppercase tracking-[0.2em] text-graphite">
+        Assumptions you can edit
+      </legend>
+      <div className="mt-4 grid gap-x-5 gap-y-6 sm:grid-cols-2">
+        <AssumptionField
+          id={
+            calendarSummary ? "pricing-calendar-team-size" : "pricing-team-size"
+          }
+          label="Team members using Tape"
+          value={values.teamSize}
+          suffix="people"
+          min={1}
+          max={10000}
+          step={1}
+          integer
+          help={
+            calendarSummary
+              ? `Prefilled from ${calendarSummary.inferredTeamSize} same domain attendees seen here. Some may not use Tape and colleagues you never meet are missing, so enter the intended user count.`
+              : "Count only the people who will use Tape."
+          }
+          onChange={(value) => onChange("teamSize", value)}
+          onCommit={onTeamSizeCommit}
+        />
+        <AssumptionField
+          id={
+            calendarSummary ? "pricing-calendar-hours" : "pricing-meeting-hours"
+          }
+          label="Meeting hours per teammate"
+          value={values.meetingHoursPerPersonPerWeek}
+          suffix="hrs / wk"
+          min={0}
+          max={80}
+          step={0.25}
+          help={
+            calendarSummary
+              ? `Your primary calendar measured ${calendarSummary.observedMeetingHoursPerWeek.toFixed(1)} hours a week. Edit it if you are not representative.`
+              : "Use a typical week, including internal and external calls."
+          }
+          onChange={(value) => onChange("meetingHoursPerPersonPerWeek", value)}
+        />
+        <AssumptionField
+          id={
+            calendarSummary
+              ? "pricing-calendar-participants"
+              : "pricing-tape-users-per-meeting"
+          }
+          label="Tape users sharing each meeting"
+          value={values.avgTapeUsersPerMeeting}
+          suffix="people"
+          min={1}
+          max={Math.max(1, parseAssumption(values.teamSize))}
+          step={0.1}
+          help={
+            calendarSummary
+              ? "Google cannot tell which colleagues will use Tape. Enter how many Tape users typically attend the same recorded call."
+              : "Count only Tape users on the same call. Use 1 when their meetings rarely overlap."
+          }
+          onChange={(value) => onChange("avgTapeUsersPerMeeting", value)}
+        />
+        <AssumptionField
+          id={
+            calendarSummary
+              ? "pricing-calendar-coverage"
+              : "pricing-recording-coverage"
+          }
+          label="Scheduled meeting time recorded"
+          value={values.recordingCoveragePercent}
+          suffix="%"
+          min={0}
+          max={100}
+          step={5}
+          help="Lower this if Tape will skip private, optional, or unsupported meetings."
+          onChange={(value) => onChange("recordingCoveragePercent", value)}
+        />
+      </div>
+    </fieldset>
   );
 }
 
@@ -278,16 +416,19 @@ function resolveCalendarState(
         status: "error",
         message:
           "Calendar access was declined, so there is nothing to measure.",
+        retryable: true,
       };
     case "unavailable":
       return {
         status: "error",
         message: "Calendar connect is not configured on this deployment.",
+        retryable: false,
       };
     default:
       return {
         status: "error",
         message: "That calendar connection did not complete. Try again.",
+        retryable: true,
       };
   }
 }
@@ -302,25 +443,28 @@ export function LandingPricing({
   const [mode, setMode] = useState<Mode>(
     calendarStatus ? "calendar" : "manual",
   );
-  const [teamSize, setTeamSize] = useState(10);
-  const [hoursPerDay, setHoursPerDay] = useState(1.5);
-  const [attendeesPerMeeting, setAttendeesPerMeeting] = useState(3);
-  const [recordingProviderId, setRecordingProviderId] =
-    useState<RecordingProviderId>("attendee");
-  const [sttProviderId, setSttProviderId] =
-    useState<SttProviderId>("whisper");
-  const [databaseProviderId, setDatabaseProviderId] =
-    useState<DatabaseProviderId>("neon");
   const calendar = useMemo<CalendarState>(
     () => resolveCalendarState(calendarStatus, calendarEstimate),
     [calendarStatus, calendarEstimate],
   );
-  // Everyone sharing the domain counts as the team until told otherwise.
-  const [selectedEmails, setSelectedEmails] = useState<readonly string[]>(() =>
-    calendarEstimate?.status === "ready"
-      ? calendarEstimate.payload.people.map((person) => person.email)
-      : [],
+  const calendarSummary = useMemo(
+    () =>
+      calendar.status === "ready"
+        ? summarizeConnectedCalendar(calendar.payload)
+        : null,
+    [calendar],
   );
+  const [manualAssumptions, setManualAssumptions] =
+    useState<UsageAssumptionValues>(MANUAL_ASSUMPTIONS);
+  const [calendarAssumptions, setCalendarAssumptions] =
+    useState<UsageAssumptionValues>(() =>
+      calendarAssumptionValues(calendarSummary),
+    );
+  const [recordingProviderId, setRecordingProviderId] =
+    useState<RecordingProviderId>("attendee");
+  const [sttProviderId, setSttProviderId] = useState<SttProviderId>("whisper");
+  const [databaseProviderId, setDatabaseProviderId] =
+    useState<DatabaseProviderId>("neon");
 
   // Clean up after the redirect: strip `?calendar=` so a reload does not look
   // like a fresh connection, and drop the access token now that the estimate is
@@ -339,67 +483,70 @@ export function LandingPricing({
       `${window.location.pathname}${nextSearch ? `?${nextSearch}` : ""}#pricing`,
     );
 
-    void fetch("/api/pricing-calendar/forget", { method: "POST" }).catch(
-      () => {
-        // The cookie expires on its own within minutes either way.
-      },
-    );
+    void fetch("/api/pricing-calendar/forget", { method: "POST" }).catch(() => {
+      // The cookie expires on its own within minutes either way.
+    });
   }, [calendarStatus]);
 
-  const calendarUsage = useMemo(() => {
-    if (calendar.status !== "ready") {
-      return null;
-    }
-
-    return summarizeCalendarUsage(calendar.payload, selectedEmails);
-  }, [calendar, selectedEmails]);
-
-  const usingCalendar = mode === "calendar" && calendarUsage !== null;
-
-  // Both modes price the same way; only the hours differ in where they come from.
-  const breakdown = useMemo(() => {
-    if (usingCalendar && calendarUsage) {
-      return computeCostFromHours({
-        teamSize: calendarUsage.selectedTeamSize,
-        personMeetingHoursPerMonth: calendarUsage.personMeetingHoursPerMonth,
-        recordedMeetingHoursPerMonth:
-          calendarUsage.recordedMeetingHoursPerMonth,
+  const usingCalendar = mode === "calendar" && calendarSummary !== null;
+  const activeAssumptions = usingCalendar
+    ? calendarAssumptions
+    : manualAssumptions;
+  const usage = useMemo(
+    () =>
+      estimateMonthlyUsage({
+        teamSize: parseAssumption(activeAssumptions.teamSize),
+        meetingHoursPerPersonPerWeek: parseAssumption(
+          activeAssumptions.meetingHoursPerPersonPerWeek,
+        ),
+        avgTapeUsersPerMeeting: parseAssumption(
+          activeAssumptions.avgTapeUsersPerMeeting,
+        ),
+        recordingCoveragePercent: parseAssumption(
+          activeAssumptions.recordingCoveragePercent,
+        ),
+      }),
+    [activeAssumptions],
+  );
+  const breakdown = useMemo(
+    () =>
+      computeCostFromHours({
+        teamSize: usage.teamSize,
+        personMeetingHoursPerMonth: usage.personMeetingHoursPerMonth,
+        recordedMeetingHoursPerMonth: usage.recordedMeetingHoursPerMonth,
         recordingProviderId,
         sttProviderId,
         databaseProviderId,
-      });
-    }
+      }),
+    [usage, recordingProviderId, sttProviderId, databaseProviderId],
+  );
 
-    return computeMonthlyCost({
-      teamSize,
-      meetingHoursPerPersonPerDay: hoursPerDay,
-      avgAttendeesPerMeeting: attendeesPerMeeting,
-      recordingProviderId,
-      sttProviderId,
-      databaseProviderId,
+  const effectiveTeamSize = usage.teamSize;
+
+  function updateManualAssumption(key: UsageAssumptionKey, value: string) {
+    setManualAssumptions((current) => ({ ...current, [key]: value }));
+  }
+
+  function updateCalendarAssumption(key: UsageAssumptionKey, value: string) {
+    setCalendarAssumptions((current) => ({ ...current, [key]: value }));
+  }
+
+  function commitTeamSize(
+    setAssumptions: Dispatch<SetStateAction<UsageAssumptionValues>>,
+    value: string,
+  ) {
+    setAssumptions((current) => {
+      const teamSize = parseAssumption(value);
+      const sharing = parseAssumption(current.avgTapeUsersPerMeeting);
+
+      return {
+        ...current,
+        teamSize: value,
+        avgTapeUsersPerMeeting:
+          sharing > teamSize ? value : current.avgTapeUsersPerMeeting,
+      };
     });
-  }, [
-    usingCalendar,
-    calendarUsage,
-    teamSize,
-    hoursPerDay,
-    attendeesPerMeeting,
-    recordingProviderId,
-    sttProviderId,
-    databaseProviderId,
-  ]);
-
-  const effectiveTeamSize = usingCalendar
-    ? (calendarUsage?.selectedTeamSize ?? 0)
-    : teamSize;
-
-  const toggleEmail = useCallback((email: string) => {
-    setSelectedEmails((current) =>
-      current.includes(email)
-        ? current.filter((entry) => entry !== email)
-        : [...current, email],
-    );
-  }, []);
+  }
 
   return (
     <section id="pricing" className="border-b border-ink/8 bg-paper">
@@ -413,9 +560,9 @@ export function LandingPricing({
               <em className="italic text-graphite">not seats.</em>
             </SectionHeading>
             <Lede>
-              Tape runs on infrastructure you choose. Estimate with the sliders,
-              or connect your calendar to price the meetings you actually held —
-              internal calls counted once, not once per colleague.
+              Enter what your team expects to record, or connect one calendar to
+              prefill the assumptions from a recent sample of up to 90 days.
+              Every assumption stays visible and editable.
             </Lede>
 
             <div className="mt-10">
@@ -424,145 +571,91 @@ export function LandingPricing({
 
             <div className="mt-10 flex flex-col gap-10">
               {mode === "manual" ? (
-                <>
-                  <div>
-                    <div className="flex items-baseline justify-between gap-4">
-                      <label
-                        htmlFor="pricing-team-size"
-                        className="text-[0.9375rem] font-medium text-ink"
-                      >
-                        Team size
-                      </label>
-                      <span className="tabular-nums text-[0.9375rem] text-graphite">
-                        {teamSize} {teamSize === 1 ? "person" : "people"}
-                      </span>
-                    </div>
-                    <Slider
-                      id="pricing-team-size"
-                      className="mt-3"
-                      min={1}
-                      max={200}
-                      step={1}
-                      value={teamSize}
-                      onValueChange={(value) => setTeamSize(value)}
-                    />
-                  </div>
-
-                  <div>
-                    <div className="flex items-baseline justify-between gap-4">
-                      <label
-                        htmlFor="pricing-hours"
-                        className="text-[0.9375rem] font-medium text-ink"
-                      >
-                        Meeting hours per person per day
-                      </label>
-                      <span className="tabular-nums text-[0.9375rem] text-graphite">
-                        {hoursPerDay.toFixed(2)} hrs
-                      </span>
-                    </div>
-                    <Slider
-                      id="pricing-hours"
-                      className="mt-3"
-                      min={0.5}
-                      max={6}
-                      step={0.25}
-                      value={hoursPerDay}
-                      onValueChange={(value) => setHoursPerDay(value)}
-                    />
-                    <p className="mt-2 text-[0.8125rem] leading-5 text-ash">
-                      ≈ {Math.round(breakdown.personMeetingHoursPerMonth)} person
-                      hours per month across the team.
-                    </p>
-                  </div>
-
-                  <div>
-                    <div className="flex items-baseline justify-between gap-4">
-                      <label
-                        htmlFor="pricing-attendees"
-                        className="text-[0.9375rem] font-medium text-ink"
-                      >
-                        Teammates per internal meeting
-                      </label>
-                      <span className="tabular-nums text-[0.9375rem] text-graphite">
-                        {Math.min(attendeesPerMeeting, teamSize)}{" "}
-                        {Math.min(attendeesPerMeeting, teamSize) === 1
-                          ? "person"
-                          : "people"}
-                      </span>
-                    </div>
-                    <Slider
-                      id="pricing-attendees"
-                      className="mt-3"
-                      min={1}
-                      max={12}
-                      step={1}
-                      value={attendeesPerMeeting}
-                      onValueChange={(value) => setAttendeesPerMeeting(value)}
-                    />
-                    <p className="mt-2 text-[0.8125rem] leading-5 text-ash">
-                      An internal call is recorded once, not once per attendee,
-                      so Tape processes ≈{" "}
-                      {Math.round(breakdown.recordedMeetingHoursPerMonth)}{" "}
-                      recorded hours per month.
-                    </p>
-                  </div>
-                </>
+                <AssumptionFields
+                  values={manualAssumptions}
+                  onChange={updateManualAssumption}
+                  onTeamSizeCommit={(value) =>
+                    commitTeamSize(setManualAssumptions, value)
+                  }
+                />
               ) : (
                 <div>
-                  {calendar.status === "ready" ? (
+                  {calendar.status === "ready" && calendarSummary ? (
                     <div className="flex flex-col gap-6">
-                      <PeoplePicker
-                        payload={calendar.payload}
-                        selectedEmails={selectedEmails}
-                        onToggle={toggleEmail}
-                        onSelectAll={() =>
-                          setSelectedEmails(
-                            calendar.payload.people.map(
-                              (person) => person.email,
-                            ),
-                          )
-                        }
-                        onSelectNone={() => setSelectedEmails([])}
-                      />
-                      {calendarUsage ? (
-                        <dl className="grid grid-cols-2 gap-x-6 gap-y-4 rounded-lg border border-ink/10 bg-mist/50 p-4 sm:grid-cols-3">
+                      <div className="rounded-lg border border-ink/10 bg-mist/50 p-5">
+                        <p className="text-[0.9375rem] font-medium text-ink">
+                          What this calendar measured
+                        </p>
+                        <dl className="mt-4 grid grid-cols-2 gap-x-6 gap-y-4 sm:grid-cols-3">
                           <div>
                             <dt className="text-[0.75rem] uppercase tracking-[0.14em] text-ash">
-                              Recorded hrs / mo
+                              Meeting hours
                             </dt>
                             <dd className="mt-1 tabular-nums text-[1.125rem] text-ink">
-                              {Math.round(
-                                calendarUsage.recordedMeetingHoursPerMonth,
-                              )}
+                              {calendarSummary.observedMeetingHoursPerWeek.toFixed(
+                                1,
+                              )}{" "}
+                              / week
                             </dd>
                           </div>
                           <div>
                             <dt className="text-[0.75rem] uppercase tracking-[0.14em] text-ash">
-                              Person hrs / mo
+                              Meetings
                             </dt>
                             <dd className="mt-1 tabular-nums text-[1.125rem] text-ink">
                               {Math.round(
-                                calendarUsage.personMeetingHoursPerMonth,
-                              )}
+                                calendarSummary.observedMeetingCountPerMonth,
+                              )}{" "}
+                              / month
                             </dd>
                           </div>
                           <div>
                             <dt className="text-[0.75rem] uppercase tracking-[0.14em] text-ash">
-                              Meetings / mo
+                              Company people
                             </dt>
                             <dd className="mt-1 tabular-nums text-[1.125rem] text-ink">
-                              {Math.round(
-                                calendarUsage.recordedMeetingCountPerMonth,
-                              )}
+                              {calendarSummary.inferredTeamSize} seen
                             </dd>
                           </div>
                         </dl>
+                      </div>
+                      {calendar.payload.eventLimitReached ? (
+                        <Alert className="border-brand-ink/20 bg-brand/5 px-4 py-3">
+                          <AlertTitle className="text-[0.8125rem] text-ink">
+                            Calendar limit reached
+                          </AlertTitle>
+                          <AlertDescription className="mt-1 text-[0.75rem] leading-5 text-graphite">
+                            Google returned more than 2,000 events. This estimate
+                            uses the first 2,000 events and their{" "}
+                            {(
+                              Math.round(
+                                calendar.payload.lookbackDays * 10,
+                              ) / 10
+                            ).toFixed(1)}{" "}
+                            day span.
+                          </AlertDescription>
+                        </Alert>
                       ) : null}
+                      {calendarSummary.qualifyingEventCount === 0 ? (
+                        <p className="text-[0.8125rem] leading-5 text-brand-ink">
+                          No qualifying meetings were found. Enter the
+                          assumptions below to build the estimate manually.
+                        </p>
+                      ) : null}
+                      <AssumptionFields
+                        values={calendarAssumptions}
+                        calendarSummary={calendarSummary}
+                        onChange={updateCalendarAssumption}
+                        onTeamSizeCommit={(value) =>
+                          commitTeamSize(setCalendarAssumptions, value)
+                        }
+                      />
                       <p className="text-[0.8125rem] leading-5 text-ash">
-                        Measured from the last {calendar.payload.lookbackDays}{" "}
-                        days ({calendar.payload.scannedEventCount} events
-                        scanned). Shared internal calls are counted once, which
-                        is why recorded hours sit below person hours.
+                        Only your primary calendar was measured. Google did not
+                        expose colleagues&apos; other meetings. We used timed,
+                        noncancelled events that you did not decline and ignored
+                        focus time, working location, rooms, solo blocks, and
+                        events longer than 12 hours.
                       </p>
                     </div>
                   ) : (
@@ -571,31 +664,77 @@ export function LandingPricing({
                         Price your real meetings
                       </p>
                       <p className="mt-2 max-w-[52ch] text-[0.8125rem] leading-5 text-graphite">
-                        Connect Google Calendar and we read the last{" "}
-                        {CALENDAR_LOOKBACK_DAYS} days to find who you meet with
-                        at your own domain. Pick the colleagues who would use
-                        Tape and the estimate uses your real meeting hours.
+                        Connect Google Calendar and we read timed meetings from
+                        your primary calendar over the last{" "}
+                        {CALENDAR_LOOKBACK_DAYS} days. We use it to prefill the
+                        four assumptions, then you can correct anything that is
+                        not representative of the team.
                       </p>
                       {calendar.status === "error" ? (
                         <p className="mt-4 text-[0.8125rem] leading-5 text-brand-ink">
                           {calendar.message}
                         </p>
                       ) : null}
-                      <a
-                        href="/api/pricing-calendar/start"
-                        className="mt-5 inline-flex items-center rounded-full border border-brand-ink bg-brand-ink px-5 py-2.5 text-[0.875rem] font-medium text-paper transition-opacity hover:opacity-90"
-                      >
-                        {calendar.status === "error"
-                          ? "Connect again"
-                          : "Connect Google Calendar"}
-                      </a>
+                      {calendar.status === "error" &&
+                      calendar.retryable === false ? (
+                        <Button
+                          type="button"
+                          onClick={() => setMode("manual")}
+                          className="mt-5 h-11 rounded-full bg-brand-ink px-5 text-[0.875rem] text-paper shadow-none hover:bg-brand-ink/90"
+                        >
+                          Estimate by hand
+                        </Button>
+                      ) : (
+                        <a
+                          href="/api/pricing-calendar/start"
+                          className="mt-5 inline-flex items-center rounded-full border border-brand-ink bg-brand-ink px-5 py-2.5 text-[0.875rem] font-medium text-paper transition-opacity hover:opacity-90"
+                        >
+                          {calendar.status === "error"
+                            ? "Connect again"
+                            : "Connect Google Calendar"}
+                        </a>
+                      )}
                       <p className="mt-3 text-[0.75rem] leading-5 text-ash">
-                        Read only. Nothing is stored, and this does not create a
+                        Read only. Colleagues&apos; private calendars are not
+                        accessed. Nothing is stored, and this does not create a
                         Tape account or sign you in.
                       </p>
                     </div>
                   )}
                 </div>
+              )}
+
+              {(mode === "manual" || usingCalendar) && (
+                <>
+                  <p className="rounded-lg border border-ink/10 bg-mist/50 px-4 py-3 text-[0.8125rem] leading-5 text-graphite">
+                    This estimate uses{" "}
+                    <strong className="font-medium text-ink tabular-nums">
+                      {Math.round(breakdown.personMeetingHoursPerMonth)}
+                    </strong>{" "}
+                    team meeting hours and{" "}
+                    <strong className="font-medium text-ink tabular-nums">
+                      {Math.round(breakdown.recordedMeetingHoursPerMonth)}
+                    </strong>{" "}
+                    distinct recorded hours each month.
+                  </p>
+                  <div
+                    aria-live="polite"
+                    className="flex items-end justify-between gap-5 border-y border-ink/10 py-4 lg:hidden"
+                  >
+                    <div>
+                      <p className="font-mono text-label uppercase tracking-[0.2em] text-graphite">
+                        Estimated monthly total
+                      </p>
+                      <p className="mt-1 text-[0.75rem] leading-5 text-ash">
+                        {formatUsdMicros(breakdown.perPersonUsdMicros)} per
+                        person
+                      </p>
+                    </div>
+                    <p className="font-display text-display-3 text-ink tabular-nums">
+                      {formatUsdMicros(breakdown.totalUsdMicros)}
+                    </p>
+                  </div>
+                </>
               )}
 
               <PickerGroup
@@ -645,7 +784,7 @@ export function LandingPricing({
             <div className="rounded-xl border border-ink/10 bg-mist/70 p-6 sm:p-7 lg:sticky lg:top-24">
               <p className="font-mono text-label uppercase tracking-[0.2em] text-graphite">
                 {usingCalendar
-                  ? "Monthly, from your calendar"
+                  ? "Calendar assisted estimate"
                   : "Monthly infrastructure"}
               </p>
               <div className="mt-5 flex flex-col gap-3">
@@ -683,7 +822,7 @@ export function LandingPricing({
                   <p className="mt-1 text-[0.8125rem] leading-5 text-graphite">
                     per person per month, all in
                     {usingCalendar && effectiveTeamSize > 0
-                      ? ` across ${effectiveTeamSize} selected`
+                      ? ` across ${effectiveTeamSize} people`
                       : ""}
                   </p>
                 </div>

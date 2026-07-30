@@ -4,21 +4,31 @@ import {
   buildCalendarEstimatePayload,
   CALENDAR_LOOKBACK_DAYS,
   DAYS_PER_MONTH,
-  summarizeCalendarUsage,
+  summarizeConnectedCalendar,
 } from "@/lib/pricing-calendar-estimate";
 import { computeCostFromHours } from "@/lib/pricing-calculator";
 
 function event(input: {
   startIso: string;
   endIso: string;
-  attendees: readonly { email: string; displayName?: string; resource?: boolean }[];
+  attendees: readonly {
+    email: string;
+    displayName?: string;
+    resource?: boolean;
+    responseStatus?: string;
+    self?: boolean;
+  }[];
   status?: string;
+  eventType?: string;
+  organizer?: { email: string; self?: boolean };
 }) {
   return {
     status: input.status ?? "confirmed",
+    eventType: input.eventType ?? "default",
     start: { dateTime: input.startIso },
     end: { dateTime: input.endIso },
     attendees: input.attendees,
+    organizer: input.organizer,
   };
 }
 
@@ -27,6 +37,8 @@ const hourLong = (
     email: string;
     displayName?: string;
     resource?: boolean;
+    responseStatus?: string;
+    self?: boolean;
   }[],
 ) =>
   event({
@@ -58,7 +70,7 @@ describe("buildCalendarEstimatePayload", () => {
     expect(payload.events[0].internalAttendeeIndexes).toHaveLength(2);
   });
 
-  it("skips solo blocks, cancelled events, and all-day entries", () => {
+  it("skips solo blocks, cancelled events, all-day entries, status blocks, and implausibly long events", () => {
     const payload = buildCalendarEstimatePayload({
       organizerEmail: "me@acme.com",
       rawEvents: [
@@ -66,17 +78,34 @@ describe("buildCalendarEstimatePayload", () => {
         event({
           startIso: "2026-07-02T10:00:00Z",
           endIso: "2026-07-02T11:00:00Z",
-          attendees: [{ email: "me@acme.com" }, { email: "colleague@acme.com" }],
+          attendees: [
+            { email: "me@acme.com" },
+            { email: "colleague@acme.com" },
+          ],
           status: "cancelled",
         }),
         { start: { date: "2026-07-03" }, end: { date: "2026-07-04" } }, // all-day
+        event({
+          startIso: "2026-07-03T10:00:00Z",
+          endIso: "2026-07-03T11:00:00Z",
+          attendees: [{ email: "me@acme.com" }],
+          eventType: "focusTime",
+        }),
+        event({
+          startIso: "2026-07-04T10:00:00Z",
+          endIso: "2026-07-05T10:00:00Z",
+          attendees: [
+            { email: "me@acme.com" },
+            { email: "colleague@acme.com" },
+          ],
+        }),
         hourLong([{ email: "me@acme.com" }, { email: "colleague@acme.com" }]),
       ],
     });
 
     expect(payload.events).toHaveLength(1);
-    expect(payload.skippedEventCount).toBe(3);
-    expect(payload.scannedEventCount).toBe(4);
+    expect(payload.skippedEventCount).toBe(5);
+    expect(payload.scannedEventCount).toBe(6);
   });
 
   it("ignores meeting rooms, which are invitees but not people", () => {
@@ -97,7 +126,7 @@ describe("buildCalendarEstimatePayload", () => {
     expect(payload.events[0].totalAttendeeCount).toBe(2);
   });
 
-  it("treats a personal Google account as having no internal domain", () => {
+  it("uses only the connected person as internal for a personal Google account", () => {
     const payload = buildCalendarEstimatePayload({
       organizerEmail: "someone@gmail.com",
       rawEvents: [
@@ -109,8 +138,69 @@ describe("buildCalendarEstimatePayload", () => {
     });
 
     expect(payload.organizerDomain).toBe("");
-    expect(payload.people).toHaveLength(0);
+    expect(payload.people.map((person) => person.email)).toEqual([
+      "someone@gmail.com",
+    ]);
+    expect(payload.events).toHaveLength(1);
+    expect(payload.events[0].internalAttendeeIndexes).toHaveLength(1);
+  });
+
+  it("skips events the connected person declined", () => {
+    const payload = buildCalendarEstimatePayload({
+      organizerEmail: "me@acme.com",
+      rawEvents: [
+        hourLong([
+          {
+            email: "me@acme.com",
+            self: true,
+            responseStatus: "declined",
+          },
+          { email: "colleague@acme.com", responseStatus: "accepted" },
+        ]),
+      ],
+    });
+
     expect(payload.events).toHaveLength(0);
+    expect(payload.skippedEventCount).toBe(1);
+  });
+
+  it("skips a colleague event when the connected person is not participating", () => {
+    const payload = buildCalendarEstimatePayload({
+      organizerEmail: "me@acme.com",
+      rawEvents: [
+        event({
+          startIso: "2026-07-01T10:00:00Z",
+          endIso: "2026-07-01T11:00:00Z",
+          organizer: { email: "colleague@acme.com" },
+          attendees: [
+            { email: "colleague@acme.com" },
+            { email: "other@acme.com" },
+          ],
+        }),
+      ],
+    });
+
+    expect(payload.events).toHaveLength(0);
+  });
+
+  it("includes the connected organizer when Google omits them from attendees", () => {
+    const payload = buildCalendarEstimatePayload({
+      organizerEmail: "me@acme.com",
+      rawEvents: [
+        event({
+          startIso: "2026-07-01T10:00:00Z",
+          endIso: "2026-07-01T11:00:00Z",
+          organizer: { email: "me@acme.com", self: true },
+          attendees: [{ email: "client@other.com" }],
+        }),
+      ],
+    });
+
+    expect(payload.events).toHaveLength(1);
+    expect(payload.people.map((person) => person.email)).toEqual([
+      "me@acme.com",
+    ]);
+    expect(payload.events[0].totalAttendeeCount).toBe(2);
   });
 
   it("counts meetings per person and lists the connected account first", () => {
@@ -149,7 +239,7 @@ describe("buildCalendarEstimatePayload", () => {
   });
 });
 
-describe("summarizeCalendarUsage", () => {
+describe("summarizeConnectedCalendar", () => {
   const threePersonMeeting = buildCalendarEstimatePayload({
     organizerEmail: "me@acme.com",
     rawEvents: [
@@ -163,59 +253,27 @@ describe("summarizeCalendarUsage", () => {
   });
   const monthlyFactor = DAYS_PER_MONTH / CALENDAR_LOOKBACK_DAYS;
 
-  it("records a shared internal meeting once but bills person hours per head", () => {
-    const summary = summarizeCalendarUsage(threePersonMeeting, [
-      "me@acme.com",
-      "second@acme.com",
-      "third@acme.com",
-    ]);
+  it("uses the connected calendar as a representative sample", () => {
+    const summary = summarizeConnectedCalendar(threePersonMeeting);
 
-    expect(summary.selectedTeamSize).toBe(3);
-    // One hour of tape, regardless of the three colleagues on the call.
-    expect(summary.recordedMeetingHoursPerMonth).toBeCloseTo(1 * monthlyFactor);
-    expect(summary.recordedMeetingCountPerMonth).toBeCloseTo(1 * monthlyFactor);
-    // Per-seat tools would bill all three.
-    expect(summary.personMeetingHoursPerMonth).toBeCloseTo(3 * monthlyFactor);
+    expect(summary.inferredTeamSize).toBe(3);
+    expect(summary.observedMeetingHoursPerWeek).toBeCloseTo(
+      7 / CALENDAR_LOOKBACK_DAYS,
+    );
+    expect(summary.observedMeetingCountPerMonth).toBeCloseTo(monthlyFactor);
   });
 
-  it("still records the meeting once when only some attendees are selected", () => {
-    const summary = summarizeCalendarUsage(threePersonMeeting, [
-      "me@acme.com",
-      "second@acme.com",
-    ]);
-
-    expect(summary.selectedTeamSize).toBe(2);
-    expect(summary.recordedMeetingHoursPerMonth).toBeCloseTo(1 * monthlyFactor);
-    expect(summary.personMeetingHoursPerMonth).toBeCloseTo(2 * monthlyFactor);
-  });
-
-  it("drops meetings that none of the selected people attended", () => {
-    const payload = buildCalendarEstimatePayload({
-      organizerEmail: "me@acme.com",
-      rawEvents: [
-        hourLong([{ email: "me@acme.com" }, { email: "second@acme.com" }]),
-        hourLong([{ email: "third@acme.com" }, { email: "fourth@acme.com" }]),
-      ],
-      lookbackDays: CALENDAR_LOOKBACK_DAYS,
+  it("returns safe defaults when no meetings qualify", () => {
+    const summary = summarizeConnectedCalendar({
+      ...threePersonMeeting,
+      events: [],
     });
-    const summary = summarizeCalendarUsage(payload, [
-      "third@acme.com",
-      "fourth@acme.com",
-    ]);
 
-    expect(summary.recordedMeetingCountPerMonth).toBeCloseTo(1 * monthlyFactor);
-    expect(summary.personMeetingHoursPerMonth).toBeCloseTo(2 * monthlyFactor);
+    expect(summary.observedMeetingHoursPerWeek).toBe(0);
+    expect(summary.observedMeetingCountPerMonth).toBe(0);
   });
 
-  it("returns zeroes when nobody is selected", () => {
-    const summary = summarizeCalendarUsage(threePersonMeeting, []);
-
-    expect(summary.selectedTeamSize).toBe(0);
-    expect(summary.recordedMeetingHoursPerMonth).toBe(0);
-    expect(summary.personMeetingHoursPerMonth).toBe(0);
-  });
-
-  it("normalizes a shorter lookback window up to a monthly rate", () => {
+  it("normalizes calendar evidence using its actual lookback window", () => {
     const payload = buildCalendarEstimatePayload({
       organizerEmail: "me@acme.com",
       rawEvents: [
@@ -223,12 +281,10 @@ describe("summarizeCalendarUsage", () => {
       ],
       lookbackDays: 30,
     });
-    const summary = summarizeCalendarUsage(payload, [
-      "me@acme.com",
-      "second@acme.com",
-    ]);
+    const summary = summarizeConnectedCalendar(payload);
 
-    expect(summary.recordedMeetingHoursPerMonth).toBeCloseTo(
+    expect(summary.observedMeetingHoursPerWeek).toBeCloseTo(7 / 30);
+    expect(summary.observedMeetingCountPerMonth).toBeCloseTo(
       DAYS_PER_MONTH / 30,
     );
   });

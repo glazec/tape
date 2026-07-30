@@ -8,6 +8,8 @@ const PAGE_SIZE = 250;
 /** Bounds a busy calendar so one visitor cannot trigger an unbounded crawl. */
 const MAX_PAGES = 8;
 
+const DAY_MS = 24 * 60 * 60 * 1000;
+
 export class GoogleCalendarReadError extends Error {
   readonly status: number;
 
@@ -20,6 +22,26 @@ export class GoogleCalendarReadError extends Error {
 
 function getString(value: unknown) {
   return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return typeof value === "object" && value !== null
+    ? (value as Record<string, unknown>)
+    : null;
+}
+
+function getEventStartTime(value: unknown) {
+  const event = asRecord(value);
+  const start = asRecord(event?.start);
+  const startValue = getString(start?.dateTime) ?? getString(start?.date);
+
+  if (!startValue) {
+    return null;
+  }
+
+  const timestamp = new Date(startValue).getTime();
+
+  return Number.isFinite(timestamp) ? timestamp : null;
 }
 
 /** Reads the email of the account that granted access. */
@@ -73,7 +95,7 @@ export async function fetchGoogleCalendarEvents(input: {
     // Only the fields the estimate needs, so we never pull meeting bodies.
     url.searchParams.set(
       "fields",
-      "nextPageToken,items(status,start/dateTime,end/dateTime,attendees(email,displayName,resource))",
+      "nextPageToken,items(status,eventType,start/date,start/dateTime,end/date,end/dateTime,organizer(email,self),attendees(email,displayName,resource,responseStatus,self))",
     );
 
     if (pageToken) {
@@ -108,5 +130,20 @@ export async function fetchGoogleCalendarEvents(input: {
     }
   }
 
-  return events;
+  const eventStartTimes = events
+    .map(getEventStartTime)
+    .filter((timestamp): timestamp is number => timestamp !== null);
+  const eventDateSpanDays =
+    eventStartTimes.length > 0
+      ? Math.max(
+          1,
+          (Math.max(...eventStartTimes) - Math.min(...eventStartTimes)) / DAY_MS,
+        )
+      : null;
+
+  return {
+    events,
+    eventDateSpanDays,
+    truncated: pageToken !== null,
+  };
 }

@@ -3,10 +3,65 @@ import { describe, expect, it } from "vitest";
 import {
   comparisonTotalUsdMicros,
   computeMonthlyCost,
+  estimateMonthlyUsage,
   personMeetingHours,
   recordedMeetingHours,
+  WEEKS_PER_MONTH,
   WORKING_DAYS_PER_MONTH,
 } from "@/lib/pricing-calculator";
+
+describe("estimateMonthlyUsage", () => {
+  it("turns explicit weekly assumptions into recorded monthly hours", () => {
+    const usage = estimateMonthlyUsage({
+      teamSize: 10,
+      meetingHoursPerPersonPerWeek: 8,
+      avgTapeUsersPerMeeting: 2,
+      recordingCoveragePercent: 75,
+    });
+
+    expect(usage.personMeetingHoursPerMonth).toBeCloseTo(
+      10 * 8 * WEEKS_PER_MONTH,
+    );
+    expect(usage.recordedMeetingHoursPerMonth).toBeCloseTo(
+      (10 * 8 * WEEKS_PER_MONTH * 0.75) / 2,
+    );
+  });
+
+  it("clamps coverage and Tape users sharing a meeting to valid bounds", () => {
+    const usage = estimateMonthlyUsage({
+      teamSize: 4,
+      meetingHoursPerPersonPerWeek: 5,
+      avgTapeUsersPerMeeting: 20,
+      recordingCoveragePercent: 140,
+    });
+
+    expect(usage.recordedMeetingHoursPerMonth).toBeCloseTo(
+      (4 * 5 * WEEKS_PER_MONTH) / 4,
+    );
+
+    expect(
+      estimateMonthlyUsage({
+        teamSize: 4,
+        meetingHoursPerPersonPerWeek: 5,
+        avgTapeUsersPerMeeting: 2,
+        recordingCoveragePercent: -10,
+      }).recordedMeetingHoursPerMonth,
+    ).toBe(0);
+  });
+
+  it("does not deduplicate meetings against company attendees who do not use Tape", () => {
+    const usage = estimateMonthlyUsage({
+      teamSize: 2,
+      meetingHoursPerPersonPerWeek: 8,
+      avgTapeUsersPerMeeting: 1,
+      recordingCoveragePercent: 100,
+    });
+
+    expect(usage.recordedMeetingHoursPerMonth).toBeCloseTo(
+      2 * 8 * WEEKS_PER_MONTH,
+    );
+  });
+});
 
 describe("personMeetingHours", () => {
   it("multiplies team size, hours per day, and working days", () => {

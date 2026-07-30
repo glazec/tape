@@ -11,6 +11,9 @@ export const CALCULATOR_RATES_SNAPSHOT_DATE = "2026-07-28";
  */
 export const WORKING_DAYS_PER_MONTH = 21.7;
 
+/** Average calendar weeks per month, derived from a 365.25 day year. */
+export const WEEKS_PER_MONTH = 365.25 / 7 / 12;
+
 /** Estimated OpenRouter LLM cost per hour of meeting (summaries + polish). */
 export const LLM_USD_MICROS_PER_MEETING_HOUR = 100_000; // $0.10 / hr
 
@@ -63,7 +66,8 @@ export const sttProviders = [
     id: "fish-audio",
     label: "Fish Audio",
     rateUsdMicrosPerHour: 360_000, // $0.36 / hr
-    source: "https://docs.fish.audio/developer-guide/models-pricing/pricing-and-rate-limits",
+    source:
+      "https://docs.fish.audio/developer-guide/models-pricing/pricing-and-rate-limits",
   },
   {
     id: "ali-dashscope",
@@ -154,6 +158,22 @@ export type CalculatorInput = ProviderSelection & {
   avgAttendeesPerMeeting: number;
 };
 
+export type UsageAssumptions = {
+  teamSize: number;
+  /** Typical scheduled meeting time for one teammate. */
+  meetingHoursPerPersonPerWeek: number;
+  /** Tape users on the same call, used to collapse duplicate recordings. */
+  avgTapeUsersPerMeeting: number;
+  /** Share of scheduled meeting time that Tape will actually record. */
+  recordingCoveragePercent: number;
+};
+
+export type MonthlyUsageEstimate = {
+  teamSize: number;
+  personMeetingHoursPerMonth: number;
+  recordedMeetingHoursPerMonth: number;
+};
+
 /**
  * Cost inputs when the meeting hours are already known — measured from a real
  * calendar rather than derived from the sliders.
@@ -182,6 +202,48 @@ export type CalculatorBreakdown = {
 
 function roundUsdMicros(value: number) {
   return Math.max(0, Math.round(value));
+}
+
+/**
+ * Converts the four visible usage assumptions into the hours that drive cost.
+ * Keeping this separate from provider prices makes both manual and calendar
+ * estimates use the same model.
+ */
+export function estimateMonthlyUsage(
+  input: UsageAssumptions,
+): MonthlyUsageEstimate {
+  const teamSize =
+    Number.isFinite(input.teamSize) && input.teamSize > 0
+      ? Math.round(input.teamSize)
+      : 0;
+  const meetingHoursPerPersonPerWeek =
+    Number.isFinite(input.meetingHoursPerPersonPerWeek) &&
+    input.meetingHoursPerPersonPerWeek > 0
+      ? input.meetingHoursPerPersonPerWeek
+      : 0;
+  const recordingCoveragePercent = Number.isFinite(
+    input.recordingCoveragePercent,
+  )
+    ? Math.min(100, Math.max(0, input.recordingCoveragePercent))
+    : 0;
+  const avgTapeUsersPerMeeting = Number.isFinite(
+    input.avgTapeUsersPerMeeting,
+  )
+    ? Math.min(
+        Math.max(1, input.avgTapeUsersPerMeeting),
+        Math.max(1, teamSize),
+      )
+    : 1;
+  const personMeetingHoursPerMonth =
+    teamSize * meetingHoursPerPersonPerWeek * WEEKS_PER_MONTH;
+
+  return {
+    teamSize,
+    personMeetingHoursPerMonth,
+    recordedMeetingHoursPerMonth:
+      (personMeetingHoursPerMonth * (recordingCoveragePercent / 100)) /
+      avgTapeUsersPerMeeting,
+  };
 }
 
 export function personMeetingHours(
@@ -223,7 +285,9 @@ export function recordedMeetingHours(
   return personHours / attendees;
 }
 
-export function computeMonthlyCost(input: CalculatorInput): CalculatorBreakdown {
+export function computeMonthlyCost(
+  input: CalculatorInput,
+): CalculatorBreakdown {
   return computeCostFromHours({
     teamSize: input.teamSize,
     personMeetingHoursPerMonth: personMeetingHours(
@@ -263,15 +327,17 @@ export function computeCostFromHours(
       : 0,
   );
 
-  const recording = recordingProviders.find(
-    (provider) => provider.id === input.recordingProviderId,
-  ) ?? recordingProviders[0];
-  const stt = sttProviders.find(
-    (provider) => provider.id === input.sttProviderId,
-  ) ?? sttProviders[0];
-  const database = databaseProviders.find(
-    (provider) => provider.id === input.databaseProviderId,
-  ) ?? databaseProviders[0];
+  const recording =
+    recordingProviders.find(
+      (provider) => provider.id === input.recordingProviderId,
+    ) ?? recordingProviders[0];
+  const stt =
+    sttProviders.find((provider) => provider.id === input.sttProviderId) ??
+    sttProviders[0];
+  const database =
+    databaseProviders.find(
+      (provider) => provider.id === input.databaseProviderId,
+    ) ?? databaseProviders[0];
 
   const recordingUsdMicros = roundUsdMicros(
     recordedMeetingHoursPerMonth * recording.rateUsdMicrosPerHour,

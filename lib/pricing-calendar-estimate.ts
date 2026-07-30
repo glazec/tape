@@ -1,4 +1,7 @@
-import { getEmailDomain, isCommonPersonalEmailDomain } from "@/lib/email-domains";
+import {
+  getEmailDomain,
+  isCommonPersonalEmailDomain,
+} from "@/lib/email-domains";
 
 /** How far back we read the calendar to measure a real meeting habit. */
 export const CALENDAR_LOOKBACK_DAYS = 90;
@@ -8,6 +11,9 @@ export const DAYS_PER_MONTH = 30.44;
 
 /** A meeting needs at least two participants; solo blocks are not meetings. */
 const MINIMUM_ATTENDEES = 2;
+
+/** Longer timed blocks are not representative recordable meetings. */
+export const MAX_MEETING_DURATION_HOURS = 12;
 
 /** Guards against a pathological calendar producing an unusable payload. */
 const MAX_PEOPLE = 300;
@@ -40,21 +46,24 @@ export type CalendarEstimatePayload = {
   scannedEventCount: number;
   /** Events skipped because they were solo blocks or had no usable times. */
   skippedEventCount: number;
+  /** True when Google had more events than the bounded calendar read retained. */
+  eventLimitReached: boolean;
 };
 
-export type CalendarUsageSummary = {
-  /** How many teammates the visitor selected. */
-  selectedTeamSize: number;
-  /** Distinct meetings recorded once each, per month. */
-  recordedMeetingHoursPerMonth: number;
-  /** Meeting time summed across selected attendees, per month. */
-  personMeetingHoursPerMonth: number;
-  /** Count of distinct recorded meetings per month. */
-  recordedMeetingCountPerMonth: number;
+export type ConnectedCalendarSummary = {
+  /** Same-domain people observed, including the connected person. */
+  inferredTeamSize: number;
+  /** Scheduled meeting time measured on the connected person's calendar. */
+  observedMeetingHoursPerWeek: number;
+  /** Qualifying meetings normalized to one month. */
+  observedMeetingCountPerMonth: number;
+  /** Number of qualifying event instances in the lookback window. */
+  qualifyingEventCount: number;
 };
 
 type RawGoogleEvent = {
   status?: unknown;
+  eventType?: unknown;
   start?: unknown;
   end?: unknown;
   attendees?: unknown;
@@ -92,8 +101,8 @@ function getEventTime(node: unknown) {
 }
 
 /**
- * Turns raw Google Calendar events into a compact payload the browser can
- * re-aggregate locally as the visitor changes who counts as their team.
+ * Turns raw Google Calendar events into a compact payload that can prefill the
+ * visitor's editable pricing assumptions.
  *
  * "Internal" means the same email domain as the connected account, which is how
  * the rest of the product decides whether an attendee is a colleague.
@@ -102,6 +111,7 @@ export function buildCalendarEstimatePayload(input: {
   organizerEmail: string;
   rawEvents: readonly unknown[];
   lookbackDays?: number;
+  eventLimitReached?: boolean;
 }): CalendarEstimatePayload {
   const organizerEmail = input.organizerEmail.trim().toLowerCase();
   const organizerDomain = getEmailDomain(organizerEmail);
@@ -151,7 +161,12 @@ export function buildCalendarEstimatePayload(input: {
   for (const rawEvent of input.rawEvents) {
     const event = asRecord(rawEvent) as RawGoogleEvent | null;
 
-    if (!event || getString(event.status) === "cancelled") {
+    if (
+      !event ||
+      getString(event.status) === "cancelled" ||
+      (getString(event.eventType) !== null &&
+        getString(event.eventType) !== "default")
+    ) {
       skippedEventCount += 1;
       continue;
     }
@@ -164,10 +179,19 @@ export function buildCalendarEstimatePayload(input: {
       continue;
     }
 
+    const durationHours = (endedAt - startedAt) / (60 * 60 * 1000);
+
+    if (durationHours > MAX_MEETING_DURATION_HOURS) {
+      skippedEventCount += 1;
+      continue;
+    }
+
     const attendees = Array.isArray(event.attendees) ? event.attendees : [];
-    const internalAttendeeIndexes: number[] = [];
-    const seenOnThisEvent = new Set<string>();
-    let totalAttendeeCount = 0;
+    const participants = new Map<
+      string,
+      { email: string; name: string | null; isSelf: boolean }
+    >();
+    let connectedPersonDeclined = false;
 
     for (const rawAttendee of attendees) {
       const attendee = asRecord(rawAttendee);
@@ -177,25 +201,75 @@ export function buildCalendarEstimatePayload(input: {
         continue;
       }
 
-      const email = getString(attendee.email)?.toLowerCase();
+      const attendeeEmail = getString(attendee.email)?.toLowerCase();
+      const isSelf = attendee.self === true || attendeeEmail === organizerEmail;
 
-      if (!email || seenOnThisEvent.has(email)) {
+      if (!attendeeEmail) {
         continue;
       }
 
-      seenOnThisEvent.add(email);
-      totalAttendeeCount += 1;
-
-      if (!internalDomain || getEmailDomain(email) !== internalDomain) {
+      if (isSelf && getString(attendee.responseStatus) === "declined") {
+        connectedPersonDeclined = true;
         continue;
       }
 
-      const index = internEmail(email, getString(attendee.displayName));
+      if (getString(attendee.responseStatus) === "declined") {
+        continue;
+      }
+
+      // `self` is more reliable than matching an alias to the userinfo email.
+      const email = isSelf ? organizerEmail : attendeeEmail;
+      participants.set(email, {
+        email,
+        name: getString(attendee.displayName),
+        isSelf,
+      });
+    }
+
+    const organizer = asRecord(event.organizer);
+    const organizerEventEmail = organizer
+      ? getString(organizer.email)?.toLowerCase()
+      : null;
+    const organizerIsSelf =
+      organizer?.self === true || organizerEventEmail === organizerEmail;
+
+    if (organizerEventEmail || organizerIsSelf) {
+      const email = organizerIsSelf
+        ? organizerEmail
+        : (organizerEventEmail as string);
+      const existing = participants.get(email);
+      participants.set(email, {
+        email,
+        name: existing?.name ?? null,
+        isSelf: organizerIsSelf || existing?.isSelf === true,
+      });
+    }
+
+    if (connectedPersonDeclined || !participants.has(organizerEmail)) {
+      skippedEventCount += 1;
+      continue;
+    }
+
+    const internalAttendeeIndexes: number[] = [];
+
+    for (const participant of participants.values()) {
+      const isInternal =
+        participant.isSelf ||
+        (internalDomain !== null &&
+          getEmailDomain(participant.email) === internalDomain);
+
+      if (!isInternal) {
+        continue;
+      }
+
+      const index = internEmail(participant.email, participant.name);
 
       if (index !== null) {
         internalAttendeeIndexes.push(index);
       }
     }
+
+    const totalAttendeeCount = participants.size;
 
     if (
       totalAttendeeCount < MINIMUM_ATTENDEES ||
@@ -210,7 +284,7 @@ export function buildCalendarEstimatePayload(input: {
     }
 
     events.push({
-      hours: (endedAt - startedAt) / (60 * 60 * 1000),
+      hours: durationHours,
       internalAttendeeIndexes,
       totalAttendeeCount,
     });
@@ -245,58 +319,41 @@ export function buildCalendarEstimatePayload(input: {
     })),
     scannedEventCount: input.rawEvents.length,
     skippedEventCount,
+    eventLimitReached: input.eventLimitReached === true,
   };
 }
 
 /**
- * Aggregates the payload for the currently selected teammates.
- *
- * A meeting several selected colleagues attend is recorded once, so its hours
- * land in `recordedMeetingHoursPerMonth` a single time while
- * `personMeetingHoursPerMonth` counts it per attendee — the gap between those
- * two numbers is exactly what per-seat pricing overcharges for.
+ * Treats the connected person's primary calendar as one representative sample.
+ * Tape-user overlap remains an explicit visitor assumption because Google
+ * cannot tell which same-domain attendees will use Tape.
  */
-export function summarizeCalendarUsage(
+export function summarizeConnectedCalendar(
   payload: CalendarEstimatePayload,
-  selectedEmails: readonly string[],
-): CalendarUsageSummary {
-  const selected = new Set(
-    selectedEmails.map((email) => email.trim().toLowerCase()),
-  );
-  const selectedIndexes = new Set<number>();
+): ConnectedCalendarSummary {
+  const selfIndex = payload.people.findIndex((person) => person.isSelf);
+  let observedMeetingHours = 0;
+  let qualifyingEventCount = 0;
 
-  payload.people.forEach((person, index) => {
-    if (selected.has(person.email)) {
-      selectedIndexes.add(index);
+  if (selfIndex >= 0) {
+    for (const event of payload.events) {
+      if (!event.internalAttendeeIndexes.includes(selfIndex)) {
+        continue;
+      }
+
+      observedMeetingHours += event.hours;
+      qualifyingEventCount += 1;
     }
-  });
-
-  let recordedHours = 0;
-  let personHours = 0;
-  let recordedCount = 0;
-
-  for (const event of payload.events) {
-    const attendingCount = event.internalAttendeeIndexes.filter((index) =>
-      selectedIndexes.has(index),
-    ).length;
-
-    if (attendingCount === 0) {
-      continue;
-    }
-
-    // Recorded once, no matter how many of the selected people were on it.
-    recordedHours += event.hours;
-    recordedCount += 1;
-    personHours += event.hours * attendingCount;
   }
 
+  const weeklyFactor = payload.lookbackDays > 0 ? 7 / payload.lookbackDays : 0;
   const monthlyFactor =
     payload.lookbackDays > 0 ? DAYS_PER_MONTH / payload.lookbackDays : 0;
 
   return {
-    selectedTeamSize: selectedIndexes.size,
-    recordedMeetingHoursPerMonth: recordedHours * monthlyFactor,
-    personMeetingHoursPerMonth: personHours * monthlyFactor,
-    recordedMeetingCountPerMonth: recordedCount * monthlyFactor,
+    inferredTeamSize: Math.max(1, payload.people.length),
+    observedMeetingHoursPerWeek: observedMeetingHours * weeklyFactor,
+    observedMeetingCountPerMonth: qualifyingEventCount * monthlyFactor,
+    qualifyingEventCount,
   };
 }
