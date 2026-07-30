@@ -146,19 +146,16 @@ export async function getOrCreateWorkspaceForSessionUser(
   const teamName = `${getWorkspaceDisplayName(domain)} workspace`;
   const teamId = randomUUID();
   setDatabaseWorkspace({ teamId, userId });
-  const [team] = await db
-    .insert(teams)
-    .values({
-      creditLimitUsdMicros: PUBLIC_WORKSPACE_CREDIT_USD_MICROS,
-      id: teamId,
-      name: teamName,
-    })
-    .returning({ id: teams.id });
+  await db.insert(teams).values({
+    creditLimitUsdMicros: PUBLIC_WORKSPACE_CREDIT_USD_MICROS,
+    id: teamId,
+    name: teamName,
+  });
 
   await db
     .insert(teamMemberships)
     .values({
-      teamId: team.id,
+      teamId,
       userId,
       role: "owner",
     })
@@ -170,7 +167,7 @@ export async function getOrCreateWorkspaceForSessionUser(
     canCreateMeetings: true,
     creditLimitUsdMicros: PUBLIC_WORKSPACE_CREDIT_USD_MICROS,
     domain,
-    teamId: team.id,
+    teamId,
     teamName,
     userId,
   });
@@ -315,26 +312,57 @@ async function getOrCreateUserId(sessionUser: SessionUser, email: string) {
     return existing[0].id;
   }
 
-  const [user] = await db
-    .insert(users)
-    .values({
+  try {
+    await db.insert(users).values({
       authUserId: sessionUser.id,
       email,
       name: sessionUser.name,
-    })
-    .onConflictDoUpdate({
-      target: users.email,
-      set: {
+    });
+  } catch (error) {
+    if (!isUniqueViolation(error)) {
+      throw error;
+    }
+  }
+
+  let [user] = await db
+    .select({ id: users.id })
+    .from(users)
+    .where(eq(users.authUserId, sessionUser.id))
+    .limit(1);
+
+  if (!user) {
+    await db
+      .update(users)
+      .set({
         authUserId: sessionUser.id,
         name: sessionUser.name,
         updatedAt: new Date(),
-      },
-    })
-    .returning({ id: users.id });
+      })
+      .where(eq(users.email, email));
+
+    [user] = await db
+      .select({ id: users.id })
+      .from(users)
+      .where(eq(users.authUserId, sessionUser.id))
+      .limit(1);
+  }
+
+  if (!user) {
+    throw new Error("Application user provisioning did not complete");
+  }
 
   await grantPendingMeetingShares(user.id, email);
 
   return user.id;
+}
+
+function isUniqueViolation(error: unknown) {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    error.code === "23505"
+  );
 }
 
 export async function grantPendingMeetingShares(userId: string, email: string) {

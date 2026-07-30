@@ -9,10 +9,12 @@ const {
   applyMeetingShareRules,
   deleteRecallCalendarEventBot,
   deleteScheduledRecallBot,
+  getDatabaseClaimsJson,
   getMeetingBotProfile,
   cancelLocationRemindersForMeeting,
   hasUndispatchedLocationReminder,
   insert,
+  randomUUID,
   retrieveRecallBot,
   scheduleLocationReminder,
   scheduleRecallCalendarEventBot,
@@ -27,10 +29,12 @@ const {
   applyMeetingShareRules: vi.fn(),
   deleteRecallCalendarEventBot: vi.fn(),
   deleteScheduledRecallBot: vi.fn(),
+  getDatabaseClaimsJson: vi.fn(),
   getMeetingBotProfile: vi.fn(),
   cancelLocationRemindersForMeeting: vi.fn(),
   hasUndispatchedLocationReminder: vi.fn(),
   insert: vi.fn(),
+  randomUUID: vi.fn(),
   retrieveRecallBot: vi.fn(),
   scheduleLocationReminder: vi.fn(),
   scheduleRecallCalendarEventBot: vi.fn(),
@@ -41,6 +45,14 @@ const {
   retireScheduledRecallBot: vi.fn(),
   update: vi.fn(),
   updateScheduledRecallBot: vi.fn(),
+}));
+
+vi.mock("node:crypto", () => ({
+  randomUUID,
+}));
+
+vi.mock("@/db/rls-context", () => ({
+  getDatabaseClaimsJson,
 }));
 
 vi.mock("@/lib/meeting-share-rules", () => ({
@@ -121,6 +133,10 @@ function selectRows(rows: unknown[]) {
 
 describe("calendar auto join", () => {
   beforeEach(() => {
+    getDatabaseClaimsJson.mockReturnValue('{"app_context_trusted":true}');
+    randomUUID.mockReturnValue(
+      "44444444-4444-4444-8444-444444444444",
+    );
     deleteRecallCalendarEventBot.mockResolvedValue({});
     deleteScheduledRecallBot.mockResolvedValue({});
     cancelLocationRemindersForMeeting.mockResolvedValue(undefined);
@@ -145,10 +161,12 @@ describe("calendar auto join", () => {
     applyMeetingShareRules.mockReset();
     deleteRecallCalendarEventBot.mockReset();
     deleteScheduledRecallBot.mockReset();
+    getDatabaseClaimsJson.mockReset();
     getMeetingBotProfile.mockReset();
     cancelLocationRemindersForMeeting.mockReset();
     hasUndispatchedLocationReminder.mockReset();
     insert.mockReset();
+    randomUUID.mockReset();
     retrieveRecallBot.mockReset();
     scheduleLocationReminder.mockReset();
     scheduleRecallCalendarEventBot.mockReset();
@@ -809,12 +827,10 @@ describe("calendar auto join", () => {
         ]),
       })),
     }));
-    const meetingValues = vi.fn(() => ({
-      returning: vi.fn().mockRejectedValue({
-        code: "23505",
-        constraint: "meetings_team_meeting_key_unique",
-      }),
-    }));
+    const meetingValues = vi.fn().mockRejectedValue({
+      code: "23505",
+      constraint: "meetings_team_meeting_key_unique",
+    });
     const concurrentMeeting = {
       calendarEventId: "33333333-3333-4333-8333-333333333333",
       endedAt: new Date("2999-01-01T12:30:00.000Z"),
@@ -861,6 +877,60 @@ describe("calendar auto join", () => {
       meetingId: concurrentMeeting.id,
       platform: "microsoft_teams",
     });
+  });
+
+  it("accepts an unread canonical Microsoft Teams meeting conflict", async () => {
+    const teamsUrl =
+      "https://teams.microsoft.com/l/meetup-join/19%3ameeting_example%40thread.v2/0";
+    const calendarEventValues = vi.fn(() => ({
+      onConflictDoUpdate: vi.fn(() => ({
+        returning: vi
+          .fn()
+          .mockResolvedValue([
+            { id: "33333333-3333-4333-8333-333333333333" },
+          ]),
+      })),
+    }));
+    const meetingValues = vi.fn().mockRejectedValue(
+      Object.assign(
+        new Error(
+          'duplicate key value violates unique constraint "meetings_team_meeting_key_unique"',
+        ),
+        { code: "23505" },
+      ),
+    );
+
+    insert
+      .mockReturnValueOnce({ values: calendarEventValues })
+      .mockReturnValueOnce({ values: meetingValues });
+    select.mockReturnValue(selectRows([]));
+
+    const { autoJoinCalendarEvent } = await import("@/lib/calendar-auto-join");
+
+    await expect(
+      autoJoinCalendarEvent({
+        connection: {
+          autoJoinEnabled: true,
+          id: "11111111-1111-4111-8111-111111111111",
+          teamId: "22222222-2222-4222-8222-222222222222",
+          userId: "55555555-5555-4555-8555-555555555555",
+        },
+        event: {
+          endsAt: "2999-01-01T12:30:00.000Z",
+          externalEventId: "google_event_teams",
+          meetingUrl: teamsUrl,
+          startsAt: "2999-01-01T12:00:00.000Z",
+          title: "Microsoft Teams sync",
+        },
+      }),
+    ).resolves.toEqual({
+      action: "skipped",
+      calendarEventId: "33333333-3333-4333-8333-333333333333",
+      meetingUrl: teamsUrl,
+      reason: "already_scheduled",
+    });
+    expect(syncMeetingParticipantAccess).not.toHaveBeenCalled();
+    expect(applyMeetingShareRules).not.toHaveBeenCalled();
   });
 
   it("does not rewrite a healthy meeting when the Recall event is unchanged", async () => {
@@ -1037,6 +1107,58 @@ describe("calendar auto join", () => {
       scheduledFor: new Date("2026-06-30T11:58:00.000Z"),
       userId: "55555555-5555-4555-8555-555555555555",
     });
+  });
+
+  it("accepts an unread canonical location meeting conflict", async () => {
+    const calendarEventValues = vi.fn().mockReturnValue({
+      onConflictDoUpdate: vi.fn().mockReturnValue({
+        returning: vi
+          .fn()
+          .mockResolvedValue([
+            { id: "33333333-3333-4333-8333-333333333333" },
+          ]),
+      }),
+    });
+    const meetingValues = vi.fn().mockRejectedValue(
+      Object.assign(
+        new Error(
+          'duplicate key value violates unique constraint "meetings_team_meeting_key_unique"',
+        ),
+        { code: "23505" },
+      ),
+    );
+
+    insert
+      .mockReturnValueOnce({ values: calendarEventValues })
+      .mockReturnValueOnce({ values: meetingValues });
+    select.mockReturnValue(selectRows([]));
+
+    const { autoJoinCalendarEvent } = await import("@/lib/calendar-auto-join");
+
+    await expect(
+      autoJoinCalendarEvent({
+        connection: {
+          id: "11111111-1111-4111-8111-111111111111",
+          teamId: "22222222-2222-4222-8222-222222222222",
+          userId: "55555555-5555-4555-8555-555555555555",
+          autoJoinEnabled: true,
+        },
+        event: {
+          externalEventId: "google_event_location",
+          title: "Office visit",
+          startsAt: "2999-06-30T12:00:00.000Z",
+          attendeeEmails: ["founder@nascent.xyz"],
+          location: "IOSG 12F",
+        },
+      }),
+    ).resolves.toEqual({
+      action: "skipped",
+      calendarEventId: "33333333-3333-4333-8333-333333333333",
+      reason: "already_scheduled",
+    });
+    expect(syncMeetingParticipantAccess).not.toHaveBeenCalled();
+    expect(applyMeetingShareRules).not.toHaveBeenCalled();
+    expect(scheduleLocationReminder).not.toHaveBeenCalled();
   });
 
   it("stores the nested Recall Calendar V2 bot id instead of the calendar event id", async () => {
@@ -1722,12 +1844,13 @@ describe("calendar auto join", () => {
       .fn()
       .mockReturnValue({ onConflictDoUpdate: calendarEventOnConflictDoUpdate });
 
-    const duplicateError = Object.assign(new Error("duplicate key"), {
-      code: "23505",
-      constraint: "meetings_team_meeting_key_unique",
-    });
-    const meetingReturning = vi.fn().mockRejectedValue(duplicateError);
-    const meetingValues = vi.fn().mockReturnValue({ returning: meetingReturning });
+    const duplicateError = Object.assign(
+      new Error(
+        'duplicate key value violates unique constraint "meetings_team_meeting_key_unique"',
+      ),
+      { code: "23505" },
+    );
+    const meetingValues = vi.fn().mockRejectedValue(duplicateError);
 
     const initialExistingLimit = vi.fn().mockResolvedValue([]);
     const retryExistingLimit = vi.fn().mockResolvedValue([
@@ -1805,6 +1928,58 @@ describe("calendar auto join", () => {
         calendarEventId: "66666666-6666-4666-8666-666666666666",
       }),
     );
+  });
+
+  it("accepts a canonical meeting conflict that is not readable by the invitee", async () => {
+    const calendarEventValues = vi.fn().mockReturnValue({
+      onConflictDoUpdate: vi.fn().mockReturnValue({
+        returning: vi
+          .fn()
+          .mockResolvedValue([
+            { id: "33333333-3333-4333-8333-333333333333" },
+          ]),
+      }),
+    });
+    const duplicateError = Object.assign(
+      new Error(
+        'duplicate key value violates unique constraint "meetings_team_meeting_key_unique"',
+      ),
+      { code: "23505" },
+    );
+    const meetingValues = vi.fn().mockRejectedValue(duplicateError);
+
+    insert
+      .mockReturnValueOnce({ values: calendarEventValues })
+      .mockReturnValueOnce({ values: meetingValues });
+    select.mockReturnValue(selectRows([]));
+
+    const { autoJoinCalendarEvent } = await import("@/lib/calendar-auto-join");
+
+    await expect(
+      autoJoinCalendarEvent({
+        connection: {
+          id: "11111111-1111-4111-8111-111111111111",
+          teamId: "22222222-2222-4222-8222-222222222222",
+          userId: "55555555-5555-4555-8555-555555555555",
+          autoJoinEnabled: true,
+        },
+        event: {
+          externalEventId: "google_event_456",
+          title: "Partner sync",
+          startsAt: "2099-06-30T12:00:00.000Z",
+          meetingUrl: "https://meet.google.com/abc-defg-hij",
+        },
+      }),
+    ).resolves.toEqual({
+      action: "skipped",
+      calendarEventId: "33333333-3333-4333-8333-333333333333",
+      meetingUrl: "https://meet.google.com/abc-defg-hij",
+      reason: "already_scheduled",
+    });
+    expect(syncMeetingParticipantAccess).not.toHaveBeenCalled();
+    expect(applyMeetingShareRules).not.toHaveBeenCalled();
+    expect(scheduleRecallCalendarEventBot).not.toHaveBeenCalled();
+    expect(scheduleRecallBot).not.toHaveBeenCalled();
   });
 
   it("updates an existing scheduled Recall bot when the calendar link and time change", async () => {
@@ -2586,6 +2761,9 @@ describe("calendar auto join", () => {
   it("keeps a recorded meeting and creates a new occurrence when its calendar event moves", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-07-22T17:05:00.000Z"));
+    randomUUID.mockReturnValue(
+      "77777777-7777-4777-8777-777777777777",
+    );
 
     const calendarEventReturning = vi.fn().mockResolvedValue([]);
     const calendarEventLimit = vi.fn().mockResolvedValue([
@@ -2750,9 +2928,9 @@ describe("calendar auto join", () => {
     const calendarEventValues = vi
       .fn()
       .mockReturnValue({ onConflictDoUpdate: calendarEventOnConflictDoUpdate });
-    const meetingValues = vi.fn().mockReturnValue({
-      returning: vi.fn().mockRejectedValue(new Error("database unavailable")),
-    });
+    const meetingValues = vi.fn().mockRejectedValue(
+      new Error("database unavailable"),
+    );
     const existingLimit = vi.fn().mockResolvedValue([
       {
         id: "44444444-4444-4444-8444-444444444444",
@@ -3080,7 +3258,44 @@ describe("calendar auto join", () => {
     expect(deleteScheduledRecallBot).not.toHaveBeenCalled();
     expect(deleteRecallCalendarEventBot).not.toHaveBeenCalled();
     expect(scheduleRecallCalendarEventBot).not.toHaveBeenCalled();
+    expect(syncMeetingParticipantAccess).not.toHaveBeenCalled();
+    expect(applyMeetingShareRules).not.toHaveBeenCalled();
     expect(update).not.toHaveBeenCalled();
+
+    getDatabaseClaimsJson.mockReturnValue(null);
+    insert.mockReturnValueOnce({ values: calendarEventValues });
+
+    await expect(
+      autoJoinCalendarEvent({
+        connection: {
+          id: "11111111-1111-4111-8111-111111111111",
+          teamId: "22222222-2222-4222-8222-222222222222",
+          userId: "55555555-5555-4555-8555-555555555555",
+          autoJoinEnabled: true,
+        },
+        event: {
+          externalEventId: "google_event_123",
+          recallCalendarEventId: "66666666-6666-4666-8666-666666666666",
+          recallCalendarEventBots: [],
+          title: "Partner sync",
+          startsAt: "2099-07-30T15:30:00.000Z",
+          endsAt: "2099-07-30T16:00:00.000Z",
+          meetingUrl: "https://zoom.us/j/2345678901",
+        },
+      }),
+    ).resolves.toEqual({
+      action: "skipped",
+      calendarEventId: "33333333-3333-4333-8333-333333333333",
+      meetingId: "44444444-4444-4444-8444-444444444444",
+      meetingUrl: "https://zoom.us/j/2345678901",
+      reason: "already_scheduled",
+    });
+    expect(syncMeetingParticipantAccess).toHaveBeenCalledWith({
+      attendeeEmails: [],
+      meetingId: "44444444-4444-4444-8444-444444444444",
+      ownerUserId: "55555555-5555-4555-8555-555555555555",
+      teamId: "22222222-2222-4222-8222-222222222222",
+    });
   });
 
   it("retries a failed active Recall Calendar V2 meeting on repair sync", async () => {

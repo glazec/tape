@@ -7,6 +7,7 @@ const {
   insert,
   onConflictDoNothing,
   onConflictDoUpdate,
+  randomUUID,
   select,
   set,
   update,
@@ -17,11 +18,16 @@ const {
   insert: vi.fn(),
   onConflictDoNothing: vi.fn(),
   onConflictDoUpdate: vi.fn(),
+  randomUUID: vi.fn(),
   select: vi.fn(),
   set: vi.fn(),
   update: vi.fn(),
   values: vi.fn(),
   where: vi.fn(),
+}));
+
+vi.mock("node:crypto", () => ({
+  randomUUID,
 }));
 
 vi.mock("@/db/client", () => ({
@@ -55,6 +61,7 @@ describe("getOrCreateWorkspaceForSessionUser", () => {
     insert.mockReset();
     onConflictDoNothing.mockReset();
     onConflictDoUpdate.mockReset();
+    randomUUID.mockReset();
     select.mockReset();
     set.mockReset();
     update.mockReset();
@@ -112,18 +119,17 @@ describe("getOrCreateWorkspaceForSessionUser", () => {
     expect(execute).toHaveBeenCalledTimes(1);
   });
 
-  it("creates a five dollar personal workspace for unknown outside domains", async () => {
-    mockLimitedSelect([{ id: "user_456" }]);
-    update.mockReturnValueOnce({ set });
-    set.mockReturnValueOnce({ where });
-    where.mockResolvedValueOnce(undefined);
+  it("creates a five dollar personal workspace for a new account", async () => {
+    randomUUID.mockReturnValueOnce("guest_team_123");
     mockLimitedSelect([]);
+    mockLimitedSelect([]);
+    insert.mockReturnValueOnce({ values });
+    values.mockResolvedValueOnce(undefined);
+    mockLimitedSelect([{ id: "user_456" }]);
     execute.mockResolvedValueOnce(undefined);
     mockLimitedSelect([]);
     insert.mockReturnValueOnce({
-      values: vi.fn().mockReturnValue({
-        returning: vi.fn().mockResolvedValue([{ id: "guest_team_123" }]),
-      }),
+      values: vi.fn().mockResolvedValue(undefined),
     });
     insert.mockReturnValueOnce({ values });
     values.mockReturnValueOnce({ onConflictDoNothing });
@@ -147,10 +153,58 @@ describe("getOrCreateWorkspaceForSessionUser", () => {
       teamName: "Vendor workspace",
       userId: "user_456",
     });
+    expect(onConflictDoUpdate).not.toHaveBeenCalled();
+    expect(onConflictDoNothing).toHaveBeenCalledTimes(1);
     expect(values).toHaveBeenLastCalledWith({
       role: "owner",
       teamId: "guest_team_123",
       userId: "user_456",
+    });
+  });
+
+  it("links an existing email after a concurrent account insert", async () => {
+    mockLimitedSelect([]);
+    mockLimitedSelect([]);
+    insert.mockReturnValueOnce({ values });
+    values.mockRejectedValueOnce({ code: "23505" });
+    mockLimitedSelect([]);
+    update.mockReturnValueOnce({ set });
+    set.mockReturnValueOnce({ where });
+    where.mockResolvedValueOnce(undefined);
+    mockLimitedSelect([{ id: "user_legacy" }]);
+    execute.mockResolvedValueOnce(undefined);
+    mockLimitedSelect([
+      {
+        creditLimitUsdMicros: 5_000_000,
+        hasAllowedDomain: false,
+        role: "owner",
+        teamId: "team_legacy",
+        teamName: "Vendor workspace",
+      },
+    ]);
+
+    const { getOrCreateWorkspaceForSessionUser } = await import(
+      "@/lib/workspace"
+    );
+
+    await expect(
+      getOrCreateWorkspaceForSessionUser({
+        email: "guest@vendor.com",
+        id: "auth_456",
+        name: "Guest",
+      }),
+    ).resolves.toEqual({
+      canCreateMeetings: true,
+      creditLimitUsdMicros: 5_000_000,
+      domain: "vendor.com",
+      teamId: "team_legacy",
+      teamName: "Vendor workspace",
+      userId: "user_legacy",
+    });
+    expect(set).toHaveBeenCalledWith({
+      authUserId: "auth_456",
+      name: "Guest",
+      updatedAt: expect.any(Date),
     });
   });
 

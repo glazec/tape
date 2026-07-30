@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+
 import {
   and,
   asc,
@@ -18,6 +20,7 @@ import {
   localRecordingAttempts,
   meetings,
 } from "@/db/schema";
+import { getDatabaseClaimsJson } from "@/db/rls-context";
 import { normalizeEmail } from "@/lib/access";
 import {
   buildAppUrl,
@@ -385,6 +388,25 @@ export async function autoJoinCalendarEvent(input: AutoJoinInput) {
         teamMeetingKey: activeTeamMeetingKey,
       }),
   );
+  const isAuthenticatedSync = Boolean(getDatabaseClaimsJson());
+
+  if (
+    existingMeeting &&
+    isAuthenticatedSync &&
+    (ownedByActiveSiblingCalendarEvent ||
+      isMeetingOwnedByAnotherUser(
+        existingMeeting,
+        input.connection.userId,
+      ))
+  ) {
+    return {
+      action: "skipped" as const,
+      calendarEventId: calendarEvent.id,
+      meetingId: existingMeeting.id,
+      meetingUrl: meetingUrl ?? undefined,
+      reason: "already_scheduled" as const,
+    };
+  }
 
   if (existingMeeting && !ignoredImportedEvent) {
     await syncMeetingParticipantAccess({
@@ -465,6 +487,7 @@ export async function autoJoinCalendarEvent(input: AutoJoinInput) {
         connection: input.connection,
         calendarEvent,
         attendeeEmails,
+        externalEventId: input.event.externalEventId,
         existingMeeting,
         title,
         startsAt,
@@ -698,25 +721,24 @@ export async function autoJoinCalendarEvent(input: AutoJoinInput) {
   let meeting: ExistingMeeting | { id: string; ownerUserId: string } | null =
     existingMeeting;
   if (!meeting) {
+    const meetingId = randomUUID();
+
     try {
-      meeting = (
-        await db
-          .insert(meetings)
-          .values({
-            teamId: input.connection.teamId,
-            ownerUserId: input.connection.userId,
-            calendarEventId: calendarEvent.id,
-            teamMeetingKey: activeTeamMeetingKey,
-            title,
-            titleSource: "calendar",
-            platform,
-            status: "scheduled",
-            meetingUrl,
-            startedAt: startsAt,
-            endedAt: endsAt,
-          })
-          .returning({ id: meetings.id, ownerUserId: meetings.ownerUserId })
-      )[0];
+      await db.insert(meetings).values({
+        id: meetingId,
+        teamId: input.connection.teamId,
+        ownerUserId: input.connection.userId,
+        calendarEventId: calendarEvent.id,
+        teamMeetingKey: activeTeamMeetingKey,
+        title,
+        titleSource: "calendar",
+        platform,
+        status: "scheduled",
+        meetingUrl,
+        startedAt: startsAt,
+        endedAt: endsAt,
+      });
+      meeting = { id: meetingId, ownerUserId: input.connection.userId };
     } catch (error) {
       if (!isTeamMeetingKeyUniqueConflict(error) || !activeTeamMeetingKey) {
         throw error;
@@ -730,7 +752,33 @@ export async function autoJoinCalendarEvent(input: AutoJoinInput) {
       });
 
       if (!existingMeeting) {
-        throw error;
+        return {
+          action: "skipped" as const,
+          calendarEventId: calendarEvent.id,
+          meetingUrl,
+          reason: "already_scheduled" as const,
+        };
+      }
+
+      if (
+        getDatabaseClaimsJson() &&
+        (isMeetingOwnedByActiveSiblingCalendarEvent({
+          currentCalendarEventId: calendarEvent.id,
+          meeting: existingMeeting,
+          teamMeetingKey: activeTeamMeetingKey,
+        }) ||
+          isMeetingOwnedByAnotherUser(
+            existingMeeting,
+            input.connection.userId,
+          ))
+      ) {
+        return {
+          action: "skipped" as const,
+          calendarEventId: calendarEvent.id,
+          meetingId: existingMeeting.id,
+          meetingUrl,
+          reason: "already_scheduled" as const,
+        };
       }
 
       meeting = existingMeeting;
@@ -927,28 +975,27 @@ async function syncLocalRecorderCalendarMeeting(input: {
       : "scheduled";
 
   if (!meeting) {
+    const meetingId = randomUUID();
+
     try {
-      meetingIdentity = (
-        await db
-          .insert(meetings)
-          .values({
-            calendarEventId: input.calendarEvent.id,
-            endedAt: input.endsAt,
-            meetingUrl: input.meetingUrl,
-            ownerUserId: input.connection.userId,
-            platform: "microsoft_teams",
-            startedAt: input.startsAt,
-            status,
-            teamId: input.connection.teamId,
-            teamMeetingKey: input.teamMeetingKey,
-            title,
-            titleSource,
-          })
-          .returning({
-            id: meetings.id,
-            ownerUserId: meetings.ownerUserId,
-          })
-      )[0];
+      await db.insert(meetings).values({
+        id: meetingId,
+        calendarEventId: input.calendarEvent.id,
+        endedAt: input.endsAt,
+        meetingUrl: input.meetingUrl,
+        ownerUserId: input.connection.userId,
+        platform: "microsoft_teams",
+        startedAt: input.startsAt,
+        status,
+        teamId: input.connection.teamId,
+        teamMeetingKey: input.teamMeetingKey,
+        title,
+        titleSource,
+      });
+      meetingIdentity = {
+        id: meetingId,
+        ownerUserId: input.connection.userId,
+      };
     } catch (error) {
       if (!isTeamMeetingKeyUniqueConflict(error) || !input.teamMeetingKey) {
         throw error;
@@ -962,7 +1009,30 @@ async function syncLocalRecorderCalendarMeeting(input: {
       });
 
       if (!meeting) {
-        throw error;
+        return {
+          action: "skipped" as const,
+          calendarEventId: input.calendarEvent.id,
+          meetingUrl: input.meetingUrl,
+          reason: "already_scheduled" as const,
+        };
+      }
+
+      if (
+        getDatabaseClaimsJson() &&
+        (isMeetingOwnedByActiveSiblingCalendarEvent({
+          currentCalendarEventId: input.calendarEvent.id,
+          meeting,
+          teamMeetingKey: input.teamMeetingKey,
+        }) ||
+          isMeetingOwnedByAnotherUser(meeting, input.connection.userId))
+      ) {
+        return {
+          action: "skipped" as const,
+          calendarEventId: input.calendarEvent.id,
+          meetingId: meeting.id,
+          meetingUrl: input.meetingUrl,
+          reason: "already_scheduled" as const,
+        };
       }
 
       meetingIdentity = meeting;
@@ -1079,6 +1149,7 @@ async function syncLocationCalendarMeeting(input: {
   connection: CalendarConnection;
   calendarEvent: CalendarEventRow;
   attendeeEmails: string[];
+  externalEventId: string;
   existingMeeting: ExistingMeeting | null;
   title: string;
   startsAt: Date;
@@ -1091,37 +1162,74 @@ async function syncLocationCalendarMeeting(input: {
   const titleSource = getCalendarMeetingTitleSource(meeting);
 
   if (!meeting) {
-    meeting = (
-      await db
-        .insert(meetings)
-        .values({
-          teamId: input.connection.teamId,
-          ownerUserId: input.connection.userId,
+    const meetingId = randomUUID();
+
+    try {
+      await db.insert(meetings).values({
+        id: meetingId,
+        teamId: input.connection.teamId,
+        ownerUserId: input.connection.userId,
+        calendarEventId: input.calendarEvent.id,
+        teamMeetingKey: input.teamMeetingKey,
+        title,
+        titleSource,
+        platform: "in_person",
+        status: "scheduled",
+        startedAt: input.startsAt,
+        endedAt: input.endsAt,
+      });
+      meeting = {
+        id: meetingId,
+        ownerUserId: input.connection.userId,
+        calendarEventId: input.calendarEvent.id,
+        teamMeetingKey: input.teamMeetingKey ?? null,
+        title,
+        titleSource,
+        platform: "in_person",
+        recallBotId: null,
+        recallRecordingId: null,
+        meetingUrl: null,
+        startedAt: input.startsAt,
+        endedAt: input.endsAt,
+        status: "scheduled",
+      };
+    } catch (error) {
+      if (!isTeamMeetingKeyUniqueConflict(error) || !input.teamMeetingKey) {
+        throw error;
+      }
+
+      meeting = await findExistingMeeting({
+        calendarEventId: input.calendarEvent.id,
+        externalEventId: input.externalEventId,
+        teamId: input.connection.teamId,
+        teamMeetingKey: input.teamMeetingKey,
+      });
+
+      if (!meeting) {
+        return {
+          action: "skipped" as const,
           calendarEventId: input.calendarEvent.id,
+          reason: "already_scheduled" as const,
+        };
+      }
+
+      if (
+        getDatabaseClaimsJson() &&
+        (isMeetingOwnedByActiveSiblingCalendarEvent({
+          currentCalendarEventId: input.calendarEvent.id,
+          meeting,
           teamMeetingKey: input.teamMeetingKey,
-          title,
-          titleSource,
-          platform: "in_person",
-          status: "scheduled",
-          startedAt: input.startsAt,
-          endedAt: input.endsAt,
-        })
-        .returning({
-          id: meetings.id,
-          ownerUserId: meetings.ownerUserId,
-          calendarEventId: meetings.calendarEventId,
-          teamMeetingKey: meetings.teamMeetingKey,
-          title: meetings.title,
-          titleSource: meetings.titleSource,
-          platform: meetings.platform,
-          recallBotId: meetings.recallBotId,
-          recallRecordingId: meetings.recallRecordingId,
-          meetingUrl: meetings.meetingUrl,
-          startedAt: meetings.startedAt,
-          endedAt: meetings.endedAt,
-          status: meetings.status,
-        })
-    )[0];
+        }) ||
+          isMeetingOwnedByAnotherUser(meeting, input.connection.userId))
+      ) {
+        return {
+          action: "skipped" as const,
+          calendarEventId: input.calendarEvent.id,
+          meetingId: meeting.id,
+          reason: "already_scheduled" as const,
+        };
+      }
+    }
   } else {
     if (
       hasCalendarMeetingRecordChange(meeting, {
@@ -1593,11 +1701,17 @@ function isTeamMeetingKeyUniqueConflict(error: unknown) {
     return false;
   }
 
-  const candidate = error as { code?: unknown; constraint?: unknown };
+  const candidate = error as {
+    code?: unknown;
+    constraint?: unknown;
+    message?: unknown;
+  };
 
   return (
     candidate.code === "23505" &&
-    candidate.constraint === "meetings_team_meeting_key_unique"
+    (candidate.constraint === "meetings_team_meeting_key_unique" ||
+      (typeof candidate.message === "string" &&
+        candidate.message.includes("meetings_team_meeting_key_unique")))
   );
 }
 
@@ -2048,6 +2162,16 @@ function isMeetingOwnedByActiveSiblingCalendarEvent(input: {
       input.meeting.linkedCalendarEventTeamMeetingKey ===
         input.teamMeetingKey &&
       isSupportedMeetingUrl(input.meeting.linkedCalendarEventMeetingUrl),
+  );
+}
+
+function isMeetingOwnedByAnotherUser(
+  meeting: ExistingMeeting,
+  connectionUserId: string,
+) {
+  return (
+    typeof meeting.ownerUserId === "string" &&
+    meeting.ownerUserId !== connectionUserId
   );
 }
 
