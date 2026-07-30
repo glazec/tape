@@ -15,6 +15,7 @@ export type ClientTelemetryEvent = {
   route: string;
   sessionId: string;
   targetType?: string;
+  testSessionId?: string;
   type:
     | "client_error"
     | "navigation_start"
@@ -31,6 +32,8 @@ type TapeTelemetryWindow = Window & {
 const FLUSH_DELAY_MS = 2_000;
 const MAX_BATCH_SIZE = 10;
 const SESSION_STORAGE_KEY = "tape.telemetry.session";
+export const TEST_SESSION_STORAGE_KEY =
+  "tape.telemetry.test_session";
 const queue: ClientTelemetryEvent[] = [];
 let flushTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -76,6 +79,8 @@ export function enqueueClientTelemetry(
     route:
       event.route ?? sanitizeTelemetryRoute(window.location.pathname),
     sessionId: event.sessionId ?? getTelemetrySessionId(),
+    testSessionId:
+      event.testSessionId ?? getTelemetryTestSessionId(),
   });
 
   if (queue.length >= MAX_BATCH_SIZE) {
@@ -235,4 +240,24 @@ function getTelemetrySessionId() {
   } catch {
     return crypto.randomUUID();
   }
+}
+
+function getTelemetryTestSessionId() {
+  try {
+    const testSessionId = sessionStorage.getItem(
+      TEST_SESSION_STORAGE_KEY,
+    );
+
+    return testSessionId && isUuid(testSessionId)
+      ? testSessionId
+      : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function isUuid(value: string) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu.test(
+    value,
+  );
 }

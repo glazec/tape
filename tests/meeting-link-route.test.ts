@@ -137,6 +137,14 @@ describe("POST /api/meetings/link", () => {
         errorMessage: 'column "title_source" does not exist',
         phase: "create_meeting",
         platform: "zoom",
+        telemetry: {
+          errorType: "Error",
+          fingerprint:
+            "meeting_link_scheduling_failure:meeting.bot.create:error",
+          handled: true,
+          operation: "meeting.bot.create",
+          source: "server",
+        },
         userId: "user_123",
       },
     );

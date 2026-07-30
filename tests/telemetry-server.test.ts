@@ -141,4 +141,44 @@ describe("server telemetry", () => {
     );
     expect(forceFlush).toHaveBeenCalledOnce();
   });
+
+  it("promotes structured console error context into queryable fields", async () => {
+    process.env.OTEL_EXPORTER_OTLP_ENDPOINT =
+      "https://otel-collector.example.com";
+    console.error = vi.fn();
+    const { createTelemetryErrorContext } = await import(
+      "@/lib/telemetry/error-context"
+    );
+    const { registerServerTelemetry } = await import(
+      "@/lib/telemetry/server"
+    );
+
+    registerServerTelemetry();
+    console.error("meeting_link_scheduling_failure", {
+      errorMessage: "Recall request failed",
+      telemetry: createTelemetryErrorContext({
+        error: new TypeError("Recall request failed"),
+        eventName: "meeting_link_scheduling_failure",
+        handled: true,
+        operation: "meeting.bot.schedule",
+        source: "server",
+      }),
+    });
+
+    expect(loggerEmit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        attributes: expect.objectContaining({
+          "error.fingerprint":
+            "meeting_link_scheduling_failure:meeting.bot.schedule:typeerror",
+          "error.handled": true,
+          "error.message": "Recall request failed",
+          "error.type": "TypeError",
+          "operation.name": "meeting.bot.schedule",
+          "telemetry.source": "server",
+        }),
+        eventName: "meeting_link_scheduling_failure",
+        severityNumber: 17,
+      }),
+    );
+  });
 });

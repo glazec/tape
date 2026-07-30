@@ -58,8 +58,15 @@ describe("browser telemetry", () => {
   });
 
   it("captures client errors without throwing into the product", async () => {
-    const { initializeClientTelemetry } = await import(
+    const {
+      initializeClientTelemetry,
+      TEST_SESSION_STORAGE_KEY,
+    } = await import(
       "@/lib/telemetry/client"
+    );
+    sessionStorage.setItem(
+      TEST_SESSION_STORAGE_KEY,
+      "33333333-3333-4333-8333-333333333333",
     );
 
     initializeClientTelemetry();
@@ -80,6 +87,8 @@ describe("browser telemetry", () => {
         expect.objectContaining({
           errorMessage: "failed https://example.com/a",
           errorName: "TypeError",
+          testSessionId:
+            "33333333-3333-4333-8333-333333333333",
           type: "client_error",
         }),
       ]),

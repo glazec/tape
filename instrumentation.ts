@@ -1,5 +1,9 @@
 import type { Instrumentation } from "next";
 
+import {
+  createTelemetryErrorContext,
+  getTelemetryErrorAttributes,
+} from "@/lib/telemetry/error-context";
 import { sanitizeTelemetryRoute } from "@/lib/telemetry/sanitize";
 
 export async function register() {
@@ -25,13 +29,24 @@ export const onRequestError: Instrumentation.onRequestError = async (
   const { emitTelemetryLog, flushTelemetry } = await import(
     "@/lib/telemetry/server"
   );
+  const route = sanitizeTelemetryRoute(request.path);
   emitTelemetryLog({
     attributes: {
+      ...getTelemetryErrorAttributes(
+        createTelemetryErrorContext({
+          error,
+          eventName: "nextjs.request.error",
+          handled: false,
+          operation: "nextjs.request",
+          scope: route,
+          source: "nextjs",
+        }),
+      ),
       "http.request.method": request.method,
       "http.route": context.routePath,
       "next.route_type": context.routeType,
       "next.router_kind": context.routerKind,
-      "url.path": sanitizeTelemetryRoute(request.path),
+      "url.path": route,
     },
     error,
     eventName: "nextjs.request.error",

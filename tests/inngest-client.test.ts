@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { buildInngestClientOptions } from "@/inngest/client";
+import { TapeTelemetryMiddleware } from "@/lib/telemetry/inngest-middleware";
 
 describe("buildInngestClientOptions", () => {
   it("trims copied Inngest keys", () => {
@@ -14,6 +15,7 @@ describe("buildInngestClientOptions", () => {
       id: "meeting-transcript",
       baseUrl: "https://inngest.example.com",
       eventKey: "event-key",
+      middleware: [TapeTelemetryMiddleware],
       signingKey: "signing-key",
     });
   });
@@ -27,6 +29,7 @@ describe("buildInngestClientOptions", () => {
       }),
     ).toEqual({
       id: "meeting-transcript",
+      middleware: [TapeTelemetryMiddleware],
     });
   });
 });

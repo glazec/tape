@@ -55,6 +55,7 @@ import {
   updateScheduledRecallBot,
 } from "@/lib/vendors/recall";
 import { assertWorkspaceHasProviderCredit } from "@/lib/provider-credit";
+import { createTelemetryErrorContext } from "@/lib/telemetry/error-context";
 
 type CalendarConnection = {
   id: string;
@@ -1746,6 +1747,14 @@ async function recordCalendarAutoJoinFailure(input: {
     reason: input.reason,
     recallCalendarEventId: input.event.recallCalendarEventId ?? null,
     startsAt: input.startsAt.toISOString(),
+    telemetry: createTelemetryErrorContext({
+      error: input.error,
+      eventName: "calendar_auto_join_failure",
+      handled: false,
+      operation: "calendar.auto_join.schedule_bot",
+      scope: input.reason,
+      source: "server",
+    }),
     title: input.title,
   };
 

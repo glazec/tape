@@ -11,6 +11,10 @@ import {
 
 import { getTelemetryConfig } from "@/lib/telemetry/config";
 import {
+  getTelemetryErrorAttributes,
+  isTelemetryErrorContext,
+} from "@/lib/telemetry/error-context";
+import {
   sanitizeTelemetryAttributes,
   sanitizeTelemetryText,
 } from "@/lib/telemetry/sanitize";
@@ -184,13 +188,18 @@ function instrumentConsole() {
         const metadata = args.slice(
           eventName === firstArgument ? 1 : 0,
         );
+        const structuredAttributes =
+          getStructuredConsoleAttributes(metadata);
 
         emitTelemetryLog({
           attributes:
             metadata.length > 0
-              ? { "log.arguments": JSON.stringify(
-                  sanitizeTelemetryAttributes({ metadata }),
-                ) }
+              ? {
+                  ...structuredAttributes,
+                  "log.arguments": JSON.stringify(
+                    sanitizeTelemetryAttributes({ metadata }),
+                  ),
+                }
               : undefined,
           error: metadata.find((argument) => argument instanceof Error),
           eventName,
@@ -205,6 +214,33 @@ function instrumentConsole() {
       }
     };
   }
+}
+
+function getStructuredConsoleAttributes(metadata: unknown[]) {
+  const attributes: Record<string, unknown> = {};
+
+  for (const value of metadata) {
+    if (!value || typeof value !== "object") {
+      continue;
+    }
+
+    const record = value as Record<string, unknown>;
+
+    if (isTelemetryErrorContext(record.telemetry)) {
+      Object.assign(
+        attributes,
+        getTelemetryErrorAttributes(record.telemetry),
+      );
+
+      if (typeof record.errorMessage === "string") {
+        attributes["error.message"] = sanitizeTelemetryText(
+          record.errorMessage,
+        );
+      }
+    }
+  }
+
+  return attributes;
 }
 
 function consoleSeverity(level: ConsoleLevel): TelemetrySeverity {

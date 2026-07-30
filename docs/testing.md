@@ -85,6 +85,20 @@ and server exporter tests:
 npx vitest run tests/telemetry-config.test.ts tests/telemetry-client.test.ts tests/telemetry-route.test.ts tests/telemetry-server.test.ts
 ```
 
+Browser tests can identify their telemetry explicitly by setting a UUID in
+session storage before the application loads:
+
+```ts
+await page.addInitScript(() => {
+  sessionStorage.setItem(
+    "tape.telemetry.test_session",
+    "33333333-3333-4333-8333-333333333333",
+  );
+});
+```
+
+Those events include `test.session.id` and `telemetry.synthetic = true`.
+
 For Recall bot scheduling or meeting chat changes, verify Zoom and Google Meet
 callback routing, mention handling, visible provider failure replies, signed
 route processing, and OpenRouter tool use:

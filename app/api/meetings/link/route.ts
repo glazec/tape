@@ -26,6 +26,7 @@ import { scheduleRecallBot } from "@/lib/vendors/recall";
 import { retireScheduledRecallBot } from "@/lib/meeting-bot-retirement";
 import { SharedOnlyAccessError } from "@/lib/access-errors";
 import { providerCreditErrorResponse } from "@/lib/provider-credit";
+import { createTelemetryErrorContext } from "@/lib/telemetry/error-context";
 
 export const runtime = "nodejs";
 
@@ -166,6 +167,13 @@ export async function POST(request: Request) {
       errorMessage: getErrorMessage(error),
       phase: "create_meeting",
       platform,
+      telemetry: createTelemetryErrorContext({
+        error,
+        eventName: "meeting_link_scheduling_failure",
+        handled: true,
+        operation: "meeting.bot.create",
+        source: "server",
+      }),
       userId: user.id,
     });
     const response = handleMeetingLinkError(error);
@@ -197,6 +205,13 @@ export async function POST(request: Request) {
         meetingId: scheduledMeeting.meetingId,
         phase: "join_existing_bot",
         platform,
+        telemetry: createTelemetryErrorContext({
+          error,
+          eventName: "meeting_link_scheduling_failure",
+          handled: true,
+          operation: "meeting.bot.join",
+          source: "server",
+        }),
         userId: user.id,
       });
 
@@ -255,6 +270,13 @@ export async function POST(request: Request) {
       meetingId: scheduledMeeting.meetingId,
       phase: "schedule_recall_bot",
       platform,
+      telemetry: createTelemetryErrorContext({
+        error,
+        eventName: "meeting_link_scheduling_failure",
+        handled: true,
+        operation: "meeting.bot.schedule",
+        source: "server",
+      }),
       userId: user.id,
     });
     await markMeetingBotFailed({ meetingId: scheduledMeeting.meetingId });

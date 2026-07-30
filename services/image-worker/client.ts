@@ -1,6 +1,8 @@
 import { Inngest, type ClientOptions } from "inngest";
 import { z } from "zod";
 
+import { TapeTelemetryMiddleware } from "@/lib/telemetry/inngest-middleware";
+
 const optionalSecret = z.preprocess(
   (value) =>
     typeof value === "string" && value.trim() === "" ? undefined : value,
@@ -34,7 +36,10 @@ export function buildImageWorkerClientOptions(
     throw new Error("ELEVENLABS_API_KEY is required in production");
   }
 
-  const options: ClientOptions = { id: "meeting-image-worker" };
+  const options: ClientOptions = {
+    id: "meeting-image-worker",
+    middleware: [TapeTelemetryMiddleware],
+  };
 
   if (environment.INNGEST_BASE_URL) {
     options.baseUrl = environment.INNGEST_BASE_URL;

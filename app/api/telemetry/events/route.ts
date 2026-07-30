@@ -8,6 +8,10 @@ import {
   isServerTelemetryEnabled,
 } from "@/lib/telemetry/server";
 import {
+  createTelemetryErrorContext,
+  getTelemetryErrorAttributes,
+} from "@/lib/telemetry/error-context";
+import {
   sanitizeTelemetryRoute,
   sanitizeTelemetryText,
 } from "@/lib/telemetry/sanitize";
@@ -27,6 +31,7 @@ const clientTelemetryEventSchema = z.object({
   route: z.string().max(240),
   sessionId: z.uuid(),
   targetType: z.string().max(64).optional(),
+  testSessionId: z.uuid().optional(),
   type: z.enum([
     "client_error",
     "navigation_start",
@@ -79,9 +84,24 @@ export async function POST(request: Request) {
     const isError =
       event.type === "client_error" ||
       event.type === "unhandled_rejection";
+    const eventName = `frontend.${event.type}`;
+    const route = sanitizeTelemetryRoute(event.route);
 
     emitTelemetryLog({
       attributes: {
+        ...(isError
+          ? getTelemetryErrorAttributes(
+              createTelemetryErrorContext({
+                error: event.errorName ?? event.errorMessage,
+                errorType: event.errorName,
+                eventName,
+                handled: false,
+                operation: "browser.runtime",
+                scope: route,
+                source: "browser",
+              }),
+            )
+          : {}),
         "action.name": event.action,
         "action.target_type": event.targetType,
         "enduser.id": anonymousUserId,
@@ -92,17 +112,21 @@ export async function POST(request: Request) {
           ? sanitizeTelemetryText(event.errorStack, 4_000)
           : undefined,
         "error.type": event.errorName,
-        "event.name": `frontend.${event.type}`,
+        "event.name": eventName,
         "navigation.type": event.navigationType,
         "page.destination_route": event.destinationRoute
           ? sanitizeTelemetryRoute(event.destinationRoute)
           : undefined,
         "page.load.duration_ms": event.durationMs,
-        "page.route": sanitizeTelemetryRoute(event.route),
+        "page.route": route,
         "session.id": event.sessionId,
         "telemetry.source": "browser",
+        "telemetry.synthetic": event.testSessionId
+          ? true
+          : undefined,
+        "test.session.id": event.testSessionId,
       },
-      eventName: `frontend.${event.type}`,
+      eventName,
       severity: isError ? "ERROR" : "INFO",
       timestamp: new Date(event.occurredAt),
     });

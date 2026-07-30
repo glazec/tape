@@ -96,6 +96,7 @@ describe("POST /api/telemetry/events", () => {
           occurredAt,
           route: "/dashboard",
           sessionId: "22222222-2222-4222-8222-222222222222",
+          testSessionId: "33333333-3333-4333-8333-333333333333",
           type: "client_error",
         },
       ],
@@ -121,7 +122,15 @@ describe("POST /api/telemetry/events", () => {
       2,
       expect.objectContaining({
         attributes: expect.objectContaining({
+          "error.fingerprint":
+            "frontend.client_error:browser.runtime:dashboard:typeerror",
+          "error.handled": false,
           "error.message": "failed https://example.com/private",
+          "error.type": "TypeError",
+          "operation.name": "browser.runtime",
+          "telemetry.synthetic": true,
+          "test.session.id":
+            "33333333-3333-4333-8333-333333333333",
         }),
         eventName: "frontend.client_error",
         severity: "ERROR",

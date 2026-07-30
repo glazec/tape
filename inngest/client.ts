@@ -1,6 +1,8 @@
 import { Inngest, type ClientOptions } from "inngest";
 import { z } from "zod";
 
+import { TapeTelemetryMiddleware } from "@/lib/telemetry/inngest-middleware";
+
 const optionalSecret = z.preprocess(
   (value) =>
     typeof value === "string" && value.trim() === "" ? undefined : value,
@@ -17,7 +19,10 @@ export function buildInngestClientOptions(
   source: Record<string, string | undefined>,
 ): ClientOptions {
   const env = inngestEnvSchema.parse(source);
-  const options: ClientOptions = { id: "meeting-transcript" };
+  const options: ClientOptions = {
+    id: "meeting-transcript",
+    middleware: [TapeTelemetryMiddleware],
+  };
 
   if (env.INNGEST_BASE_URL) {
     options.baseUrl = env.INNGEST_BASE_URL;

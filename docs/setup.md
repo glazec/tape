@@ -119,6 +119,11 @@ Telemetry intentionally excludes DOM text, form values, meeting content,
 query strings, email addresses, and raw authenticated user IDs. Routes replace
 UUID and long numeric path segments with `:id`.
 
+Error logs include `error.fingerprint`, `error.handled`, `error.type`,
+`operation.name`, and `telemetry.source`. Final Inngest failures also include
+`inngest.function.id`, `inngest.run.id`, and `inngest.attempt`, so retries and
+terminal failures can be separated without parsing log messages.
+
 ## Database
 
 Apply every committed migration to the configured database:
