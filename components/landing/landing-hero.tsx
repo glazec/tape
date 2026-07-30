@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useSyncExternalStore } from "react";
+import { useEffect, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import { motion, useMotionValue, useTransform } from "framer-motion";
 import Link from "next/link";
@@ -9,23 +9,91 @@ import { Container } from "./landing-section";
 
 const HeroScene = dynamic(() => import("./hero-scene"), { ssr: false });
 
-function usePrefersReducedMotion() {
-  return useSyncExternalStore(
-    (onChange) => {
-      const mq = window.matchMedia("(prefers-reduced-motion: reduce)");
-      mq.addEventListener("change", onChange);
-      return () => mq.removeEventListener("change", onChange);
-    },
-    () => window.matchMedia("(prefers-reduced-motion: reduce)").matches,
-    () => false,
+/**
+ * The scroll-driven scene is a WebGL render with an environment map behind it,
+ * which is far too much work for a phone and pointless for anyone who asked for
+ * reduced motion. Load it only on a large fine-pointer viewport, and only once
+ * the browser is idle, so three.js never competes with first paint. Everyone
+ * else gets the still motif below, which costs nothing.
+ */
+function useHeroSceneEnabled() {
+  const [enabled, setEnabled] = useState(false);
+
+  useEffect(() => {
+    const query = window.matchMedia(
+      "(min-width: 1024px) and (pointer: fine) and (prefers-reduced-motion: no-preference)",
+    );
+
+    let idleHandle: number | null = null;
+
+    const cancelIdle = () => {
+      if (idleHandle === null) return;
+      if (typeof window.cancelIdleCallback === "function") {
+        window.cancelIdleCallback(idleHandle);
+      } else {
+        window.clearTimeout(idleHandle);
+      }
+      idleHandle = null;
+    };
+
+    const sync = () => {
+      cancelIdle();
+
+      if (!query.matches) {
+        setEnabled(false);
+        return;
+      }
+
+      idleHandle =
+        typeof window.requestIdleCallback === "function"
+          ? window.requestIdleCallback(() => setEnabled(true), { timeout: 1200 })
+          : window.setTimeout(() => setEnabled(true), 300);
+    };
+
+    sync();
+    query.addEventListener("change", sync);
+
+    return () => {
+      cancelIdle();
+      query.removeEventListener("change", sync);
+    };
+  }, []);
+
+  return enabled;
+}
+
+/** Still spools, for viewports that do not get the animated scene. */
+function HeroStill() {
+  return (
+    <svg
+      aria-hidden
+      viewBox="0 0 420 260"
+      className="h-full w-full text-ink"
+      preserveAspectRatio="xMidYMid meet"
+    >
+      <g fill="none" stroke="currentColor" opacity={0.16}>
+        <circle cx="120" cy="130" r="42" strokeWidth="5" />
+        <circle cx="300" cy="130" r="74" strokeWidth="5" />
+        <path d="M120 88h180" strokeWidth="4" />
+        <path d="M120 172h180" strokeWidth="4" />
+      </g>
+      <g fill="currentColor" opacity={0.16}>
+        <circle cx="120" cy="130" r="12" />
+        <circle cx="300" cy="130" r="20" />
+      </g>
+    </svg>
   );
 }
 
 export function LandingHero() {
   const regionRef = useRef<HTMLElement>(null);
+  const sceneEnabled = useHeroSceneEnabled();
   // Measured manually — deterministic 0→1 across the sticky region.
   const scrollYProgress = useMotionValue(0);
+
   useEffect(() => {
+    if (!sceneEnabled) return;
+
     const measure = () => {
       const el = regionRef.current;
       if (!el) return;
@@ -43,7 +111,7 @@ export function LandingHero() {
       window.removeEventListener("scroll", measure);
       window.removeEventListener("resize", measure);
     };
-  }, [scrollYProgress]);
+  }, [scrollYProgress, sceneEnabled]);
 
   // Beat 1: intro copy fades/slides out as the wind begins.
   const copyOpacity = useTransform(scrollYProgress, [0.04, 0.26], [1, 0]);
@@ -52,21 +120,33 @@ export function LandingHero() {
   const captionOpacity = useTransform(scrollYProgress, [0.72, 0.9], [0, 1]);
   const captionY = useTransform(scrollYProgress, [0.72, 0.92], [28, 0]);
 
-  const reducedMotion = usePrefersReducedMotion();
-
   return (
     <section
       ref={regionRef}
       className={
-        reducedMotion
-          ? "relative bg-paper"
-          : "relative h-[220vh] bg-paper lg:h-[300vh]"
+        sceneEnabled ? "relative h-[300vh] bg-paper" : "relative bg-paper"
       }
     >
-      <div className="sticky top-0 h-screen overflow-hidden">
-        {/* full-bleed 3D scene */}
+      <div
+        className={
+          sceneEnabled
+            ? "sticky top-0 h-screen overflow-hidden"
+            : "relative overflow-hidden"
+        }
+      >
+        {/* full-bleed 3D scene, or the still motif in its place */}
         <div className="absolute inset-0">
-          <HeroScene progress={scrollYProgress} />
+          {sceneEnabled ? (
+            <HeroScene progress={scrollYProgress} />
+          ) : (
+            // Below sm the copy fills the measure, so the motif would only
+            // show as a cropped arc behind the text. Type carries it instead.
+            <div className="hidden h-full items-center justify-end pr-[6vw] sm:flex">
+              <div className="h-[48%] w-[52%] max-w-[24rem]">
+                <HeroStill />
+              </div>
+            </div>
+          )}
         </div>
         {/* Keeps the copy legible where the tape ribbon crosses behind it. */}
         <div
@@ -80,8 +160,12 @@ export function LandingHero() {
 
         {/* intro copy */}
         <motion.div
-          style={{ opacity: copyOpacity, y: copyY }}
-          className="pointer-events-none relative flex h-full items-center pb-20 pt-24 sm:pt-28"
+          style={sceneEnabled ? { opacity: copyOpacity, y: copyY } : undefined}
+          className={
+            sceneEnabled
+              ? "pointer-events-none relative flex h-full items-center pb-20 pt-24 sm:pt-28"
+              : "pointer-events-none relative flex items-center pb-16 pt-32 sm:pb-24 sm:pt-40"
+          }
         >
           <Container>
             <div className="pointer-events-auto max-w-[42rem]">
@@ -118,19 +202,21 @@ export function LandingHero() {
         </motion.div>
 
         {/* closing caption over the take-up detail shot */}
-        <motion.div
-          style={{ opacity: captionOpacity, y: captionY }}
-          className="pointer-events-none absolute inset-x-0 top-28 lg:top-32"
-        >
-          <Container>
-            <p className="font-mono text-label uppercase tracking-[0.2em] text-brand-ink">
-              While you talk
-            </p>
-            <p className="font-display mt-4 max-w-[17ch] text-display-3 tracking-[-0.02em] text-ink">
-              It listens, <em className="italic">so you can think.</em>
-            </p>
-          </Container>
-        </motion.div>
+        {sceneEnabled ? (
+          <motion.div
+            style={{ opacity: captionOpacity, y: captionY }}
+            className="pointer-events-none absolute inset-x-0 top-28 lg:top-32"
+          >
+            <Container>
+              <p className="font-mono text-label uppercase tracking-[0.2em] text-brand-ink">
+                While you talk
+              </p>
+              <p className="font-display mt-4 max-w-[17ch] text-display-3 tracking-[-0.02em] text-ink">
+                It listens, <em className="italic">so you can think.</em>
+              </p>
+            </Container>
+          </motion.div>
+        ) : null}
       </div>
     </section>
   );

@@ -10,11 +10,12 @@ import { Container } from "./landing-section";
 const EASE = [0.16, 1, 0.3, 1] as const;
 
 const LINKS = [
-  { href: "#capture", label: "Capture" },
-  { href: "#languages", label: "Languages" },
   { href: "#memory", label: "Memory" },
+  { href: "#languages", label: "Languages" },
   { href: "#agents", label: "Agents" },
+  { href: "#capture", label: "Capture" },
   { href: "#enterprise", label: "Enterprise" },
+  { href: "#pricing", label: "Pricing" },
 ];
 
 export function LandingNav() {

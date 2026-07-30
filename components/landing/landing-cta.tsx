@@ -7,11 +7,13 @@ import { ProductLogo } from "@/components/product-logo";
 import { Container, FadeIn, Lede } from "./landing-section";
 
 const SECTION_LINKS = [
-  { href: "#capture", label: "Capture" },
-  { href: "#languages", label: "Languages" },
   { href: "#memory", label: "Memory" },
+  { href: "#languages", label: "Languages" },
   { href: "#agents", label: "Agents" },
+  { href: "#capture", label: "Capture" },
   { href: "#enterprise", label: "Enterprise" },
+  { href: "#pricing", label: "Pricing" },
+  { href: "#faq", label: "Questions" },
 ];
 
 const SITE_LINKS = [

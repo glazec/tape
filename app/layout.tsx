@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Geist, Fraunces, Space_Grotesk, IBM_Plex_Mono } from "next/font/google";
 import Script from "next/script";
 
@@ -7,6 +7,7 @@ import {
   getOneSignalAllowedOrigins,
   getOneSignalAppId,
 } from "@/lib/onesignal-web-sdk";
+import { SITE_NAME, siteOrigin } from "@/lib/site";
 import { cn } from "@/lib/utils";
 
 import "./globals.css";
@@ -32,9 +33,41 @@ const oneSignalInitScript = oneSignalAppId
   ? buildOneSignalInitScript(oneSignalAppId, oneSignalAllowedOrigins)
   : null;
 
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+};
+
 export const metadata: Metadata = {
-  title: "Tape",
-  description: "Tape is your team meeting transcript workspace",
+  metadataBase: new URL(siteOrigin()),
+  title: {
+    default: "Tape — Every conversation, on the record",
+    template: "%s · Tape",
+  },
+  description:
+    "Tape is an AI meeting note taker for bilingual teams, turning Chinese and English conversations into accurate notes and searchable team memory.",
+  applicationName: SITE_NAME,
+  keywords: [
+    "bilingual meeting notes",
+    "Chinese English meeting transcription",
+    "AI meeting notes without a bot",
+    "meeting transcript workspace",
+    "MCP meeting notes",
+    "self hosted meeting notes",
+    "open source meeting transcription",
+    "team meeting memory",
+  ],
+  openGraph: {
+    type: "website",
+    siteName: SITE_NAME,
+    locale: "en_US",
+  },
+  twitter: { card: "summary_large_image" },
+  robots: {
+    index: true,
+    follow: true,
+    googleBot: { index: true, follow: true, "max-image-preview": "large" },
+  },
 };
 
 export default function RootLayout({

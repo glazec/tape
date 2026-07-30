@@ -32,6 +32,41 @@ test("shows the Tape landing page", async ({ page }) => {
   ).toBeVisible();
 });
 
+test("publishes complete search and social metadata on mobile", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 320, height: 720 });
+  await page.goto("/");
+
+  const metadata = await page.evaluate(() => ({
+    description: document.querySelector<HTMLMetaElement>(
+      'meta[name="description"]',
+    )?.content,
+    openGraphImage: document.querySelector<HTMLMetaElement>(
+      'meta[property="og:image"]',
+    )?.content,
+    openGraphLocale: document.querySelector<HTMLMetaElement>(
+      'meta[property="og:locale"]',
+    )?.content,
+    twitterImage: document.querySelector<HTMLMetaElement>(
+      'meta[name="twitter:image"]',
+    )?.content,
+    viewport: document.querySelector<HTMLMetaElement>(
+      'meta[name="viewport"]',
+    )?.content,
+    clientWidth: document.documentElement.clientWidth,
+    scrollWidth: document.documentElement.scrollWidth,
+  }));
+
+  expect(metadata.description?.length).toBeGreaterThanOrEqual(70);
+  expect(metadata.description?.length).toBeLessThanOrEqual(160);
+  expect(metadata.openGraphImage).toContain("/og-image.png");
+  expect(metadata.openGraphLocale).toBe("en_US");
+  expect(metadata.twitterImage).toContain("/og-image.png");
+  expect(metadata.viewport).toContain("width=device-width");
+  expect(metadata.scrollWidth).toBeLessThanOrEqual(metadata.clientWidth);
+});
+
 test("shows the sign in page linked from the landing call to action", async ({
   page,
 }) => {

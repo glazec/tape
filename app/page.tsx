@@ -20,7 +20,13 @@ import { REPOSITORY_URL, SITE_NAME, siteUrl } from "@/lib/site";
 export const dynamic = "force-dynamic";
 
 const DESCRIPTION =
-  "Bilingual meeting notes for teams working across Chinese and English. Nothing to pick before the call, recurring meetings thread into one conversation, and your own AI assistant can query the archive over MCP.";
+  "Bilingual meeting notes for Chinese–English teams. Auto-threaded recurring meetings and an AI assistant that queries your full archive via MCP.";
+const SOCIAL_IMAGE = {
+  url: "/og-image.png",
+  width: 1200,
+  height: 630,
+  alt: "Tape meeting workspace with bilingual transcript and AI answers",
+};
 
 export const metadata: Metadata = {
   title: "Tape — Every conversation, on the record",
@@ -31,13 +37,16 @@ export const metadata: Metadata = {
     url: siteUrl("/"),
     siteName: SITE_NAME,
     title: "Tape — Every conversation, on the record",
+    locale: "en_US",
     description: DESCRIPTION,
   },
+    images: [SOCIAL_IMAGE],
   twitter: {
     card: "summary_large_image",
     title: "Tape — Every conversation, on the record",
     description: DESCRIPTION,
   },
+    images: [SOCIAL_IMAGE],
 };
 
 /**
