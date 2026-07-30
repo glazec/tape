@@ -195,7 +195,10 @@ jobs:
 
           mkdir -p "$UPDATES_DIR"
           ditto -c -k --sequesterRsrc --keepParent "$APP_PATH" "$ARCHIVE_PATH"
-          shasum -a 256 "$ARCHIVE_PATH" > "$ARCHIVE_PATH.sha256"
+          (
+            cd "$UPDATES_DIR"
+            shasum -a 256 "$ARCHIVE_NAME"
+          ) > "$ARCHIVE_PATH.sha256"
           printf '%s' "$SPARKLE_PRIVATE_KEY" | \
             "$SPARKLE_TOOLS/generate_appcast" \
               --ed-key-file - \

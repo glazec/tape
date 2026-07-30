@@ -140,6 +140,12 @@ describe("local recorder app packaging", () => {
     expect(workflow).toContain(
       'grep -q "<sparkle:shortVersionString>$APP_VERSION</sparkle:shortVersionString>"',
     );
+    expect(workflow).toMatch(
+      /cd "\$UPDATES_DIR"\s+shasum -a 256 "\$ARCHIVE_NAME"/,
+    );
+    expect(workflow).not.toContain(
+      'shasum -a 256 "$ARCHIVE_PATH"',
+    );
     expect(workflow).toContain('ARCHIVE_NAME="Tape-Desktop.zip"');
     expect(workflow).toContain("--latest");
   });
