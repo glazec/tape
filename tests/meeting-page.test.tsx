@@ -48,11 +48,13 @@ vi.mock("@/components/meeting-auto-refresh", () => ({
 vi.mock("@/components/meeting-actions", () => ({
   MeetingActions: ({
     audioPartCount = 0,
+    canDelete = true,
     hasAudio = true,
     hasTranscript = true,
     imageCount = 0,
   }: {
     audioPartCount?: number;
+    canDelete?: boolean;
     hasAudio?: boolean;
     hasTranscript?: boolean;
     imageCount?: number;
@@ -60,7 +62,7 @@ vi.mock("@/components/meeting-actions", () => ({
     <span>
       meeting actions:
       {hasAudio || hasTranscript || imageCount > 0 ? "content" : "delete only"}
-      :audio parts:{audioPartCount}
+      :audio parts:{audioPartCount}:delete:{String(canDelete)}
     </span>
   ),
 }));
@@ -150,6 +152,21 @@ describe("meeting page", () => {
     expect(html).toContain("transcript:meeting_1");
     expect(html).toContain("lg:grid-cols-[1fr_20rem]");
     expect(mocks.listRecipients).toHaveBeenCalled();
+  });
+
+  it("keeps delete hidden from a meeting administrator who is not the owner", async () => {
+    mocks.getMeeting.mockResolvedValue(
+      meeting({ canDelete: false, canManage: true }),
+    );
+
+    const html = renderToStaticMarkup(
+      await MeetingPage({
+        params: Promise.resolve({ meetingId: "admin_meeting" }),
+      }),
+    );
+
+    expect(html).toContain("meeting actions:content");
+    expect(html).toContain("delete:false");
   });
 
   it("passes the stored and preferred translation languages to the transcript", async () => {
@@ -375,11 +392,13 @@ describe("meeting page", () => {
       }),
     );
     expect(html).toContain("Shared transcript");
+    expect(html).toContain("share dialog");
+    expect(html).toContain("read and share this transcript");
     expect(html).toContain("In person:No recording");
     expect(html).toContain("transcript:readonly");
     expect(html).not.toContain("meeting actions");
     expect(html).not.toContain("recovery panel");
-    expect(mocks.listRecipients).not.toHaveBeenCalled();
+    expect(mocks.listRecipients).toHaveBeenCalled();
   });
 
   it("does not offer uploads for an empty shared meeting", async () => {
@@ -448,6 +467,7 @@ function meeting(overrides: Record<string, unknown> = {}) {
   return {
     accessPeople: [],
     audioUrl: "/audio",
+    canDelete: true,
     canManage: true,
     durationMs: 60_000,
     endedAt: new Date("2026-07-20T10:01:00Z"),

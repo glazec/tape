@@ -33,6 +33,7 @@ describe("meeting share service", () => {
           {
             id: "55555555-5555-4555-8555-555555555555",
             pending: false,
+            shared: true,
           },
         ],
       ].slice(0, queries.length);
@@ -58,6 +59,7 @@ describe("meeting share service", () => {
     ).resolves.toMatchObject({
       id: "55555555-5555-4555-8555-555555555555",
       pending: false,
+      shared: true,
     });
     expect(transaction).toHaveBeenCalledTimes(1);
     expect(txn).toHaveBeenCalledTimes(2);
@@ -114,6 +116,7 @@ describe("meeting share service", () => {
     ).resolves.toEqual({
       id: "55555555-5555-4555-8555-555555555555",
       pending: true,
+      shared: false,
     });
     const materializationQuery = txn.mock.results[1]?.value;
     expect(materializationQuery?.params).toContainEqual([]);

@@ -132,6 +132,7 @@ export type MeetingTranscript = {
   speakerAliases: SpeakerAlias[];
   speakerSuggestions: SpeakerSuggestion[];
   accessScope: "workspace" | "shared";
+  canDelete: boolean;
   canManage: boolean;
   accessPeople: MeetingAccessPerson[];
   entities: MeetingTranscriptEntity[];
@@ -1248,6 +1249,7 @@ export async function getMeetingTranscriptForWorkspace(
       translationErrorMessage: meetings.translationErrorMessage,
       translationLanguage: meetings.translationLanguage,
       translationStatus: meetings.translationStatus,
+      canDelete: eq(meetings.ownerUserId, workspace.userId),
       canManage: getMeetingManagerCondition(workspace),
     })
     .from(meetings)
@@ -1452,6 +1454,7 @@ export async function getMeetingTranscriptForWorkspace(
     speakerAliases,
     speakerSuggestions,
     accessScope,
+    canDelete: Boolean(meeting.canDelete),
     canManage: Boolean(meeting.canManage),
     accessPeople,
     entities: normalizeMeetingTranscriptEntities(entities),

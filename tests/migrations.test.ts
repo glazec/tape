@@ -424,6 +424,44 @@ describe("database migrations", () => {
     }
   });
 
+  it("allows readable meetings to be reshared while keeping deletion owner only", () => {
+    const sql = readFileSync(
+      "db/migrations/0045_meeting_resharing_permissions.sql",
+      "utf8",
+    ).replace(/\s+/g, " ");
+
+    expect(sql).toContain(
+      "create or replace function app_private.can_share_meeting",
+    );
+    expect(sql).toContain(
+      "select app_private.can_read_meeting(target_meeting_id)",
+    );
+    expect(sql).toContain(
+      "create policy meeting_share_policies_insert",
+    );
+    expect(sql).toContain(
+      "meeting_share_policies.scope = 'single' or app_private.can_write_meeting(meeting.id)",
+    );
+    expect(sql).toContain(
+      "create policy meeting_access_sources_insert",
+    );
+    expect(sql).toContain(
+      "create policy meeting_share_invites_insert",
+    );
+    expect(sql).toContain(
+      "create trigger meeting_access_protect_reshare_update",
+    );
+    expect(sql).toContain("and new.revoked_at is null");
+    expect(
+      sql.match(
+        /if nullif\(current_setting\('request\.jwt\.claims', true\), ''\) is null then return new; end if;/g,
+      ),
+    ).toHaveLength(2);
+    expect(sql).toContain(
+      "using (owner_user_id = app_private.current_user_id())",
+    );
+  });
+
   it("scopes dashboard transcript stats to readable meetings", () => {
     const sql = readFileSync(
       "db/migrations/0044_dashboard_transcript_stats.sql",

@@ -5,6 +5,7 @@ import { db } from "@/db/client";
 import { calendarEvents, meetings, users } from "@/db/schema";
 import { normalizeEmail } from "@/lib/access";
 import { getCurrentUser } from "@/lib/auth";
+import { getReadableMeetingsCondition } from "@/lib/meeting-access-policy";
 import {
   createMeetingSharePolicy,
   listActiveMeetingShares,
@@ -19,7 +20,7 @@ import {
   meetingsShareReliableMatch,
 } from "@/lib/meeting-sharing";
 import { getTeamConfiguration } from "@/lib/team-configuration";
-import { getManageableMeetingCondition } from "@/lib/meeting-write-policy";
+import { getMeetingManagerCondition } from "@/lib/meeting-write-policy";
 import { getOrCreateWorkspaceForSessionUser } from "@/lib/workspace";
 
 export const runtime = "nodejs";
@@ -54,7 +55,7 @@ export async function GET(
   _request: Request,
   context: { params: Promise<{ meetingId: string }> },
 ) {
-  const access = await getManageableMeeting(context);
+  const access = await getAccessibleMeeting(context);
 
   if (access instanceof Response) {
     return access;
@@ -69,7 +70,7 @@ export async function POST(
   request: Request,
   context: { params: Promise<{ meetingId: string }> },
 ) {
-  const access = await getManageableMeeting(context);
+  const access = await getAccessibleMeeting(context);
 
   if (access instanceof Response) {
     return access;
@@ -90,6 +91,16 @@ export async function POST(
 
   if (shareRequest.email === normalizeEmail(access.user.email)) {
     return Response.json({ error: "You already have access" }, { status: 400 });
+  }
+
+  if (shareRequest.includeRelated && !access.meeting.canManage) {
+    return Response.json(
+      {
+        error:
+          "Only the meeting owner or a workspace administrator can share related meetings",
+      },
+      { status: 403 },
+    );
   }
 
   const scope = shareRequest.includeRelated ? "related" : "single";
@@ -118,8 +129,15 @@ export async function POST(
       recipientEmail: shareRequest.email,
       scope: "single",
       seedMeetingId: access.meeting.id,
-      teamId: access.workspace.teamId,
+      teamId: access.meeting.teamId,
     });
+
+    if (shared.shared === false) {
+      return Response.json(
+        { error: "The meeting owner removed this person’s access" },
+        { status: 409 },
+      );
+    }
 
     return Response.json({
       email: shareRequest.email,
@@ -153,7 +171,7 @@ export async function POST(
     .leftJoin(calendarEvents, eq(calendarEvents.id, meetings.calendarEventId))
     .where(
       and(
-        eq(meetings.teamId, access.workspace.teamId),
+        eq(meetings.teamId, access.meeting.teamId),
         eq(meetings.ownerUserId, access.meeting.ownerUserId),
         ne(meetings.status, "cancelled"),
       ),
@@ -188,8 +206,15 @@ export async function POST(
     recipientEmail: shareRequest.email,
     scope: "related",
     seedMeetingId: access.meeting.id,
-    teamId: access.workspace.teamId,
+    teamId: access.meeting.teamId,
   });
+
+  if (shared.shared === false) {
+    return Response.json(
+      { error: "The meeting owner removed this person’s access" },
+      { status: 409 },
+    );
+  }
 
   return Response.json({
     email: shareRequest.email,
@@ -204,10 +229,14 @@ export async function DELETE(
   request: Request,
   context: { params: Promise<{ meetingId: string }> },
 ) {
-  const access = await getManageableMeeting(context);
+  const access = await getAccessibleMeeting(context);
 
   if (access instanceof Response) {
     return access;
+  }
+
+  if (!access.meeting.canManage) {
+    return Response.json({ error: "Meeting not found" }, { status: 404 });
   }
 
   const searchParams = new URL(request.url).searchParams;
@@ -268,7 +297,7 @@ function getCandidateMatchKeys(
   });
 }
 
-async function getManageableMeeting(context: {
+async function getAccessibleMeeting(context: {
   params: Promise<{ meetingId: string }>;
 }) {
   const user = await getCurrentUser();
@@ -288,6 +317,7 @@ async function getManageableMeeting(context: {
   const [meeting] = await db
     .select({
       attendeeEmails: calendarEvents.attendeeEmails,
+      canManage: getMeetingManagerCondition(workspace),
       id: meetings.id,
       ownerEmail: sql<string>`(
         select lower(${users.email})
@@ -295,11 +325,17 @@ async function getManageableMeeting(context: {
         where ${users.id} = ${meetings.ownerUserId}
       )`,
       ownerUserId: meetings.ownerUserId,
+      teamId: meetings.teamId,
       title: meetings.title,
     })
     .from(meetings)
     .leftJoin(calendarEvents, eq(calendarEvents.id, meetings.calendarEventId))
-    .where(getManageableMeetingCondition(workspace, parsedMeetingId.data))
+    .where(
+      and(
+        eq(meetings.id, parsedMeetingId.data),
+        getReadableMeetingsCondition(workspace),
+      ),
+    )
     .limit(1);
 
   if (!meeting) {
@@ -309,14 +345,14 @@ async function getManageableMeeting(context: {
   return { meeting, user, workspace };
 }
 
-type ManageableMeetingAccess = Exclude<
-  Awaited<ReturnType<typeof getManageableMeeting>>,
+type AccessibleMeetingAccess = Exclude<
+  Awaited<ReturnType<typeof getAccessibleMeeting>>,
   Response
 >;
 
 async function shareWithAudience(
   audience: "organization" | "team_group",
-  access: ManageableMeetingAccess,
+  access: AccessibleMeetingAccess,
 ) {
   const currentUserEmail = normalizeEmail(access.user.email);
   const teamConfiguration =
@@ -342,7 +378,7 @@ async function shareWithAudience(
       email !== currentUserEmail && email !== access.meeting.ownerEmail,
   );
 
-  await Promise.all(
+  const results = await Promise.all(
     recipients.map(({ email }) =>
       createMeetingSharePolicy({
         createdByUserId: access.workspace.userId,
@@ -352,14 +388,14 @@ async function shareWithAudience(
         recipientEmail: email,
         scope: "single",
         seedMeetingId: access.meeting.id,
-        teamId: access.workspace.teamId,
+        teamId: access.meeting.teamId,
       }),
     ),
   );
 
   return Response.json({
     audience,
-    recipientCount: recipients.length,
+    recipientCount: results.filter((result) => result.shared !== false).length,
     shared: true,
   });
 }

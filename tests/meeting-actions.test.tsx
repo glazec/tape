@@ -52,6 +52,19 @@ describe("MeetingActions", () => {
     expect(html).toContain("Delete meeting");
   });
 
+  it("hides deletion from meeting administrators who are not the owner", () => {
+    const html = renderToStaticMarkup(
+      <MeetingActions
+        canDelete={false}
+        meetingId="11111111-1111-4111-8111-111111111111"
+      />,
+    );
+
+    expect(html).toContain("Export");
+    expect(html).not.toContain("Delete meeting");
+    expect(html).not.toContain('aria-label="More meeting actions"');
+  });
+
   it("offers only actions backed by available meeting content", () => {
     const audioOnly = renderToStaticMarkup(
       <MeetingActions

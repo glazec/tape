@@ -99,10 +99,17 @@ async function removeRecipientRequest(email: string) {
 }
 
 function mockMeetingRows(rows: unknown[]) {
+  const accessibleRows = rows.map((row) => ({
+    canManage: true,
+    teamId: "team_123",
+    ...(row as Record<string, unknown>),
+  }));
   select.mockReturnValueOnce({
     from: () => ({
       leftJoin: () => ({
-        where: () => ({ limit: vi.fn().mockResolvedValue(rows) }),
+        where: () => ({
+          limit: vi.fn().mockResolvedValue(accessibleRows),
+        }),
       }),
     }),
   });
@@ -303,6 +310,79 @@ describe("POST /api/meetings/[meetingId]/share", () => {
       seedMeetingId: meetingId,
       teamId: "team_123",
     });
+  });
+
+  it("allows a share recipient to share the meeting with another person", async () => {
+    getCurrentUser.mockResolvedValue({
+      email: "recipient@example.com",
+      id: "auth_recipient",
+      name: null,
+    });
+    getWorkspace.mockResolvedValue({
+      domain: "recipient.example",
+      teamId: "recipient_team",
+      userId: "recipient_user_id",
+    });
+    mockMeetingRows([
+      {
+        attendeeEmails: [],
+        canManage: false,
+        id: meetingId,
+        ownerUserId: "owner_user_id",
+        teamId: "owner_team",
+        title: "Weekly sync",
+      },
+    ]);
+    createMeetingSharePolicy.mockResolvedValue({
+      pending: false,
+      shared: true,
+    });
+
+    const response = await shareMeetingRequest({
+      email: "new-person@example.com",
+      includeRelated: false,
+    });
+
+    expect(response.status).toBe(200);
+    expect(createMeetingSharePolicy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        createdByUserId: "recipient_user_id",
+        meetingIds: [meetingId],
+        ownerUserId: "owner_user_id",
+        teamId: "owner_team",
+      }),
+    );
+  });
+
+  it("does not let a share recipient extend access to related meetings", async () => {
+    getCurrentUser.mockResolvedValue({
+      email: "recipient@example.com",
+      id: "auth_recipient",
+      name: null,
+    });
+    getWorkspace.mockResolvedValue({
+      domain: "recipient.example",
+      teamId: "recipient_team",
+      userId: "recipient_user_id",
+    });
+    mockMeetingRows([
+      {
+        attendeeEmails: ["founder@example.com"],
+        canManage: false,
+        id: meetingId,
+        ownerUserId: "owner_user_id",
+        teamId: "owner_team",
+        title: "Weekly sync",
+      },
+    ]);
+
+    const response = await shareMeetingRequest({
+      email: "new-person@example.com",
+      includeRelated: true,
+    });
+
+    expect(response.status).toBe(403);
+    expect(createMeetingSharePolicy).not.toHaveBeenCalled();
   });
 
   it("shares a meeting with the whole workspace organization", async () => {
@@ -624,6 +704,34 @@ describe("POST /api/meetings/[meetingId]/share", () => {
 
     expect(response.status).toBe(200);
     expect(revokeMeetingSharePolicy).toHaveBeenCalledWith(shareId);
+  });
+
+  it("does not let a share recipient remove another person’s access", async () => {
+    getCurrentUser.mockResolvedValue({
+      email: "recipient@example.com",
+      id: "auth_recipient",
+      name: null,
+    });
+    getWorkspace.mockResolvedValue({
+      domain: "recipient.example",
+      teamId: "recipient_team",
+      userId: "recipient_user_id",
+    });
+    mockMeetingRows([
+      {
+        attendeeEmails: [],
+        canManage: false,
+        id: meetingId,
+        ownerUserId: "owner_user_id",
+        teamId: "owner_team",
+        title: "Weekly sync",
+      },
+    ]);
+
+    const response = await removeRecipientRequest("guest@example.com");
+
+    expect(response.status).toBe(404);
+    expect(revokeMeetingRecipientAccess).not.toHaveBeenCalled();
   });
 
   it("explains why an unauthenticated recipient removal is rejected", async () => {

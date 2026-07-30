@@ -36,6 +36,8 @@ type ShareAudienceOption = {
 };
 
 type ShareDialogProps = {
+  allowRelated?: boolean;
+  canRemoveAccess?: boolean;
   customAudience?: ShareAudienceOption | null;
   initialAccessPeople?: MeetingAccessPerson[];
   initialShares?: ActiveMeetingShare[];
@@ -60,6 +62,8 @@ type ShareRecipientOption = {
 };
 
 export function ShareDialog({
+  allowRelated = true,
+  canRemoveAccess = true,
   customAudience = null,
   initialAccessPeople = [],
   instanceId,
@@ -362,7 +366,7 @@ export function ShareDialog({
               </Combobox>
             </div>
 
-            {!selectedAudience ? (
+            {!selectedAudience && allowRelated ? (
               <label className="flex cursor-pointer items-center gap-2 rounded-lg border px-3 py-2.5 text-sm">
                 <input
                   checked={scope === "related"}
@@ -422,16 +426,18 @@ export function ShareDialog({
                       {person.detail}
                     </p>
                   </div>
-                  <Button
-                    aria-label={`Remove ${person.email}`}
-                    disabled={state === "loading"}
-                    onClick={() => void removeRecipient(person.email)}
-                    size="icon-sm"
-                    type="button"
-                    variant="ghost"
-                  >
-                    <X />
-                  </Button>
+                  {canRemoveAccess ? (
+                    <Button
+                      aria-label={`Remove ${person.email}`}
+                      disabled={state === "loading"}
+                      onClick={() => void removeRecipient(person.email)}
+                      size="icon-sm"
+                      type="button"
+                      variant="ghost"
+                    >
+                      <X />
+                    </Button>
+                  ) : null}
                 </li>
               ))}
             </ul>
@@ -443,8 +449,9 @@ export function ShareDialog({
         </div>
 
         <p className="text-xs leading-5 text-muted-foreground">
-          Eligible internal participants receive access automatically. Remove
-          access above or share manually with external guests.
+          {canRemoveAccess
+            ? "Eligible internal participants receive access automatically. Remove access above or share manually with external guests."
+            : "Eligible internal participants receive access automatically. Share manually with external guests."}
         </p>
       </CardContent>
     </Card>

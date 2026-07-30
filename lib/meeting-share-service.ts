@@ -39,7 +39,8 @@ export async function createMeetingSharePolicy(input: {
         scope,
         role,
         created_by_user_id
-      ) values (
+      )
+      select
         ${policyId}::uuid,
         ${input.teamId}::uuid,
         ${input.ownerUserId}::uuid,
@@ -48,7 +49,13 @@ export async function createMeetingSharePolicy(input: {
         ${input.scope},
         'shared',
         ${input.createdByUserId}::uuid
-      )
+      where app_private.can_write_meeting(${input.seedMeetingId}::uuid)
+        or not exists (
+          select 1
+          from meeting_access_exclusions
+          where meeting_id = ${input.seedMeetingId}::uuid
+            and recipient_email = ${input.recipientEmail}
+        )
       on conflict (
         team_id,
         owner_user_id,
@@ -71,10 +78,20 @@ export async function createMeetingSharePolicy(input: {
           and recipient_email = ${input.recipientEmail}
           and scope = ${input.scope}
           and revoked_at is null
+          and (
+            app_private.can_write_meeting(${input.seedMeetingId}::uuid)
+            or not exists (
+              select 1
+              from meeting_access_exclusions
+              where meeting_id = ${input.seedMeetingId}::uuid
+                and recipient_email = ${input.recipientEmail}
+            )
+          )
       ), cleared_exclusions as (
         delete from meeting_access_exclusions
         where meeting_id = any(${input.meetingIds}::uuid[])
           and recipient_email = ${input.recipientEmail}
+          and app_private.can_write_meeting(${input.seedMeetingId}::uuid)
       ), new_keys as (
         insert into meeting_share_policy_keys (policy_id, match_key)
         select active_policy.id, key
@@ -91,19 +108,26 @@ export async function createMeetingSharePolicy(input: {
           created_by_user_id
         )
         select
-          meeting_id,
+          target.meeting_id,
           ${input.recipientEmail},
           'shared',
           'share_policy',
           active_policy.id::text,
           ${input.createdByUserId}::uuid
         from active_policy
-        cross join unnest(${input.meetingIds}::uuid[]) as meeting_id
+        cross join unnest(${input.meetingIds}::uuid[]) as target(meeting_id)
+        where not exists (
+          select 1
+          from meeting_access_exclusions
+          where meeting_access_exclusions.meeting_id = target.meeting_id
+            and meeting_access_exclusions.recipient_email = ${input.recipientEmail}
+        )
         on conflict (meeting_id, recipient_email, source, source_id) do update
         set role = excluded.role,
             created_by_user_id = excluded.created_by_user_id,
             revoked_at = null,
             updated_at = now()
+        returning meeting_id, recipient_email
       ), access_grants as (
         insert into meeting_access (
           meeting_id,
@@ -114,13 +138,13 @@ export async function createMeetingSharePolicy(input: {
           created_by_user_id
         )
         select
-          meeting_id,
+          new_sources.meeting_id,
           app_user.id,
           'shared',
           'effective',
           'materialized',
           ${input.createdByUserId}::uuid
-        from unnest(${input.meetingIds}::uuid[]) as meeting_id
+        from new_sources
         join users as app_user on lower(app_user.email) = ${input.recipientEmail}
         on conflict (meeting_id, user_id) do update
         set role = excluded.role,
@@ -139,13 +163,13 @@ export async function createMeetingSharePolicy(input: {
           source_id
         )
         select
-          meeting_id,
+          new_sources.meeting_id,
           ${input.recipientEmail},
           'shared',
           ${input.createdByUserId}::uuid,
           'effective',
           'materialized'
-        from unnest(${input.meetingIds}::uuid[]) as meeting_id
+        from new_sources
         where not exists (
           select 1 from users where lower(email) = ${input.recipientEmail}
         )
@@ -160,6 +184,7 @@ export async function createMeetingSharePolicy(input: {
       )
       select
         active_policy.id,
+        exists (select 1 from new_sources) as shared,
         not exists (
           select 1 from users where lower(email) = ${input.recipientEmail}
         ) as pending
@@ -167,13 +192,14 @@ export async function createMeetingSharePolicy(input: {
     `,
   ]);
   const rows = result.at(-1) as
-    | Array<{ id: string; pending: boolean }>
+    | Array<{ id: string; pending: boolean; shared: boolean }>
     | undefined;
   const row = rows?.[0];
 
   return {
     id: row?.id ?? policyId,
     pending: row?.pending ?? true,
+    shared: row?.shared ?? false,
   };
 }
 

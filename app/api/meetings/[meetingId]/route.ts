@@ -6,7 +6,10 @@ import { getCurrentUser } from "@/lib/auth";
 import { deleteMeetingMediaObjects } from "@/lib/meeting-media-cleanup";
 import { reconcileMeetingSharingForMeeting } from "@/lib/meeting-share-rules";
 import { revokeMeetingSharesSeededByMeeting } from "@/lib/meeting-share-service";
-import { getManageableMeetingCondition } from "@/lib/meeting-write-policy";
+import {
+  getManageableMeetingCondition,
+  getOwnedMeetingCondition,
+} from "@/lib/meeting-write-policy";
 import { getOrCreateWorkspaceForSessionUser } from "@/lib/workspace";
 
 export const runtime = "nodejs";
@@ -89,7 +92,7 @@ export async function DELETE(
   const meetingRows = await db
     .select({ id: meetings.id })
     .from(meetings)
-    .where(getManageableMeetingCondition(workspace, parsedMeetingId.data))
+    .where(getOwnedMeetingCondition(workspace, parsedMeetingId.data))
     .limit(1);
 
   if (!meetingRows[0]) {
@@ -109,7 +112,7 @@ export async function DELETE(
 
   await db
     .delete(meetings)
-    .where(getManageableMeetingCondition(workspace, parsedMeetingId.data));
+    .where(getOwnedMeetingCondition(workspace, parsedMeetingId.data));
 
   return Response.json({ deleted: true });
 }

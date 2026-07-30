@@ -54,7 +54,8 @@ export default async function MeetingPage({
   }
 
   const canManage = meeting.canManage;
-  const [shareRecipients, activeShares, teamConfiguration] = canManage
+  const canShare = meeting.segments.length > 0;
+  const [shareRecipients, activeShares, teamConfiguration] = canShare
     ? await Promise.all([
         listWorkspaceShareRecipients(workspace),
         listActiveMeetingShares(meetingId),
@@ -132,6 +133,7 @@ export default async function MeetingPage({
                     : undefined
                 }
                 audioPartCount={recordingParts.length}
+                canDelete={meeting.canDelete}
                 hasAudio={
                   Boolean(meeting.audioUrl) || recordingParts.length > 0
                 }
@@ -341,14 +343,16 @@ export default async function MeetingPage({
           <>
             <aside
               className={`min-w-0 lg:col-start-2 lg:row-span-2 lg:row-start-1 ${
-                canManage ? "lg:pt-8" : "lg:pt-24"
+                canShare ? "lg:pt-8" : "lg:pt-24"
               }`}
             >
               {canManage ? (
                 <>
-                  {meeting.segments.length > 0 ? (
+                  {canShare ? (
                     <div>
                       <ShareDialog
+                        allowRelated
+                        canRemoveAccess
                         customAudience={
                           teamConfiguration?.shareAudience
                             ? {
@@ -377,10 +381,34 @@ export default async function MeetingPage({
                 </>
               ) : (
                 <>
-                  <div className="rounded-lg border bg-card p-5">
+                  {canShare ? (
+                    <ShareDialog
+                      allowRelated={false}
+                      canRemoveAccess={false}
+                      customAudience={
+                        teamConfiguration?.shareAudience
+                          ? {
+                              memberCount:
+                                teamConfiguration.shareAudience.emails.length,
+                              name: teamConfiguration.shareAudience.name,
+                            }
+                          : null
+                      }
+                      initialAccessPeople={meeting.accessPeople}
+                      initialShares={activeShares}
+                      instanceId="meeting-sharing"
+                      meetingId={meetingId}
+                      teamMembers={shareRecipients}
+                    />
+                  ) : null}
+                  <div
+                    className={`rounded-lg border bg-card p-5 ${
+                      canShare ? "mt-6" : ""
+                    }`}
+                  >
                     <p className="text-sm font-semibold">Shared transcript</p>
                     <p className="mt-2 text-sm leading-6 text-muted-foreground">
-                      You can read this transcript. Editing and sharing stay
+                      You can read and share this transcript. Editing stays
                       with the meeting owner.
                     </p>
                   </div>

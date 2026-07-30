@@ -16,6 +16,17 @@ export function getManageableMeetingCondition(
   )!;
 }
 
+export function getOwnedMeetingCondition(
+  workspace: WorkspaceContext,
+  meetingId: string,
+): SQL {
+  return and(
+    eq(meetings.id, meetingId),
+    eq(meetings.teamId, workspace.teamId),
+    eq(meetings.ownerUserId, workspace.userId),
+  )!;
+}
+
 export function getMeetingManagerCondition(
   workspace: WorkspaceContext,
 ): SQL {

@@ -162,7 +162,7 @@ describe("DELETE /api/meetings/[meetingId]", () => {
     expect(where).toHaveBeenCalled();
     const query = toQuery(selectWhere.mock.calls[0][0]);
     expect(query.sql).toContain('"meetings"."owner_user_id"');
-    expect(query.sql).toContain('"team_memberships"');
+    expect(query.sql).not.toContain('"team_memberships"');
   });
 
   it("keeps the meeting when stored media cleanup fails", async () => {
