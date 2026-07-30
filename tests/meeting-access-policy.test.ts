@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   getMeetingAccessScope,
+  getPersonalReadableMeetingsCondition,
   getReadableMeetingsCondition,
 } from "@/lib/meeting-access-policy";
 
@@ -14,7 +15,26 @@ function toQuery(condition: SQL) {
 }
 
 describe("meeting access policy", () => {
-  it("limits reads to owners, team managers, and active grants", () => {
+  it("limits personal reads to owners and active grants", () => {
+    const query = toQuery(
+      getPersonalReadableMeetingsCondition({
+        teamId: "team_123",
+        userId: "user_123",
+        domain: "example.com",
+        canCreateMeetings: true,
+      }),
+    );
+
+    expect(query.sql).toContain('"meetings"."owner_user_id" = $1');
+    expect(query.sql).not.toContain('"team_memberships"');
+    expect(query.sql).not.toContain("organization_access_enabled");
+    expect(query.sql).toContain('"meeting_access"');
+    expect(query.sql).toContain('"meeting_access"."revoked_at" is null');
+    expect(query.sql).not.toContain('"meetings"."team_id" =');
+    expect(query.params).toEqual(["user_123", "user_123"]);
+  });
+
+  it("preserves direct meeting reads for team managers", () => {
     const query = toQuery(
       getReadableMeetingsCondition({
         teamId: "team_123",
@@ -24,13 +44,17 @@ describe("meeting access policy", () => {
       }),
     );
 
-    expect(query.sql).toContain('"meetings"."owner_user_id" = $1');
-    expect(query.sql).toContain('"team_memberships"');
-    expect(query.sql).not.toContain("organization_access_enabled");
+    expect(query.sql).toContain('"meetings"."owner_user_id"');
     expect(query.sql).toContain('"meeting_access"');
-    expect(query.sql).toContain('"meeting_access"."revoked_at" is null');
-    expect(query.sql).not.toContain('"meetings"."team_id" =');
-    expect(query.params).toContain("user_123");
+    expect(query.sql).toContain('"team_memberships"');
+    expect(query.sql).toContain('"team_memberships"."role" in (');
+    expect(query.params).toEqual([
+      "user_123",
+      "user_123",
+      "admin",
+      "owner",
+      "user_123",
+    ]);
   });
 
   it("uses managed scope only for meeting managers", () => {

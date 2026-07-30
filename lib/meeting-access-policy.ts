@@ -9,16 +9,18 @@ import type { WorkspaceContext } from "@/lib/workspace";
 
 const meetingManagerRoles = ["admin", "owner"];
 
+export function getPersonalReadableMeetingsCondition(
+  workspace: WorkspaceContext,
+): SQL {
+  return or(
+    eq(meetings.ownerUserId, workspace.userId),
+    getActiveGrantCondition(workspace),
+  )!;
+}
+
 export function getReadableMeetingsCondition(
   workspace: WorkspaceContext,
 ): SQL {
-  const activeGrantCondition = sql`exists (
-    select 1
-    from ${meetingAccess}
-    where ${meetingAccess.meetingId} = ${meetings.id}
-      and ${meetingAccess.userId} = ${workspace.userId}
-      and ${isNull(meetingAccess.revokedAt)}
-  )`;
   const teamManagerCondition = sql`exists (
     select 1
     from ${teamMemberships}
@@ -29,10 +31,20 @@ export function getReadableMeetingsCondition(
   return or(
     eq(meetings.ownerUserId, workspace.userId),
     teamManagerCondition,
-    activeGrantCondition,
+    getActiveGrantCondition(workspace),
   )!;
 }
 
 export function getMeetingAccessScope(canManage: boolean) {
   return canManage ? "workspace" : "shared";
+}
+
+function getActiveGrantCondition(workspace: WorkspaceContext): SQL {
+  return sql`exists (
+    select 1
+    from ${meetingAccess}
+    where ${meetingAccess.meetingId} = ${meetings.id}
+      and ${meetingAccess.userId} = ${workspace.userId}
+      and ${isNull(meetingAccess.revokedAt)}
+  )`;
 }

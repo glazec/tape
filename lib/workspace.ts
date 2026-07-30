@@ -15,6 +15,7 @@ import {
 import { SharedOnlyAccessError } from "@/lib/access-errors";
 import type { SessionUser } from "@/lib/auth";
 import { normalizeEmail, normalizeEmailDomain } from "@/lib/access";
+import { getPersonalReadableMeetingsCondition } from "@/lib/meeting-access-policy";
 import { PUBLIC_WORKSPACE_CREDIT_USD_MICROS } from "@/lib/provider-credit";
 import { getWorkspaceDisplayName } from "@/lib/team-name";
 
@@ -214,7 +215,12 @@ export async function getWorkspaceAccessSummary(workspace: WorkspaceContext) {
     db
       .select({ id: meetings.id })
       .from(meetings)
-      .where(eq(meetings.teamId, workspace.teamId))
+      .where(
+        and(
+          eq(meetings.teamId, workspace.teamId),
+          getPersonalReadableMeetingsCondition(workspace),
+        ),
+      )
       .limit(1),
     db
       .select({ id: meetingAccess.id })

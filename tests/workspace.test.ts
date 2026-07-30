@@ -1,3 +1,5 @@
+import type { SQL } from "drizzle-orm";
+import { PgDialect } from "drizzle-orm/pg-core";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 const {
@@ -30,6 +32,12 @@ vi.mock("@/db/client", () => ({
     update,
   },
 }));
+
+const dialect = new PgDialect();
+
+function toQuery(condition: SQL) {
+  return dialect.sqlToQuery(condition);
+}
 
 function mockLimitedSelect(rows: unknown[]) {
   select.mockReturnValueOnce({
@@ -202,7 +210,16 @@ describe("getOrCreateWorkspaceForSessionUser", () => {
   });
 
   it("summarizes workspace and external share access", async () => {
-    mockLimitedSelect([{ id: "meeting_1" }]);
+    const workspaceMeetingWhere = vi.fn((condition: SQL) => {
+      void condition;
+
+      return {
+        limit: vi.fn().mockResolvedValue([{ id: "meeting_1" }]),
+      };
+    });
+    select.mockReturnValueOnce({
+      from: () => ({ where: workspaceMeetingWhere }),
+    });
     select.mockReturnValueOnce({
       from: () => ({
         innerJoin: () => ({ where: () => ({ limit: vi.fn().mockResolvedValue([{ id: "access_1" }]) }) }),
@@ -220,6 +237,11 @@ describe("getOrCreateWorkspaceForSessionUser", () => {
       hasWorkspaceMeetings: true,
       isSharedOnly: true,
     });
+    const workspaceMeetingQuery = toQuery(
+      workspaceMeetingWhere.mock.calls[0][0],
+    );
+    expect(workspaceMeetingQuery.sql).toContain('"meeting_access"');
+    expect(workspaceMeetingQuery.sql).not.toContain('"team_memberships"');
   });
 
   it("rejects meeting creation for a read only workspace", async () => {

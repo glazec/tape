@@ -86,6 +86,7 @@ import {
 } from "@/lib/meeting-intelligence";
 import {
   getMeetingAccessScope,
+  getPersonalReadableMeetingsCondition,
   getReadableMeetingsCondition,
 } from "@/lib/meeting-access-policy";
 import { getMeetingManagerCondition } from "@/lib/meeting-write-policy";
@@ -248,7 +249,8 @@ export async function listMeetingLibraryPageForWorkspace(
   const searchCondition = search
     ? getMeetingLibrarySearchCondition(search, searchScope)
     : undefined;
-  const readableMeetingsCondition = getReadableMeetingsCondition(workspace);
+  const readableMeetingsCondition =
+    getPersonalReadableMeetingsCondition(workspace);
   const visibleMeetingsCondition = and(
     readableMeetingsCondition,
     ne(meetings.status, "cancelled"),

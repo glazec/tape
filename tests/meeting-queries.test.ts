@@ -684,6 +684,7 @@ describe("listMeetingDetailRelatedMeetingsForWorkspace", () => {
 
     const meetingQuery = toQuery(meetingWhere.mock.calls[0][0]);
     expect(meetingQuery.sql).toContain('"meeting_access"');
+    expect(meetingQuery.sql).toContain('"team_memberships"');
     expect(meetingQuery.params).toContain("cancelled");
     expectUsesCurrentTranscriptJob(previewWhere.mock.calls[0][0]);
   });
@@ -1275,14 +1276,17 @@ describe("listMeetingsForWorkspace", () => {
 
   it("prioritizes active work before paging the meeting library", async () => {
     const orderBy = vi.fn().mockResolvedValue([]);
+    const meetingWhere = vi.fn((condition: SQL) => {
+      void condition;
+
+      return { orderBy };
+    });
 
     select
       .mockReturnValueOnce({
         from: () => ({
           leftJoin: () => ({
-            where: () => ({
-              orderBy,
-            }),
+            where: meetingWhere,
           }),
         }),
       })
@@ -1303,6 +1307,9 @@ describe("listMeetingsForWorkspace", () => {
     });
 
     expect(orderBy.mock.calls[0]).toHaveLength(3);
+    const meetingQuery = toQuery(meetingWhere.mock.calls[0][0]);
+    expect(meetingQuery.sql).toContain('"meeting_access"');
+    expect(meetingQuery.sql).not.toContain('"team_memberships"');
   });
 
   it("enriches only 50 visible table rows out of 206 matches", async () => {
