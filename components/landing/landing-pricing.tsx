@@ -213,7 +213,7 @@ function ModeToggle({
   ];
 
   return (
-    <div className="inline-flex rounded-full border border-ink/15 bg-paper p-1">
+    <div className="flex w-full flex-col rounded-2xl border border-ink/15 bg-paper p-1 sm:inline-flex sm:w-auto sm:flex-row sm:rounded-full">
       {options.map((option) => {
         const active = option.id === mode;
         return (
@@ -224,7 +224,7 @@ function ModeToggle({
             onClick={() => onChange(option.id)}
             variant={active ? "default" : "ghost"}
             className={cn(
-              "h-11 rounded-full border-0 px-4 text-[0.8125rem] leading-5 shadow-none sm:h-8",
+              "h-11 w-full rounded-xl border-0 px-4 text-[0.8125rem] leading-5 shadow-none sm:h-8 sm:w-auto sm:rounded-full",
               active
                 ? "bg-brand-ink text-paper"
                 : "text-graphite hover:text-ink",
