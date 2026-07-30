@@ -17,12 +17,26 @@ export const LLM_USD_MICROS_PER_MEETING_HOUR = 100_000; // $0.10 / hr
 /** Fixed monthly hosting estimate (app + workers), not per meeting-hour. */
 export const HOSTING_USD_MICROS_PER_MONTH = 5_000_000; // $5 / mo
 
-export const recordingProviders = [
+/** Flat infra for self-hosted capture (bots + Whisper on a small VPS). */
+export const SELF_HOST_USD_MICROS_PER_MONTH = 10_000_000; // $10 / mo
+
+export type RecordingProvider = {
+  id: string;
+  label: string;
+  /** Per-hour rate; 0 when capture is a flat self-host monthly cost. */
+  rateUsdMicrosPerHour: number;
+  /** Flat monthly infra that replaces the per-hour rate when > 0. */
+  selfHostMonthlyUsdMicros?: number;
+  source: string;
+};
+
+export const recordingProviders: readonly RecordingProvider[] = [
   {
     id: "attendee",
-    label: "Attendee (SaaS)",
-    rateUsdMicrosPerHour: 500_000, // $0.50 / hr; 5 hrs free, volume to $0.35
-    source: "https://attendee.dev/pricing",
+    label: "Attendee (self-host)",
+    rateUsdMicrosPerHour: 0,
+    selfHostMonthlyUsdMicros: SELF_HOST_USD_MICROS_PER_MONTH,
+    source: "https://github.com/attendee-labs/attendee",
   },
   {
     id: "recall",
@@ -58,13 +72,23 @@ export const sttProviders = [
     approximate: true,
     source: "https://www.alibabacloud.com/help/en/model-studio/asr-model",
   },
+  {
+    id: "whisper",
+    label: "Whisper (self-host)",
+    // No per-hour fee; runs on the same self-host box as the capture bots.
+    rateUsdMicrosPerHour: 0,
+    source: "https://github.com/openai/whisper",
+  },
 ] as const;
 
 export const databaseProviders = [
   {
     id: "neon",
     label: "Neon",
-    monthlyUsdMicros: 19_000_000, // ~$19 / mo usage floor
+    // Usage-based ($0.106/CU-hr + storage, scale-to-zero, no monthly minimum).
+    // ~$5/mo estimate for a small always-on workspace.
+    monthlyUsdMicros: 5_000_000,
+    approximate: true,
     source: "https://neon.com/pricing",
   },
   {
@@ -108,16 +132,45 @@ export type RecordingProviderId = (typeof recordingProviders)[number]["id"];
 export type SttProviderId = (typeof sttProviders)[number]["id"];
 export type DatabaseProviderId = (typeof databaseProviders)[number]["id"];
 
-export type CalculatorInput = {
-  teamSize: number;
-  meetingHoursPerPersonPerDay: number;
+/** Providers that share the self-host box, so its cost is only counted once. */
+const SELF_HOST_RECORDING_ID: RecordingProviderId = "attendee";
+const SELF_HOST_STT_ID: SttProviderId = "whisper";
+
+/** The three provider choices that drive every cost line. */
+export type ProviderSelection = {
   recordingProviderId: RecordingProviderId;
   sttProviderId: SttProviderId;
   databaseProviderId: DatabaseProviderId;
 };
 
+export type CalculatorInput = ProviderSelection & {
+  teamSize: number;
+  meetingHoursPerPersonPerDay: number;
+  /**
+   * Average number of your own teammates on a meeting. An internal call is
+   * recorded once no matter how many colleagues attend, so this de-duplicates
+   * shared meetings: recorded hours = person hours / attendees.
+   */
+  avgAttendeesPerMeeting: number;
+};
+
+/**
+ * Cost inputs when the meeting hours are already known — measured from a real
+ * calendar rather than derived from the sliders.
+ */
+export type HoursCostInput = ProviderSelection & {
+  teamSize: number;
+  /** Meeting time summed across every person (what per-seat tools bill on). */
+  personMeetingHoursPerMonth: number;
+  /** Distinct meetings recorded once each (what Tape bills on). */
+  recordedMeetingHoursPerMonth: number;
+};
+
 export type CalculatorBreakdown = {
-  meetingHoursPerMonth: number;
+  /** Sum of meeting time across every person (what per-seat tools bill on). */
+  personMeetingHoursPerMonth: number;
+  /** Distinct meetings actually recorded and processed (what Tape bills on). */
+  recordedMeetingHoursPerMonth: number;
   recordingUsdMicros: number;
   sttUsdMicros: number;
   llmUsdMicros: number;
@@ -131,7 +184,7 @@ function roundUsdMicros(value: number) {
   return Math.max(0, Math.round(value));
 }
 
-export function monthlyMeetingHours(
+export function personMeetingHours(
   teamSize: number,
   meetingHoursPerPersonPerDay: number,
 ) {
@@ -147,10 +200,67 @@ export function monthlyMeetingHours(
   return teamSize * meetingHoursPerPersonPerDay * WORKING_DAYS_PER_MONTH;
 }
 
+/**
+ * Distinct recorded hours after collapsing internal attendees. Each shared
+ * meeting is captured once, so we divide person-hours by the average number of
+ * teammates per meeting (never more than the team itself).
+ */
+export function recordedMeetingHours(
+  teamSize: number,
+  meetingHoursPerPersonPerDay: number,
+  avgAttendeesPerMeeting: number,
+) {
+  const personHours = personMeetingHours(teamSize, meetingHoursPerPersonPerDay);
+  if (personHours === 0) {
+    return 0;
+  }
+
+  const attendees = Math.min(
+    Math.max(1, avgAttendeesPerMeeting),
+    Math.max(1, teamSize),
+  );
+
+  return personHours / attendees;
+}
+
 export function computeMonthlyCost(input: CalculatorInput): CalculatorBreakdown {
-  const meetingHoursPerMonth = monthlyMeetingHours(
-    input.teamSize,
-    input.meetingHoursPerPersonPerDay,
+  return computeCostFromHours({
+    teamSize: input.teamSize,
+    personMeetingHoursPerMonth: personMeetingHours(
+      input.teamSize,
+      input.meetingHoursPerPersonPerDay,
+    ),
+    // Internal meetings are recorded once, so cost scales with distinct
+    // recorded hours, not the sum across every attendee.
+    recordedMeetingHoursPerMonth: recordedMeetingHours(
+      input.teamSize,
+      input.meetingHoursPerPersonPerDay,
+      input.avgAttendeesPerMeeting,
+    ),
+    recordingProviderId: input.recordingProviderId,
+    sttProviderId: input.sttProviderId,
+    databaseProviderId: input.databaseProviderId,
+  });
+}
+
+/**
+ * Prices a known number of meeting hours. Shared by the slider estimate and
+ * the calendar-measured estimate so both bill identically.
+ */
+export function computeCostFromHours(
+  input: HoursCostInput,
+): CalculatorBreakdown {
+  const personMeetingHoursPerMonth = Math.max(
+    0,
+    Number.isFinite(input.personMeetingHoursPerMonth)
+      ? input.personMeetingHoursPerMonth
+      : 0,
+  );
+  const recordedMeetingHoursPerMonth = Math.max(
+    0,
+    Number.isFinite(input.recordedMeetingHoursPerMonth)
+      ? input.recordedMeetingHoursPerMonth
+      : 0,
   );
 
   const recording = recordingProviders.find(
@@ -164,16 +274,24 @@ export function computeMonthlyCost(input: CalculatorInput): CalculatorBreakdown 
   ) ?? databaseProviders[0];
 
   const recordingUsdMicros = roundUsdMicros(
-    meetingHoursPerMonth * recording.rateUsdMicrosPerHour,
+    recordedMeetingHoursPerMonth * recording.rateUsdMicrosPerHour,
   );
   const sttUsdMicros = roundUsdMicros(
-    meetingHoursPerMonth * stt.rateUsdMicrosPerHour,
+    recordedMeetingHoursPerMonth * stt.rateUsdMicrosPerHour,
   );
   const llmUsdMicros = roundUsdMicros(
-    meetingHoursPerMonth * LLM_USD_MICROS_PER_MEETING_HOUR,
+    recordedMeetingHoursPerMonth * LLM_USD_MICROS_PER_MEETING_HOUR,
   );
   const databaseUsdMicros = database.monthlyUsdMicros;
-  const hostingUsdMicros = HOSTING_USD_MICROS_PER_MONTH;
+
+  // Self-host box is shared between capture and Whisper; count it once.
+  // Check the resolved providers so unknown ids that fall back to a self-host
+  // default still carry the box cost.
+  const usesSelfHost =
+    recording.id === SELF_HOST_RECORDING_ID || stt.id === SELF_HOST_STT_ID;
+  const hostingUsdMicros =
+    HOSTING_USD_MICROS_PER_MONTH +
+    (usesSelfHost ? SELF_HOST_USD_MICROS_PER_MONTH : 0);
 
   const totalUsdMicros =
     recordingUsdMicros +
@@ -186,7 +304,8 @@ export function computeMonthlyCost(input: CalculatorInput): CalculatorBreakdown 
     input.teamSize > 0 ? Math.round(totalUsdMicros / input.teamSize) : 0;
 
   return {
-    meetingHoursPerMonth,
+    personMeetingHoursPerMonth,
+    recordedMeetingHoursPerMonth,
     recordingUsdMicros,
     sttUsdMicros,
     llmUsdMicros,

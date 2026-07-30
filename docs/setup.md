@@ -174,7 +174,12 @@ Recall.ai, ElevenLabs, Google Calendar OAuth, and Inngest require a stable publi
 | Recall.ai Calendar V2 | `/api/recall/calendar/webhook` |
 | ElevenLabs transcription | `/api/elevenlabs/webhook` |
 | Google Calendar OAuth | `/api/calendar/oauth/callback` |
+| Landing pricing calculator calendar | `/api/pricing-calendar/callback` |
 | Inngest | `/api/inngest` |
+
+Both Google routes use the same `GOOGLE_CALENDAR_CLIENT_ID`, so add **both** callback paths to the Authorized redirect URIs of that OAuth client. Without `/api/pricing-calendar/callback` registered, the landing page pricing calculator returns `?calendar=error` instead of an estimate.
+
+The pricing calculator calendar flow is deliberately separate from the signed-in calendar connection: it is public, requests read-only event scope with `access_type=online` so Google issues no refresh token, creates no Tape session, writes nothing to the database, and holds the access token only in a short-lived encrypted `HttpOnly` cookie that is dropped once the estimate renders.
 
 For the repository tunnel script, install `cloudflared`, set `CLOUDFLARED_TOKEN`, then run:
 

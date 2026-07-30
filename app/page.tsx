@@ -15,6 +15,7 @@ import { LandingNav } from "@/components/landing/landing-nav";
 import { LandingPartners } from "@/components/landing/landing-partners";
 import { LandingPricing } from "@/components/landing/landing-pricing";
 import { getAuthenticatedUser } from "@/lib/auth";
+import { readPricingCalendarEstimate } from "@/lib/pricing-calendar-server";
 import { REPOSITORY_URL, SITE_NAME, siteUrl } from "@/lib/site";
 
 export const dynamic = "force-dynamic";
@@ -36,17 +37,17 @@ export const metadata: Metadata = {
     type: "website",
     url: siteUrl("/"),
     siteName: SITE_NAME,
-    title: "Tape — Every conversation, on the record",
     locale: "en_US",
+    title: "Tape — Every conversation, on the record",
     description: DESCRIPTION,
-  },
     images: [SOCIAL_IMAGE],
+  },
   twitter: {
     card: "summary_large_image",
     title: "Tape — Every conversation, on the record",
     description: DESCRIPTION,
-  },
     images: [SOCIAL_IMAGE],
+  },
 };
 
 /**
@@ -94,12 +95,30 @@ function structuredData() {
   };
 }
 
-export default async function LandingPage() {
+export default async function LandingPage({
+  searchParams,
+}: {
+  searchParams?: Promise<{ [key: string]: string | string[] | undefined }>;
+} = {}) {
   const user = await getAuthenticatedUser();
 
   if (user) {
     redirect("/dashboard");
   }
+
+  // The anonymous calendar connect flow returns to /?calendar=<status>#pricing.
+  // Reading it here keeps the pricing section's first render correct.
+  const calendarStatus = searchParams
+    ? (await searchParams).calendar
+    : undefined;
+  const normalizedCalendarStatus =
+    typeof calendarStatus === "string" ? calendarStatus : null;
+  // Building the estimate here means the browser never handles the token or a
+  // loading state; it receives finished aggregates or an error message.
+  const calendarEstimate =
+    normalizedCalendarStatus === "connected"
+      ? await readPricingCalendarEstimate()
+      : null;
 
   return (
     <main className="min-h-screen bg-paper font-landing text-ink antialiased">
@@ -117,7 +136,10 @@ export default async function LandingPage() {
       <LandingAgents />
       <LandingCapture />
       <LandingEnterprise />
-      <LandingPricing />
+      <LandingPricing
+        calendarStatus={normalizedCalendarStatus}
+        calendarEstimate={calendarEstimate}
+      />
       <LandingFaq />
       <LandingCta />
     </main>
