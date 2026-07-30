@@ -48,6 +48,7 @@ describe("landing page smoke test", () => {
     expect(html).toContain("A workspace per team");
     expect(html).toContain("Nobody wonders what they missed");
     expect(html).toContain('href="/auth/sign-in"');
+    expect(html).toContain('href="/blog"');
     expect(html).toContain(
       'href="https://github.com/glazec/tape/releases/latest/download/Tape-Desktop.zip"',
     );

@@ -17,6 +17,7 @@ const SECTION_LINKS = [
 ];
 
 const SITE_LINKS = [
+  { href: "/blog", label: "Blog" },
   { href: "/auth/sign-in", label: "Sign in" },
   { href: "/privacy", label: "Privacy" },
   { href: "/terms", label: "Terms" },

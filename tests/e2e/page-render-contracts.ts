@@ -3,6 +3,7 @@ import { authenticatedDashboardFixture } from "./authenticated-dashboard-fixture
 export const publicPageRenderHeadings = {
   "/": "Every conversation, on the record.",
   "/auth/sign-in": "Sign in to Tape.",
+  "/blog": "Notes for meetings that keep working.",
   "/privacy": "Your meetings remain your record.",
   "/terms": "A shared record needs shared responsibility.",
 } as const;
@@ -23,5 +24,6 @@ export const pageRenderContractRoutes = [
   ...Object.keys(publicPageRenderHeadings),
   ...Object.keys(authenticatedPageRenderHeadings),
   "/admin",
+  "/blog/smoke-test-value",
   "/dashboard",
 ].sort();

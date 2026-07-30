@@ -16,6 +16,7 @@ const LINKS = [
   { href: "#capture", label: "Capture" },
   { href: "#enterprise", label: "Enterprise" },
   { href: "#pricing", label: "Pricing" },
+  { href: "/blog", label: "Blog" },
 ];
 
 export function LandingNav() {
@@ -41,13 +42,13 @@ export function LandingNav() {
           className="hidden items-center gap-7 font-mono text-label uppercase tracking-[0.16em] text-graphite lg:flex"
         >
           {LINKS.map((link) => (
-            <a
+            <Link
               key={link.href}
               href={link.href}
               className="transition-colors hover:text-ink"
             >
               {link.label}
-            </a>
+            </Link>
           ))}
         </nav>
         <div className="flex items-center gap-5">
