@@ -13,12 +13,16 @@ const PANEL_POINTS = [
 export default async function SignInPage({
   searchParams,
 }: {
-  searchParams: Promise<{ callbackUrl?: string | string[] }>;
+  searchParams: Promise<{
+    callbackUrl?: string | string[];
+    reason?: string | string[];
+  }>;
 }) {
-  const { callbackUrl } = await searchParams;
+  const { callbackUrl, reason } = await searchParams;
   const signInCallbackUrl = Array.isArray(callbackUrl)
     ? callbackUrl[0]
     : callbackUrl;
+  const signInReason = Array.isArray(reason) ? reason[0] : reason;
 
   return (
     <main className="grid min-h-screen bg-paper font-landing text-ink antialiased lg:grid-cols-2">
@@ -83,6 +87,14 @@ export default async function SignInPage({
               Use any Google account to create your meeting workspace or open
               meetings shared with you.
             </p>
+            {signInReason === "dashboard_load_failed" ? (
+              <div
+                role="alert"
+                className="mt-6 rounded-lg border border-destructive/30 bg-destructive/8 p-4 text-[0.875rem] leading-[1.7] text-destructive"
+              >
+                We could not open your dashboard. Sign in again to retry.
+              </div>
+            ) : null}
             <div className="mt-9">
               <SignInForm callbackUrl={signInCallbackUrl} />
             </div>

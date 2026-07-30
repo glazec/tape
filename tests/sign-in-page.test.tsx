@@ -25,6 +25,18 @@ describe("sign in page", () => {
     expect(screen.getAllByRole("link", { name: /Tape home|Back to site/ })).toHaveLength(2);
   });
 
+  it("explains when a dashboard failure returned the user to sign in", async () => {
+    const page = await SignInPage({
+      searchParams: Promise.resolve({ reason: "dashboard_load_failed" }),
+    });
+
+    render(page);
+
+    expect(screen.getByRole("alert").textContent).toContain(
+      "We could not open your dashboard. Sign in again to retry.",
+    );
+  });
+
   it("starts Google sign in with the requested callback", async () => {
     social.mockResolvedValue({ error: null });
     render(<SignInForm callbackUrl="/meetings/one" />);
