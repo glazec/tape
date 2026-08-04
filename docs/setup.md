@@ -101,7 +101,7 @@ uncaught errors, and unhandled promise rejections are batched through
 `/api/telemetry/events`. The browser never receives the collector endpoint or
 collector credentials.
 
-Configure the common OTLP HTTP collector origin on the Vercel application:
+Configure the common OTLP HTTP collector origin on the Railway web service:
 
 ```text
 OTEL_EXPORTER_OTLP_ENDPOINT=https://your-otel-collector.example
@@ -222,21 +222,24 @@ The R2 bucket must allow browser `PUT` requests from each application origin. Us
 
 ## Deploy the web application
 
-[Vercel](https://vercel.com) is the supported web deployment target. Import the
-repository into a new Vercel project, add the required variables from
-`.env.example`, and set `NEXT_PUBLIC_APP_URL` to the final HTTPS origin.
+[Railway](https://railway.com) is the supported web deployment target. Create a
+`tape-web` service in the `tape` project, connect the `glazec/tape` repository
+and `main` branch, and set the Railway config path to `/railway.web.json`. Add
+the required variables from `.env.example` and set `NEXT_PUBLIC_APP_URL` to the
+final HTTPS origin. The root `/railway.json` remains assigned to the media
+worker.
 
 For a CLI deployment:
 
 ```bash
 npm run setup:check
-npx vercel --prod
+railway up --service tape-web
 ```
 
-The production build validates the deployment environment, validates the
-migration lineage, applies pending database migrations, and only then builds
-the application. Preview deployments build without mutating the production
-database.
+The Railway build validates the deployment environment and migration lineage,
+then builds the application. A pre-deploy container applies pending database
+migrations. Railway checks `/api/health/dashboard` before routing production
+traffic to the new deployment.
 
 After the first successful deployment:
 
@@ -247,10 +250,12 @@ After the first successful deployment:
 5. Open `/settings/team` as the first administrator and set the team name,
    translation language, meeting bot identity, optional sharing group, and transcription vocabulary.
 6. Verify `/api/health/dashboard` before inviting the team.
+7. Attach the production domain, publish Railway's CNAME and TXT verification
+   records as DNS only, and wait for the certificate to become valid.
 
 ## Deploy the media worker
 
-Screen share extraction and long recording transcription run in a dedicated service in the same Railway project as the Tape MCP. Name the Railway project `tape` and keep the MCP and media worker as separate services so each runtime retains its own build, variables, health checks, and scaling. The Vercel application emits Inngest events after recording completion. The worker downloads the media, runs ffmpeg and ffprobe, and stores stable screen share frames in R2. Recordings over 60 minutes are converted into overlapping audio chunks no longer than 60 minutes. Every chunk is transcribed and checkpointed independently, then merged by timestamp before one canonical transcript and one translation job are published.
+Screen share extraction and long recording transcription run in a dedicated service in the same Railway project as the Tape MCP. Name the Railway project `tape` and keep the web application, MCP, and media worker as separate services so each runtime retains its own build, variables, health checks, and scaling. The web application emits Inngest events after recording completion. The worker downloads the media, runs ffmpeg and ffprobe, and stores stable screen share frames in R2. Recordings over 60 minutes are converted into overlapping audio chunks no longer than 60 minutes. Every chunk is transcribed and checkpointed independently, then merged by timestamp before one canonical transcript and one translation job are published.
 
 Configure these variables on the Railway service:
 
@@ -359,7 +364,7 @@ service after the URL token has already authenticated the MCP request.
 
 Port `8289` is only needed if a future service uses Inngest Connect.
 
-Set the same values on the Vercel application and image worker:
+Set the same values on the Railway web service and image worker:
 
 ```text
 INNGEST_BASE_URL=https://your-inngest-gateway.example
@@ -377,7 +382,7 @@ Inngest Cloud and the self-hosted database. Before cutover:
 1. Pause new event producers where practical.
 2. Let active Cloud runs finish or record the work that must be replayed.
 3. Deploy the Railway engine and verify `/health`.
-4. Update Vercel and the image worker with the new base URL and keys.
+4. Update the Railway web service and image worker with the new base URL and keys.
 5. Redeploy both services.
 6. Run `npm run inngest:sync` and `npm run inngest:sync:image-worker`.
 7. Verify the registered functions and run one safe canary.

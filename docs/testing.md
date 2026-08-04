@@ -152,7 +152,7 @@ Pull requests and pushes to `main` run four jobs in `.github/workflows/test.yml`
 3. `mac-recorder` runs the sidecar and Swift suites on macOS 15.
 4. `mcp` runs the Python suite with local development authentication.
 
-Vercel readiness is checked separately after a deployment event. `.github/workflows/vercel-dashboard-check.yml` calls `/api/health/dashboard` and publishes the SHA status named `Vercel - meeting-note: dashboard`.
+Railway readiness is enforced by the `/api/health/dashboard` check in `railway.web.json`. A deployment becomes active only after the application starts and the database health check succeeds.
 
 ## Regression Rules
 

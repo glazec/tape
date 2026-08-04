@@ -73,7 +73,7 @@ Team settings shows remaining workspace credit plus current month personal and o
 
 | Area | Current implementation |
 | --- | --- |
-| Web application | Next.js 16 and React 19 on Vercel |
+| Web application | Next.js 16 and React 19 on Railway |
 | Authentication | Neon Auth with Google sign in |
 | Product data | Neon Postgres with Drizzle migrations |
 | Tenant isolation | Forced PostgreSQL RLS for signed in web and MCP reads |
@@ -128,7 +128,7 @@ npm run setup:check
 
 ## Deployment
 
-The web application deploys to Vercel. Its production build validates required configuration and migration lineage, applies pending migrations, and then builds the application. Preview builds do not mutate the production database.
+The web application deploys to the `tape-web` service on Railway using `railway.web.json`. Its production build validates required configuration and migration lineage, applies pending migrations in a pre-deploy container, builds the application, and checks `/api/health/dashboard` before the new deployment receives traffic. The root `railway.json` remains dedicated to the media worker.
 
 The Inngest engine, its authenticated gateway, MCP, and media worker run as separate services in one Railway project named `tape`. Inngest uses dedicated PostgreSQL and Redis services. The gateway keeps the engine private, exposes machine endpoints to the SDK, protects the dashboard with a seven day cookie session, and protects `/mcp` with separate credentials for bearer capable clients and Claude custom connector URLs. The worker accepts Inngest requests at `/api/inngest`, handles screen share extraction and recordings over 60 minutes, and exposes `/health` for service health checks.
 
