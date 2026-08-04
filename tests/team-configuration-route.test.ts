@@ -39,6 +39,7 @@ describe("POST /api/team/configuration", () => {
   afterEach(() => {
     vi.resetAllMocks();
     vi.resetModules();
+    vi.unstubAllEnvs();
   });
 
   it("blocks ordinary members", async () => {
@@ -58,6 +59,7 @@ describe("POST /api/team/configuration", () => {
   });
 
   it("lets administrators save the configuration", async () => {
+    vi.stubEnv("NEXT_PUBLIC_APP_URL", "https://tape.example.com");
     getCurrentUser.mockResolvedValue({
       email: "admin@example.com",
       id: "auth_123",
@@ -71,6 +73,9 @@ describe("POST /api/team/configuration", () => {
     const response = await POST(configurationRequest());
 
     expect(response.status).toBe(303);
+    expect(response.headers.get("location")).toBe(
+      "https://tape.example.com/settings/team",
+    );
     expect(updateTeamConfiguration).toHaveBeenCalledWith({
       name: "Example Capital",
       shareAudienceEmails: "partner@example.com",

@@ -1,4 +1,5 @@
 import { getStringFormValue } from "@/lib/form-data";
+import { siteUrl } from "@/lib/site";
 import {
   TeamConfigurationInputError,
   updateTeamConfiguration,
@@ -38,5 +39,5 @@ export async function POST(request: Request) {
     );
   }
 
-  return Response.redirect(new URL("/settings/team", request.url), 303);
+  return Response.redirect(siteUrl("/settings/team"), 303);
 }

@@ -462,6 +462,45 @@ describe("database migrations", () => {
     );
   });
 
+  it("checks share policy writes through security definer functions", () => {
+    const sql = readFileSync(
+      "db/migrations/0046_fix_share_policy_rls_checks.sql",
+      "utf8",
+    ).replace(/\s+/g, " ");
+
+    expect(sql).toContain(
+      "create or replace function app_private.can_insert_share_policy",
+    );
+    expect(sql).toContain(
+      "create or replace function app_private.can_update_share_policy",
+    );
+    expect(sql).toContain("security definer");
+    expect(sql).toContain(
+      "app_private.can_insert_share_policy( team_id, owner_user_id, seed_meeting_id, created_by_user_id, scope, role )",
+    );
+    expect(sql).toContain(
+      "app_private.can_update_share_policy( team_id, owner_user_id, seed_meeting_id, created_by_user_id, scope, role )",
+    );
+  });
+
+  it("allows inserted share policies to pass the returning read policy", () => {
+    const sql = readFileSync(
+      "db/migrations/0047_fix_share_policy_returning.sql",
+      "utf8",
+    ).replace(/\s+/g, " ");
+
+    expect(sql).toContain(
+      "create or replace function app_private.can_read_share_policy_values",
+    );
+    expect(sql).toContain("security definer");
+    expect(sql).not.toContain(
+      "from public.meeting_share_policies as policy",
+    );
+    expect(sql).toContain(
+      "app_private.can_read_share_policy_values( id, team_id, seed_meeting_id )",
+    );
+  });
+
   it("scopes dashboard transcript stats to readable meetings", () => {
     const sql = readFileSync(
       "db/migrations/0044_dashboard_transcript_stats.sql",

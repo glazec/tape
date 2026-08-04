@@ -323,6 +323,20 @@
       "when": 1786300000004,
       "tag": "0045_meeting_resharing_permissions",
       "breakpoints": true
+    },
+    {
+      "idx": 46,
+      "version": "7",
+      "when": 1786300000005,
+      "tag": "0046_fix_share_policy_rls_checks",
+      "breakpoints": true
+    },
+    {
+      "idx": 47,
+      "version": "7",
+      "when": 1786300000006,
+      "tag": "0047_fix_share_policy_returning",
+      "breakpoints": true
     }
   ]
 }
