@@ -104,18 +104,22 @@ export function ShareDialog({
 
   async function submitShare(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    const submittedRecipient = getSubmittedRecipient(
+      event.currentTarget,
+      email,
+    );
 
-    const audience = getSelectedAudience(email, customAudience);
+    const audience = getSelectedAudience(submittedRecipient, customAudience);
 
     if (audience) {
       await requestAudience(audience);
       return;
     }
 
-    await requestShare(scope === "related");
+    await requestShare(scope === "related", submittedRecipient);
   }
 
-  async function requestShare(previewOnly: boolean) {
+  async function requestShare(previewOnly: boolean, recipientEmail = email) {
     setState("loading");
     setMessage(null);
 
@@ -124,7 +128,7 @@ export function ShareDialog({
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
-          email,
+          email: recipientEmail.trim(),
           includeRelated: scope === "related",
           preview: previewOnly,
         }),
@@ -294,7 +298,7 @@ export function ShareDialog({
           <SharePreviewPanel
             busy={state === "loading"}
             onBack={() => setPreview(null)}
-            onConfirm={() => void requestShare(false)}
+            onConfirm={() => void requestShare(false, preview.email)}
             preview={preview}
           />
         ) : (
@@ -537,6 +541,14 @@ function getSelectedAudience(
   }
 
   return null;
+}
+
+function getSubmittedRecipient(form: HTMLFormElement, fallback: string) {
+  const submitted = new FormData(form).get("email");
+
+  return typeof submitted === "string" && submitted.trim()
+    ? submitted
+    : fallback;
 }
 
 function buildRecipientOptions(

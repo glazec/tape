@@ -32,18 +32,21 @@ const recipientEmailSchema = z
   .trim()
   .pipe(z.email().max(320))
   .transform(normalizeEmail);
-const emailShareRequestSchema = z.strictObject({
-  email: recipientEmailSchema,
-  includeRelated: z.boolean().optional().default(false),
-  preview: z.boolean().optional().default(false),
-});
-const audienceShareRequestSchema = z.strictObject({
-  audience: z.enum(["organization", "team_group"]),
-});
-const shareRequestSchema = z.union([
-  emailShareRequestSchema,
-  audienceShareRequestSchema,
-]);
+const shareRequestSchema = z
+  .object({
+    audience: z.enum(["organization", "team_group"]).optional(),
+    email: recipientEmailSchema.optional(),
+    includeRelated: z.boolean().optional().default(false),
+    preview: z.boolean().optional().default(false),
+  })
+  .superRefine((value, context) => {
+    if (Boolean(value.email) === Boolean(value.audience)) {
+      context.addIssue({
+        code: "custom",
+        message: "Choose one sharing recipient",
+      });
+    }
+  });
 
 type MeetingMatchCandidate = {
   attendeeEmails: unknown;
@@ -85,11 +88,17 @@ export async function POST(
 
   const shareRequest = result.data;
 
-  if ("audience" in shareRequest) {
+  if (shareRequest.audience) {
     return shareWithAudience(shareRequest.audience, access);
   }
 
-  if (shareRequest.email === normalizeEmail(access.user.email)) {
+  const recipientEmail = shareRequest.email;
+
+  if (!recipientEmail) {
+    return Response.json({ error: "Invalid sharing details" }, { status: 400 });
+  }
+
+  if (recipientEmail === normalizeEmail(access.user.email)) {
     return Response.json({ error: "You already have access" }, { status: 400 });
   }
 
@@ -106,13 +115,13 @@ export async function POST(
   const scope = shareRequest.includeRelated ? "related" : "single";
   const activeShares = await listActiveMeetingShares(access.meeting.id);
   const existingShare = activeShares.find(
-    (share) => share.email === shareRequest.email && share.scope === scope,
+    (share) => share.email === recipientEmail && share.scope === scope,
   );
 
   if (existingShare && !shareRequest.preview) {
     return Response.json({
       alreadyShared: true,
-      email: shareRequest.email,
+      email: recipientEmail,
       futureMeetings: scope === "related",
       meetingCount: 1,
       pending: existingShare.pending,
@@ -126,7 +135,7 @@ export async function POST(
       matchKeys: [],
       meetingIds: [access.meeting.id],
       ownerUserId: access.meeting.ownerUserId,
-      recipientEmail: shareRequest.email,
+      recipientEmail,
       scope: "single",
       seedMeetingId: access.meeting.id,
       teamId: access.meeting.teamId,
@@ -140,7 +149,7 @@ export async function POST(
     }
 
     return Response.json({
-      email: shareRequest.email,
+      email: recipientEmail,
       futureMeetings: false,
       meetingCount: 1,
       pending: shared.pending,
@@ -189,7 +198,7 @@ export async function POST(
 
   if (shareRequest.preview) {
     return Response.json({
-      email: shareRequest.email,
+      email: recipientEmail,
       futureMeetings: true,
       meetingCount: relatedMeetings.length,
       meetings: relatedMeetings.map(({ id, title }) => ({ id, title })),
@@ -203,7 +212,7 @@ export async function POST(
     matchKeys,
     meetingIds: relatedMeetings.map(({ id }) => id),
     ownerUserId: access.meeting.ownerUserId,
-    recipientEmail: shareRequest.email,
+    recipientEmail,
     scope: "related",
     seedMeetingId: access.meeting.id,
     teamId: access.meeting.teamId,
@@ -217,7 +226,7 @@ export async function POST(
   }
 
   return Response.json({
-    email: shareRequest.email,
+    email: recipientEmail,
     futureMeetings: true,
     meetingCount: relatedMeetings.length,
     pending: shared.pending,

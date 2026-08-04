@@ -32,16 +32,16 @@ describe("ShareDialog interactions", () => {
 
   it("shares one meeting and refreshes the access list", async () => {
     vi.mocked(fetch)
-      .mockResolvedValueOnce(response({ email: "guest@example.com" }))
+      .mockResolvedValueOnce(response({ email: "sid@iosg.vc", pending: true }))
       .mockResolvedValueOnce(response({ shares: [] }));
     render(<ShareDialog {...props} />);
 
-    changeRecipient("guest@example.com");
+    changeRecipient("sid@iosg.vc");
     fireEvent.click(screen.getByRole("button", { name: "Share meeting" }));
 
     const toast = await screen.findByRole("status");
     expect(toast.textContent).toBe(
-      "Shared with guest@example.com. Meeting link copied.",
+      "Invite saved for sid@iosg.vc. Meeting link copied.",
     );
     expect(toast.className).toContain("fixed");
     expect(navigator.clipboard.writeText).toHaveBeenCalledWith(
@@ -50,7 +50,42 @@ describe("ShareDialog interactions", () => {
     expect(fetch).toHaveBeenNthCalledWith(
       1,
       "/api/meetings/meeting%2Fone/share",
-      expect.objectContaining({ method: "POST" }),
+      expect.objectContaining({
+        body: JSON.stringify({
+          email: "sid@iosg.vc",
+          includeRelated: false,
+          preview: false,
+        }),
+        method: "POST",
+      }),
+    );
+  });
+
+  it("submits the visible recipient when browser input and state diverge", async () => {
+    vi.mocked(fetch)
+      .mockResolvedValueOnce(response({ email: "sid@iosg.vc", pending: true }))
+      .mockResolvedValueOnce(response({ shares: [] }));
+    render(<ShareDialog {...props} />);
+
+    const input = screen.getByRole("combobox") as HTMLInputElement;
+    const valueSetter = Object.getOwnPropertyDescriptor(
+      HTMLInputElement.prototype,
+      "value",
+    )?.set;
+    valueSetter?.call(input, "sid@iosg.vc");
+    fireEvent.click(screen.getByRole("button", { name: "Share meeting" }));
+
+    await screen.findByRole("status");
+    expect(fetch).toHaveBeenNthCalledWith(
+      1,
+      "/api/meetings/meeting%2Fone/share",
+      expect.objectContaining({
+        body: JSON.stringify({
+          email: "sid@iosg.vc",
+          includeRelated: false,
+          preview: false,
+        }),
+      }),
     );
   });
 

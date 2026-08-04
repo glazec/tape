@@ -312,6 +312,71 @@ describe("POST /api/meetings/[meetingId]/share", () => {
     });
   });
 
+  it("accepts a typed external address with harmless client metadata", async () => {
+    getCurrentUser.mockResolvedValue({
+      email: "owner@example.com",
+      id: "auth_owner",
+      name: null,
+    });
+    getWorkspace.mockResolvedValue({
+      domain: "example.com",
+      teamId: "team_123",
+      userId: "owner_user_id",
+    });
+    mockMeetingRows([
+      {
+        attendeeEmails: [],
+        id: meetingId,
+        ownerUserId: "owner_user_id",
+        title: "Weekly sync",
+      },
+    ]);
+    createMeetingSharePolicy.mockResolvedValue({ pending: true });
+
+    const response = await shareMeetingRequest({
+      email: "sid@iosg.vc",
+      includeRelated: false,
+      inputSource: "combobox",
+      preview: false,
+    });
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      email: "sid@iosg.vc",
+      pending: true,
+      shared: true,
+    });
+  });
+
+  it("rejects ambiguous email and audience requests", async () => {
+    getCurrentUser.mockResolvedValue({
+      email: "owner@example.com",
+      id: "auth_owner",
+      name: null,
+    });
+    getWorkspace.mockResolvedValue({
+      domain: "example.com",
+      teamId: "team_123",
+      userId: "owner_user_id",
+    });
+    mockMeetingRows([
+      {
+        attendeeEmails: [],
+        id: meetingId,
+        ownerUserId: "owner_user_id",
+        title: "Weekly sync",
+      },
+    ]);
+
+    const response = await shareMeetingRequest({
+      audience: "organization",
+      email: "sid@iosg.vc",
+    });
+
+    expect(response.status).toBe(400);
+    expect(createMeetingSharePolicy).not.toHaveBeenCalled();
+  });
+
   it("allows a share recipient to share the meeting with another person", async () => {
     getCurrentUser.mockResolvedValue({
       email: "recipient@example.com",
