@@ -23,11 +23,12 @@ vi.mock("@/lib/telemetry/server", () => ({
 async function postTelemetry(
   body: unknown,
   headers?: Record<string, string>,
+  requestUrl = "https://tape.example.com/api/telemetry/events",
 ) {
   const { POST } = await import("@/app/api/telemetry/events/route");
 
   return POST(
-    new Request("https://tape.example.com/api/telemetry/events", {
+    new Request(requestUrl, {
       body: JSON.stringify(body),
       headers: {
         "Content-Type": "application/json",
@@ -65,6 +66,22 @@ describe("POST /api/telemetry/events", () => {
     );
 
     expect(response.status).toBe(403);
+  });
+
+  it("accepts the public origin behind a TLS terminating proxy", async () => {
+    isServerTelemetryEnabled.mockReturnValue(false);
+
+    const response = await postTelemetry(
+      { events: [] },
+      {
+        Origin: "https://tape.example.com",
+        "X-Forwarded-Host": "tape.example.com",
+        "X-Forwarded-Proto": "https",
+      },
+      "http://railway.internal/api/telemetry/events",
+    );
+
+    expect(response.status).toBe(204);
   });
 
   it("emits sanitized behavior and error logs with a pseudonymous user", async () => {

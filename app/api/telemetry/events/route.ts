@@ -144,8 +144,26 @@ function isSameOriginRequest(request: Request) {
   }
 
   try {
-    return origin === new URL(request.url).origin;
+    const forwardedHost = firstForwardedValue(
+      request.headers.get("x-forwarded-host"),
+    );
+    const forwardedProtocol = firstForwardedValue(
+      request.headers.get("x-forwarded-proto"),
+    );
+
+    if (
+      forwardedHost &&
+      (forwardedProtocol === "http" || forwardedProtocol === "https")
+    ) {
+      return new URL(origin).origin === `${forwardedProtocol}://${forwardedHost}`;
+    }
+
+    return new URL(origin).origin === new URL(request.url).origin;
   } catch {
     return false;
   }
+}
+
+function firstForwardedValue(value: string | null) {
+  return value?.split(",", 1)[0]?.trim();
 }
