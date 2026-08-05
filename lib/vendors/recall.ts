@@ -842,6 +842,8 @@ export async function deleteScheduledRecallBot(input: { botId: string }) {
     headers,
   });
 
+  let activeBotLeft = false;
+
   if (response.status === 405) {
     const leaveResponse = await fetch(
       buildRecallApiUrl(
@@ -864,13 +866,15 @@ export async function deleteScheduledRecallBot(input: { botId: string }) {
       );
     }
 
+    activeBotLeft = true;
+
     response = await fetch(botUrl, {
       method: "DELETE",
       headers,
     });
   }
 
-  if (response.status === 404) {
+  if (response.status === 404 || (activeBotLeft && response.status === 405)) {
     return {};
   }
 

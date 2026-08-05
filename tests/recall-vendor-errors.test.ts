@@ -150,6 +150,29 @@ describe("Recall vendor failure contracts", () => {
     );
   });
 
+  it("accepts a dispatched bot that remains undeletable after leaving", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(null, {
+          status: 405,
+          statusText: "Method Not Allowed",
+        }),
+      )
+      .mockResolvedValueOnce(new Response(null, { status: 200 }))
+      .mockResolvedValueOnce(
+        new Response(null, {
+          status: 405,
+          statusText: "Method Not Allowed",
+        }),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(
+      deleteScheduledRecallBot({ botId: "bot_1" }),
+    ).resolves.toEqual({});
+  });
+
   it("returns null for malformed recording media collections", () => {
     expect(findRecallRecordingMediaUrl(null)).toBeNull();
     expect(findRecallRecordingMediaUrl({ recordings: "invalid" })).toBeNull();
