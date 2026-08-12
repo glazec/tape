@@ -37,6 +37,7 @@ class RecallCalendarBulkSyncError extends Error {
 type ConnectedCalendarConnection = {
   connectionId: string;
   creditLimitUsdMicros: number | null;
+  recallCalendarStatus: string | null;
   teamId: string;
   userId: string;
   userEmail: string;
@@ -94,7 +95,7 @@ export async function syncRecallCalendarEventsForAllConnectedUsers(
 async function listConnectedRecallCalendarConnections(): Promise<
   ConnectedCalendarConnection[]
 > {
-  return db
+  const connections = await db
     .select({
       connectionId: calendarConnections.id,
       creditLimitUsdMicros: sql<number | null>`(
@@ -111,6 +112,7 @@ async function listConnectedRecallCalendarConnections(): Promise<
         where ${teams.id} = ${calendarConnections.teamId}
       )`,
       autoJoinEnabled: calendarConnections.autoJoinEnabled,
+      recallCalendarStatus: calendarConnections.recallCalendarStatus,
     })
     .from(calendarConnections)
     .innerJoin(users, eq(users.id, calendarConnections.userId))
@@ -120,6 +122,10 @@ async function listConnectedRecallCalendarConnections(): Promise<
         isNotNull(calendarConnections.recallCalendarId),
       ),
     );
+
+  return connections.filter(
+    (connection) => connection.recallCalendarStatus !== "disconnected",
+  );
 }
 
 function getErrorMessage(error: unknown) {

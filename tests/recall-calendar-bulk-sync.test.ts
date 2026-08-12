@@ -38,6 +38,7 @@ describe("syncRecallCalendarEventsForAllConnectedUsers", () => {
       {
         connectionId: "connection_1",
         creditLimitUsdMicros: null,
+        recallCalendarStatus: "connected",
         teamId: "team_1",
         userId: "user_1",
         userEmail: "Alice@IOSG.VC",
@@ -46,6 +47,7 @@ describe("syncRecallCalendarEventsForAllConnectedUsers", () => {
       {
         connectionId: "connection_2",
         creditLimitUsdMicros: 5_000_000,
+        recallCalendarStatus: "connected",
         teamId: "team_2",
         userId: "user_2",
         userEmail: "bob@example.com",
@@ -91,11 +93,57 @@ describe("syncRecallCalendarEventsForAllConnectedUsers", () => {
     });
   });
 
+  it("skips calendars that Recall has marked disconnected", async () => {
+    mockConnectedCalendarRows([
+      {
+        connectionId: "connection_1",
+        creditLimitUsdMicros: null,
+        recallCalendarStatus: "connected",
+        teamId: "team_1",
+        userId: "user_1",
+        userEmail: "alice@iosg.vc",
+        autoJoinEnabled: true,
+      },
+      {
+        connectionId: "connection_2",
+        creditLimitUsdMicros: null,
+        recallCalendarStatus: "disconnected",
+        teamId: "team_2",
+        userId: "user_2",
+        userEmail: "bob@example.com",
+        autoJoinEnabled: true,
+      },
+    ]);
+    syncRecallCalendarEventsForWorkspace.mockResolvedValue({
+      syncedEventCount: 3,
+    });
+
+    const { syncRecallCalendarEventsForAllConnectedUsers } = await import(
+      "@/lib/recall-calendar-bulk-sync"
+    );
+
+    await expect(
+      syncRecallCalendarEventsForAllConnectedUsers(),
+    ).resolves.toMatchObject({
+      connectionCount: 1,
+      failedConnectionCount: 0,
+      syncedConnectionCount: 1,
+      syncedEventCount: 3,
+    });
+    expect(syncRecallCalendarEventsForWorkspace).toHaveBeenCalledTimes(1);
+    expect(syncRecallCalendarEventsForWorkspace).toHaveBeenCalledWith(
+      expect.objectContaining({
+        workspace: expect.objectContaining({ teamId: "team_1" }),
+      }),
+    );
+  });
+
   it("keeps syncing other users and reports a failed run when one connected calendar fails", async () => {
     mockConnectedCalendarRows([
       {
         connectionId: "connection_1",
         creditLimitUsdMicros: null,
+        recallCalendarStatus: "connected",
         teamId: "team_1",
         userId: "user_1",
         userEmail: "alice@iosg.vc",
@@ -104,6 +152,7 @@ describe("syncRecallCalendarEventsForAllConnectedUsers", () => {
       {
         connectionId: "connection_2",
         creditLimitUsdMicros: 5_000_000,
+        recallCalendarStatus: "connected",
         teamId: "team_2",
         userId: "user_2",
         userEmail: "bob@example.com",
