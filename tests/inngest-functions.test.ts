@@ -15,6 +15,7 @@ const {
   getTranscriptJobDurationMs,
   markMeetingTranslationCompleted,
   markMeetingTranslationFailed,
+  markMeetingTranslationFailedIfActive,
   markMeetingTranslationRunning,
   markLocationReminderDeliveryFailed,
   polishTranscriptSegmentsInOriginalLanguage,
@@ -40,6 +41,7 @@ const {
   getTranscriptJobDurationMs: vi.fn().mockResolvedValue(30 * 60 * 1_000),
   markMeetingTranslationCompleted: vi.fn(),
   markMeetingTranslationFailed: vi.fn(),
+  markMeetingTranslationFailedIfActive: vi.fn(),
   markMeetingTranslationRunning: vi.fn(),
   markLocationReminderDeliveryFailed: vi.fn(),
   polishTranscriptSegmentsInOriginalLanguage: vi.fn(),
@@ -69,6 +71,7 @@ vi.mock("@/lib/meeting-translation-jobs", () => ({
   getStoredMeetingTranslationLanguage,
   markMeetingTranslationCompleted,
   markMeetingTranslationFailed,
+  markMeetingTranslationFailedIfActive,
   markMeetingTranslationRunning,
 }));
 
@@ -135,6 +138,7 @@ describe("Inngest functions", () => {
     getTranscriptJobDurationMs.mockReset().mockResolvedValue(30 * 60 * 1_000);
     markMeetingTranslationCompleted.mockReset();
     markMeetingTranslationFailed.mockReset();
+    markMeetingTranslationFailedIfActive.mockReset();
     markMeetingTranslationRunning.mockReset();
     polishTranscriptSegmentsInOriginalLanguage.mockReset();
     select.mockReset();

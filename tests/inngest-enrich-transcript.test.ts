@@ -5,6 +5,7 @@ const {
   getStoredMeetingTranslationLanguage,
   markMeetingTranslationCompleted,
   markMeetingTranslationFailed,
+  markMeetingTranslationFailedIfActive,
   markMeetingTranslationRunning,
   polishTranscriptSegmentsInOriginalLanguage,
   select,
@@ -15,6 +16,7 @@ const {
   getStoredMeetingTranslationLanguage: vi.fn(),
   markMeetingTranslationCompleted: vi.fn(),
   markMeetingTranslationFailed: vi.fn(),
+  markMeetingTranslationFailedIfActive: vi.fn(),
   markMeetingTranslationRunning: vi.fn(),
   polishTranscriptSegmentsInOriginalLanguage: vi.fn(),
   select: vi.fn(),
@@ -35,6 +37,7 @@ vi.mock("@/lib/meeting-translation-jobs", () => ({
   getStoredMeetingTranslationLanguage,
   markMeetingTranslationCompleted,
   markMeetingTranslationFailed,
+  markMeetingTranslationFailedIfActive,
   markMeetingTranslationRunning,
 }));
 
@@ -46,6 +49,7 @@ vi.mock("@/lib/vendors/openrouter", () => ({
 
 type RunnableInngestFunction = {
   fn: (input: unknown) => Promise<unknown>;
+  onFailureFn: (input: unknown) => Promise<unknown>;
 };
 
 const meetingId = "11111111-1111-4111-8111-111111111111";
@@ -207,34 +211,53 @@ describe("enrich transcript", () => {
     expect(markMeetingTranslationFailed).not.toHaveBeenCalled();
   });
 
-  it("marks translation failed without starting polish when translation fails", async () => {
-    const { run } = mockSegments();
+  it("marks an active translation failed after Inngest exhausts retries", async () => {
     const translationError = new Error("OpenRouter translation returned no content");
-
-    translateTranscriptSegments.mockRejectedValue(translationError);
-
     const { enrichTranscript } = await import("@/inngest/functions");
 
-    await expect(
-      (enrichTranscript as unknown as RunnableInngestFunction).fn({
-        attempt: 4,
-        event: {
-          data: {
-            meetingId,
-            translateTranscript: true,
-            translationLanguage: "zh-CN",
+    await (
+      enrichTranscript as unknown as RunnableInngestFunction
+    ).onFailureFn({
+      error: translationError,
+      event: {
+        data: {
+          event: {
+            data: {
+              meetingId,
+              translateTranscript: true,
+              translationLanguage: "zh-CN",
+            },
           },
         },
-        step: { run },
-      }),
-    ).rejects.toThrow("OpenRouter translation returned no content");
+      },
+    });
 
-    expect(markMeetingTranslationFailed).toHaveBeenCalledWith(
+    expect(markMeetingTranslationFailedIfActive).toHaveBeenCalledWith(
       meetingId,
       translationError,
     );
-    expect(markMeetingTranslationCompleted).not.toHaveBeenCalled();
-    expect(polishTranscriptSegmentsInOriginalLanguage).not.toHaveBeenCalled();
+  });
+
+  it("does not mark translation failed when translation was not requested", async () => {
+    const { enrichTranscript } = await import("@/inngest/functions");
+
+    await (
+      enrichTranscript as unknown as RunnableInngestFunction
+    ).onFailureFn({
+      error: new Error("OpenRouter polish returned no content"),
+      event: {
+        data: {
+          event: {
+            data: {
+              meetingId,
+              translateTranscript: false,
+            },
+          },
+        },
+      },
+    });
+
+    expect(markMeetingTranslationFailedIfActive).not.toHaveBeenCalled();
   });
 
   it("does not move a completed translation back to running during a polish retry", async () => {

@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 
 import { db } from "@/db/client";
 import { meetings } from "@/db/schema";
@@ -78,6 +78,25 @@ export async function markMeetingTranslationFailed(
       updatedAt: new Date(),
     })
     .where(eq(meetings.id, meetingId));
+}
+
+export async function markMeetingTranslationFailedIfActive(
+  meetingId: string,
+  error: unknown,
+) {
+  await db
+    .update(meetings)
+    .set({
+      translationErrorMessage: getTranslationErrorMessage(error),
+      translationStatus: "failed",
+      updatedAt: new Date(),
+    })
+    .where(
+      and(
+        eq(meetings.id, meetingId),
+        inArray(meetings.translationStatus, ["queued", "running"]),
+      ),
+    );
 }
 
 function getTranslationErrorMessage(error: unknown) {

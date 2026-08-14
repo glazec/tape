@@ -27,6 +27,10 @@ describe("meeting translation job state", () => {
       "meeting_123",
       new Error("provider failed"),
     );
+    await jobs.markMeetingTranslationFailedIfActive(
+      "meeting_123",
+      new Error("provider retry exhausted"),
+    );
 
     expect(set).toHaveBeenNthCalledWith(
       1,
@@ -51,6 +55,13 @@ describe("meeting translation job state", () => {
       4,
       expect.objectContaining({
         translationErrorMessage: "provider failed",
+        translationStatus: "failed",
+      }),
+    );
+    expect(set).toHaveBeenNthCalledWith(
+      5,
+      expect.objectContaining({
+        translationErrorMessage: "provider retry exhausted",
         translationStatus: "failed",
       }),
     );

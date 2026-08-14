@@ -23,6 +23,7 @@ import {
   getStoredMeetingTranslationLanguage,
   markMeetingTranslationCompleted,
   markMeetingTranslationFailed,
+  markMeetingTranslationFailedIfActive,
   markMeetingTranslationRunning,
 } from "@/lib/meeting-translation-jobs";
 import {
@@ -288,17 +289,24 @@ export const convertVideoToAudio = inngest.createFunction(
 export const enrichTranscript = inngest.createFunction(
   {
     id: "enrich-transcript",
+    onFailure: async ({ event, error }) => {
+      const data = enrichTranscriptDataSchema.parse(event.data.event.data);
+      const shouldTranslate =
+        data.translateTranscript ?? data.translateToChinese ?? true;
+
+      if (shouldTranslate) {
+        await markMeetingTranslationFailedIfActive(data.meetingId, error);
+      }
+    },
     retries: ENRICH_TRANSCRIPT_RETRIES,
     triggers: [{ event: "meeting/enrich.transcript" }],
   },
-  async ({ event, step, attempt = 0 }) => {
+  async ({ event, step }) => {
     const data = enrichTranscriptDataSchema.parse(event.data);
     const shouldTranslate =
       data.translateTranscript ?? data.translateToChinese ?? true;
     const translationLanguage =
       data.translationLanguage ?? DEFAULT_TRANSLATION_LANGUAGE;
-    let translationFinished = !shouldTranslate;
-
     try {
       await assertMeetingHasProviderCredit(data.meetingId);
 
@@ -443,7 +451,7 @@ export const enrichTranscript = inngest.createFunction(
           );
         }
 
-        const translatedCount = await step.run(
+        await step.run(
           "complete-transcript-translation",
           async () => {
             const currentSegments = await db
@@ -477,8 +485,6 @@ export const enrichTranscript = inngest.createFunction(
             return completedCount;
           },
         );
-
-        translationFinished = translatedCount >= segments.length;
       }
 
       let newPolishedCount = 0;
@@ -595,13 +601,6 @@ export const enrichTranscript = inngest.createFunction(
         return { action: "skipped", reason: "credit_exhausted" };
       }
 
-      if (
-        shouldTranslate &&
-        !translationFinished &&
-        attempt >= ENRICH_TRANSCRIPT_RETRIES
-      ) {
-        await markMeetingTranslationFailed(data.meetingId, error);
-      }
       throw error;
     }
   },
