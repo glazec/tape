@@ -7,6 +7,7 @@ export type UploadMedia = {
 };
 
 export const MAX_UPLOAD_MEDIA_BYTES = 1_000_000_000;
+export const MAX_AUDIO_BATCH_FILES = 10;
 
 export function isUploadMediaSizeAllowed(size: number | undefined) {
   return (

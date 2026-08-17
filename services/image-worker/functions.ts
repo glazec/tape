@@ -86,13 +86,16 @@ export const transcribeMeetingInChunks = imageWorkerInngest.createFunction(
       );
       transcriptPersisted = true;
 
-      await step.run("queue-chunked-transcript-enrichment", () =>
-        queueChunkedTranscriptEnrichment({
-          meetingId: data.meetingId,
-          translateTranscript: result.translateTranscript,
-          translationLanguage: result.translationLanguage,
-        }),
-      );
+      if (result.meetingFinalized) {
+        await step.run("queue-chunked-transcript-enrichment", () =>
+          queueChunkedTranscriptEnrichment({
+            meetingId: data.meetingId,
+            transcriptJobId: data.transcriptJobId,
+            translateTranscript: result.translateTranscript,
+            translationLanguage: result.translationLanguage,
+          }),
+        );
+      }
       await step.run("cleanup-transcript-chunks", () =>
         cleanupCompletedTranscriptChunks(completedChunks),
       );

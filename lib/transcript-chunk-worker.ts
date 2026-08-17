@@ -3,7 +3,11 @@ import { eq } from "drizzle-orm";
 import { db } from "@/db/client";
 import { meetings, transcriptJobs } from "@/db/schema";
 import { inngest } from "@/inngest/client";
-import { applyElevenLabsTranscriptEvent } from "@/lib/elevenlabs-transcripts";
+import { getActiveTranscriptText } from "@/lib/active-transcript-text";
+import {
+  applyElevenLabsTranscriptEvent,
+  finalizeMeetingTranscriptGeneration,
+} from "@/lib/elevenlabs-transcripts";
 import {
   markMeetingTranslationCompleted,
   markMeetingTranslationQueued,
@@ -91,19 +95,12 @@ export function createTranscriptChunkWorkerAdapter(
     }
 
     const safeSourceUrl = parseTranscriptMediaUrl(sourceUrl);
-    const durationMs = await probeMediaDurationMs(
-      safeSourceUrl,
-      dependencies,
-    );
+    const durationMs = await probeMediaDurationMs(safeSourceUrl, dependencies);
     const plans = planTranscriptChunks(durationMs);
     const chunks: PreparedTranscriptChunk[] = [];
 
     for (const plan of plans) {
-      const audio = await extractAudioChunk(
-        safeSourceUrl,
-        plan,
-        dependencies,
-      );
+      const audio = await extractAudioChunk(safeSourceUrl, plan, dependencies);
       const audioObjectKey = buildMeetingObjectKey({
         teamId: meeting.teamId,
         meetingId: input.meetingId,
@@ -219,27 +216,32 @@ export async function persistCompletedTranscriptChunks(input: {
   const translationLanguage = await getMeetingTranslationLanguage(
     input.meetingId,
   );
+  const transcriptText = result.meetingFinalized
+    ? await getActiveTranscriptText(input.meetingId)
+    : result.text;
   const translateTranscript = shouldAutoTranslateTranscript(
-    result.text,
+    transcriptText,
     translationLanguage,
   );
 
-  if (translateTranscript) {
-    await markMeetingTranslationQueued(input.meetingId);
-  } else {
-    await markMeetingTranslationCompleted(
-      input.meetingId,
-      translationLanguage,
-    );
+  if (result.meetingFinalized) {
+    if (translateTranscript) {
+      await markMeetingTranslationQueued(input.meetingId);
+    } else {
+      await markMeetingTranslationCompleted(
+        input.meetingId,
+        translationLanguage,
+      );
+    }
   }
 
   return {
     maxEndMs: result.segments.reduce(
-      (maximum, segment) =>
-        Math.max(maximum, segment.endMs ?? segment.startMs),
+      (maximum, segment) => Math.max(maximum, segment.endMs ?? segment.startMs),
       0,
     ),
     segmentCount: result.segments.length,
+    meetingFinalized: result.meetingFinalized,
     translateTranscript,
     translationLanguage,
   };
@@ -247,12 +249,18 @@ export async function persistCompletedTranscriptChunks(input: {
 
 export async function queueChunkedTranscriptEnrichment(input: {
   meetingId: string;
+  transcriptJobId: string;
   translateTranscript: boolean;
   translationLanguage: "en" | "zh-CN";
 }) {
   return inngest.send({
+    id: `transcript-enrichment:${input.transcriptJobId}`,
     name: "meeting/enrich.transcript",
-    data: input,
+    data: {
+      meetingId: input.meetingId,
+      translateTranscript: input.translateTranscript,
+      translationLanguage: input.translationLanguage,
+    },
   });
 }
 
@@ -282,10 +290,7 @@ export async function markChunkedTranscriptJobFailed(input: {
     .update(transcriptJobs)
     .set({ errorMessage, status: "failed", updatedAt: now })
     .where(eq(transcriptJobs.id, input.transcriptJobId));
-  await db
-    .update(meetings)
-    .set({ status: "failed", updatedAt: now })
-    .where(eq(meetings.id, input.meetingId));
+  await finalizeMeetingTranscriptGeneration(input.meetingId, now);
 }
 
 async function probeMediaDurationMs(

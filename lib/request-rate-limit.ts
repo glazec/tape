@@ -27,6 +27,11 @@ export const requestRateLimitPolicies = {
     scope: "server_media_upload",
     windowMs: 60 * 60 * 1_000,
   },
+  serverMediaBatchStage: {
+    limit: 10,
+    scope: "server_media_batch_stage",
+    windowMs: 60 * 60 * 1_000,
+  },
 } as const;
 
 export class RequestRateLimitError extends Error {
@@ -40,12 +45,14 @@ export class RequestRateLimitError extends Error {
 }
 
 export async function assertRequestRateLimit(input: {
+  cost?: number;
   limit: number;
   now?: Date;
   scope: string;
   subject: string;
   windowMs: number;
 }) {
+  const cost = input.cost ?? 1;
   const now = input.now ?? new Date();
   const windowStartedAt = new Date(
     Math.floor(now.getTime() / input.windowMs) * input.windowMs,
@@ -71,7 +78,7 @@ export async function assertRequestRateLimit(input: {
       ${input.scope},
       ${subjectHash},
       ${windowStartedAt},
-      1,
+      ${cost},
       ${expiresAt},
       now(),
       now()
@@ -81,8 +88,8 @@ export async function assertRequestRateLimit(input: {
       window_started_at = excluded.window_started_at,
       request_count = case
         when request_rate_limits.window_started_at = excluded.window_started_at
-          then request_rate_limits.request_count + 1
-        else 1
+          then request_rate_limits.request_count + ${cost}
+        else ${cost}
       end,
       expires_at = excluded.expires_at,
       updated_at = now()

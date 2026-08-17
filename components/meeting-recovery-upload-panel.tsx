@@ -16,6 +16,10 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
+  AudioBatchSignInRequiredError,
+  uploadAudioBatch,
+} from "@/lib/browser-audio-batch";
+import {
   readMediaFileDurationMs,
   waitForRecordingDurationMs,
 } from "@/lib/recording-duration";
@@ -23,6 +27,7 @@ import {
   audioUploadMediaAccept,
   getUploadMediaFromFile,
   isUploadMediaSizeAllowed,
+  MAX_AUDIO_BATCH_FILES,
 } from "@/lib/upload-media";
 import { cn } from "@/lib/utils";
 
@@ -55,10 +60,10 @@ export function MeetingRecoveryUploadPanel({
   const [source, setSource] = useState<MeetingContentSource | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [signInRequired, setSignInRequired] = useState(false);
-  const [audioFile, setAudioFile] = useState<File | null>(null);
-  const audioDurationPromiseRef = useRef<Promise<number | undefined> | null>(
-    null,
-  );
+  const [audioFiles, setAudioFiles] = useState<File[]>([]);
+  const audioDurationPromisesRef = useRef<
+    Promise<number | undefined>[]
+  >([]);
   const [transcriptFile, setTranscriptFile] = useState<File | null>(null);
   const [transcriptText, setTranscriptText] = useState("");
 
@@ -69,12 +74,12 @@ export function MeetingRecoveryUploadPanel({
   }
 
   function handleAudioChange(event: ChangeEvent<HTMLInputElement>) {
-    const file = event.currentTarget.files?.[0] ?? null;
+    const files = Array.from(event.currentTarget.files ?? []);
 
-    setAudioFile(file);
-    audioDurationPromiseRef.current = file
-      ? readMediaFileDurationMs(file)
-      : null;
+    setAudioFiles(files);
+    audioDurationPromisesRef.current = files.map((file) =>
+      readMediaFileDurationMs(file),
+    );
     resetMessage();
   }
 
@@ -107,32 +112,72 @@ export function MeetingRecoveryUploadPanel({
     setMessage(null);
     setSignInRequired(false);
 
-    if (!audioFile || audioFile.size === 0) {
+    if (audioFiles.length === 0 || audioFiles.some((file) => file.size === 0)) {
       showError("Select a recording file first");
       return;
     }
 
-    if (!isUploadMediaSizeAllowed(audioFile.size)) {
-      showError("Recording file must be 1 GB or smaller");
+    if (audioFiles.length > MAX_AUDIO_BATCH_FILES) {
+      showError(`Choose up to ${MAX_AUDIO_BATCH_FILES} audio files`);
       return;
     }
 
-    const uploadMedia = getUploadMediaFromFile(audioFile);
+    if (audioFiles.some((file) => !isUploadMediaSizeAllowed(file.size))) {
+      showError("Each recording file must be 1 GB or smaller");
+      return;
+    }
 
-    if (!uploadMedia || uploadMedia.kind !== "audio") {
+    const uploadMedia = audioFiles.map((file) => getUploadMediaFromFile(file));
+
+    if (uploadMedia.some((media) => !media || media.kind !== "audio")) {
       showError("Only MP3, M4A, and WebM files are supported");
       return;
     }
 
     try {
+      if (audioFiles.length > 1) {
+        const durations = await Promise.all(audioDurationPromisesRef.current);
+
+        if (durations.some((durationMs) => !durationMs)) {
+          showError("The length of every audio file must be readable");
+          return;
+        }
+
+        const queuedResult = await uploadAudioBatch({
+          completePath: `/api/meetings/${encodeURIComponent(
+            meetingId,
+          )}/uploads/audio/batch/complete`,
+          files: audioFiles.map((file, index) => ({
+            durationMs: durations[index] as number,
+            file,
+            uploadMedia: uploadMedia[index]!,
+          })),
+          signPath: `/api/meetings/${encodeURIComponent(
+            meetingId,
+          )}/uploads/audio/batch/sign`,
+          stagePath: `/api/meetings/${encodeURIComponent(
+            meetingId,
+          )}/uploads/audio/batch`,
+          startedAt: new Date().toISOString(),
+        });
+
+        setState("complete");
+        setMessage(
+          `${audioFiles.length} recordings uploaded. Transcription queued`,
+        );
+        router.replace(queuedResult.redirectTo ?? `/meetings/${meetingId}`);
+        router.refresh();
+        return;
+      }
+
       const durationMs = await waitForRecordingDurationMs(
-        audioDurationPromiseRef.current,
+        audioDurationPromisesRef.current[0] ?? null,
       );
       const queuedResult = await uploadRecoveryAudio({
         durationMs,
-        file: audioFile,
+        file: audioFiles[0]!,
         meetingId,
-        uploadMedia,
+        uploadMedia: uploadMedia[0]!,
       });
 
       setState("complete");
@@ -140,7 +185,10 @@ export function MeetingRecoveryUploadPanel({
       router.replace(queuedResult.redirectTo ?? `/meetings/${meetingId}`);
       router.refresh();
     } catch (error) {
-      if (error instanceof SignInRequiredError) {
+      if (
+        error instanceof SignInRequiredError ||
+        error instanceof AudioBatchSignInRequiredError
+      ) {
         setSignInRequired(true);
       }
 
@@ -298,23 +346,37 @@ export function MeetingRecoveryUploadPanel({
             onSubmit={handleAudioSubmit}
           >
             <div className="flex flex-col gap-2">
-              <Label htmlFor="meeting-recovery-audio">Audio file</Label>
+              <Label htmlFor="meeting-recovery-audio">Audio files</Label>
               <Input
                 accept={audioUploadMediaAccept}
                 className="bg-background"
                 disabled={isBusy}
                 id="meeting-recovery-audio"
                 name="meeting-recovery-audio"
+                multiple
                 onChange={handleAudioChange}
                 type="file"
               />
               <p className="text-xs text-muted-foreground">
-                MP3, M4A, or WebM · 1 GB maximum
+                MP3, M4A, or WebM · 1 GB maximum per file · files play in the order shown
               </p>
             </div>
+            {audioFiles.length > 0 ? (
+              <ol className="list-decimal space-y-1 rounded-md border bg-background px-3 py-2 pl-8 text-xs text-muted-foreground">
+                {audioFiles.map((file, index) => (
+                  <li className="break-all" key={`${file.name}:${file.size}:${index}`}>
+                    {file.name}
+                  </li>
+                ))}
+              </ol>
+            ) : null}
             <Button type="submit" disabled={isBusy} size="sm">
               <UploadCloud data-icon="inline-start" />
-              {audioUploading ? "Uploading..." : "Upload audio"}
+              {audioUploading
+                ? "Uploading..."
+                : audioFiles.length > 1
+                  ? "Upload audio files"
+                  : "Upload audio"}
             </Button>
           </form>
         ) : null}

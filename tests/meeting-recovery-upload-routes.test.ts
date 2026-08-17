@@ -215,6 +215,7 @@ describe("meeting recovery upload routes", () => {
       },
     });
     expect(send).toHaveBeenCalledWith({
+      id: "upload-transcription:job_123",
       name: "meeting/transcribe.audio",
       data: {
         mediaAssetId: "asset_123",
@@ -307,6 +308,7 @@ describe("meeting recovery upload routes", () => {
       },
     });
     expect(send).toHaveBeenCalledWith({
+      id: "upload-transcription:job_123",
       name: "meeting/transcribe.audio",
       data: {
         mediaAssetId: "asset_123",
@@ -372,6 +374,7 @@ describe("meeting recovery upload routes", () => {
       },
     });
     expect(send).toHaveBeenCalledWith({
+      id: "upload-transcription:job_123",
       name: "meeting/transcribe.audio",
       data: {
         mediaAssetId: "asset_123",

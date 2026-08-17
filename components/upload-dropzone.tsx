@@ -16,12 +16,17 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
+  AudioBatchSignInRequiredError,
+  uploadAudioBatch,
+} from "@/lib/browser-audio-batch";
+import {
   readMediaFileDurationMs,
   waitForRecordingDurationMs,
 } from "@/lib/recording-duration";
 import {
   getUploadMediaFromFile,
   isUploadMediaSizeAllowed,
+  MAX_AUDIO_BATCH_FILES,
   uploadMediaAccept,
 } from "@/lib/upload-media";
 
@@ -36,19 +41,19 @@ export function UploadDropzone() {
   const [state, setState] = useState<UploadState>("idle");
   const [message, setMessage] = useState<string | null>(null);
   const [signInRequired, setSignInRequired] = useState(false);
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const selectedDurationPromiseRef = useRef<Promise<number | undefined> | null>(
-    null,
-  );
+  const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
+  const selectedDurationPromisesRef = useRef<
+    Promise<number | undefined>[]
+  >([]);
   const [startTime, setStartTime] = useState("");
 
   function handleFileChange(event: ChangeEvent<HTMLInputElement>) {
-    const file = event.currentTarget.files?.[0] ?? null;
+    const files = Array.from(event.currentTarget.files ?? []);
 
-    setSelectedFile(file);
-    selectedDurationPromiseRef.current = file
-      ? readMediaFileDurationMs(file)
-      : null;
+    setSelectedFiles(files);
+    selectedDurationPromisesRef.current = files.map((file) =>
+      readMediaFileDurationMs(file),
+    );
     setState("idle");
     setMessage(null);
     setSignInRequired(false);
@@ -60,23 +65,40 @@ export function UploadDropzone() {
     setMessage(null);
     setSignInRequired(false);
 
-    if (!selectedFile || selectedFile.size === 0) {
+    if (selectedFiles.length === 0 || selectedFiles.some((file) => file.size === 0)) {
       setState("error");
       setMessage("Select a recording file first");
       return;
     }
 
-    if (!isUploadMediaSizeAllowed(selectedFile.size)) {
+    if (selectedFiles.length > MAX_AUDIO_BATCH_FILES) {
       setState("error");
-      setMessage("Recording file must be 1 GB or smaller");
+      setMessage(`Choose up to ${MAX_AUDIO_BATCH_FILES} audio files`);
       return;
     }
 
-    const uploadMedia = getUploadMediaFromFile(selectedFile);
+    if (selectedFiles.some((file) => !isUploadMediaSizeAllowed(file.size))) {
+      setState("error");
+      setMessage("Each recording file must be 1 GB or smaller");
+      return;
+    }
 
-    if (!uploadMedia) {
+    const selectedMedia = selectedFiles.map((file) =>
+      getUploadMediaFromFile(file),
+    );
+
+    if (selectedMedia.some((uploadMedia) => !uploadMedia)) {
       setState("error");
       setMessage("Only MP3, M4A, MP4, MOV, WEBM, and MKV files are supported");
+      return;
+    }
+
+    if (
+      selectedFiles.length > 1 &&
+      selectedMedia.some((uploadMedia) => uploadMedia?.kind !== "audio")
+    ) {
+      setState("error");
+      setMessage("Choose only audio files when uploading multiple recordings");
       return;
     }
 
@@ -89,6 +111,34 @@ export function UploadDropzone() {
     }
 
     try {
+      if (selectedFiles.length > 1) {
+        const durations = await Promise.all(selectedDurationPromisesRef.current);
+
+        if (durations.some((durationMs) => !durationMs)) {
+          throw new Error("Recording duration unavailable");
+        }
+
+        const queuedResult = await uploadAudioBatch({
+          completePath: "/api/uploads/audio/batch/complete",
+          files: selectedFiles.map((file, index) => ({
+            durationMs: durations[index] as number,
+            file,
+            uploadMedia: selectedMedia[index]!,
+          })),
+          startedAt: startedAt ?? new Date().toISOString(),
+        });
+
+        setState("complete");
+        setMessage(
+          `${selectedFiles.length} recordings uploaded. Transcription queued`,
+        );
+        router.replace(queuedResult.redirectTo ?? "/dashboard");
+        router.refresh();
+        return;
+      }
+
+      const selectedFile = selectedFiles[0]!;
+      const uploadMedia = selectedMedia[0]!;
       const signResponse = await fetch("/api/upload", {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -125,7 +175,7 @@ export function UploadDropzone() {
         uploadMedia.contentType,
       );
       const durationMs = await waitForRecordingDurationMs(
-        selectedDurationPromiseRef.current,
+        selectedDurationPromisesRef.current[0] ?? null,
       );
 
       let queuedResult: UploadQueuedResponse;
@@ -157,9 +207,19 @@ export function UploadDropzone() {
       setMessage("Upload complete. Transcription queued");
       router.replace(getPostUploadPath(queuedResult.redirectTo));
       router.refresh();
-    } catch {
+    } catch (error) {
       setState("error");
-      setMessage("Upload failed");
+      if (error instanceof AudioBatchSignInRequiredError) {
+        setMessage("Sign in to upload recordings");
+        setSignInRequired(true);
+      } else if (
+        error instanceof Error &&
+        error.message === "Recording duration unavailable"
+      ) {
+        setMessage("The length of every audio file must be readable");
+      } else {
+        setMessage("Upload failed");
+      }
     }
   }
 
@@ -187,17 +247,20 @@ export function UploadDropzone() {
       <CardContent>
         <form onSubmit={handleSubmit} className="flex flex-col gap-4">
           <div className="flex flex-col gap-2">
-            <Label htmlFor="meeting-audio">Recording file</Label>
+            <Label htmlFor="meeting-audio">Recording files</Label>
             <Input
               id="meeting-audio"
               name="meeting-audio"
               type="file"
+              multiple
               accept={uploadMediaAccept}
               onChange={handleFileChange}
               className="min-h-11 bg-background"
               aria-invalid={state === "error" && !startTimeInvalid}
             />
-            <p className="text-xs text-muted-foreground">1 GB maximum.</p>
+            <p className="text-xs text-muted-foreground">
+              Choose one recording, or multiple audio files in playback order. 1 GB maximum per file.
+            </p>
           </div>
           <details className="group rounded-lg border bg-muted/20">
             <summary className="flex min-h-11 cursor-pointer list-none items-center px-3 text-sm font-medium text-muted-foreground outline-none focus-visible:ring-3 focus-visible:ring-ring/50">
@@ -219,10 +282,17 @@ export function UploadDropzone() {
               </p>
             </div>
           </details>
-          {selectedFile ? (
-            <p className="w-fit break-all rounded-md border bg-muted/45 px-2.5 py-1.5 text-sm text-muted-foreground">
-              Selected file: {selectedFile.name}
-            </p>
+          {selectedFiles.length > 0 ? (
+            <div className="rounded-md border bg-muted/45 px-3 py-2 text-sm text-muted-foreground">
+              <p className="font-medium text-foreground">Plays in this order</p>
+              <ol className="mt-1 list-decimal space-y-1 pl-5">
+                {selectedFiles.map((file, index) => (
+                  <li className="break-all" key={`${file.name}:${file.size}:${index}`}>
+                    {file.name}
+                  </li>
+                ))}
+              </ol>
+            </div>
           ) : null}
           <Button
             type="submit"
@@ -230,7 +300,11 @@ export function UploadDropzone() {
             className="min-h-11 w-fit"
           >
             <UploadCloud data-icon="inline-start" />
-            {state === "uploading" ? "Uploading recording" : "Upload recording"}
+            {state === "uploading"
+              ? "Uploading recordings"
+              : selectedFiles.length > 1
+                ? "Upload recordings"
+                : "Upload recording"}
           </Button>
           {message ? (
             <Alert variant={state === "error" ? "destructive" : "default"}>

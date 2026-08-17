@@ -42,6 +42,13 @@ describe("client component effects", () => {
     unmount();
     act(() => vi.advanceTimersByTime(5_000));
     expect(refresh).toHaveBeenCalledTimes(2);
+    expect(
+      shouldAutoRefreshMeeting({
+        meetingStatus: "processing",
+        segmentCount: 12,
+        transcriptJobStatus: "running",
+      }),
+    ).toBe(true);
   });
 
   it("does not poll terminal meetings", () => {

@@ -247,6 +247,48 @@ describe("TranscriptViewer interactions", () => {
     fireEvent.ended(audio);
   });
 
+  it("plays multiple audio sources as one continuous recording", async () => {
+    render(
+      <TranscriptViewer
+        audioParts={[
+          { audioUrl: "/first.mp3", durationMs: 30_000, id: "first" },
+          { audioUrl: "/second.mp3", durationMs: 30_000, id: "second" },
+        ]}
+        segments={segments}
+      />,
+    );
+    const audio = document.querySelector("audio") as HTMLAudioElement;
+    Object.defineProperty(audio, "paused", {
+      configurable: true,
+      value: false,
+    });
+
+    fireEvent.change(
+      screen.getByText("Playback speed").parentElement?.querySelector(
+        "select",
+      ) as HTMLSelectElement,
+      { target: { value: "1.5" } },
+    );
+    fireEvent.ended(audio);
+    await waitFor(() => expect(audio.getAttribute("src")).toBe("/second.mp3"));
+    fireEvent.canPlay(audio);
+    expect(audio.currentTime).toBe(0);
+    expect(audio.playbackRate).toBe(1.5);
+    expect(HTMLMediaElement.prototype.play).toHaveBeenCalled();
+
+    fireEvent.change(screen.getByLabelText("Audio progress"), {
+      target: { value: "12" },
+    });
+    await waitFor(() => expect(audio.getAttribute("src")).toBe("/first.mp3"));
+    fireEvent.canPlay(audio);
+    expect(audio.currentTime).toBe(12);
+
+    fireEvent.click(screen.getByRole("button", { name: "Play from 0:30" }));
+    await waitFor(() => expect(audio.getAttribute("src")).toBe("/second.mp3"));
+    fireEvent.canPlay(audio);
+    expect(audio.currentTime).toBe(0);
+  });
+
   it("seeks from waveform and updates the hover WPM tooltip", () => {
     render(<TranscriptViewer audioUrl="/audio.mp3" segments={segments} />);
     const audio = document.querySelector("audio") as HTMLAudioElement;

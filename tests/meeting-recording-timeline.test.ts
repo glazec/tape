@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  getAppendedRecordingPartOffsetMs,
   getRecordingPartEndOffsetMs,
   getRecordingPartOffsetMs,
+  moveRecordingTimestampToAppendedTimeline,
 } from "@/lib/meeting-recording-timeline";
 
 const parts = [
@@ -33,5 +35,12 @@ describe("meeting recording timeline", () => {
     ];
 
     expect(getRecordingPartOffsetMs(undatedParts, 1)).toBe(420_000);
+  });
+
+  it("removes gaps when recordings are presented as one continuous timeline", () => {
+    expect(getAppendedRecordingPartOffsetMs(parts, 1)).toBe(420_000);
+    expect(moveRecordingTimestampToAppendedTimeline(parts, 1_201_000)).toBe(
+      421_000,
+    );
   });
 });

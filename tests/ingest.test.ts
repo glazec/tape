@@ -23,6 +23,7 @@ import { generateOpenRouterChatReply } from "@/lib/vendors/openrouter";
 const {
   applyElevenLabsTranscriptEvent,
   applyRecallMeetingEvent,
+  getActiveTranscriptText,
   getMeetingTranslationLanguage,
   markVendorWebhookEventProcessed,
   markMeetingTranslationCompleted,
@@ -35,6 +36,7 @@ const {
 } = vi.hoisted(() => ({
   applyElevenLabsTranscriptEvent: vi.fn(),
   applyRecallMeetingEvent: vi.fn(),
+  getActiveTranscriptText: vi.fn(),
   getMeetingTranslationLanguage: vi.fn(),
   markVendorWebhookEventProcessed: vi.fn(),
   markMeetingTranslationCompleted: vi.fn(),
@@ -61,6 +63,10 @@ vi.mock("@/lib/vendor-webhook-events", () => {
 
 vi.mock("@/lib/elevenlabs-transcripts", () => ({
   applyElevenLabsTranscriptEvent,
+}));
+
+vi.mock("@/lib/active-transcript-text", () => ({
+  getActiveTranscriptText,
 }));
 
 vi.mock("@/lib/meeting-translation-jobs", () => ({
@@ -224,6 +230,7 @@ describe("vendor webhook normalization", () => {
     getMeetingTranslationLanguage.mockResolvedValue("zh-CN");
     applyElevenLabsTranscriptEvent.mockResolvedValue({ action: "skip" });
     applyRecallMeetingEvent.mockResolvedValue({ action: "skip" });
+    getActiveTranscriptText.mockResolvedValue("Transcript text");
   });
 
   afterEach(() => {
@@ -240,6 +247,7 @@ describe("vendor webhook normalization", () => {
     sendInngestEvent.mockReset();
     applyElevenLabsTranscriptEvent.mockReset();
     applyRecallMeetingEvent.mockReset();
+    getActiveTranscriptText.mockReset();
   });
 
   it("normalizes Recall bot status webhooks", () => {
@@ -508,9 +516,14 @@ describe("vendor webhook normalization", () => {
   it("queues original polish without automatic translation for mostly Chinese transcripts", async () => {
     applyElevenLabsTranscriptEvent.mockResolvedValueOnce({
       action: "complete",
+      meetingFinalized: true,
       meetingId: "11111111-1111-4111-8111-111111111111",
       text: "今天我们先聊 IOSG portfolio，然后看 OpenAI API 成本和下周安排。",
+      transcriptJobId: "22222222-2222-4222-8222-222222222222",
     });
+    getActiveTranscriptText.mockResolvedValueOnce(
+      "今天我们先聊 IOSG portfolio，然后看 OpenAI API 成本和下周安排。",
+    );
 
     const response = await postElevenLabsWebhook({
       type: "speech_to_text_transcription",
@@ -533,6 +546,7 @@ describe("vendor webhook normalization", () => {
     );
     expect(markMeetingTranslationQueued).not.toHaveBeenCalled();
     expect(sendInngestEvent).toHaveBeenCalledWith({
+      id: "transcript-enrichment:22222222-2222-4222-8222-222222222222",
       name: "meeting/enrich.transcript",
       data: {
         meetingId: "11111111-1111-4111-8111-111111111111",
@@ -547,9 +561,14 @@ describe("vendor webhook normalization", () => {
     getMeetingTranslationLanguage.mockResolvedValue("en");
     applyElevenLabsTranscriptEvent.mockResolvedValueOnce({
       action: "complete",
+      meetingFinalized: true,
       meetingId: "11111111-1111-4111-8111-111111111111",
       text: "今天我们先聊基金表现，然后讨论下周安排和后续工作。",
+      transcriptJobId: "22222222-2222-4222-8222-222222222222",
     });
+    getActiveTranscriptText.mockResolvedValueOnce(
+      "今天我们先聊基金表现，然后讨论下周安排和后续工作。",
+    );
 
     const response = await postElevenLabsWebhook({
       type: "speech_to_text_transcription",
@@ -570,6 +589,7 @@ describe("vendor webhook normalization", () => {
       "11111111-1111-4111-8111-111111111111",
     );
     expect(sendInngestEvent).toHaveBeenCalledWith({
+      id: "transcript-enrichment:22222222-2222-4222-8222-222222222222",
       name: "meeting/enrich.transcript",
       data: {
         meetingId: "11111111-1111-4111-8111-111111111111",
@@ -577,6 +597,39 @@ describe("vendor webhook normalization", () => {
         translationLanguage: "en",
       },
     });
+  });
+
+  it("uses the complete active transcript to choose multipart translation", async () => {
+    getMeetingTranslationLanguage.mockResolvedValue("en");
+    applyElevenLabsTranscriptEvent.mockResolvedValueOnce({
+      action: "complete",
+      meetingFinalized: true,
+      meetingId: "11111111-1111-4111-8111-111111111111",
+      text: "We have the final update and this is the end.",
+      transcriptJobId: "22222222-2222-4222-8222-222222222222",
+    });
+    getActiveTranscriptText.mockResolvedValueOnce(
+      "今天我们讨论基金表现、项目进展、团队安排、市场变化和后续工作。\nWe have the final update and this is the end.",
+    );
+
+    const response = await postElevenLabsWebhook({
+      type: "speech_to_text_transcription",
+      data: {
+        request_id: "req_123",
+        webhook_metadata: {
+          meetingId: "11111111-1111-4111-8111-111111111111",
+          transcriptJobId: "22222222-2222-4222-8222-222222222222",
+        },
+        transcription: {
+          text: "We have the final update and this is the end.",
+        },
+      },
+    });
+
+    expect(response.status).toBe(200);
+    expect(markMeetingTranslationQueued).toHaveBeenCalledWith(
+      "11111111-1111-4111-8111-111111111111",
+    );
   });
 
   it("accepts copied ElevenLabs webhook secret values", async () => {

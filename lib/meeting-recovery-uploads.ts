@@ -4,6 +4,7 @@ import { randomUUID } from "node:crypto";
 import { databaseSql, db } from "@/db/client";
 import {
   mediaAssets,
+  meetingEntities,
   meetings,
   recordings,
   transcriptJobs,
@@ -59,10 +60,16 @@ export async function completeMeetingAudioUpload(input: {
     .values({
       mediaAssetId: asset.id,
       meetingId: input.meetingId,
+      mode: "replace",
       provider: "elevenlabs",
+      recordingId: recording.id,
       status: "queued",
     })
     .returning({ id: transcriptJobs.id });
+
+  await db
+    .delete(meetingEntities)
+    .where(eq(meetingEntities.meetingId, input.meetingId));
 
   await db
     .update(meetings)
@@ -121,6 +128,10 @@ export async function completeManualTranscriptUpload(input: {
         ${now},
         ${now}
       )
+    `,
+    txn`
+      delete from meeting_entities
+      where meeting_id = ${input.meetingId}::uuid
     `,
     txn`
       delete from transcript_segments

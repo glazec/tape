@@ -42,7 +42,9 @@ describe("UploadDropzone", () => {
     Object.defineProperty(oversized, "size", { value: 1024 ** 3 + 1 });
     selectFile(oversized);
     fireEvent.click(screen.getByRole("button", { name: "Upload recording" }));
-    expect(await screen.findByText("Recording file must be 1 GB or smaller")).toBeTruthy();
+    expect(
+      await screen.findByText("Each recording file must be 1 GB or smaller"),
+    ).toBeTruthy();
   });
 
   it("uploads directly and queues transcription", async () => {
@@ -82,6 +84,63 @@ describe("UploadDropzone", () => {
     expect(fetch).toHaveBeenNthCalledWith(3, "/api/uploads/audio", expect.objectContaining({ method: "POST" }));
   });
 
+  it("uploads multiple audio files in the selected order", async () => {
+    readMediaFileDurationMs
+      .mockResolvedValueOnce(60_000)
+      .mockResolvedValueOnce(120_000);
+    vi.mocked(fetch)
+      .mockResolvedValueOnce(
+        response({
+          uploads: [
+            { uploadId: "up_1", uploadUrl: "https://upload/1" },
+            { uploadId: "up_2", uploadUrl: "https://upload/2" },
+          ],
+        }),
+      )
+      .mockResolvedValueOnce(response({}))
+      .mockResolvedValueOnce(response({}))
+      .mockResolvedValueOnce(
+        response({ redirectTo: "/meetings/meeting_1" }),
+      );
+
+    render(<UploadDropzone />);
+    selectFiles([
+      new File(["one"], "first.mp3", { type: "audio/mpeg" }),
+      new File(["two"], "second.m4a", { type: "audio/mp4" }),
+    ]);
+
+    expect(screen.getByText("Plays in this order")).toBeTruthy();
+    expect(screen.getByText("first.mp3")).toBeTruthy();
+    expect(screen.getByText("second.m4a")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Upload recordings" }));
+
+    await waitFor(() =>
+      expect(replace).toHaveBeenCalledWith("/meetings/meeting_1"),
+    );
+    const batchRequest = vi.mocked(fetch).mock.calls[3]?.[1] as RequestInit;
+    expect(
+      JSON.parse(String(batchRequest.body)),
+    ).toEqual({
+      files: [
+        {
+          contentType: "audio/mpeg",
+          durationMs: 60_000,
+          extension: "mp3",
+          fileName: "first.mp3",
+          uploadId: "up_1",
+        },
+        {
+          contentType: "audio/mp4",
+          durationMs: 120_000,
+          extension: "m4a",
+          fileName: "second.m4a",
+          uploadId: "up_2",
+        },
+      ],
+      startedAt: expect.any(String),
+    });
+  });
+
   it("shows sign in and generic service failures", async () => {
     vi.mocked(fetch).mockResolvedValueOnce(response({}, 401));
     render(<UploadDropzone />);
@@ -97,8 +156,12 @@ describe("UploadDropzone", () => {
 });
 
 function selectFile(file: File) {
-  fireEvent.change(screen.getByLabelText("Recording file"), {
-    target: { files: [file] },
+  selectFiles([file]);
+}
+
+function selectFiles(files: File[]) {
+  fireEvent.change(screen.getByLabelText("Recording files"), {
+    target: { files },
   });
 }
 

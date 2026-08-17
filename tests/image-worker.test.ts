@@ -204,6 +204,7 @@ describe("image worker", () => {
       .mockResolvedValueOnce(completed[1]);
     persistCompletedTranscriptChunks.mockResolvedValue({
       maxEndMs: 4_000_000,
+      meetingFinalized: true,
       segmentCount: 320,
       translateTranscript: true,
       translationLanguage: "zh-CN",
@@ -271,6 +272,7 @@ describe("image worker", () => {
       transcribePreparedTranscriptChunk.mockResolvedValue(completed);
       persistCompletedTranscriptChunks.mockResolvedValue({
         maxEndMs: 60_000,
+        meetingFinalized: true,
         segmentCount: 4,
         translateTranscript: false,
         translationLanguage: "en",

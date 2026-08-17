@@ -1,4 +1,4 @@
-import { and, eq, sql } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 
 import { databaseSql, db } from "@/db/client";
@@ -10,6 +10,7 @@ import {
   users,
 } from "@/db/schema";
 import { normalizeEmailDomain } from "@/lib/access";
+import { activeTranscriptJobIdsSubquery } from "@/lib/current-transcript-job";
 import {
   listMeetingParticipantTimeline,
   type ParticipantTimelineEntry,
@@ -243,20 +244,21 @@ export async function applyElevenLabsTranscriptEvent(
       })
       .where(eq(transcriptJobs.id, persistence.transcriptJobId));
 
-    if (meetingId) {
-      await db
-        .update(meetings)
-        .set({ status: "failed", updatedAt: now })
-        .where(
-          and(eq(meetings.id, meetingId), eq(meetings.status, "processing")),
-        );
-    }
-
     await recordElevenLabsTranscriptUsage({
       transcriptJobId: persistence.transcriptJobId,
     });
 
-    return persistence;
+    if (meetingId) {
+      return {
+        ...persistence,
+        meetingFinalized: await finalizeMeetingTranscriptGeneration(
+          meetingId,
+          now,
+        ),
+      };
+    }
+
+    return { ...persistence, meetingFinalized: false };
   }
 
   const applicationContext = await loadTranscriptApplicationContext(
@@ -270,8 +272,7 @@ export async function applyElevenLabsTranscriptEvent(
   const segmentRows = persistence.segments.map((segment) => ({
     emotion_label: segment.emotionLabel ?? null,
     emotion_reason: segment.emotionReason ?? null,
-    end_ms:
-      segment.endMs === null ? null : segment.endMs + segmentOffsetMs,
+    end_ms: segment.endMs === null ? null : segment.endMs + segmentOffsetMs,
     id: randomUUID(),
     speaker: segment.speaker,
     start_ms: segment.startMs + segmentOffsetMs,
@@ -380,12 +381,6 @@ export async function applyElevenLabsTranscriptEvent(
         and duration_ms is null
     `,
     txn`
-      update meetings
-      set status = 'ready', updated_at = ${now}
-      where id = ${persistence.meetingId}::uuid
-        and status = 'processing'
-    `,
-    txn`
       update transcript_jobs
       set
         provider_job_id = coalesce(
@@ -403,7 +398,75 @@ export async function applyElevenLabsTranscriptEvent(
     transcriptJobId: persistence.transcriptJobId,
   });
 
-  return persistence;
+  return {
+    ...persistence,
+    meetingFinalized: await finalizeMeetingTranscriptGeneration(
+      persistence.meetingId,
+      now,
+    ),
+  };
+}
+
+export async function finalizeMeetingTranscriptGeneration(
+  meetingId: string,
+  now: Date,
+) {
+  const rows = await databaseSql`
+    with latest_replace as (
+      select id, created_at, generation_id
+      from transcript_jobs
+      where meeting_id = ${meetingId}::uuid
+        and mode = 'replace'
+      order by created_at desc, id desc
+      limit 1
+    ), active_generation as (
+      select active_job.id, active_job.status
+      from transcript_jobs active_job
+      where active_job.meeting_id = ${meetingId}::uuid
+        and (
+          active_job.id = (select id from latest_replace)
+          or (
+          active_job.mode = 'append'
+          and (
+              active_job.generation_id = (
+                select generation_id from latest_replace
+              )
+              or (
+                active_job.generation_id is null
+                and (
+                  active_job.created_at > (select created_at from latest_replace)
+                  or (
+                    active_job.created_at = (select created_at from latest_replace)
+                    and active_job.id > (select id from latest_replace)
+                  )
+                )
+              )
+            )
+          )
+        )
+    )
+    update meetings
+    set
+      status = case
+        when exists (
+          select 1 from active_generation where status = 'failed'
+        ) then 'failed'::meeting_status
+        else 'ready'::meeting_status
+      end,
+      updated_at = ${now}
+    where id = ${meetingId}::uuid
+      and status = 'processing'
+      and not exists (
+        select 1
+        from active_generation
+        where status in ('queued', 'running')
+      )
+    returning status
+  `;
+
+  return Boolean(
+    rows?.some((row: { status?: string }) => row.status === "ready"),
+  );
 }
 
 async function shouldApplyTranscriptJob(
@@ -457,6 +520,7 @@ export function isTranscriptJobApplicable(
 type TranscriptApplicationContext = {
   firstRecordingStartedAt: Date | string | null;
   mode: "append" | "replace";
+  recordingOffsetMs?: number | string | null;
   recordingStartedAt: Date | string | null;
 };
 
@@ -467,16 +531,36 @@ async function loadTranscriptApplicationContext(
   const result = await db.execute<{
     first_recording_started_at: Date | string | null;
     mode: "append" | "replace";
+    recording_offset_ms: number | string | null;
     recording_started_at: Date | string | null;
   }>(sql`
     select
       transcript_jobs.mode,
       recordings.started_at as recording_started_at,
       (
+        select case
+          when count(*) filter (
+            where prior_recording.duration_ms is null
+          ) > 0 then null
+          else coalesce(sum(prior_recording.duration_ms), 0)
+        end
+        from transcript_jobs prior_job
+        inner join recordings prior_recording
+          on prior_recording.id = prior_job.recording_id
+        where prior_job.id in ${activeTranscriptJobIdsSubquery(meetingId)}
+          and (
+            prior_job.created_at < transcript_jobs.created_at
+            or (
+              prior_job.created_at = transcript_jobs.created_at
+              and prior_job.id < transcript_jobs.id
+            )
+          )
+      ) as recording_offset_ms,
+      (
         select min(first_recording.started_at)
         from recordings first_recording
         where first_recording.meeting_id = ${meetingId}::uuid
-          and first_recording.source = 'recall'
+          and first_recording.source = recordings.source
       ) as first_recording_started_at
     from transcript_jobs
     left join recordings on recordings.id = transcript_jobs.recording_id
@@ -488,6 +572,7 @@ async function loadTranscriptApplicationContext(
   return {
     firstRecordingStartedAt: row?.first_recording_started_at ?? null,
     mode: row?.mode === "append" ? "append" : "replace",
+    recordingOffsetMs: row?.recording_offset_ms ?? null,
     recordingStartedAt: row?.recording_started_at ?? null,
   };
 }
@@ -495,6 +580,18 @@ async function loadTranscriptApplicationContext(
 export function getTranscriptSegmentOffsetMs(
   context: TranscriptApplicationContext,
 ) {
+  const recordingOffsetMs = Number(context.recordingOffsetMs);
+
+  if (
+    context.mode === "append" &&
+    context.recordingOffsetMs !== null &&
+    context.recordingOffsetMs !== undefined &&
+    Number.isFinite(recordingOffsetMs) &&
+    recordingOffsetMs >= 0
+  ) {
+    return recordingOffsetMs;
+  }
+
   if (
     context.mode !== "append" ||
     !context.recordingStartedAt ||

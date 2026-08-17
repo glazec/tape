@@ -1,7 +1,7 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 
-import { inngest } from "@/inngest/client";
+import { dispatchAudioBatchTranscriptions } from "@/lib/audio-batch-dispatch";
 import { getCurrentUser } from "@/lib/auth";
 import {
   assertCanManageMeeting,
@@ -33,6 +33,7 @@ const completeMeetingAudioUploadSchema = z.strictObject({
   extension: z.string().trim().toLowerCase().min(1).default("mp3"),
   contentType: z.string().trim().toLowerCase().min(1).default("audio/mpeg"),
   durationMs: z.number().int().positive().max(MAX_RECORDING_DURATION_MS).optional(),
+  recordingStartedAt: z.iso.datetime().optional(),
 });
 
 export async function POST(
@@ -101,13 +102,13 @@ export async function POST(
       meetingId,
       mimeType: objectMetadata.contentType,
       objectKey,
+      ...(result.data.recordingStartedAt
+        ? { recordingStartedAt: new Date(result.data.recordingStartedAt) }
+        : {}),
       workspace,
     });
 
-    await inngest.send({
-      name: "meeting/transcribe.audio",
-      data: transcription,
-    });
+    await dispatchAudioBatchTranscriptions([transcription]);
 
     revalidatePath("/dashboard");
     revalidatePath(`/meetings/${meetingId}`);

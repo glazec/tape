@@ -2,12 +2,7 @@ import { and, asc, eq, inArray, or } from "drizzle-orm";
 import { z } from "zod";
 
 import { db } from "@/db/client";
-import {
-  mediaAssets,
-  meetings,
-  recordings,
-  transcriptSegments,
-} from "@/db/schema";
+import { mediaAssets, meetings, transcriptSegments } from "@/db/schema";
 import { getCurrentUser } from "@/lib/auth";
 import { currentTranscriptJobIdsSubquery } from "@/lib/current-transcript-job";
 import { getReadableMeetingsCondition } from "@/lib/meeting-access-policy";
@@ -52,7 +47,7 @@ export async function GET(
     );
   }
 
-  if (format !== "text" && format !== "images" && format !== "audio-parts") {
+  if (format !== "text" && format !== "images") {
     return Response.json(
       { error: "Unsupported export format" },
       { status: 400 },
@@ -83,10 +78,6 @@ export async function GET(
     return exportMeetingImages(meeting);
   }
 
-  if (format === "audio-parts") {
-    return exportMeetingAudioParts(request, meeting);
-  }
-
   const segments = await db
     .select({
       speaker: transcriptSegments.speaker,
@@ -112,54 +103,6 @@ export async function GET(
     headers: {
       "content-disposition": `attachment; filename="${filename}"`,
       "content-type": "text/plain; charset=utf-8",
-    },
-  });
-}
-
-async function exportMeetingAudioParts(
-  request: Request,
-  meeting: { id: string; title: string },
-) {
-  const recordingParts = await db
-    .select({ id: recordings.id })
-    .from(recordings)
-    .where(eq(recordings.meetingId, meeting.id))
-    .orderBy(asc(recordings.startedAt), asc(recordings.createdAt));
-  const entries: ZipEntry[] = [];
-  const cookie = request.headers.get("cookie");
-
-  for (const [index, recording] of recordingParts.entries()) {
-    const audioUrl = new URL(
-      `/api/meetings/${encodeURIComponent(
-        meeting.id,
-      )}/audio?recording=${encodeURIComponent(recording.id)}&proxy=1`,
-      request.url,
-    );
-    const response = await fetch(audioUrl, {
-      headers: cookie ? { cookie } : undefined,
-    });
-
-    if (!response.ok) {
-      continue;
-    }
-
-    entries.push({
-      data: new Uint8Array(await response.arrayBuffer()),
-      name: `${sanitizeFilename(meeting.title)} part ${index + 1}.mp3`,
-    });
-  }
-
-  if (entries.length === 0) {
-    return Response.json(
-      { error: "Meeting audio could not be exported" },
-      { status: 502 },
-    );
-  }
-
-  return new Response(buildZipArchive(entries), {
-    headers: {
-      "content-disposition": `attachment; filename="${sanitizeFilename(meeting.title)} audio parts.zip"`,
-      "content-type": "application/zip",
     },
   });
 }

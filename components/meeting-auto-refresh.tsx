@@ -43,16 +43,11 @@ export function MeetingAutoRefresh(props: MeetingAutoRefreshProps) {
 
 export function shouldAutoRefreshMeeting({
   meetingStatus,
-  segmentCount,
   transcriptJobStatus,
   translationStatus,
 }: MeetingAutoRefreshProps) {
   if (translationStatus && isTranslationActive(translationStatus)) {
     return true;
-  }
-
-  if (segmentCount > 0) {
-    return false;
   }
 
   const displayStatus = getMeetingDisplayStatus({

@@ -30,6 +30,12 @@ import {
 
 import { Button } from "@/components/ui/button";
 import {
+  getAudioPlaylistDurationSeconds,
+  getAudioPlaylistPartOffsetSeconds,
+  getAudioPlaylistPosition,
+  type AudioPlaylistPart,
+} from "@/lib/audio-playlist";
+import {
   Combobox,
   ComboboxEmpty,
   ComboboxInput,
@@ -139,6 +145,7 @@ const TRANSCRIPT_FALLBACK_WORD_PATTERN = /[A-Za-z0-9]+(?:['’][A-Za-z0-9]+)?/g;
 const TRANSCRIPT_CJK_CHARACTER_PATTERN = /[\u3400-\u9fff\uf900-\ufaff]/g;
 
 type TranscriptViewerProps = {
+  audioParts?: AudioPlaylistPart[];
   audioUrl?: string | null;
   meetingId?: string | null;
   preferredTranslationLanguage?: TranslationLanguage;
@@ -358,6 +365,7 @@ export function getVisualAssetPlacements(
 }
 
 export function TranscriptViewer({
+  audioParts,
   audioUrl,
   meetingId,
   preferredTranslationLanguage,
@@ -369,6 +377,19 @@ export function TranscriptViewer({
   visualAssets = [],
 }: TranscriptViewerProps) {
   const router = useRouter();
+  const playbackParts = useMemo<AudioPlaylistPart[]>(
+    () =>
+      audioParts && audioParts.length > 0
+        ? audioParts
+        : audioUrl
+          ? [{ audioUrl, durationMs: null, id: "meeting-audio" }]
+          : [],
+    [audioParts, audioUrl],
+  );
+  const playlistDuration = useMemo(
+    () => getAudioPlaylistDurationSeconds(playbackParts),
+    [playbackParts],
+  );
   const [segments, setSegments] = useState(initialSegments);
   const [editingSpeaker, setEditingSpeaker] = useState<EditingSpeaker | null>(
     null,
@@ -387,6 +408,11 @@ export function TranscriptViewer({
   >(null);
   const audioRef = useRef<HTMLAudioElement>(null);
   const segmentRefs = useRef(new Map<string, HTMLLIElement>());
+  const pendingPlaybackRef = useRef<{
+    localTimeSeconds: number;
+    shouldPlay: boolean;
+  } | null>(null);
+  const [activeAudioPartIndex, setActiveAudioPartIndex] = useState(0);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -395,6 +421,9 @@ export function TranscriptViewer({
     string | null
   >(null);
   const speakerPreviewRef = useRef<SpeakerPreviewState | null>(null);
+  const activeAudioPart = playbackParts[activeAudioPartIndex] ?? null;
+  const activeAudioUrl = activeAudioPart?.audioUrl ?? null;
+  const playbackDuration = playbackParts.length > 1 ? playlistDuration : duration;
   const canEditSpeakers = Boolean(meetingId);
   const hasTranslations = useMemo(
     () => segments.some((segment) => Boolean(segment.translatedText?.trim())),
@@ -446,9 +475,9 @@ export function TranscriptViewer({
   const [textVersion, setTextVersion] = useState<"polished" | "raw">(
     hasOriginalPolish || hasTranslations ? "polished" : "raw",
   );
-  const canSeekTranscript = Boolean(audioUrl);
+  const canSeekTranscript = Boolean(activeAudioUrl);
   const hasPlaybackError = Boolean(
-    audioUrl && failedPlaybackAudioUrl === audioUrl,
+    activeAudioUrl && failedPlaybackAudioUrl === activeAudioUrl,
   );
   const rawDisplaySegments = useMemo(
     () =>
@@ -586,31 +615,155 @@ export function TranscriptViewer({
     speakerPreviewRef.current = null;
   }
 
-  async function playSpeakerPreview(clips: SpeakerPreviewClip[]) {
+  async function setPlaybackPosition(
+    timeSeconds: number,
+    options: { preservePreview?: boolean; shouldPlay: boolean },
+  ) {
+    const position = getAudioPlaylistPosition(playbackParts, timeSeconds);
     const audio = audioRef.current;
-    const playableClips = normalizeSpeakerPreviewClips(clips);
-    const firstClip = playableClips[0];
 
-    if (!audio || !firstClip) {
+    if (!position || !audio) {
       return;
     }
 
-    speakerPreviewRef.current = { clips: playableClips, index: 0 };
-    audio.currentTime = firstClip.startMs / 1000;
-    setCurrentTime(audio.currentTime);
+    if (!options.preservePreview) {
+      clearSpeakerPreview();
+    }
+
+    setCurrentTime(position.globalTimeSeconds);
+
+    if (position.partIndex !== activeAudioPartIndex) {
+      pendingPlaybackRef.current = {
+        localTimeSeconds: position.localTimeSeconds,
+        shouldPlay: options.shouldPlay,
+      };
+      setActiveAudioPartIndex(position.partIndex);
+      return;
+    }
+
+    audio.currentTime = position.localTimeSeconds;
+
+    if (!options.shouldPlay) {
+      return;
+    }
 
     try {
       await audio.play();
       setIsPlaying(true);
     } catch {
-      clearSpeakerPreview();
-      setFailedPlaybackAudioUrl(audioUrl ?? null);
+      setFailedPlaybackAudioUrl(activeAudioUrl);
       setIsPlaying(false);
     }
   }
 
+  async function handlePlaybackReady(audio: HTMLAudioElement) {
+    setFailedPlaybackAudioUrl(null);
+    audio.playbackRate = playbackRate;
+    const pendingPlayback = pendingPlaybackRef.current;
+
+    if (!pendingPlayback) {
+      return;
+    }
+
+    pendingPlaybackRef.current = null;
+    audio.currentTime = pendingPlayback.localTimeSeconds;
+
+    if (!pendingPlayback.shouldPlay) {
+      return;
+    }
+
+    try {
+      await audio.play();
+      setIsPlaying(true);
+    } catch {
+      setFailedPlaybackAudioUrl(activeAudioUrl);
+      setIsPlaying(false);
+    }
+  }
+
+  async function togglePlayback() {
+    const audio = audioRef.current;
+
+    if (!audio) {
+      return;
+    }
+
+    clearSpeakerPreview();
+
+    if (audio.paused) {
+      try {
+        await audio.play();
+        setIsPlaying(true);
+      } catch {
+        setFailedPlaybackAudioUrl(activeAudioUrl);
+        setIsPlaying(false);
+      }
+      return;
+    }
+
+    audio.pause();
+    setIsPlaying(false);
+  }
+
+  function seekPlayback(timeSeconds: number) {
+    void setPlaybackPosition(timeSeconds, { shouldPlay: isPlaying });
+  }
+
+  function skipPlayback(seconds: number) {
+    const upperBound = playbackDuration || audioRef.current?.duration || 0;
+    const nextTime = Math.min(Math.max(currentTime + seconds, 0), upperBound);
+
+    seekPlayback(nextTime);
+  }
+
+  function changePlaybackRate(nextRate: number) {
+    if (audioRef.current) {
+      audioRef.current.playbackRate = nextRate;
+    }
+
+    setPlaybackRate(nextRate);
+  }
+
+  function handleAudioEnded() {
+    const nextPartIndex = activeAudioPartIndex + 1;
+
+    if (nextPartIndex < playbackParts.length) {
+      pendingPlaybackRef.current = {
+        localTimeSeconds: 0,
+        shouldPlay: true,
+      };
+      setCurrentTime(
+        getAudioPlaylistPartOffsetSeconds(playbackParts, nextPartIndex),
+      );
+      setActiveAudioPartIndex(nextPartIndex);
+      return;
+    }
+
+    clearSpeakerPreview();
+    setIsPlaying(false);
+  }
+
+  async function playSpeakerPreview(clips: SpeakerPreviewClip[]) {
+    const playableClips = normalizeSpeakerPreviewClips(clips);
+    const firstClip = playableClips[0];
+
+    if (!firstClip) {
+      return;
+    }
+
+    speakerPreviewRef.current = { clips: playableClips, index: 0 };
+    await setPlaybackPosition(firstClip.startMs / 1000, {
+      preservePreview: true,
+      shouldPlay: true,
+    });
+  }
+
   function handleAudioTimeUpdate(audio: HTMLAudioElement) {
-    const nextTime = audio.currentTime;
+    const nextTime =
+      getAudioPlaylistPartOffsetSeconds(
+        playbackParts,
+        activeAudioPartIndex,
+      ) + audio.currentTime;
 
     setCurrentTime(nextTime);
 
@@ -641,15 +794,10 @@ export function TranscriptViewer({
       clips: preview.clips,
       index: transition.index,
     };
-    audio.currentTime = transition.clip.startMs / 1000;
-    setCurrentTime(audio.currentTime);
-
-    if (!audio.paused) {
-      void audio.play().catch(() => {
-        setFailedPlaybackAudioUrl(audioUrl ?? null);
-        setIsPlaying(false);
-      });
-    }
+    void setPlaybackPosition(transition.clip.startMs / 1000, {
+      preservePreview: true,
+      shouldPlay: !audio.paused,
+    });
   }
 
   function startEditing(speaker: string | null, segmentId?: string) {
@@ -924,23 +1072,7 @@ export function TranscriptViewer({
   }
 
   async function seekTo(startMs: number) {
-    const audio = audioRef.current;
-
-    if (!audio) {
-      return;
-    }
-
-    clearSpeakerPreview();
-    audio.currentTime = startMs / 1000;
-    setCurrentTime(audio.currentTime);
-
-    try {
-      await audio.play();
-      setIsPlaying(true);
-    } catch {
-      setFailedPlaybackAudioUrl(audioUrl ?? null);
-      setIsPlaying(false);
-    }
+    await setPlaybackPosition(startMs / 1000, { shouldPlay: true });
   }
 
   async function seekToTranscriptWord(
@@ -985,7 +1117,7 @@ export function TranscriptViewer({
 
   return (
     <>
-      <section className={audioUrl ? "pb-48" : undefined}>
+      <section className={activeAudioUrl ? "pb-48" : undefined}>
         <header className="mb-5">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <h2 className="text-lg font-semibold">Transcript</h2>
@@ -1404,30 +1536,37 @@ export function TranscriptViewer({
         />
       ) : null}
 
-      {audioUrl ? (
+      {activeAudioUrl ? (
         <TranscriptAudioPlayer
           activeSegmentId={activeSegmentId}
+          allowAudioWaveform={playbackParts.length === 1}
           audioRef={audioRef}
-          audioUrl={audioUrl}
+          audioUrl={activeAudioUrl}
           currentTime={currentTime}
-          duration={duration}
+          duration={playbackDuration}
           hasPlaybackError={hasPlaybackError}
           isPlaying={isPlaying}
           playbackRate={playbackRate}
           segments={displaySegments}
           speakerColorByKey={speakerColorByKey}
           onAudioTimeUpdate={handleAudioTimeUpdate}
+          onDurationChange={(audioDuration) => {
+            if (playbackParts.length === 1) {
+              setDuration(audioDuration);
+            }
+          }}
+          onEnded={handleAudioEnded}
+          onPlaybackRateChange={changePlaybackRate}
           onPlaybackError={() => {
-            setFailedPlaybackAudioUrl(audioUrl);
+            setFailedPlaybackAudioUrl(activeAudioUrl);
             setIsPlaying(false);
           }}
-          onPlaybackReady={() => setFailedPlaybackAudioUrl(null)}
-          onPreviewCancel={clearSpeakerPreview}
+          onPlaybackReady={handlePlaybackReady}
+          onSeek={seekPlayback}
+          onSkipBy={skipPlayback}
           onTimelineSeek={scrollTranscriptToTime}
-          setCurrentTime={setCurrentTime}
-          setDuration={setDuration}
+          onTogglePlayback={togglePlayback}
           setIsPlaying={setIsPlaying}
-          setPlaybackRate={setPlaybackRate}
         />
       ) : null}
     </>
@@ -1987,6 +2126,7 @@ function TranscriptText({
 
 function TranscriptAudioPlayer({
   activeSegmentId,
+  allowAudioWaveform,
   audioRef,
   audioUrl,
   currentTime,
@@ -1997,16 +2137,19 @@ function TranscriptAudioPlayer({
   segments,
   speakerColorByKey,
   onAudioTimeUpdate,
+  onDurationChange,
+  onEnded,
+  onPlaybackRateChange,
   onPlaybackError,
   onPlaybackReady,
-  onPreviewCancel,
+  onSeek,
+  onSkipBy,
   onTimelineSeek,
-  setCurrentTime,
-  setDuration,
+  onTogglePlayback,
   setIsPlaying,
-  setPlaybackRate,
 }: {
   activeSegmentId: string | null;
+  allowAudioWaveform: boolean;
   audioRef: RefObject<HTMLAudioElement | null>;
   audioUrl: string;
   currentTime: number;
@@ -2017,14 +2160,16 @@ function TranscriptAudioPlayer({
   segments: TranscriptSegment[];
   speakerColorByKey: ReadonlyMap<string, string>;
   onAudioTimeUpdate: (audio: HTMLAudioElement) => void;
+  onDurationChange: (duration: number) => void;
+  onEnded: () => void;
+  onPlaybackRateChange: (playbackRate: number) => void;
   onPlaybackError: () => void;
-  onPlaybackReady: () => void;
-  onPreviewCancel: () => void;
+  onPlaybackReady: (audio: HTMLAudioElement) => void;
+  onSeek: (timeSecond: number) => void;
+  onSkipBy: (seconds: number) => void;
   onTimelineSeek: (timeSecond: number) => void;
-  setCurrentTime: (value: number) => void;
-  setDuration: (value: number) => void;
+  onTogglePlayback: () => void;
   setIsPlaying: (value: boolean) => void;
-  setPlaybackRate: (value: number) => void;
 }) {
   const [audioWaveform, setAudioWaveform] = useState<{
     audioUrl: string;
@@ -2047,6 +2192,7 @@ function TranscriptAudioPlayer({
   const timelineDuration = safeDuration || segmentDuration;
   const progressValue = safeDuration ? currentTime : 0;
   const audioWaveformPeaks =
+    allowAudioWaveform &&
     shouldDecodeAudioWaveform({
       duration: safeDuration,
       timelineDuration,
@@ -2107,9 +2253,9 @@ function TranscriptAudioPlayer({
     ? clamp((currentTime / timelineDuration) * 100, 0, 100)
     : 0;
   const shouldLoadAudioWaveform = shouldDecodeAudioWaveform({
-    duration: safeDuration,
-    timelineDuration,
-  });
+      duration: safeDuration,
+      timelineDuration,
+    }) && allowAudioWaveform;
   const waveformAccessibleName = shouldLoadAudioWaveform
     ? "Audio waveform"
     : "Transcript activity waveform";
@@ -2204,76 +2350,23 @@ function TranscriptAudioPlayer({
     };
   }, [audioUrl, shouldLoadAudioWaveform, waveformBarCount]);
 
-  async function togglePlayback() {
-    const audio = audioRef.current;
-
-    if (!audio) {
-      return;
-    }
-
-    onPreviewCancel();
-
-    if (audio.paused) {
-      try {
-        await audio.play();
-        setIsPlaying(true);
-      } catch {
-        onPlaybackError();
-      }
-      return;
-    }
-
-    audio.pause();
-    setIsPlaying(false);
-  }
-
-  function skipBy(seconds: number) {
-    const audio = audioRef.current;
-
-    if (!audio) {
-      return;
-    }
-
-    onPreviewCancel();
-
-    const upperBound = safeDuration || audio.duration || 0;
-    const nextTime = Math.min(
-      Math.max(audio.currentTime + seconds, 0),
-      upperBound,
-    );
-    audio.currentTime = nextTime;
-    setCurrentTime(nextTime);
-  }
-
   function seek(event: ChangeEvent<HTMLInputElement>) {
-    const audio = audioRef.current;
     const nextTime = Number(event.currentTarget.value);
 
-    if (!audio) {
-      return;
-    }
-
-    onPreviewCancel();
-    audio.currentTime = nextTime;
-    setCurrentTime(nextTime);
+    onSeek(nextTime);
     onTimelineSeek(nextTime);
   }
 
   function seekFromWaveform(event: PointerEvent<HTMLButtonElement>) {
-    const audio = audioRef.current;
-
-    if (!audio || !timelineDuration) {
+    if (!timelineDuration) {
       return;
     }
-
-    onPreviewCancel();
 
     const bounds = event.currentTarget.getBoundingClientRect();
     const position = clamp((event.clientX - bounds.left) / bounds.width, 0, 1);
     const nextTime = position * timelineDuration;
 
-    audio.currentTime = nextTime;
-    setCurrentTime(nextTime);
+    onSeek(nextTime);
     onTimelineSeek(nextTime);
   }
 
@@ -2292,34 +2385,26 @@ function TranscriptAudioPlayer({
   }
 
   function changePlaybackRate(event: ChangeEvent<HTMLSelectElement>) {
-    const audio = audioRef.current;
     const nextRate = Number(event.currentTarget.value);
 
-    if (audio) {
-      audio.playbackRate = nextRate;
-    }
-
-    setPlaybackRate(nextRate);
+    onPlaybackRateChange(nextRate);
   }
 
   return (
     <div className="fixed inset-x-0 bottom-0 z-40 border-t bg-background/95 backdrop-blur">
       <audio
-        onCanPlay={onPlaybackReady}
+        onCanPlay={(event) => onPlaybackReady(event.currentTarget)}
         onDurationChange={(event) =>
-          setDuration(event.currentTarget.duration || 0)
+          onDurationChange(event.currentTarget.duration || 0)
         }
-        onEnded={() => {
-          onPreviewCancel();
-          setIsPlaying(false);
-        }}
+        onEnded={onEnded}
         onPause={() => setIsPlaying(false)}
         onError={() => {
           onPlaybackError();
         }}
         onPlay={(event) => {
           event.currentTarget.playbackRate = playbackRate;
-          onPlaybackReady();
+          void onPlaybackReady(event.currentTarget);
           setIsPlaying(true);
         }}
         onTimeUpdate={(event) => onAudioTimeUpdate(event.currentTarget)}
@@ -2572,7 +2657,7 @@ function TranscriptAudioPlayer({
             <Button
               className="min-w-12 gap-1 rounded-full px-2"
               aria-label="Skip back 5 seconds"
-              onClick={() => skipBy(-5)}
+              onClick={() => onSkipBy(-5)}
               size="sm"
               type="button"
               variant="ghost"
@@ -2582,7 +2667,7 @@ function TranscriptAudioPlayer({
             </Button>
             <Button
               aria-label={isPlaying ? "Pause audio" : "Play audio"}
-              onClick={togglePlayback}
+              onClick={onTogglePlayback}
               size="icon-lg"
               type="button"
             >
@@ -2591,7 +2676,7 @@ function TranscriptAudioPlayer({
             <Button
               className="min-w-12 gap-1 rounded-full px-2"
               aria-label="Skip forward 5 seconds"
-              onClick={() => skipBy(5)}
+              onClick={() => onSkipBy(5)}
               size="sm"
               type="button"
               variant="ghost"

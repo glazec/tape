@@ -64,7 +64,6 @@ describe("MeetingActions interactions", () => {
     });
     render(
       <MeetingActions
-        audioPartCount={2}
         audioExportUrls={["/api/meetings/meeting/export?format=audio-parts"]}
         hasTranscript={false}
         meetingId="meeting"

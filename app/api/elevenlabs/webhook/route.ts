@@ -2,6 +2,7 @@ import {
   getElevenLabsWebhookIdempotencyKey,
   normalizeElevenLabsWebhook,
 } from "@/lib/vendors/elevenlabs";
+import { getActiveTranscriptText } from "@/lib/active-transcript-text";
 import {
   markVendorWebhookEventProcessed,
   MissingWebhookIdempotencyKeyError,
@@ -72,12 +73,18 @@ export async function POST(request: Request) {
       processingStartedAt = recorded.processingStartedAt;
       const persistence = await applyElevenLabsTranscriptEvent(event);
 
-      if (persistence.action === "complete") {
+      if (
+        persistence.action === "complete" &&
+        persistence.meetingFinalized
+      ) {
         const translationLanguage = await getMeetingTranslationLanguage(
           persistence.meetingId,
         );
+        const transcriptText = await getActiveTranscriptText(
+          persistence.meetingId,
+        );
         const translateTranscript = shouldAutoTranslateTranscript(
-          persistence.text,
+          transcriptText,
           translationLanguage,
         );
 
@@ -92,6 +99,7 @@ export async function POST(request: Request) {
 
         await inngest
           .send({
+            id: `transcript-enrichment:${persistence.transcriptJobId}`,
             name: "meeting/enrich.transcript",
             data: {
               meetingId: persistence.meetingId,

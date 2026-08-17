@@ -43,7 +43,10 @@ import {
   type DashboardWorkflowSegmentStats,
   type DashboardWorkflowSummaryModel,
 } from "@/lib/dashboard-workflow-summary";
-import { currentTranscriptJobIdsSubquery } from "@/lib/current-transcript-job";
+import {
+  activeTranscriptJobIdsSubquery,
+  currentTranscriptJobIdsSubquery,
+} from "@/lib/current-transcript-job";
 import { normalizeEmailAddress } from "@/lib/email-domains";
 import {
   getMeetingDisplayStatus,
@@ -273,11 +276,29 @@ export async function listMeetingLibraryPageForWorkspace(
       platform: meetings.platform,
       status: meetings.status,
       transcriptJobStatus: sql<TranscriptJobStatus | null>`(
-        select ${transcriptJobs.status}
-        from ${transcriptJobs}
-        where ${transcriptJobs.meetingId} = ${meetings.id}
-        order by ${transcriptJobs.createdAt} desc
-        limit 1
+        select case
+          when exists (
+            select 1 from ${transcriptJobs} active_job
+            where active_job.id in ${activeTranscriptJobIdsSubquery(meetings.id)}
+              and active_job.status = 'running'
+          ) then 'running'::job_status
+          when exists (
+            select 1 from ${transcriptJobs} active_job
+            where active_job.id in ${activeTranscriptJobIdsSubquery(meetings.id)}
+              and active_job.status = 'queued'
+          ) then 'queued'::job_status
+          when exists (
+            select 1 from ${transcriptJobs} active_job
+            where active_job.id in ${activeTranscriptJobIdsSubquery(meetings.id)}
+              and active_job.status = 'failed'
+          ) then 'failed'::job_status
+          when exists (
+            select 1 from ${transcriptJobs} active_job
+            where active_job.id in ${activeTranscriptJobIdsSubquery(meetings.id)}
+              and active_job.status = 'completed'
+          ) then 'completed'::job_status
+          else null
+        end
       )`,
       calendarAttendeeEmails: getMeetingAttendeeEmailsSnapshot(),
       recallBotId: meetings.recallBotId,
@@ -1372,11 +1393,38 @@ export async function getMeetingTranscriptForWorkspace(
       .where(
         and(
           eq(recordings.meetingId, meeting.id),
-          eq(recordings.source, "recall"),
-          sql`${recordings.externalId} is not null`,
+          sql`exists (
+            select 1
+            from ${transcriptJobs} recording_job
+            where recording_job.recording_id = ${recordings.id}
+              and recording_job.id in ${activeTranscriptJobIdsSubquery(
+                meeting.id,
+              )}
+          )`,
         ),
       )
-      .orderBy(asc(recordings.startedAt), asc(recordings.createdAt)),
+      .orderBy(
+        sql`(
+          select recording_job.created_at
+          from ${transcriptJobs} recording_job
+          where recording_job.recording_id = ${recordings.id}
+            and recording_job.id in ${activeTranscriptJobIdsSubquery(
+              meeting.id,
+            )}
+          order by recording_job.created_at, recording_job.id
+          limit 1
+        )`,
+        sql`(
+          select recording_job.id
+          from ${transcriptJobs} recording_job
+          where recording_job.recording_id = ${recordings.id}
+            and recording_job.id in ${activeTranscriptJobIdsSubquery(
+              meeting.id,
+            )}
+          order by recording_job.created_at, recording_job.id
+          limit 1
+        )`,
+      ),
   ]);
   const displaySegments = applySpeakerAliasesToSegments(
     segments,
@@ -1398,12 +1446,16 @@ export async function getMeetingTranscriptForWorkspace(
     scheduledEndedAt: meeting.endedAt?.toISOString() ?? null,
     startedAt:
       (
-        meeting.recordedStartedAt ??
+        (recordingParts.length > 1
+          ? recordingParts[0]?.startedAt
+          : meeting.recordedStartedAt) ??
         meeting.startedAt ??
         meeting.createdAt
       )?.toISOString() ?? null,
     endedAt:
-      meeting.recordedEndedAt?.toISOString() ??
+      (recordingParts.length > 1
+        ? recordingParts.at(-1)?.endedAt?.toISOString()
+        : meeting.recordedEndedAt?.toISOString()) ??
       meeting.endedAt?.toISOString() ??
       null,
     updatedAt: (
@@ -1413,9 +1465,15 @@ export async function getMeetingTranscriptForWorkspace(
       new Date(0)
     ).toISOString(),
     durationMs:
-      getTranscriptDurationMs(meeting.recordedDurationMs) ??
-      getTranscriptDurationMs(meeting.transcriptDurationMs) ??
-      null,
+      recordingParts.length > 1 &&
+      recordingParts.every((recording) => recording.durationMs !== null)
+        ? recordingParts.reduce(
+            (total, recording) => total + (recording.durationMs ?? 0),
+            0,
+          )
+        : getTranscriptDurationMs(meeting.recordedDurationMs) ??
+          getTranscriptDurationMs(meeting.transcriptDurationMs) ??
+          null,
     transcriptJobStatus: meeting.transcriptJobStatus,
     translationLanguage: normalizeTranslationLanguage(
       meeting.translationLanguage,

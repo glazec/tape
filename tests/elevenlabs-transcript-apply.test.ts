@@ -1,7 +1,17 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-const { execute, select, transaction, txn, update } = vi.hoisted(() => ({
+const {
+  databaseSql,
+  execute,
+  recordElevenLabsTranscriptUsage,
+  select,
+  transaction,
+  txn,
+  update,
+} = vi.hoisted(() => ({
+  databaseSql: vi.fn(),
   execute: vi.fn(),
+  recordElevenLabsTranscriptUsage: vi.fn(),
   select: vi.fn(),
   transaction: vi.fn(),
   txn: vi.fn((strings: TemplateStringsArray) => strings),
@@ -9,7 +19,7 @@ const { execute, select, transaction, txn, update } = vi.hoisted(() => ({
 }));
 
 vi.mock("@/db/client", () => ({
-  databaseSql: { transaction },
+  databaseSql: Object.assign(databaseSql, { transaction }),
   db: {
     execute,
     select,
@@ -26,13 +36,15 @@ vi.mock("@/lib/vendors/twenty", () => ({
 }));
 
 vi.mock("@/lib/provider-usage", () => ({
-  recordElevenLabsTranscriptUsage: vi.fn(),
+  recordElevenLabsTranscriptUsage,
 }));
 
 describe("applyElevenLabsTranscriptEvent", () => {
   afterEach(() => {
     select.mockReset();
     execute.mockReset();
+    databaseSql.mockReset();
+    recordElevenLabsTranscriptUsage.mockReset();
     transaction.mockReset();
     txn.mockClear();
     update.mockReset();
@@ -63,11 +75,7 @@ describe("applyElevenLabsTranscriptEvent", () => {
     });
     const transcriptWhere = vi.fn().mockResolvedValue(undefined);
     const transcriptSet = vi.fn().mockReturnValue({ where: transcriptWhere });
-    const meetingWhere = vi.fn().mockResolvedValue(undefined);
-    const meetingSet = vi.fn().mockReturnValue({ where: meetingWhere });
-    update
-      .mockReturnValueOnce({ set: transcriptSet })
-      .mockReturnValueOnce({ set: meetingSet });
+    update.mockReturnValueOnce({ set: transcriptSet });
 
     const { applyElevenLabsTranscriptEvent } =
       await import("@/lib/elevenlabs-transcripts");
@@ -94,9 +102,10 @@ describe("applyElevenLabsTranscriptEvent", () => {
       status: "failed",
       updatedAt: expect.any(Date),
     });
-    expect(meetingSet).toHaveBeenCalledWith({
-      status: "failed",
-      updatedAt: expect.any(Date),
+    expect(databaseSql).toHaveBeenCalledOnce();
+    expect(databaseSql.mock.calls[0]?.[0]?.join(" ")).toContain("not exists");
+    expect(recordElevenLabsTranscriptUsage).toHaveBeenCalledWith({
+      transcriptJobId: "22222222-2222-4222-8222-222222222222",
     });
   });
 
@@ -209,14 +218,14 @@ describe("applyElevenLabsTranscriptEvent", () => {
     });
 
     expect(transaction).toHaveBeenCalledOnce();
-    expect(txn).toHaveBeenCalledTimes(7);
+    expect(txn).toHaveBeenCalledTimes(6);
     expect(txn.mock.calls[1]?.[0].join(" ")).toContain(
       "delete from transcript_segments",
     );
     expect(txn.mock.calls[2]?.[0].join(" ")).toContain(
       "insert into transcript_segments",
     );
-    expect(txn.mock.calls[6]?.[0].join(" ")).toContain(
+    expect(txn.mock.calls[5]?.[0].join(" ")).toContain(
       "update transcript_jobs",
     );
   });
@@ -234,6 +243,59 @@ describe("getTranscriptSegmentOffsetMs", () => {
         recordingStartedAt: "2026-07-22T17:20:58.000Z",
       }),
     ).toBe(1_200_000);
+  });
+
+  it("uses cumulative duration and falls back when a prior duration is unknown", async () => {
+    const { getTranscriptSegmentOffsetMs } =
+      await import("@/lib/elevenlabs-transcripts");
+    const context = {
+      firstRecordingStartedAt: "2026-07-22T17:00:58.000Z",
+      mode: "append" as const,
+      recordingStartedAt: "2026-07-22T17:20:58.000Z",
+    };
+
+    expect(
+      getTranscriptSegmentOffsetMs({ ...context, recordingOffsetMs: 385_000 }),
+    ).toBe(385_000);
+    expect(
+      getTranscriptSegmentOffsetMs({ ...context, recordingOffsetMs: null }),
+    ).toBe(1_200_000);
+  });
+});
+
+describe("finalizeMeetingTranscriptGeneration", () => {
+  it("allows only the callback that observes every terminal job to finalize", async () => {
+    databaseSql
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([{ status: "ready" }]);
+    const { finalizeMeetingTranscriptGeneration } =
+      await import("@/lib/elevenlabs-transcripts");
+
+    await expect(
+      Promise.all([
+        finalizeMeetingTranscriptGeneration(
+          "11111111-1111-4111-8111-111111111111",
+          new Date(),
+        ),
+        finalizeMeetingTranscriptGeneration(
+          "11111111-1111-4111-8111-111111111111",
+          new Date(),
+        ),
+      ]),
+    ).resolves.toEqual([false, true]);
+  });
+
+  it("does not report a failed generation as ready for enrichment", async () => {
+    databaseSql.mockResolvedValueOnce([{ status: "failed" }]);
+    const { finalizeMeetingTranscriptGeneration } =
+      await import("@/lib/elevenlabs-transcripts");
+
+    await expect(
+      finalizeMeetingTranscriptGeneration(
+        "11111111-1111-4111-8111-111111111111",
+        new Date(),
+      ),
+    ).resolves.toBe(false);
   });
 });
 

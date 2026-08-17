@@ -1,0 +1,2 @@
+ALTER TABLE "transcript_jobs" ADD COLUMN "generation_id" uuid;--> statement-breakpoint
+CREATE INDEX "transcript_jobs_meeting_generation_index" ON "transcript_jobs" USING btree ("meeting_id","generation_id");

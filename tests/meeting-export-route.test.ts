@@ -421,57 +421,19 @@ describe("GET /api/meetings/[meetingId]/export", () => {
     );
   });
 
-  it("exports resumed audio parts as one archive", async () => {
+  it("rejects the legacy in-memory multipart archive format", async () => {
     getCurrentUser.mockResolvedValue({
       id: "user_123",
       email: "user@example.com",
       name: null,
     });
-    getWorkspace.mockResolvedValue({ teamId: "team_123" });
-    select
-      .mockReturnValueOnce({
-        from: () => ({
-          where: () => ({
-            limit: vi.fn().mockResolvedValue([
-              {
-                id: "11111111-1111-4111-8111-111111111111",
-                title: "Nascent Sync",
-              },
-            ]),
-          }),
-        }),
-      })
-      .mockReturnValueOnce({
-        from: () => ({
-          where: () => ({
-            orderBy: vi
-              .fn()
-              .mockResolvedValue([
-                { id: "22222222-2222-4222-8222-222222222222" },
-                { id: "33333333-3333-4333-8333-333333333333" },
-              ]),
-          }),
-        }),
-      });
-    const fetchAudio = vi
-      .fn()
-      .mockResolvedValueOnce(new Response(new Uint8Array([1, 2, 3])))
-      .mockResolvedValueOnce(new Response(new Uint8Array([4, 5, 6])));
-    vi.stubGlobal("fetch", fetchAudio);
 
     const response = await getMeetingExport(
       "https://app.example.com/api/meetings/11111111-1111-4111-8111-111111111111/export?format=audio-parts",
     );
 
-    expect(response.status).toBe(200);
-    expect(response.headers.get("content-type")).toBe("application/zip");
-    expect(response.headers.get("content-disposition")).toContain(
-      "Nascent Sync audio parts.zip",
-    );
-    expect(fetchAudio).toHaveBeenCalledTimes(2);
-    expect(fetchAudio.mock.calls[0][0].toString()).toContain(
-      "recording=22222222-2222-4222-8222-222222222222&proxy=1",
-    );
+    expect(response.status).toBe(400);
+    expect(select).not.toHaveBeenCalled();
   });
 
   it("redirects MP3 exports to the authenticated meeting audio route", async () => {

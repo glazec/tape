@@ -107,6 +107,53 @@ describe("MeetingRecoveryUploadPanel", () => {
     );
   });
 
+  it("uploads multiple audio files in the selected order", async () => {
+    readMediaFileDurationMs
+      .mockResolvedValueOnce(60_000)
+      .mockResolvedValueOnce(90_000);
+    vi.mocked(fetch)
+      .mockResolvedValueOnce(
+        response({
+          uploads: [
+            { uploadId: "up_1", uploadUrl: "https://upload/1" },
+            { uploadId: "up_2", uploadUrl: "https://upload/2" },
+          ],
+        }),
+      )
+      .mockResolvedValueOnce(response({}))
+      .mockResolvedValueOnce(response({}))
+      .mockResolvedValueOnce(
+        response({ redirectTo: "/meetings/meeting_123?queued=1" }),
+      );
+
+    render(<MeetingRecoveryUploadPanel meetingId="meeting_123" />);
+    fireEvent.click(screen.getByRole("button", { name: "Audio recording" }));
+    chooseFiles("meeting-recovery-audio", [
+      new File(["one"], "first.mp3", { type: "audio/mpeg" }),
+      new File(["two"], "second.m4a", { type: "audio/mp4" }),
+    ]);
+
+    expect(screen.getByText("first.mp3")).toBeTruthy();
+    expect(screen.getByText("second.m4a")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Upload audio files" }));
+
+    await waitFor(() =>
+      expect(replace).toHaveBeenCalledWith(
+        "/meetings/meeting_123?queued=1",
+      ),
+    );
+    expect(fetch).toHaveBeenNthCalledWith(
+      4,
+      "/api/meetings/meeting_123/uploads/audio/batch/complete",
+      expect.objectContaining({ method: "POST" }),
+    );
+    const request = vi.mocked(fetch).mock.calls[3]?.[1] as RequestInit;
+    expect(JSON.parse(String(request.body)).files).toEqual([
+      expect.objectContaining({ uploadId: "up_1", durationMs: 60_000 }),
+      expect.objectContaining({ uploadId: "up_2", durationMs: 90_000 }),
+    ]);
+  });
+
   it("shows sign in recovery for unauthorized audio and transcript uploads", async () => {
     vi.mocked(fetch).mockResolvedValue(response({}, 401));
     render(<MeetingRecoveryUploadPanel meetingId="meeting_123" />);
@@ -146,8 +193,12 @@ describe("MeetingRecoveryUploadPanel", () => {
 });
 
 function chooseFile(inputId: string, file: File) {
+  chooseFiles(inputId, [file]);
+}
+
+function chooseFiles(inputId: string, files: File[]) {
   fireEvent.change(document.getElementById(inputId) as HTMLInputElement, {
-    target: { files: [file] },
+    target: { files },
   });
 }
 

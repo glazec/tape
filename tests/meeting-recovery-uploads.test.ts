@@ -172,7 +172,15 @@ describe("meeting recovery uploads", () => {
     expect(set).toHaveBeenCalledWith(
       expect.objectContaining({ status: "processing" }),
     );
+    expect(values).toHaveBeenNthCalledWith(
+      3,
+      expect.objectContaining({
+        mode: "replace",
+        recordingId: "recording_123",
+      }),
+    );
     expect(syncMeetingParticipantAccessFromCalendar).not.toHaveBeenCalled();
+    expect(where).toHaveBeenCalled();
   });
 
   it("replaces transcript segments and marks a manual recovery ready", async () => {
@@ -194,14 +202,14 @@ describe("meeting recovery uploads", () => {
       transcriptJobId: expect.any(String),
     });
     expect(transaction).toHaveBeenCalledOnce();
-    expect(txn).toHaveBeenCalledTimes(4);
-    expect(txn.mock.calls[1]?.[0].join(" ")).toContain(
+    expect(txn).toHaveBeenCalledTimes(5);
+    expect(txn.mock.calls[2]?.[0].join(" ")).toContain(
       "delete from transcript_segments",
     );
-    expect(txn.mock.calls[2]?.[0].join(" ")).toContain(
+    expect(txn.mock.calls[3]?.[0].join(" ")).toContain(
       "insert into transcript_segments",
     );
-    expect(txn.mock.calls[3]?.[0].join(" ")).toContain("status = 'ready'");
+    expect(txn.mock.calls[4]?.[0].join(" ")).toContain("status = 'ready'");
     expect(syncMeetingParticipantAccessFromCalendar).not.toHaveBeenCalled();
   });
 

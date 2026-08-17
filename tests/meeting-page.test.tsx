@@ -47,13 +47,13 @@ vi.mock("@/components/meeting-auto-refresh", () => ({
 }));
 vi.mock("@/components/meeting-actions", () => ({
   MeetingActions: ({
-    audioPartCount = 0,
+    audioExportUrls,
     canDelete = true,
     hasAudio = true,
     hasTranscript = true,
     imageCount = 0,
   }: {
-    audioPartCount?: number;
+    audioExportUrls?: string[];
     canDelete?: boolean;
     hasAudio?: boolean;
     hasTranscript?: boolean;
@@ -62,7 +62,8 @@ vi.mock("@/components/meeting-actions", () => ({
     <span>
       meeting actions:
       {hasAudio || hasTranscript || imageCount > 0 ? "content" : "delete only"}
-      :audio parts:{audioPartCount}:delete:{String(canDelete)}
+      :delete:{String(canDelete)}
+      {audioExportUrls ? `:exports:${audioExportUrls.join(",")}` : ""}
     </span>
   ),
 }));
@@ -95,12 +96,14 @@ vi.mock("@/components/share-dialog", () => ({
 }));
 vi.mock("@/components/transcript-viewer", () => ({
   TranscriptViewer: ({
+    audioParts,
     audioUrl,
     meetingId,
     preferredTranslationLanguage,
     segments,
     translationLanguage,
   }: {
+    audioParts?: Array<{ audioUrl: string }>;
     audioUrl?: string | null;
     meetingId: string | null;
     preferredTranslationLanguage: string;
@@ -110,7 +113,8 @@ vi.mock("@/components/transcript-viewer", () => ({
     <span>
       transcript:{meetingId ?? "readonly"}:languages:{translationLanguage}:
       {preferredTranslationLanguage}:audio:{audioUrl ?? "none"}:starts:
-      {segments.map((segment) => segment.startMs).join(",")}
+      {segments.map((segment) => segment.startMs).join(",")}:sources:
+      {audioParts?.map((part) => part.audioUrl).join(",") ?? "single"}
     </span>
   ),
 }));
@@ -318,7 +322,7 @@ describe("meeting page", () => {
     vi.useRealTimers();
   });
 
-  it("pairs each resumed recording with its local transcript timeline and export", async () => {
+  it("renders continued recordings as one gapless transcript and audio playlist", async () => {
     mocks.getMeeting.mockResolvedValue(
       meeting({
         audioUrl: null,
@@ -348,11 +352,11 @@ describe("meeting page", () => {
             text: "Part one",
           },
           {
-            endMs: 1_201_000,
+            endMs: 421_000,
             id: "seg-2",
             polishedText: "Part two",
             speaker: "Alice",
-            startMs: 1_200_000,
+            startMs: 420_000,
             text: "Part two",
           },
         ],
@@ -365,9 +369,17 @@ describe("meeting page", () => {
       }),
     );
 
-    expect(html).toContain("Recording continued in 2 parts");
-    expect(html).toContain("audio:/audio?recording=part-1:starts:0");
-    expect(html).toContain("meeting actions:content:audio parts:2");
+    expect(html).not.toContain("Part 1");
+    expect(html).not.toContain("Part 2");
+    expect(html).not.toContain("Recording continued");
+    expect(html).toContain("starts:0,420000");
+    expect(html).toContain(
+      "sources:/audio?recording=part-1,/audio?recording=part-2",
+    );
+    expect(html).toContain(
+      ":exports:/api/meetings/resumed_meeting/audio?recording=part-1&amp;download=1,/api/meetings/resumed_meeting/audio?recording=part-2&amp;download=1",
+    );
+    expect(html).toContain("meeting actions:content:delete:true");
   });
 
   it("keeps an existing transcript visible during failed recovery", async () => {

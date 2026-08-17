@@ -7,7 +7,6 @@ import { MeetingActions } from "@/components/meeting-actions";
 import { MeetingEntityLinks } from "@/components/meeting-entity-links";
 import { MeetingHeaderMetadata } from "@/components/meeting-header-metadata";
 import { MeetingRecoveryUploadPanel } from "@/components/meeting-recovery-upload-panel";
-import { MeetingRecordingParts } from "@/components/meeting-recording-parts";
 import { MeetingRecordingResume } from "@/components/meeting-recording-resume";
 import { MeetingTitleEditor } from "@/components/meeting-title-editor";
 import { RelatedMeetingsCard } from "@/components/related-meetings-card";
@@ -25,10 +24,7 @@ import {
   listMeetingDetailRelatedMeetingsForWorkspace,
   listWorkspaceShareRecipients,
 } from "@/lib/meeting-queries";
-import {
-  getRecordingPartEndOffsetMs,
-  getRecordingPartOffsetMs,
-} from "@/lib/meeting-recording-timeline";
+import { moveRecordingTimestampToAppendedTimeline } from "@/lib/meeting-recording-timeline";
 import { getTeamConfiguration } from "@/lib/team-configuration";
 import { getOrCreateWorkspaceForSessionUser } from "@/lib/workspace";
 
@@ -67,6 +63,19 @@ export default async function MeetingPage({
     transcriptJobStatus: meeting.transcriptJobStatus,
   });
   const recordingParts = meeting.recordingParts ?? [];
+  const continuousVisualAssets =
+    recordingParts.length > 1
+      ? meeting.visualAssets.map((asset) => ({
+          ...asset,
+          timestampMs:
+            asset.timestampMs === null
+              ? null
+              : moveRecordingTimestampToAppendedTimeline(
+                  recordingParts,
+                  asset.timestampMs,
+                ),
+        }))
+      : meeting.visualAssets;
   const shouldOfferBotRecovery = isMeetingBotRecoveryEligible({
     canManage,
     endedAt: meeting.endedAt,
@@ -125,14 +134,16 @@ export default async function MeetingPage({
               <MeetingActions
                 audioExportUrls={
                   recordingParts.length > 1
-                    ? [
-                        `/api/meetings/${encodeURIComponent(
-                          meetingId,
-                        )}/export?format=audio-parts`,
-                      ]
+                    ? recordingParts.map(
+                        (part) =>
+                          `/api/meetings/${encodeURIComponent(
+                            meetingId,
+                          )}/audio?recording=${encodeURIComponent(
+                            part.id,
+                          )}&download=1`,
+                      )
                     : undefined
                 }
-                audioPartCount={recordingParts.length}
                 canDelete={meeting.canDelete}
                 hasAudio={
                   Boolean(meeting.audioUrl) || recordingParts.length > 0
@@ -221,114 +232,34 @@ export default async function MeetingPage({
                     meetingUrl={meeting.meetingUrl}
                   />
                 ) : null}
-                {recordingParts.length > 1 ? (
-                  <MeetingRecordingParts parts={recordingParts}>
-                    {recordingParts.map((part, partIndex) => {
-                      const partOffsetMs = getRecordingPartOffsetMs(
-                        recordingParts,
-                        partIndex,
-                      );
-                      const partEndOffsetMs = getRecordingPartEndOffsetMs(
-                        recordingParts,
-                        partIndex,
-                      );
-                      const partSegments = meeting.segments.filter(
-                        (segment) =>
-                          segment.startMs >= partOffsetMs &&
-                          segment.startMs < partEndOffsetMs,
-                      );
-                      const translatedSegments = partSegments.filter(
-                        (segment) => Boolean(segment.translatedText?.trim()),
-                      ).length;
-
-                      return (
-                        <TranscriptViewer
-                          key={`${part.id}:${getTranscriptViewerRenderKey({
-                            displayStatus,
-                            meetingId,
-                            polishedSegments: meeting.segments.filter(
-                              (segment) =>
-                                Boolean(segment.polishedText?.trim()),
-                            ).length,
-                            segmentCount: meeting.segments.length,
-                            translatedSegments:
-                              meeting.translationSummary.translatedSegments,
-                            translationStatus:
-                              meeting.translationSummary.status,
-                          })}`}
-                          meetingId={canManage ? meetingId : null}
-                          preferredTranslationLanguage={
-                            teamConfiguration?.translationLanguage ??
-                            meeting.translationLanguage
-                          }
-                          segments={partSegments.map((segment) => ({
-                            ...segment,
-                            endMs:
-                              segment.endMs === null
-                                ? null
-                                : Math.max(0, segment.endMs - partOffsetMs),
-                            startMs: Math.max(
-                              0,
-                              segment.startMs - partOffsetMs,
-                            ),
-                          }))}
-                          speakerAliases={meeting.speakerAliases}
-                          speakerSuggestions={meeting.speakerSuggestions}
-                          translationLanguage={meeting.translationLanguage}
-                          translationSummary={{
-                            ...meeting.translationSummary,
-                            hasTranslations: translatedSegments > 0,
-                            totalSegments: partSegments.length,
-                            translatedSegments,
-                          }}
-                          visualAssets={meeting.visualAssets
-                            .filter((asset) =>
-                              asset.timestampMs === null
-                                ? partIndex === 0
-                                : asset.timestampMs >= partOffsetMs &&
-                                  asset.timestampMs < partEndOffsetMs,
-                            )
-                            .map((asset) => ({
-                              ...asset,
-                              timestampMs:
-                                asset.timestampMs === null
-                                  ? null
-                                  : Math.max(
-                                      0,
-                                      asset.timestampMs - partOffsetMs,
-                                    ),
-                            }))}
-                        />
-                      );
-                    })}
-                  </MeetingRecordingParts>
-                ) : (
-                  <TranscriptViewer
-                    audioUrl={meeting.audioUrl}
-                    key={getTranscriptViewerRenderKey({
-                      displayStatus,
-                      meetingId,
-                      polishedSegments: meeting.segments.filter((segment) =>
-                        Boolean(segment.polishedText?.trim()),
-                      ).length,
-                      segmentCount: meeting.segments.length,
-                      translatedSegments:
-                        meeting.translationSummary.translatedSegments,
-                      translationStatus: meeting.translationSummary.status,
-                    })}
-                    meetingId={canManage ? meetingId : null}
-                    preferredTranslationLanguage={
-                      teamConfiguration?.translationLanguage ??
-                      meeting.translationLanguage
-                    }
-                    segments={meeting.segments}
-                    speakerAliases={meeting.speakerAliases}
-                    speakerSuggestions={meeting.speakerSuggestions}
-                    translationLanguage={meeting.translationLanguage}
-                    translationSummary={meeting.translationSummary}
-                    visualAssets={meeting.visualAssets}
-                  />
-                )}
+                <TranscriptViewer
+                  audioParts={
+                    recordingParts.length > 1 ? recordingParts : undefined
+                  }
+                  audioUrl={meeting.audioUrl}
+                  key={getTranscriptViewerRenderKey({
+                    displayStatus,
+                    meetingId,
+                    polishedSegments: meeting.segments.filter((segment) =>
+                      Boolean(segment.polishedText?.trim()),
+                    ).length,
+                    segmentCount: meeting.segments.length,
+                    translatedSegments:
+                      meeting.translationSummary.translatedSegments,
+                    translationStatus: meeting.translationSummary.status,
+                  })}
+                  meetingId={canManage ? meetingId : null}
+                  preferredTranslationLanguage={
+                    teamConfiguration?.translationLanguage ??
+                    meeting.translationLanguage
+                  }
+                  segments={meeting.segments}
+                  speakerAliases={meeting.speakerAliases}
+                  speakerSuggestions={meeting.speakerSuggestions}
+                  translationLanguage={meeting.translationLanguage}
+                  translationSummary={meeting.translationSummary}
+                  visualAssets={continuousVisualAssets}
+                />
                 <MeetingEntityLinks entities={meeting.entities} />
               </>
             )}
@@ -408,8 +339,8 @@ export default async function MeetingPage({
                   >
                     <p className="text-sm font-semibold">Shared transcript</p>
                     <p className="mt-2 text-sm leading-6 text-muted-foreground">
-                      You can read and share this transcript. Editing stays
-                      with the meeting owner.
+                      You can read and share this transcript. Editing stays with
+                      the meeting owner.
                     </p>
                   </div>
                   <div className="hidden lg:mt-6 lg:block">

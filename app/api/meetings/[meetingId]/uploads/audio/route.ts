@@ -1,6 +1,6 @@
 import { revalidatePath } from "next/cache";
 
-import { inngest } from "@/inngest/client";
+import { dispatchAudioBatchTranscriptions } from "@/lib/audio-batch-dispatch";
 import { getCurrentUser } from "@/lib/auth";
 import {
   assertCanManageMeeting,
@@ -119,10 +119,7 @@ export async function POST(
       workspace,
     });
 
-    await inngest.send({
-      name: "meeting/transcribe.audio",
-      data: transcription,
-    });
+    await dispatchAudioBatchTranscriptions([transcription]);
 
     revalidatePath("/dashboard");
     revalidatePath(`/meetings/${meetingId}`);

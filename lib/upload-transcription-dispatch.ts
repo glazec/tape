@@ -48,7 +48,7 @@ export async function dispatchQueuedUploadTranscriptions(
     )
     .where(
       and(
-        eq(meetings.platform, "upload"),
+        or(eq(meetings.platform, "upload"), eq(mediaAssets.source, "upload")),
         eq(transcriptJobs.provider, "elevenlabs"),
         eq(transcriptJobs.status, "queued"),
         isNull(transcriptJobs.providerJobId),

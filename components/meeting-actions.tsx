@@ -15,7 +15,6 @@ import { Button, buttonVariants } from "@/components/ui/button";
 
 type MeetingActionsProps = {
   audioExportUrls?: string[];
-  audioPartCount?: number;
   canDelete?: boolean;
   hasAudio?: boolean;
   hasTranscript?: boolean;
@@ -28,7 +27,6 @@ type ExportFormat = "transcript" | "mp3" | "images";
 
 export function MeetingActions({
   audioExportUrls,
-  audioPartCount = 1,
   canDelete = true,
   hasAudio = true,
   hasTranscript = true,
@@ -219,7 +217,6 @@ export function MeetingActions({
                 />
                 <span className="font-medium">
                   MP3
-                  {audioPartCount > 1 ? ` (${audioPartCount} parts)` : ""}
                 </span>
               </label>
             ) : null}

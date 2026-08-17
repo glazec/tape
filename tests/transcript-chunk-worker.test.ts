@@ -1,13 +1,17 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-const { select } = vi.hoisted(() => ({
-  select: vi.fn(),
-}));
+const { finalizeMeetingTranscriptGeneration, select, update } = vi.hoisted(
+  () => ({
+    finalizeMeetingTranscriptGeneration: vi.fn(),
+    select: vi.fn(),
+    update: vi.fn(),
+  }),
+);
 
 vi.mock("@/db/client", () => ({
   db: {
     select,
-    update: vi.fn(),
+    update,
   },
 }));
 
@@ -17,11 +21,14 @@ vi.mock("@/inngest/client", () => ({
 
 vi.mock("@/lib/elevenlabs-transcripts", () => ({
   applyElevenLabsTranscriptEvent: vi.fn(),
+  finalizeMeetingTranscriptGeneration,
 }));
 
 describe("transcript chunk worker", () => {
   afterEach(() => {
     select.mockReset();
+    update.mockReset();
+    finalizeMeetingTranscriptGeneration.mockReset();
   });
 
   it("renders and stores only chunks at or below sixty minutes", async () => {
@@ -40,13 +47,10 @@ describe("transcript chunk worker", () => {
     const putObject = vi.fn().mockResolvedValue(undefined);
     const runProcess = vi
       .fn()
-      .mockResolvedValueOnce(
-        new TextEncoder().encode(String(61 * 60)),
-      )
+      .mockResolvedValueOnce(new TextEncoder().encode(String(61 * 60)))
       .mockResolvedValue(new Uint8Array([1, 2, 3]));
-    const { createTranscriptChunkWorkerAdapter } = await import(
-      "@/lib/transcript-chunk-worker"
-    );
+    const { createTranscriptChunkWorkerAdapter } =
+      await import("@/lib/transcript-chunk-worker");
     const adapter = createTranscriptChunkWorkerAdapter({
       createReadUrl,
       ffmpegPath: "ffmpeg",
@@ -90,9 +94,8 @@ describe("transcript chunk worker", () => {
       }),
     });
     const runProcess = vi.fn();
-    const { createTranscriptChunkWorkerAdapter } = await import(
-      "@/lib/transcript-chunk-worker"
-    );
+    const { createTranscriptChunkWorkerAdapter } =
+      await import("@/lib/transcript-chunk-worker");
     const adapter = createTranscriptChunkWorkerAdapter({
       createReadUrl: vi.fn(),
       ffmpegPath: "ffmpeg",
@@ -110,5 +113,32 @@ describe("transcript chunk worker", () => {
       }),
     ).rejects.toThrow("unsafe");
     expect(runProcess).not.toHaveBeenCalled();
+  });
+
+  it("waits for aggregate finalization after a chunked job fails", async () => {
+    const where = vi.fn().mockResolvedValue(undefined);
+    const set = vi.fn().mockReturnValue({ where });
+    update.mockReturnValue({ set });
+    finalizeMeetingTranscriptGeneration.mockResolvedValue(false);
+    const { markChunkedTranscriptJobFailed } =
+      await import("@/lib/transcript-chunk-worker");
+
+    await markChunkedTranscriptJobFailed({
+      error: new Error("chunk failed"),
+      meetingId: "22222222-2222-4222-8222-222222222222",
+      transcriptJobId: "33333333-3333-4333-8333-333333333333",
+    });
+
+    expect(set).toHaveBeenCalledWith(
+      expect.objectContaining({
+        errorMessage: "chunk failed",
+        status: "failed",
+      }),
+    );
+    expect(update).toHaveBeenCalledOnce();
+    expect(finalizeMeetingTranscriptGeneration).toHaveBeenCalledWith(
+      "22222222-2222-4222-8222-222222222222",
+      expect.any(Date),
+    );
   });
 });

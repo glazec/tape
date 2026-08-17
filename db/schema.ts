@@ -797,6 +797,7 @@ export const transcriptJobs = pgTable(
     }),
     provider: text("provider").notNull().default("elevenlabs"),
     mode: transcriptMode("mode").notNull().default("replace"),
+    generationId: uuid("generation_id"),
     providerJobId: text("provider_job_id"),
     billingKeytermsUsed: boolean("billing_keyterms_used")
       .notNull()
@@ -819,6 +820,10 @@ export const transcriptJobs = pgTable(
     index("transcript_jobs_meeting_created_index").on(
       table.meetingId,
       table.createdAt,
+    ),
+    index("transcript_jobs_meeting_generation_index").on(
+      table.meetingId,
+      table.generationId,
     ),
   ],
 );

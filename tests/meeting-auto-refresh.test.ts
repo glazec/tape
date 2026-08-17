@@ -13,14 +13,14 @@ describe("shouldAutoRefreshMeeting", () => {
     ).toBe(true);
   });
 
-  it("stops polling after transcript segments are available", () => {
+  it("keeps polling after partial transcript segments are available", () => {
     expect(
       shouldAutoRefreshMeeting({
         meetingStatus: "processing",
         segmentCount: 3,
         transcriptJobStatus: "running",
       }),
-    ).toBe(false);
+    ).toBe(true);
   });
 
   it("polls while translation is active after transcript segments exist", () => {
