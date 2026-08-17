@@ -74,6 +74,7 @@ export default async function TeamSettingsPage() {
   return (
     <AppShell
       activeHref="/settings/team"
+      amplitudeTeamId={workspace.teamId}
       canCreateMeetings
       oneSignalExternalId={workspace.userId}
     >

@@ -294,8 +294,6 @@ Recommended:
 1. `MCP_HOST`
 2. `MCP_PORT`
 3. `NEON_AUTH_AUDIENCE` when the Neon Auth JWTs include a known audience claim
-4. `POSTHOG_API_KEY`
-5. `POSTHOG_HOST`
 
 Every MCP database query opens a read only transaction and applies `SQL_TOOL_STATEMENT_TIMEOUT_MS`. Production should still use a dedicated read only database role so a future code path cannot write by accident.
 

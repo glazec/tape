@@ -1760,16 +1760,6 @@ async function recordCalendarAutoJoinFailure(input: {
 
   console.error("calendar_auto_join_failure", metadata);
 
-  await capturePostHogEvent("calendar_auto_join_failure", {
-    distinctId: input.userId ?? input.meetingId,
-    properties: {
-      ...metadata,
-      service: "meeting-note",
-      teamId: input.teamId,
-      userId: input.userId ?? null,
-    },
-  });
-
   try {
     await db.insert(auditEvents).values({
       action: "calendar_auto_join_failure",
@@ -1782,52 +1772,6 @@ async function recordCalendarAutoJoinFailure(input: {
   } catch {
     // Keep the original scheduling error as the authoritative failure.
   }
-}
-
-async function capturePostHogEvent(
-  event: string,
-  input: {
-    distinctId: string;
-    properties: Record<string, unknown>;
-  },
-) {
-  const apiKey = process.env.POSTHOG_API_KEY?.trim();
-
-  if (!apiKey) {
-    return;
-  }
-
-  const host = getPostHogHost();
-
-  try {
-    const response = await fetch(`${host}/i/v0/e/`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        api_key: apiKey,
-        distinct_id: input.distinctId,
-        event,
-        properties: input.properties,
-      }),
-    });
-
-    if (!response.ok) {
-      console.error("posthog_capture_failed", {
-        event,
-        status: response.status,
-      });
-    }
-  } catch (error) {
-    console.error("posthog_capture_failed", {
-      errorMessage: getErrorMessage(error),
-      event,
-    });
-  }
-}
-
-function getPostHogHost() {
-  const host = process.env.POSTHOG_HOST?.trim() || "https://us.i.posthog.com";
-  return host.replace(/\/+$/, "");
 }
 
 function getErrorMessage(error: unknown) {

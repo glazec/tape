@@ -30,6 +30,8 @@ import type {
   ActiveMeetingShare,
   MeetingShareScope,
 } from "@/lib/meeting-share-service";
+import { captureClientAction } from "@/lib/telemetry/client";
+
 type ShareAudienceOption = {
   memberCount: number;
   name: string;
@@ -143,12 +145,14 @@ export function ShareDialog({
       } | null;
 
       if (!response.ok || !body?.email) {
+        captureClientAction("meeting_share_failed");
         setState("error");
         setMessage(body?.error ?? "Could not share this meeting.");
         return;
       }
 
       if (previewOnly) {
+        captureClientAction("meeting_share_previewed");
         setPreview({
           email: body.email,
           meetingCount: body.meetingCount ?? 1,
@@ -160,6 +164,7 @@ export function ShareDialog({
 
       const copied = await copyMeetingLink(meetingId);
       setPreview(null);
+      captureClientAction("meeting_share_completed");
       setState("success");
       setEmail("");
       const shareMessage =
@@ -173,6 +178,7 @@ export function ShareDialog({
       );
       await loadShares();
     } catch {
+      captureClientAction("meeting_share_failed");
       setState("error");
       setMessage("Could not share right now. Try again.");
     }
@@ -219,6 +225,7 @@ export function ShareDialog({
     } | null;
 
     if (!response?.ok) {
+      captureClientAction("meeting_access_removal_failed");
       setState("error");
       setMessage(
         response?.status === 401
@@ -235,6 +242,7 @@ export function ShareDialog({
       currentShares.filter((share) => share.email !== recipientEmail),
     );
     setState("success");
+    captureClientAction("meeting_access_removed");
     setMessage("Access removed.");
     await loadShares();
   }
@@ -254,12 +262,14 @@ export function ShareDialog({
     } | null;
 
     if (!response?.ok) {
+      captureClientAction("meeting_share_failed");
       setState("error");
       setMessage(body?.error ?? "Could not update access right now.");
       return;
     }
 
     const copied = await copyMeetingLink(meetingId);
+    captureClientAction("meeting_share_completed");
     setState("success");
     setEmail("");
     setScope("single");
@@ -389,6 +399,7 @@ export function ShareDialog({
 
             <Button
               className="min-h-10 w-full"
+              data-telemetry-action="meeting_share_submitted"
               disabled={state === "loading"}
               type="submit"
             >
@@ -434,6 +445,7 @@ export function ShareDialog({
                     <Button
                       aria-label={`Remove ${person.email}`}
                       disabled={state === "loading"}
+                      data-telemetry-action="meeting_access_remove_clicked"
                       onClick={() => void removeRecipient(person.email)}
                       size="icon-sm"
                       type="button"
@@ -630,10 +642,21 @@ function SharePreviewPanel({
         </ul>
       ) : null}
       <div className="grid grid-cols-2 gap-2">
-        <Button disabled={busy} onClick={onBack} type="button" variant="outline">
+        <Button
+          data-telemetry-action="meeting_share_preview_cancelled"
+          disabled={busy}
+          onClick={onBack}
+          type="button"
+          variant="outline"
+        >
           Back
         </Button>
-        <Button disabled={busy} onClick={onConfirm} type="button">
+        <Button
+          data-telemetry-action="meeting_share_confirmed"
+          disabled={busy}
+          onClick={onConfirm}
+          type="button"
+        >
           {busy ? "Sharing…" : "Confirm"}
         </Button>
       </div>

@@ -109,6 +109,7 @@ export default async function MeetingPage({
   return (
     <AppShell
       activeHref="/dashboard"
+      amplitudeTeamId={workspace.teamId}
       canCreateMeetings={workspace.canCreateMeetings !== false}
       oneSignalExternalId={workspace.userId}
     >

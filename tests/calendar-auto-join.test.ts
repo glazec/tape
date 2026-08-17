@@ -1570,10 +1570,6 @@ describe("calendar auto join", () => {
   });
 
   it("rejects a Recall Calendar V2 bot response without a nested bot id", async () => {
-    vi.stubEnv("POSTHOG_API_KEY", "ph_project_key");
-    vi.stubEnv("POSTHOG_HOST", "https://us.i.posthog.com");
-    const fetchMock = vi.fn().mockResolvedValue(new Response("{}", { status: 200 }));
-    vi.stubGlobal("fetch", fetchMock);
     const consoleError = vi
       .spyOn(console, "error")
       .mockImplementation(() => undefined);
@@ -1643,31 +1639,6 @@ describe("calendar auto join", () => {
         meetingId: "44444444-4444-4444-8444-444444444444",
         recallCalendarEventId: "55555555-5555-4555-8555-555555555555",
         reason: "schedule_bot_failed",
-      }),
-    );
-    expect(fetchMock).toHaveBeenCalledWith(
-      "https://us.i.posthog.com/i/v0/e/",
-      expect.objectContaining({
-        body: expect.any(String),
-        headers: { "Content-Type": "application/json" },
-        method: "POST",
-      }),
-    );
-    const posthogBody = JSON.parse(fetchMock.mock.calls[0]?.[1]?.body as string);
-    expect(posthogBody).toEqual(
-      expect.objectContaining({
-        api_key: "ph_project_key",
-        distinct_id: "55555555-5555-4555-8555-555555555555",
-        event: "calendar_auto_join_failure",
-        properties: expect.objectContaining({
-          calendarEventId: "33333333-3333-4333-8333-333333333333",
-          errorMessage: "Recall bot response missing id",
-          meetingId: "44444444-4444-4444-8444-444444444444",
-          recallCalendarEventId: "55555555-5555-4555-8555-555555555555",
-          reason: "schedule_bot_failed",
-          service: "meeting-note",
-          teamId: "22222222-2222-4222-8222-222222222222",
-        }),
       }),
     );
     expect(auditValues).toHaveBeenCalledWith(

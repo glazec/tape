@@ -81,9 +81,16 @@ REST API key are configured.
 | Exa web search for live answers | `EXA_API_KEY` |
 | OneSignal reminders | `NEXT_PUBLIC_ONESIGNAL_APP_ID`, `NEXT_PUBLIC_ONESIGNAL_ALLOWED_ORIGINS`, `ONESIGNAL_REST_API_KEY` |
 | Twenty CRM vocabulary | `TWENTY_API_BASE_URL`, `TWENTY_API_KEY`; restricted to the team owning `iosg.vc` |
-| PostHog events | `POSTHOG_API_KEY`, `POSTHOG_HOST` |
+| Amplitude browser analytics | No environment variable; the public project key is initialized in `instrumentation-client.ts` |
 | SigNoz telemetry | `OTEL_EXPORTER_OTLP_ENDPOINT`, `OTEL_EXPORTER_OTLP_HEADERS`, `OTEL_SERVICE_NAME` |
 | Cloudflare tunnel | `CLOUDFLARED_TOKEN` |
+
+Amplitude records sessions, campaign attribution, web vitals, main thread
+blocks, safe interaction and frustration signals for heatmaps, and the app's
+semantic product events. Session Replay samples all sessions while usage is
+low. Its conservative privacy mode masks all text, form values, accessible
+labels, and titles. It blocks images, audio, video, canvases, iframes, and
+elements marked with `data-amplitude-block`.
 
 Leave optional variables empty when their feature is not used. `NEON_AUTH_BASE_URL` can remain empty when `NEON_AUTH_JWKS_URL` ends with `/.well-known/jwks.json`.
 

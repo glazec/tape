@@ -18,6 +18,7 @@ import {
   getMobileRecordingFileType,
   selectMobileRecorderMimeType,
 } from "@/lib/mobile-recorder";
+import { captureClientAction } from "@/lib/telemetry/client";
 
 type RecorderState =
   | "idle"
@@ -166,6 +167,7 @@ export function MobileMeetingRecorder({
         setElapsedSeconds((seconds) => seconds + 1);
       }, 1000);
       stateRef.current = "recording";
+      captureClientAction("mobile_recording_permission_granted");
       setState("recording");
     } catch {
       stopStream();
@@ -261,6 +263,7 @@ export function MobileMeetingRecorder({
         return;
       }
 
+      captureClientAction("mobile_recording_uploaded");
       router.replace(`/meetings/${encodeURIComponent(meetingId)}`);
       router.refresh();
     } catch (error) {
@@ -291,6 +294,7 @@ export function MobileMeetingRecorder({
   }
 
   function showError(message: string) {
+    captureClientAction("mobile_recording_failed");
     clearTimer();
     stateRef.current = "error";
     setState("error");
@@ -304,7 +308,13 @@ export function MobileMeetingRecorder({
       <header className="border-b bg-background/95">
         <div className="mx-auto flex min-h-16 w-full max-w-3xl items-center justify-between gap-4 px-4 sm:px-6">
           <ProductLogo />
-          <Button className="min-h-11" onClick={leaveRecorder} type="button" variant="ghost">
+          <Button
+            className="min-h-11"
+            data-telemetry-action="mobile_recording_leave_clicked"
+            onClick={leaveRecorder}
+            type="button"
+            variant="ghost"
+          >
             <ArrowLeft data-icon="inline-start" />
             Back to meeting
           </Button>
@@ -348,12 +358,24 @@ export function MobileMeetingRecorder({
         ) : null}
 
         {state === "recording" ? (
-          <Button className="min-h-11" onClick={stopRecording} size="lg" variant="destructive">
+          <Button
+            className="min-h-11"
+            data-telemetry-action="mobile_recording_stop_clicked"
+            onClick={stopRecording}
+            size="lg"
+            variant="destructive"
+          >
             <Square data-icon="inline-start" />
             Stop and upload
           </Button>
         ) : (
-          <Button className="min-h-11" disabled={isBusy} onClick={startRecording} size="lg">
+          <Button
+            className="min-h-11"
+            data-telemetry-action="mobile_recording_start_clicked"
+            disabled={isBusy}
+            onClick={startRecording}
+            size="lg"
+          >
             {isBusy ? (
               <LoaderCircle className="animate-spin" data-icon="inline-start" />
             ) : (
