@@ -12,6 +12,18 @@ describe("request rate limits", () => {
     vi.resetModules();
   });
 
+  it("allows 30 server media uploads per hour", async () => {
+    const { requestRateLimitPolicies } = await import(
+      "@/lib/request-rate-limit"
+    );
+
+    expect(requestRateLimitPolicies.serverMediaUpload).toEqual({
+      limit: 30,
+      scope: "server_media_upload",
+      windowMs: 3_600_000,
+    });
+  });
+
   it("allows requests within the persistent window limit", async () => {
     execute.mockResolvedValue({ rows: [{ request_count: 3 }] });
     const { assertRequestRateLimit } = await import(

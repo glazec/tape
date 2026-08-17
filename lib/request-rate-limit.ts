@@ -23,7 +23,7 @@ export const requestRateLimitPolicies = {
     windowMs: 60 * 60 * 1_000,
   },
   serverMediaUpload: {
-    limit: 10,
+    limit: 30,
     scope: "server_media_upload",
     windowMs: 60 * 60 * 1_000,
   },
