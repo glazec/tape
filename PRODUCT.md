@@ -21,7 +21,7 @@ Turn meetings into dependable team memory. Success means colleagues can understa
 3. Upload audio or video, paste a transcript, or record on a phone.
 4. Use the macOS recorder for in-person meetings, ad hoc calls, and any meeting cloud capture misses.
 5. Search the meeting library by title, participant, entity, or transcript text.
-6. Query the archive from an outside assistant over the MCP server, read only and scoped to the caller's access.
+6. Query the archive or upload a local audio meeting at a chosen time from an outside assistant over the MCP server, scoped to the caller's access and meeting creation rights.
 7. Review synchronized audio, transcript, speakers, translation, and captured screen share images.
 8. Export transcript text, audio, and meeting images.
 9. Share a transcript with workspace members or named external colleagues, optionally including past and future meetings in the same related series.

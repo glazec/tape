@@ -1,4 +1,5 @@
 import asyncio
+import json
 import unittest
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
@@ -125,6 +126,170 @@ class SqlSafetyTests(unittest.TestCase):
             with self.subTest(params=params):
                 with self.assertRaises(ValueError):
                     main._normalize_sql_params(params)
+
+
+class MeetingBackendRequestTests(unittest.TestCase):
+    class Response:
+        def __init__(self, payload):
+            self.payload = payload
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, traceback):
+            return False
+
+        def read(self):
+            return json.dumps(self.payload).encode()
+
+    def test_signs_canonical_user_and_request_body(self):
+        user = main.TapeUser(
+            id="11111111-1111-4111-8111-111111111111",
+            auth_user_id="auth-user-123",
+            email="member@example.com",
+            name="Member",
+        )
+
+        with (
+            patch.object(main, "APP_BASE_URL", "https://app.example.com"),
+            patch.object(main, "MCP_BACKEND_SHARED_SECRET", "s" * 32),
+            patch.object(main.time, "time", return_value=1_776_590_400),
+            patch.object(
+                main,
+                "uuid4",
+                return_value="request-123",
+            ),
+            patch.object(
+                main.urllib.request,
+                "urlopen",
+                return_value=self.Response({"uploadId": "upload-123"}),
+            ) as urlopen,
+        ):
+            result = main._post_tape_backend_sync(
+                "/api/mcp/uploads/prepare",
+                user,
+                {"fileName": "meeting.mp3"},
+            )
+            request = urlopen.call_args.args[0]
+            body = request.data.decode()
+            expected_signature = main._backend_signature(
+                f"request-123.1776590400.{body}",
+            )
+
+        self.assertEqual(result, {"uploadId": "upload-123"})
+        self.assertEqual(
+            json.loads(body),
+            {
+                "input": {"fileName": "meeting.mp3"},
+                "user": {
+                    "email": "member@example.com",
+                    "id": "auth-user-123",
+                    "name": "Member",
+                },
+            },
+        )
+        self.assertEqual(
+            request.get_header("X-tape-mcp-signature"),
+            f"v1,{expected_signature}",
+        )
+        self.assertEqual(
+            request.full_url,
+            "https://app.example.com/api/mcp/uploads/prepare",
+        )
+
+    def test_requires_https_for_non_local_backends(self):
+        with patch.object(main, "APP_BASE_URL", "http://app.example.com"):
+            with self.assertRaises(RuntimeError):
+                main._backend_endpoint("/api/mcp/uploads/prepare")
+
+
+class MeetingUploadToolTests(unittest.IsolatedAsyncioTestCase):
+    async def test_prepares_direct_upload_without_exposing_local_path(self):
+        backend_result = {
+            "completionToken": "completion-token",
+            "contentType": "audio/mpeg",
+            "expiresAt": "2026-08-17T15:15:00.000Z",
+            "uploadHeaders": {"Content-Type": "audio/mpeg"},
+            "uploadId": "upload-123",
+            "uploadMethod": "PUT",
+            "uploadUrl": "https://uploads.example.com/signed",
+        }
+
+        with (
+            patch.object(main, "_current_user_id", return_value="user-123"),
+            patch.object(
+                main,
+                "_post_tape_backend",
+                AsyncMock(return_value=backend_result),
+            ) as post_backend,
+        ):
+            result = await main.prepare_meeting_upload(
+                file_name="/private/recordings/meeting.mp3",
+                file_size_bytes=123,
+                meeting_time="2026-08-17T11:00:00-04:00",
+                duration_ms=60_000,
+                title="MCP test meeting",
+            )
+
+        post_backend.assert_awaited_once_with(
+            "/api/mcp/uploads/prepare",
+            {
+                "contentType": "audio/mpeg",
+                "durationMs": 60_000,
+                "fileName": "meeting.mp3",
+                "fileSizeBytes": 123,
+                "meetingTime": "2026-08-17T15:00:00Z",
+                "title": "MCP test meeting",
+            },
+        )
+        self.assertEqual(result["upload_url"], backend_result["uploadUrl"])
+        self.assertEqual(result["next_tool"], "complete_meeting_upload")
+        self.assertNotIn("/private/recordings", json.dumps(result))
+
+    async def test_rejects_meeting_time_without_timezone(self):
+        with patch.object(
+            main,
+            "_post_tape_backend",
+            AsyncMock(),
+        ) as post_backend:
+            with self.assertRaisesRegex(ValueError, "timezone"):
+                await main.prepare_meeting_upload(
+                    file_name="meeting.mp3",
+                    file_size_bytes=123,
+                    meeting_time="2026-08-17T11:00:00",
+                )
+
+        post_backend.assert_not_awaited()
+
+    async def test_completes_upload_and_returns_meeting_link(self):
+        with (
+            patch.object(main, "APP_BASE_URL", "https://tape.example.com"),
+            patch.object(main, "_current_user_id", return_value="user-123"),
+            patch.object(
+                main,
+                "_post_tape_backend",
+                AsyncMock(
+                    return_value={
+                        "delayedCount": 0,
+                        "existing": False,
+                        "meetingId": "11111111-1111-4111-8111-111111111111",
+                        "queued": True,
+                        "status": "processing",
+                    },
+                ),
+            ) as post_backend,
+        ):
+            result = await main.complete_meeting_upload("completion-token")
+
+        post_backend.assert_awaited_once_with(
+            "/api/mcp/uploads/complete",
+            {"completionToken": "completion-token"},
+        )
+        self.assertEqual(
+            result["meeting_url"],
+            "https://tape.example.com/meetings/11111111-1111-4111-8111-111111111111",
+        )
+        self.assertTrue(result["queued"])
 
 
 class RlsQueryContextTests(unittest.IsolatedAsyncioTestCase):

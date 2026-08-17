@@ -86,7 +86,7 @@ Team settings shows remaining workspace credit plus current month personal and o
 | Heavy media processing | A Railway Node worker for screen share extraction and long recording transcription chunks |
 | Notifications | Optional OneSignal browser and mobile push |
 | Vocabulary enrichment | Optional Twenty CRM names and companies for the IOSG workspace only |
-| Agent access | A separate FastMCP server with caller scoped read only tools |
+| Agent access | A separate FastMCP server with caller scoped reads and backend mediated local recording uploads |
 
 The database is the source of truth for meetings, access, jobs, and transcript records. Vendor payloads and media URLs do not replace local access checks. Recall cloud bots use the dedicated `RECALL_REALTIME_WEBHOOK_URL` so Zoom and Google Meet chat delivery remains on the hosted application when a local development tunnel starts or stops.
 

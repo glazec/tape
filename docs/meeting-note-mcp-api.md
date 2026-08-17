@@ -4,13 +4,15 @@
 
 # Tape MCP API
 
-This MCP exposes Tape as a read only tool surface for authenticated colleagues. It reuses Neon Auth for caller identity, maps the verified subject to `users.auth_user_id`, then gives the agent a safe SQL layer over meeting data.
+This MCP exposes authenticated Tape reads and local audio meeting uploads. It reuses Neon Auth for caller identity, maps the verified subject to `users.auth_user_id`, gives the agent a safe SQL layer over meeting data, and sends upload mutations through signed Tape web backend routes.
 
 ## Design Choice
 
 SQL is the primary retrieval surface. One off tools like `search_meetings`, `get_meeting_transcript`, `get_meeting_entities`, `find_related_meetings`, and `get_person_speaking_timeline` are no longer exposed because `execute_meeting_sql` can express those queries more flexibly.
 
 Media retrieval remains in dedicated tools because audio and image access must stay behind authenticated application routes instead of exposing storage or Recall URLs from MCP.
+
+Local recording input also uses dedicated tools. A remote MCP cannot read a caller's local path, so Tape returns a short lived R2 `PUT` URL. The client transfers bytes directly to R2, outside the model context, then the MCP asks the web backend to validate and process the upload.
 
 Visible tools:
 
@@ -22,6 +24,8 @@ Visible tools:
 6. `execute_meeting_sql`
 7. `get_meeting_audio`
 8. `get_meeting_images`
+9. `prepare_meeting_upload`
+10. `complete_meeting_upload`
 
 ## Access Model
 
@@ -37,7 +41,9 @@ MCP data access mirrors the app read policy:
 6. Shared scoped SQL rows keep transcript content available but hide workspace team ids, join URLs, URL derived grouping keys, and participant email lists.
 7. Duplicate allowed domains fail closed unless the user already has explicit team membership.
 
-The MCP does not create users, memberships, shares, translations, or transcripts. It only returns data already stored by the app. Users must already exist in the app because the MCP resolves access through `users.auth_user_id`.
+The MCP does not create users, memberships, shares, or translations. Users must already exist in the app because the MCP resolves access through `users.auth_user_id`. Workspace members with meeting creation rights can create an uploaded meeting. Shared only users cannot prepare or complete uploads.
+
+MCP database access stays read only. Upload preparation and completion use HMAC signed requests to dedicated Tape web routes. The web backend applies the same workspace, provider credit, rate limit, media validation, R2, and transcription dispatch rules as the browser upload flow.
 
 ## Safe SQL Model
 
@@ -140,6 +146,36 @@ Behavior:
 4. Do not sign R2 URLs or return image bytes from MCP.
 
 The returned URLs require an authenticated application session.
+
+### prepare_meeting_upload
+
+Prepare a direct upload for one local audio recording.
+
+Arguments:
+
+1. `file_name`: basename or local path ending in `.mp3`, `.m4a`, or `.webm`
+2. `file_size_bytes`: exact local file size, from 1 byte through 1 GB
+3. `meeting_time`: ISO 8601 date and time with a timezone offset
+4. `content_type`: optional when it can be inferred from the extension
+5. `duration_ms`: optional recording duration, maximum 7 days
+6. `title`: optional meeting title, maximum 200 characters
+
+Returns a 15 minute `upload_url`, required `upload_headers`, and an opaque 30 minute `completion_token`. Upload the exact file bytes with HTTP `PUT` and the returned `Content-Type`. Do not pass recording bytes or base64 through the model context.
+
+Example transfer:
+
+```bash
+curl --fail --request PUT \
+  --header 'Content-Type: audio/mpeg' \
+  --data-binary @meeting.mp3 \
+  '<upload_url>'
+```
+
+### complete_meeting_upload
+
+Complete a prepared upload with its `completion_token`. Tape checks that the token belongs to the authenticated user, rechecks meeting creation rights and provider credit, confirms the object size and type, creates the meeting at the prepared time, and emits the existing `meeting/transcribe.audio` event.
+
+Completion is idempotent for the same uploaded object. The response includes the new meeting id, processing status, and authenticated Tape meeting URL.
 
 ## Safe Tables
 
@@ -288,6 +324,7 @@ Required in production:
 8. `NEON_AUTH_ISSUER`
 9. `DATABASE_URL` for a least privilege read only database role
 10. `APP_BASE_URL`
+11. `MCP_BACKEND_SHARED_SECRET`, with the same value on the Tape web service
 
 Recommended:
 
@@ -295,6 +332,6 @@ Recommended:
 2. `MCP_PORT`
 3. `NEON_AUTH_AUDIENCE` when the Neon Auth JWTs include a known audience claim
 
-Every MCP database query opens a read only transaction and applies `SQL_TOOL_STATEMENT_TIMEOUT_MS`. Production should still use a dedicated read only database role so a future code path cannot write by accident.
+Every MCP database query opens a read only transaction and applies `SQL_TOOL_STATEMENT_TIMEOUT_MS`. Production should still use a dedicated read only database role so a future code path cannot write by accident. `MCP_BACKEND_SHARED_SECRET` must contain at least 32 characters and must not be reused as `FASTMCP_JWT_SIGNING_KEY`.
 
 Local development can use `DISABLE_AUTH=true`, `MCP_ALLOW_DEV_AUTH=true`, `MCP_HOST=127.0.0.1`, `MCP_DEV_USER_EMAIL`, and `MCP_DEV_AUTH_USER_ID` to test with a known app user. Dev auth bypass is rejected in production runtimes or when configured with a non localhost host or base URL. Production should not use the app owner database URL for the SQL tool.

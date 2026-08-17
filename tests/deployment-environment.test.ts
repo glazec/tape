@@ -13,6 +13,7 @@ function validEnvironment() {
         `${name.toLowerCase()}_value`,
       ]),
     ),
+    MCP_BACKEND_SHARED_SECRET: "a".repeat(32),
     RECALL_REALTIME_WEBHOOK_URL:
       "https://meetings.example.com/api/recall/realtime/webhook",
   } as Record<string, string>;
@@ -133,6 +134,7 @@ describe("deployment environment", () => {
       NEON_AUTH_ISSUER: "https://auth.example.com",
       NEON_AUTH_JWKS_URL: "https://auth.example.com/.well-known/jwks.json",
       NEON_AUTH_COOKIE_SECRET: "short",
+      MCP_BACKEND_SHARED_SECRET: "short",
       NEXT_PUBLIC_APP_URL: "https://meetings.example.com/app?preview=true",
       NEXT_PUBLIC_ONESIGNAL_ALLOWED_ORIGINS: "not-a-url",
       RECALL_API_BASE_URL: "https://us-east-1.recall.ai",
@@ -146,6 +148,7 @@ describe("deployment environment", () => {
       "DATABASE_URL must be a PostgreSQL connection URL",
       "DATABASE_AUTHENTICATED_URL must be a PostgreSQL connection URL",
       "NEON_AUTH_COOKIE_SECRET must contain at least 32 characters",
+      "MCP_BACKEND_SHARED_SECRET must contain at least 32 characters",
       "NEXT_PUBLIC_ONESIGNAL_ALLOWED_ORIGINS must contain valid HTTP or HTTPS URLs",
     ]);
   });

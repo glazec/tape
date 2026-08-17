@@ -1,7 +1,4 @@
-"""Meeting Note FastMCP server.
-
-Read only SQL tools for meeting data plus audio URL retrieval.
-"""
+"""Tape FastMCP server for meeting reads and local audio uploads."""
 
 from __future__ import annotations
 
@@ -11,13 +8,18 @@ from decimal import Decimal
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
-from uuid import UUID
+from uuid import UUID, uuid4
 import asyncio
+import base64
 import hashlib
+import hmac
 import json
 import logging
 import os
 import re
+import time
+import urllib.error
+import urllib.request
 
 from dotenv import load_dotenv
 
@@ -60,6 +62,13 @@ APIKEY_DATABASE_URL = os.environ.get("APIKEY_DATABASE_URL", "").strip()
 _apikey_pool = None
 _recorded_mcp_onboarding_emails: set[str] = set()
 APP_BASE_URL = os.environ.get("APP_BASE_URL", "").strip().rstrip("/")
+MCP_BACKEND_SHARED_SECRET = os.environ.get(
+    "MCP_BACKEND_SHARED_SECRET",
+    "",
+).strip()
+MCP_BACKEND_TIMEOUT_SECONDS = float(
+    os.environ.get("MCP_BACKEND_TIMEOUT_SECONDS", "30"),
+)
 DEFAULT_MCP_HOST = "0.0.0.0" if os.environ.get("PORT") else "127.0.0.1"
 MCP_HOST = os.environ.get("MCP_HOST", DEFAULT_MCP_HOST).strip() or DEFAULT_MCP_HOST
 MCP_PORT = int(os.environ.get("PORT") or os.environ.get("MCP_PORT", "8000"))
@@ -412,6 +421,14 @@ class Workspace:
     can_manage_team_meetings: bool
 
 
+@dataclass(frozen=True)
+class TapeUser:
+    id: str
+    auth_user_id: str
+    email: str
+    name: str | None
+
+
 class MeetingAccessError(Exception):
     """Raised when the caller cannot read the requested meeting."""
 
@@ -747,6 +764,112 @@ def _current_user_id() -> str | None:
     return _claim_value(claims, "sub") or _claim_value(claims, "email")
 
 
+class MeetingBackendError(RuntimeError):
+    """Raised when the Tape web backend rejects an MCP mutation."""
+
+
+def _backend_endpoint(path: str) -> str:
+    if not APP_BASE_URL:
+        raise RuntimeError("APP_BASE_URL is required for meeting uploads")
+
+    parsed = urlparse(APP_BASE_URL)
+    if parsed.scheme != "https" and not _is_local_host(APP_BASE_URL):
+        raise RuntimeError("APP_BASE_URL must use HTTPS outside local development")
+
+    return f"{APP_BASE_URL}/{path.lstrip('/')}"
+
+
+def _mcp_backend_secret() -> str:
+    if len(MCP_BACKEND_SHARED_SECRET) < 32:
+        raise RuntimeError(
+            "MCP_BACKEND_SHARED_SECRET must contain at least 32 characters",
+        )
+    return MCP_BACKEND_SHARED_SECRET
+
+
+def _backend_signature(message: str) -> str:
+    digest = hmac.new(
+        _mcp_backend_secret().encode(),
+        message.encode(),
+        hashlib.sha256,
+    ).digest()
+    return base64.urlsafe_b64encode(digest).decode().rstrip("=")
+
+
+def _post_tape_backend_sync(
+    path: str,
+    user: TapeUser,
+    input_payload: dict[str, Any],
+) -> dict[str, Any]:
+    body = json.dumps(
+        {
+            "input": input_payload,
+            "user": {
+                "email": user.email,
+                "id": user.auth_user_id,
+                "name": user.name,
+            },
+        },
+        ensure_ascii=False,
+        separators=(",", ":"),
+        sort_keys=True,
+    ).encode()
+    request_id = str(uuid4())
+    timestamp = str(int(time.time()))
+    signature = _backend_signature(
+        f"{request_id}.{timestamp}.{body.decode()}",
+    )
+    request = urllib.request.Request(
+        _backend_endpoint(path),
+        data=body,
+        method="POST",
+        headers={
+            "Content-Type": "application/json",
+            "X-Tape-Mcp-Id": request_id,
+            "X-Tape-Mcp-Signature": f"v1,{signature}",
+            "X-Tape-Mcp-Timestamp": timestamp,
+        },
+    )
+
+    try:
+        with urllib.request.urlopen(
+            request,
+            timeout=MCP_BACKEND_TIMEOUT_SECONDS,
+        ) as response:
+            payload = json.loads(response.read().decode())
+    except urllib.error.HTTPError as exc:
+        try:
+            error_payload = json.loads(exc.read().decode())
+            message = str(error_payload.get("error") or "Tape backend rejected request")
+        except (json.JSONDecodeError, UnicodeDecodeError, AttributeError):
+            message = "Tape backend rejected request"
+        raise MeetingBackendError(message) from exc
+    except urllib.error.URLError as exc:
+        raise MeetingBackendError("Tape backend is unavailable") from exc
+    except TimeoutError as exc:
+        raise MeetingBackendError("Tape backend is unavailable") from exc
+    except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+        raise MeetingBackendError("Tape backend returned an invalid response") from exc
+
+    if not isinstance(payload, dict):
+        raise MeetingBackendError("Tape backend returned an invalid response")
+
+    return payload
+
+
+async def _post_tape_backend(
+    path: str,
+    input_payload: dict[str, Any],
+) -> dict[str, Any]:
+    user = await _tape_user_for_current_user()
+    return await asyncio.to_thread(
+        _post_tape_backend_sync,
+        path,
+        user,
+        input_payload,
+    )
+
+
 async def _fetch_all(
     query: str,
     params: dict[str, Any] | None = None,
@@ -801,6 +924,18 @@ async def _workspace_for_current_user() -> Workspace:
         raise RuntimeError("Authenticated caller email is required")
 
     return await _workspace_for_auth_user(auth_user_id, token_email)
+
+
+async def _tape_user_for_current_user() -> TapeUser:
+    claims = _current_user_claims()
+    auth_user_id = _claim_value(claims, "sub")
+    token_email = _claim_value(claims, "email")
+    if not auth_user_id:
+        raise RuntimeError("Authenticated caller subject is required")
+    if not token_email:
+        raise RuntimeError("Authenticated caller email is required")
+
+    return await _resolve_tape_user(auth_user_id, token_email)
 
 
 async def _record_mcp_onboarding_use(workspace: Workspace) -> bool:
@@ -865,38 +1000,9 @@ mcp.add_middleware(McpOnboardingUsageMiddleware())
 
 
 async def _workspace_for_auth_user(auth_user_id: str, token_email: str) -> Workspace:
-    normalized_token_email = _normalize_email(token_email)
-    user = await _fetch_one(
-        """
-        select id, email, name, auth_user_id
-        from users
-        where auth_user_id = %(auth_user_id)s
-        limit 1
-        """,
-        {"auth_user_id": auth_user_id},
-    )
-    if not user:
-        user = await _fetch_one(
-            """
-            select id, email, name, auth_user_id
-            from users
-            where lower(email) = %(email)s
-            limit 1
-            """,
-            {"email": normalized_token_email},
-        )
-    if not user:
-        raise MeetingAccessError("Authenticated user is not registered in Meeting Note")
-
-    user_id = str(user["id"])
-    user_email = _normalize_email(str(user["email"] or ""))
-    if not user_email or "@" not in user_email:
-        raise MeetingAccessError("Meeting Note user email is invalid")
-    if normalized_token_email != user_email:
-        raise MeetingAccessError(
-            "Authenticated token email does not match Meeting Note user email",
-        )
-
+    user = await _resolve_tape_user(auth_user_id, token_email)
+    user_id = user.id
+    user_email = user.email
     domain = _email_domain(user_email)
     matching_domains = await _fetch_all(
         """
@@ -935,6 +1041,51 @@ async def _workspace_for_auth_user(auth_user_id: str, token_email: str) -> Works
         team_id=None,
         can_create_meetings=False,
         can_manage_team_meetings=False,
+    )
+
+
+async def _resolve_tape_user(auth_user_id: str, token_email: str) -> TapeUser:
+    normalized_token_email = _normalize_email(token_email)
+    user = await _fetch_one(
+        """
+        select id, email, name, auth_user_id
+        from users
+        where auth_user_id = %(auth_user_id)s
+        limit 1
+        """,
+        {"auth_user_id": auth_user_id},
+    )
+    if not user:
+        user = await _fetch_one(
+            """
+            select id, email, name, auth_user_id
+            from users
+            where lower(email) = %(email)s
+            limit 1
+            """,
+            {"email": normalized_token_email},
+        )
+    if not user:
+        raise MeetingAccessError("Authenticated user is not registered in Meeting Note")
+
+    user_id = str(user["id"])
+    canonical_auth_user_id = str(user.get("auth_user_id") or "").strip()
+    user_email = _normalize_email(str(user["email"] or ""))
+    user_name = str(user["name"]).strip() if user.get("name") else None
+    if not canonical_auth_user_id:
+        raise MeetingAccessError("Meeting Note user authentication is incomplete")
+    if not user_email or "@" not in user_email:
+        raise MeetingAccessError("Meeting Note user email is invalid")
+    if normalized_token_email != user_email:
+        raise MeetingAccessError(
+            "Authenticated token email does not match Meeting Note user email",
+        )
+
+    return TapeUser(
+        id=user_id,
+        auth_user_id=canonical_auth_user_id,
+        email=user_email,
+        name=user_name,
     )
 
 
@@ -1410,6 +1561,69 @@ async def _get_accessible_meeting(
     return meeting
 
 
+def _meeting_upload_file_name(value: str) -> str:
+    file_name = re.split(r"[\\/]", value.strip())[-1]
+    if not file_name or len(file_name) > 512 or "." not in file_name:
+        raise ValueError("file_name must include a supported audio extension")
+    return file_name
+
+
+def _meeting_upload_content_type(file_name: str, value: str | None) -> str:
+    extension = file_name.rsplit(".", 1)[-1].lower()
+    default_types = {
+        "m4a": "audio/mp4",
+        "mp3": "audio/mpeg",
+        "webm": "audio/webm",
+    }
+    content_type = (value or default_types.get(extension) or "").strip().lower()
+    supported_pairs = {
+        ("m4a", "audio/mp4"),
+        ("m4a", "audio/x-m4a"),
+        ("mp3", "audio/mpeg"),
+        ("webm", "audio/webm"),
+    }
+    if (extension, content_type) not in supported_pairs:
+        raise ValueError("Recording must be MP3, M4A, or audio WebM")
+    return content_type
+
+
+def _meeting_upload_time(value: str) -> str:
+    try:
+        parsed = datetime.fromisoformat(value.strip().replace("Z", "+00:00"))
+    except ValueError as exc:
+        raise ValueError("meeting_time must be an ISO 8601 date and time") from exc
+    if parsed.tzinfo is None or parsed.utcoffset() is None:
+        raise ValueError("meeting_time must include a timezone offset")
+    return parsed.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+
+
+def _meeting_upload_size(value: int) -> int:
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise ValueError("file_size_bytes must be an integer")
+    if value <= 0 or value > 1_000_000_000:
+        raise ValueError("Recording file must be between 1 byte and 1 GB")
+    return value
+
+
+def _meeting_upload_duration(value: int | None) -> int | None:
+    if value is None:
+        return None
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise ValueError("duration_ms must be an integer")
+    if value <= 0 or value > 7 * 24 * 60 * 60 * 1000:
+        raise ValueError("duration_ms must be between 1 ms and 7 days")
+    return value
+
+
+def _meeting_upload_title(value: str | None) -> str | None:
+    if value is None:
+        return None
+    title = value.strip()
+    if not title or len(title) > 200:
+        raise ValueError("title must contain 1 to 200 characters")
+    return title
+
+
 @mcp.tool
 async def get_user_info() -> dict[str, Any]:
     """Return the authenticated MCP user."""
@@ -1428,7 +1642,101 @@ async def get_user_info() -> dict[str, Any]:
 @mcp.tool
 def get_version() -> str:
     """Return the MCP server version."""
-    return "0.1.0"
+    return "0.2.0"
+
+
+@mcp.tool(
+    annotations={
+        "readOnlyHint": False,
+        "destructiveHint": False,
+        "idempotentHint": False,
+        "openWorldHint": True,
+    },
+)
+async def prepare_meeting_upload(
+    file_name: str,
+    file_size_bytes: int,
+    meeting_time: str,
+    content_type: str | None = None,
+    duration_ms: int | None = None,
+    title: str | None = None,
+) -> dict[str, Any]:
+    """Prepare a local audio recording upload to Tape. Use the returned short lived PUT URL to upload the exact local file bytes with the returned Content-Type, then call complete_meeting_upload with the completion_token. meeting_time must be ISO 8601 with a timezone. Supports MP3, M4A, and audio WebM up to 1 GB."""
+    normalized_file_name = _meeting_upload_file_name(file_name)
+    normalized_content_type = _meeting_upload_content_type(
+        normalized_file_name,
+        content_type,
+    )
+    normalized_size = _meeting_upload_size(file_size_bytes)
+    normalized_time = _meeting_upload_time(meeting_time)
+    normalized_duration = _meeting_upload_duration(duration_ms)
+    normalized_title = _meeting_upload_title(title)
+
+    result = await _post_tape_backend(
+        "/api/mcp/uploads/prepare",
+        {
+            "contentType": normalized_content_type,
+            **(
+                {"durationMs": normalized_duration}
+                if normalized_duration is not None
+                else {}
+            ),
+            "fileName": normalized_file_name,
+            "fileSizeBytes": normalized_size,
+            "meetingTime": normalized_time,
+            **({"title": normalized_title} if normalized_title else {}),
+        },
+    )
+    upload_url = str(result["uploadUrl"])
+    completion_token = str(result["completionToken"])
+    return {
+        "upload_id": result.get("uploadId"),
+        "upload_url": upload_url,
+        "upload_method": result.get("uploadMethod", "PUT"),
+        "upload_headers": result.get(
+            "uploadHeaders",
+            {"Content-Type": normalized_content_type},
+        ),
+        "expires_at": result.get("expiresAt"),
+        "completion_token": completion_token,
+        "next_tool": "complete_meeting_upload",
+        "instructions": [
+            "Upload the exact local file bytes to upload_url before it expires.",
+            "Use HTTP PUT and the exact Content-Type in upload_headers.",
+            "After a successful upload, call complete_meeting_upload with completion_token.",
+        ],
+    }
+
+
+@mcp.tool(
+    annotations={
+        "readOnlyHint": False,
+        "destructiveHint": False,
+        "idempotentHint": True,
+        "openWorldHint": True,
+    },
+)
+async def complete_meeting_upload(completion_token: str) -> dict[str, Any]:
+    """Complete a prepared local recording upload. Tape validates the uploaded object, creates the meeting at the prepared time, and queues transcription. Repeating the same completion is safe and returns the same meeting."""
+    token = completion_token.strip()
+    if not token or len(token) > 4096:
+        raise ValueError("completion_token is invalid")
+
+    result = await _post_tape_backend(
+        "/api/mcp/uploads/complete",
+        {"completionToken": token},
+    )
+    meeting_id = _uuid(str(result["meetingId"]), "meeting_id")
+    return {
+        "meeting_id": meeting_id,
+        "status": result.get("status", "processing"),
+        "queued": bool(result.get("queued", True)),
+        "dispatch_delayed": bool(result.get("delayedCount")),
+        "already_completed": bool(result.get("existing")),
+        "meeting_url": (
+            f"{APP_BASE_URL}/meetings/{meeting_id}" if APP_BASE_URL else None
+        ),
+    }
 
 
 @mcp.tool

@@ -11,7 +11,7 @@ Tape tests each runtime at the boundary where its behavior can regress. Provider
 | Playwright | Public navigation, sign in, protected redirects, authenticated page rendering, RLS isolation, and desktop and mobile browser flows | `npm run test:e2e` |
 | Node test runner | Recall desktop SDK sidecar lifecycle and capture fallback | `npm run test:sidecar` |
 | Swift Testing and build | macOS recorder state, permission failures, API requests, scheduling, capture, upload behavior, and executable compilation | `npm run test:swift` |
-| Python unittest | MCP authentication, caller scope, SQL safety, media tools, and read only boundaries | `npm run test:mcp` |
+| Python unittest | MCP authentication, caller scope, SQL safety, media tools, signed upload handoff, and read only database boundaries | `npm run test:mcp` |
 | Live calendar probe | Stored production connection, Google token refresh, Calendar read access, Recall connectivity, and recent sync state | `CALENDAR_LIVE_TEST_EMAIL=user@example.com npm run test:calendar-live` |
 
 Playwright starts an isolated Next.js development server on port 3100 unless `PLAYWRIGHT_BASE_URL` points to an existing deployment.
@@ -83,6 +83,13 @@ and server exporter tests:
 
 ```bash
 npx vitest run tests/telemetry-config.test.ts tests/telemetry-client.test.ts tests/telemetry-route.test.ts tests/telemetry-server.test.ts
+```
+
+For MCP meeting upload changes, verify request signatures, completion token binding, web route authorization, exact object validation, idempotent completion, and the Python tool contract:
+
+```bash
+npx vitest run tests/mcp-backend-auth.test.ts tests/mcp-upload-routes.test.ts tests/deployment-environment.test.ts
+npm run test:mcp
 ```
 
 Browser tests can identify their telemetry explicitly by setting a UUID in

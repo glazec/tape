@@ -15,7 +15,7 @@ import { parseR2Env } from "@/lib/r2";
 import type { WorkspaceContext } from "@/lib/workspace";
 
 export type CompletedAudioBatchFile = {
-  durationMs: number;
+  durationMs?: number;
   fileName: string;
   fileSizeBytes: number;
   mimeType: string;
@@ -42,7 +42,7 @@ export async function createUploadedAudioBatch(input: {
 
   if (existing) {
     await assertCanManageMeeting(input.workspace, existing.meetingId);
-    return existing;
+    return { ...existing, existing: true };
   }
 
   const meetingId = randomUUID();
@@ -53,31 +53,46 @@ export async function createUploadedAudioBatch(input: {
     startedAt: input.startedAt,
   });
 
-  await databaseSql.transaction((txn) => [
-    txn`
-      insert into meetings (
-        id,
-        team_id,
-        owner_user_id,
-        title,
-        title_source,
-        platform,
-        status,
-        started_at
-      )
-      values (
-        ${meetingId}::uuid,
-        ${input.workspace.teamId}::uuid,
-        ${input.workspace.userId}::uuid,
-        ${input.title},
-        'upload',
-        'upload',
-        'processing',
-        ${input.startedAt}
-      )
-    `,
-    ...buildAudioBatchInsertQueries(txn, transcriptions),
-  ]);
+  try {
+    await databaseSql.transaction((txn) => [
+      txn`
+        insert into meetings (
+          id,
+          team_id,
+          owner_user_id,
+          title,
+          title_source,
+          platform,
+          status,
+          started_at
+        )
+        values (
+          ${meetingId}::uuid,
+          ${input.workspace.teamId}::uuid,
+          ${input.workspace.userId}::uuid,
+          ${input.title},
+          'upload',
+          'upload',
+          'processing',
+          ${input.startedAt}
+        )
+      `,
+      ...buildAudioBatchInsertQueries(txn, transcriptions),
+    ]);
+  } catch (error) {
+    if (isUniqueViolation(error)) {
+      const completed = await findExistingAudioBatch(
+        input.files.map((file) => file.objectKey),
+      );
+
+      if (completed) {
+        await assertCanManageMeeting(input.workspace, completed.meetingId);
+        return { ...completed, existing: true };
+      }
+    }
+
+    throw error;
+  }
 
   try {
     await reconcileMeetingSharingForMeeting(meetingId);
@@ -86,7 +101,7 @@ export async function createUploadedAudioBatch(input: {
     throw error;
   }
 
-  return { meetingId, transcriptions };
+  return { existing: false, meetingId, transcriptions };
 }
 
 export async function attachUploadedAudioBatch(input: {
@@ -135,6 +150,13 @@ function buildAudioBatchRows(input: {
   modeForIndex: (index: number) => "append" | "replace";
   startedAt: Date;
 }) {
+  if (
+    input.files.length > 1 &&
+    input.files.some((file) => file.durationMs === undefined)
+  ) {
+    throw new Error("Every file in a multi audio batch requires a duration");
+  }
+
   const generationId = randomUUID();
   let offsetMs = 0;
   const jobCreatedAtMs = Date.now();
@@ -143,7 +165,10 @@ function buildAudioBatchRows(input: {
     const startedAt = new Date(input.startedAt.getTime() + offsetMs);
     const row = {
       ...file,
-      endedAt: new Date(startedAt.getTime() + file.durationMs),
+      endedAt:
+        file.durationMs === undefined
+          ? undefined
+          : new Date(startedAt.getTime() + file.durationMs),
       generationId,
       mediaAssetId: randomUUID(),
       meetingId: input.meetingId,
@@ -154,7 +179,7 @@ function buildAudioBatchRows(input: {
       transcriptJobId: randomUUID(),
     };
 
-    offsetMs += file.durationMs;
+    offsetMs += file.durationMs ?? 0;
     return row;
   });
 }
@@ -180,8 +205,8 @@ function buildAudioBatchInsertQueries(
         ${row.meetingId}::uuid,
         'upload',
         ${row.startedAt},
-        ${row.endedAt},
-        ${row.durationMs}
+        ${row.endedAt ?? null},
+        ${row.durationMs ?? null}
       )
     `,
     txn`
@@ -235,6 +260,15 @@ function buildAudioBatchInsertQueries(
       )
     `,
   ]);
+}
+
+function isUniqueViolation(error: unknown) {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    error.code === "23505"
+  );
 }
 
 async function findExistingAudioBatch(

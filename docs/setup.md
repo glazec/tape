@@ -41,13 +41,15 @@ Fill these values in `.env.local` for the complete application:
 | ElevenLabs | `ELEVENLABS_API_KEY`, `ELEVENLABS_WEBHOOK_SECRET` |
 | OpenRouter | `OPENROUTER_API_KEY`, `OPENROUTER_MODEL` |
 | Inngest | `INNGEST_EVENT_KEY`, `INNGEST_SIGNING_KEY` |
-| Application | `NEXT_PUBLIC_APP_URL` |
+| Application | `NEXT_PUBLIC_APP_URL`, `MCP_BACKEND_SHARED_SECRET` |
 
 Generate the Neon Auth cookie secret locally:
 
 ```bash
 openssl rand -base64 32
 ```
+
+Generate a separate MCP backend secret with the same command. Set that value as `MCP_BACKEND_SHARED_SECRET` on both `tape-web` and the Tape MCP service. It signs short lived identity bound upload requests and must not reuse the OAuth JWT signing key.
 
 `RECALL_API_BASE_URL` must match the region of the Recall.ai API key. `RECALL_WEBHOOK_SECRET` must begin with `whsec_`. `RECALL_REALTIME_WEBHOOK_URL` must be the durable HTTPS route that receives cloud bot events, such as `https://tape.example.com/api/recall/realtime/webhook`. Keep it pointed at the hosted application even when `NEXT_PUBLIC_APP_URL` uses localhost or a temporary development tunnel. This prevents local calendar syncs from replacing Zoom and Google Meet bot callbacks with an unavailable local route.
 
@@ -252,6 +254,8 @@ and `main` branch, and set the Railway config path to `/railway.web.json`. Add
 the required variables from `.env.example` and set `NEXT_PUBLIC_APP_URL` to the
 final HTTPS origin. The root `/railway.json` remains assigned to the media
 worker.
+
+The Tape MCP service must use the same `MCP_BACKEND_SHARED_SECRET` as `tape-web` and set `APP_BASE_URL` to the production web origin. Its database login remains the RLS enforced, read only `tape_mcp` role because meeting creation runs only through the signed web routes.
 
 For a CLI deployment:
 

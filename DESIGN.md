@@ -119,7 +119,7 @@ Transcription is no longer a differentiator, and neither is bot-free capture. Th
 1. `01 · Capture` — calendar bots for scheduled Zoom and Meet calls, calendar backed local recording for Microsoft Teams, *and* a local macOS recorder for the room, with speaker separation. Competitors offer one or the other, not both
 2. `02 · Every language` — 30+ languages with the translation kept beside the original line. The bot-free tools are weakest here
 3. `03 · Memory` — recurring calls grouped into one series, detected entities, talk metrics beside the transcript
-4. `04 · Agents` — the archive published over MCP to the assistant the team already uses, rather than another vendor chatbot. Read only and scoped to the caller's access
+4. `04 · Agents` — the archive and local meeting upload flow published over MCP to the assistant the team already uses, rather than another vendor chatbot. Reads stay scoped to the caller's access and uploads keep the same creation policy as Tape
 5. `05 · Enterprise` — dark section: workspaces per team, sharing a future meeting series so nobody wonders what they missed, access that matches the room, expiring share links
 
 Section grammar alternates on purpose: three copy-and-still splits, then the agents section with a mono result panel and a three-column row, then the dark enterprise spec grid. Do not add a fourth identical split. Partner logos live in `public/brand/partners/` as monochrome graphite SVGs.

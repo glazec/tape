@@ -21,6 +21,7 @@ export const requiredDeploymentVariables = [
   "OPENROUTER_MODEL",
   "INNGEST_EVENT_KEY",
   "INNGEST_SIGNING_KEY",
+  "MCP_BACKEND_SHARED_SECRET",
   "NEXT_PUBLIC_APP_URL",
 ];
 
@@ -121,6 +122,14 @@ export function getDeploymentEnvironmentIssues(
 
   if (cookieSecret && cookieSecret.length < 32) {
     issues.push("NEON_AUTH_COOKIE_SECRET must contain at least 32 characters");
+  }
+
+  const mcpBackendSecret = source.MCP_BACKEND_SHARED_SECRET?.trim();
+
+  if (mcpBackendSecret && mcpBackendSecret.length < 32) {
+    issues.push(
+      "MCP_BACKEND_SHARED_SECRET must contain at least 32 characters",
+    );
   }
 
   if (

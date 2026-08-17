@@ -77,7 +77,7 @@ export function getUploadMediaFromFile(file: File) {
   return candidates.find((media) => media.contentType === contentType) ?? null;
 }
 
-function getFileExtension(fileName: string) {
+export function getFileExtension(fileName: string) {
   const lastSegment = fileName.trim().split(/[\\/]/).pop() ?? "";
   const dotIndex = lastSegment.lastIndexOf(".");
 

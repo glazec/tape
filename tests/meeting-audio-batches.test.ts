@@ -76,6 +76,7 @@ describe("meeting audio batches", () => {
     });
 
     expect(result.transcriptions).toHaveLength(2);
+    expect(result.existing).toBe(false);
     expect(databaseTransaction).toHaveBeenCalledOnce();
     expect(txn).toHaveBeenCalledTimes(7);
     expect(txn.mock.calls[3]?.slice(1)).toContain("replace");
@@ -92,6 +93,74 @@ describe("meeting audio batches", () => {
     expect(reconcileMeetingSharingForMeeting).toHaveBeenCalledWith(
       result.meetingId,
     );
+  });
+
+  it("creates a single uploaded meeting without a supplied duration", async () => {
+    mockExistingRows([]);
+    databaseTransaction.mockImplementation(async (build) => build(txn));
+    reconcileMeetingSharingForMeeting.mockResolvedValue(undefined);
+    const { createUploadedAudioBatch } =
+      await import("@/lib/meeting-audio-batches");
+
+    const result = await createUploadedAudioBatch({
+      files: [{ ...files[0]!, durationMs: undefined }],
+      startedAt: new Date("2026-08-16T14:00:00.000Z"),
+      title: "first",
+      workspace,
+    });
+
+    expect(result.existing).toBe(false);
+    expect(txn).toHaveBeenCalledTimes(4);
+    expect(txn.mock.calls[1]?.slice(1)).toContain(null);
+  });
+
+  it("returns the completed batch after a concurrent insert wins", async () => {
+    const existing = {
+      mediaAssetId: "asset_1",
+      meetingId: "11111111-1111-4111-8111-111111111111",
+      objectKey: files[0]!.objectKey,
+      recordingId: "recording_1",
+      transcriptJobId: "job_1",
+    };
+    mockExistingRowsSequence([], [existing]);
+    databaseTransaction.mockRejectedValue({ code: "23505" });
+    assertCanManageMeeting.mockResolvedValue(undefined);
+    const { createUploadedAudioBatch } =
+      await import("@/lib/meeting-audio-batches");
+
+    const result = await createUploadedAudioBatch({
+      files: [files[0]!],
+      startedAt: new Date("2026-08-16T14:00:00.000Z"),
+      title: "first",
+      workspace,
+    });
+
+    expect(result).toEqual({
+      existing: true,
+      meetingId: existing.meetingId,
+      transcriptions: [existing],
+    });
+    expect(assertCanManageMeeting).toHaveBeenCalledWith(
+      workspace,
+      existing.meetingId,
+    );
+    expect(reconcileMeetingSharingForMeeting).not.toHaveBeenCalled();
+  });
+
+  it("requires durations when a batch contains multiple files", async () => {
+    mockExistingRows([]);
+    const { createUploadedAudioBatch } =
+      await import("@/lib/meeting-audio-batches");
+
+    await expect(
+      createUploadedAudioBatch({
+        files: [{ ...files[0]!, durationMs: undefined }, files[1]!],
+        startedAt: new Date("2026-08-16T14:00:00.000Z"),
+        title: "first",
+        workspace,
+      }),
+    ).rejects.toThrow("Every file in a multi audio batch requires a duration");
+    expect(databaseTransaction).not.toHaveBeenCalled();
   });
 
   it("attaches files as one replacement generation", async () => {
@@ -163,5 +232,13 @@ function mockExistingRows(rows: unknown[]) {
     from: () => ({
       innerJoin: () => ({ where: vi.fn().mockResolvedValue(rows) }),
     }),
+  });
+}
+
+function mockExistingRowsSequence(...rows: unknown[][]) {
+  const where = vi.fn();
+  rows.forEach((result) => where.mockResolvedValueOnce(result));
+  select.mockReturnValue({
+    from: () => ({ innerJoin: () => ({ where }) }),
   });
 }
