@@ -1,5 +1,7 @@
 import * as amplitude from "@amplitude/unified";
+import * as Sentry from "@sentry/nextjs";
 
+import { getSentryInitOptions } from "@/lib/sentry/config";
 import {
   captureNavigationStart,
   initializeClientTelemetry,
@@ -70,11 +72,21 @@ if (!amplitudeWindow.__tapeAmplitudeInitialization) {
   void amplitudeWindow.__tapeAmplitudeInitialization.catch(() => undefined);
 }
 
+Sentry.init(
+  getSentryInitOptions({
+    development: process.env.NODE_ENV === "development",
+    dsn: process.env.NEXT_PUBLIC_SENTRY_DSN,
+    environment:
+      process.env.NEXT_PUBLIC_VERCEL_ENV || process.env.NODE_ENV,
+  }),
+);
+
 initializeClientTelemetry();
 
 export function onRouterTransitionStart(
   url: string,
   navigationType: "push" | "replace" | "traverse",
 ) {
+  Sentry.captureRouterTransitionStart(url, navigationType);
   captureNavigationStart(url, navigationType);
 }

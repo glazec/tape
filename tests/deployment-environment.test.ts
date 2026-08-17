@@ -173,4 +173,20 @@ describe("deployment environment", () => {
       "OTEL_EXPORTER_OTLP_LOGS_ENDPOINT must be an absolute HTTP or HTTPS URL",
     ]);
   });
+
+  it("validates optional Sentry configuration", () => {
+    expect(
+      getDeploymentEnvironmentIssues({
+        ...validEnvironment(),
+        NEXT_PUBLIC_SENTRY_DSN: "http://sentry.example.com/1",
+        SENTRY_AUTH_TOKEN: "token",
+      }),
+    ).toContain("NEXT_PUBLIC_SENTRY_DSN must be an absolute HTTPS URL");
+    expect(
+      getDeploymentEnvironmentIssues({
+        ...validEnvironment(),
+        SENTRY_AUTH_TOKEN: "token",
+      }),
+    ).toContain("SENTRY_AUTH_TOKEN requires NEXT_PUBLIC_SENTRY_DSN");
+  });
 });

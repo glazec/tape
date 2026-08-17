@@ -1,4 +1,5 @@
 import type { Instrumentation } from "next";
+import * as Sentry from "@sentry/nextjs";
 
 import {
   createTelemetryErrorContext,
@@ -7,14 +8,18 @@ import {
 import { sanitizeTelemetryRoute } from "@/lib/telemetry/sanitize";
 
 export async function register() {
-  if (process.env.NEXT_RUNTIME !== "nodejs") {
-    return;
+  if (process.env.NEXT_RUNTIME === "nodejs") {
+    await import("./sentry.server.config");
+
+    const { registerServerTelemetry } = await import(
+      "@/lib/telemetry/server"
+    );
+    registerServerTelemetry({ defaultServiceName: "tape-web" });
   }
 
-  const { registerServerTelemetry } = await import(
-    "@/lib/telemetry/server"
-  );
-  registerServerTelemetry({ defaultServiceName: "tape-web" });
+  if (process.env.NEXT_RUNTIME === "edge") {
+    await import("./sentry.edge.config");
+  }
 }
 
 export const onRequestError: Instrumentation.onRequestError = async (
@@ -22,6 +27,8 @@ export const onRequestError: Instrumentation.onRequestError = async (
   request,
   context,
 ) => {
+  Sentry.captureRequestError(error, request, context);
+
   if (process.env.NEXT_RUNTIME !== "nodejs") {
     return;
   }

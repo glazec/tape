@@ -175,6 +175,18 @@ export function getDeploymentEnvironmentIssues(
     }
   }
 
+  const sentryDsn = source.NEXT_PUBLIC_SENTRY_DSN?.trim();
+  const sentryAuthToken = source.SENTRY_AUTH_TOKEN?.trim();
+  const parsedSentryDsn = sentryDsn ? parseHttpUrl(sentryDsn) : null;
+
+  if (sentryDsn && (!parsedSentryDsn || parsedSentryDsn.protocol !== "https:")) {
+    issues.push("NEXT_PUBLIC_SENTRY_DSN must be an absolute HTTPS URL");
+  }
+
+  if (sentryAuthToken && !sentryDsn) {
+    issues.push("SENTRY_AUTH_TOKEN requires NEXT_PUBLIC_SENTRY_DSN");
+  }
+
   return issues;
 }
 

@@ -83,6 +83,7 @@ REST API key are configured.
 | Twenty CRM vocabulary | `TWENTY_API_BASE_URL`, `TWENTY_API_KEY`; restricted to the team owning `iosg.vc` |
 | Amplitude browser analytics | No environment variable; the public project key is initialized in `instrumentation-client.ts` |
 | SigNoz telemetry | `OTEL_EXPORTER_OTLP_ENDPOINT`, `OTEL_EXPORTER_OTLP_HEADERS`, `OTEL_SERVICE_NAME` |
+| Sentry errors, traces, and logs | `NEXT_PUBLIC_SENTRY_DSN`; optional source maps via `SENTRY_AUTH_TOKEN` |
 | Cloudflare tunnel | `CLOUDFLARED_TOKEN` |
 
 Amplitude records sessions, campaign attribution, web vitals, main thread
@@ -130,6 +131,22 @@ Error logs include `error.fingerprint`, `error.handled`, `error.type`,
 `operation.name`, and `telemetry.source`. Final Inngest failures also include
 `inngest.function.id`, `inngest.run.id`, and `inngest.attempt`, so retries and
 terminal failures can be separated without parsing log messages.
+
+## Sentry monitoring
+
+Tape sends uncaught browser, server, edge, React render, and Next.js request
+errors to the `tape` project in the `iosg` Sentry organization. It also forwards
+the existing sanitized structured application logs to Sentry Logs. Set
+`NEXT_PUBLIC_SENTRY_DSN` on the Railway web service. For readable production
+stack traces, also set `SENTRY_AUTH_TOKEN` with the `org:ci` scope so the build
+can upload source maps. Never expose that token to the browser or commit it.
+
+Production captures every error and samples ten percent of traces. Development
+captures every trace when a DSN is configured. Session replay remains disabled.
+The SDK excludes user identity, cookies, headers, request and response bodies,
+query parameters, database values, GraphQL documents and variables, AI inputs
+and outputs, stack variables, console breadcrumbs, and UI interaction
+breadcrumbs. Client source maps are removed after upload.
 
 ## Database
 

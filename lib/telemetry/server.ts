@@ -4,6 +4,7 @@ import {
   BatchLogRecordProcessor,
   type LogRecordProcessor,
 } from "@opentelemetry/sdk-logs";
+import * as Sentry from "@sentry/nextjs";
 import {
   OTLPHttpJsonTraceExporter,
   registerOTel,
@@ -93,7 +94,7 @@ export function registerServerTelemetry(options?: {
 }
 
 export function isServerTelemetryEnabled() {
-  return Boolean(telemetryGlobal.__tapeTelemetryState);
+  return Boolean(telemetryGlobal.__tapeTelemetryState || Sentry.isEnabled());
 }
 
 export function emitTelemetryLog(input: {
@@ -104,16 +105,6 @@ export function emitTelemetryLog(input: {
   timestamp?: Date;
 }) {
   const state = telemetryGlobal.__tapeTelemetryState;
-
-  if (!state) {
-    return false;
-  }
-
-  if (state.emitting) {
-    return false;
-  }
-
-  state.emitting = true;
   const severity = input.severity ?? "INFO";
   const attributes = sanitizeTelemetryAttributes(input.attributes ?? {});
 
@@ -131,6 +122,18 @@ export function emitTelemetryLog(input: {
   } else if (input.error !== undefined) {
     attributes["exception.message"] = sanitizeTelemetryText(input.error);
   }
+
+  const sentryEmitted = emitSentryLog(
+    input.eventName,
+    severity,
+    attributes,
+  );
+
+  if (!state || state.emitting) {
+    return sentryEmitted;
+  }
+
+  state.emitting = true;
 
   try {
     state.logger.emit({
@@ -151,18 +154,48 @@ export function emitTelemetryLog(input: {
 export async function flushTelemetry() {
   const state = telemetryGlobal.__tapeTelemetryState;
 
-  if (!state || state.flushing) {
+  if (state?.flushing) {
     return;
   }
 
-  state.flushing = true;
+  if (state) {
+    state.flushing = true;
+  }
+
   try {
-    await state.processor.forceFlush();
+    await Promise.allSettled([
+      ...(state ? [state.processor.forceFlush()] : []),
+      ...(Sentry.isEnabled() ? [Sentry.flush(2_000)] : []),
+    ]);
   } catch {
     // Telemetry must never change the product request outcome.
   } finally {
-    state.flushing = false;
+    if (state) {
+      state.flushing = false;
+    }
   }
+}
+
+function emitSentryLog(
+  eventName: string,
+  severity: TelemetrySeverity,
+  attributes: Record<string, unknown>,
+) {
+  if (!Sentry.isEnabled()) {
+    return false;
+  }
+
+  if (severity === "ERROR") {
+    Sentry.logger.error(eventName, attributes);
+  } else if (severity === "WARN") {
+    Sentry.logger.warn(eventName, attributes);
+  } else if (severity === "DEBUG") {
+    Sentry.logger.debug(eventName, attributes);
+  } else {
+    Sentry.logger.info(eventName, attributes);
+  }
+
+  return true;
 }
 
 function instrumentConsole() {
