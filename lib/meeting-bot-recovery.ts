@@ -5,6 +5,7 @@ import { meetings, recordings, transcriptSegments } from "@/db/schema";
 import type { SessionUser } from "@/lib/auth";
 import type { SupportedMeetingPlatform } from "@/lib/meeting-links";
 import {
+  FAILED_MEETING_BOT_RECOVERY_WINDOW_MS,
   MEETING_BOT_RECOVERY_WINDOW_MS,
   MEETING_RECORDING_RESUME_MIN_REMAINING_MS,
 } from "@/lib/meeting-bot-recovery-policy";
@@ -162,6 +163,9 @@ async function findRecoverableMeetings(input: {
   const windowStart = new Date(
     input.now.getTime() - MEETING_BOT_RECOVERY_WINDOW_MS,
   );
+  const failedWindowStart = new Date(
+    input.now.getTime() - FAILED_MEETING_BOT_RECOVERY_WINDOW_MS,
+  );
   const recoveryAnchor = meetings.updatedAt;
   const activeWindowEnd = new Date(
     input.now.getTime() + MEETING_RECORDING_RESUME_MIN_REMAINING_MS,
@@ -178,7 +182,14 @@ async function findRecoverableMeetings(input: {
         sql`${meetings.endedAt} is not null`,
         sql`${meetings.endedAt} >= ${activeWindowEnd}`,
       ),
-      sql`${recoveryAnchor} >= ${windowStart}`,
+      and(
+        eq(meetings.status, "failed"),
+        sql`${recoveryAnchor} >= ${failedWindowStart}`,
+      ),
+      and(
+        eq(meetings.status, "missed"),
+        sql`${recoveryAnchor} >= ${windowStart}`,
+      ),
     ),
     sql`${recoveryAnchor} <= ${input.now}`,
     sql`not exists (

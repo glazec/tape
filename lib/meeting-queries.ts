@@ -52,6 +52,7 @@ import {
   getMeetingDisplayStatus,
   type TranscriptJobStatus,
 } from "@/lib/meeting-display-status";
+import { isRecentFailedMeetingBotRecoveryEligible } from "@/lib/meeting-bot-recovery-policy";
 import {
   parseMeetingLibrarySearchScope,
   parseMeetingLibrarySort,
@@ -213,10 +214,14 @@ export type MeetingLibraryPageOptions = {
 
 type MeetingLibraryBaseDetails = {
   attendeeEmails: unknown;
+  canManage: boolean;
   createdAt: Date;
   endedAt: Date | null;
+  meetingUrl: string | null;
+  platform: MeetingListItem["platform"];
   startedAt: Date | null;
   status: MeetingListItem["status"];
+  updatedAt: Date;
 };
 
 type MeetingLibraryRecordingStats = {
@@ -248,6 +253,7 @@ export async function listMeetingLibraryPageForWorkspace(
   workspace: WorkspaceContext,
   options: MeetingLibraryPageOptions = {},
 ): Promise<MeetingLibraryPage> {
+  const now = options.now ?? new Date();
   const search = options.query?.trim();
   const searchScope = parseMeetingLibrarySearchScope(options.searchScope);
   const searchCondition = search
@@ -302,9 +308,11 @@ export async function listMeetingLibraryPageForWorkspace(
       )`,
       calendarAttendeeEmails: getMeetingAttendeeEmailsSnapshot(),
       recallBotId: meetings.recallBotId,
+      meetingUrl: meetings.meetingUrl,
       startedAt: meetings.startedAt,
       endedAt: meetings.endedAt,
       createdAt: meetings.createdAt,
+      updatedAt: meetings.updatedAt,
     })
     .from(meetings)
     .leftJoin(calendarEvents, eq(calendarEvents.id, meetings.calendarEventId))
@@ -324,10 +332,18 @@ export async function listMeetingLibraryPageForWorkspace(
 
     baseDetailsByMeetingId.set(meeting.id, {
       attendeeEmails: meeting.calendarAttendeeEmails,
+      canManage: Boolean(meeting.canManage),
       createdAt: meeting.createdAt,
       endedAt: meeting.endedAt,
+      meetingUrl: meeting.meetingUrl ?? null,
+      platform: meeting.platform,
       startedAt: meeting.startedAt,
       status: meeting.status,
+      updatedAt:
+        meeting.updatedAt ??
+        meeting.endedAt ??
+        meeting.startedAt ??
+        meeting.createdAt,
     });
 
     return {
@@ -384,6 +400,7 @@ export async function listMeetingLibraryPageForWorkspace(
         enrichMeetingLibraryItem({
           baseDetailsByMeetingId,
           meeting,
+          now,
           recordingStatsByMeetingId,
           transcriptStatsByMeetingId,
         }),
@@ -415,6 +432,7 @@ export async function listMeetingLibraryPageForWorkspace(
       enrichMeetingLibraryItem({
         baseDetailsByMeetingId,
         meeting,
+        now,
         recordingStatsByMeetingId,
         transcriptStatsByMeetingId,
       }),
@@ -1727,11 +1745,13 @@ function getMeetingLibraryPageMeetingIds(meetingsForPage: MeetingListItem[]) {
 function enrichMeetingLibraryItem({
   baseDetailsByMeetingId,
   meeting,
+  now,
   recordingStatsByMeetingId,
   transcriptStatsByMeetingId,
 }: {
   baseDetailsByMeetingId: Map<string, MeetingLibraryBaseDetails>;
   meeting: MeetingListItem;
+  now: Date;
   recordingStatsByMeetingId: Map<string, MeetingLibraryRecordingStats>;
   transcriptStatsByMeetingId: Map<string, MeetingLibraryTranscriptStats>;
 }): MeetingListItem {
@@ -1746,9 +1766,22 @@ function enrichMeetingLibraryItem({
   const durationMs =
     getTranscriptDurationMs(recordingStats?.durationMs) ??
     getTranscriptDurationMs(transcriptStats?.durationMs);
+  const canRecoverBot =
+    meeting.transcriptJobStatus !== "failed" &&
+    isRecentFailedMeetingBotRecoveryEligible({
+      canManage: baseDetails.canManage,
+      now,
+      platform: baseDetails.platform,
+      segmentCount: transcriptStats?.segmentCount ?? 0,
+      status: baseDetails.status,
+      updatedAt: baseDetails.updatedAt.toISOString(),
+    });
 
   return {
     ...meeting,
+    ...(canRecoverBot
+      ? { canRecoverBot: true, meetingUrl: baseDetails.meetingUrl }
+      : {}),
     startedAt: (
       recordingStats?.startedAt ??
       baseDetails.startedAt ??
@@ -1771,6 +1804,7 @@ function enrichMeetingLibraryItem({
             enrichMeetingLibraryItem({
               baseDetailsByMeetingId,
               meeting: relatedMeeting,
+              now,
               recordingStatsByMeetingId,
               transcriptStatsByMeetingId,
             }),

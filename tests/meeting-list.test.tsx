@@ -1,5 +1,9 @@
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({ refresh: vi.fn() }),
+}));
 
 import { MeetingList } from "@/components/meeting-list";
 
@@ -363,6 +367,33 @@ describe("MeetingList", () => {
       "text-muted-foreground hover:text-foreground",
     );
     expect(html).not.toContain("text-xs text-destructive");
+    expect(html).not.toContain("Rejoin");
+  });
+
+  it("turns an eligible recent failed status into a rejoin action", () => {
+    const html = renderToStaticMarkup(
+      <MeetingList
+        meetings={[
+          {
+            canRecoverBot: true,
+            id: "55555555-5555-4555-8555-555555555555",
+            meetingUrl: "https://zoom.us/j/123456789",
+            platform: "zoom",
+            startedAt: "2026-06-27T12:00:00.000Z",
+            status: "failed",
+            title: "Partner call",
+          },
+        ]}
+      />,
+    );
+
+    expect(html).toContain("Failed");
+    expect(html).toContain("Rejoin");
+    expect(html).toContain('aria-label="Rejoin Partner call"');
+    expect(html).toContain("meeting-join-badge");
+    expect(html).toContain("meeting-join-action");
+    expect(html).toContain("h-5 w-[5.625rem]");
+    expect(html).toContain("[@media(hover:none)]:h-11");
   });
 
   it("renders sortable headers for meeting name, participants, duration, and time", () => {

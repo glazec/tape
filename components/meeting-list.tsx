@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { Fragment, useState } from "react";
+import { useRouter } from "next/navigation";
+import { Fragment, useEffect, useRef, useState } from "react";
 import {
   ArrowDown,
   ArrowUp,
@@ -9,10 +10,19 @@ import {
   ChevronRight,
   History,
   LogIn,
+  RotateCcw,
 } from "lucide-react";
 
+import { MeetingBotRecoveryPanel } from "@/components/meeting-bot-recovery-panel";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import {
   Table,
   TableBody,
@@ -48,6 +58,8 @@ type MeetingListBaseItem = {
   status: MeetingRecordStatus;
   transcriptJobStatus?: TranscriptJobStatus | null;
   hasRecallBot?: boolean;
+  canRecoverBot?: boolean;
+  meetingUrl?: string | null;
   accessScope?: "workspace" | "shared";
   primaryEntity?: string | null;
 };
@@ -303,7 +315,9 @@ function MeetingTableRow({
         <LocalDateTime value={meeting.startedAt} />
       </TableCell>
       <TableCell className="w-28 text-center">
-        {displayStatus === "scheduled" &&
+        {displayStatus === "failed" && meeting.canRecoverBot ? (
+          <FailedMeetingAction meeting={meeting} />
+        ) : displayStatus === "scheduled" &&
         meeting.hasRecallBot &&
         meeting.accessScope !== "shared" ? (
           <ScheduledMeetingAction meeting={meeting} />
@@ -314,6 +328,95 @@ function MeetingTableRow({
         )}
       </TableCell>
     </TableRow>
+  );
+}
+
+function FailedMeetingAction({ meeting }: { meeting: MeetingListBaseItem }) {
+  const router = useRouter();
+  const [open, setOpen] = useState(false);
+  const [complete, setComplete] = useState(false);
+  const [joining, setJoining] = useState(false);
+  const doneRef = useRef<HTMLButtonElement | null>(null);
+  const triggerRef = useRef<HTMLButtonElement | null>(null);
+
+  useEffect(() => {
+    if (complete) {
+      doneRef.current?.focus();
+    }
+  }, [complete]);
+
+  function handleOpenChange(nextOpen: boolean) {
+    if (!nextOpen && joining) {
+      return;
+    }
+
+    setOpen(nextOpen);
+    if (!nextOpen) {
+      if (complete) {
+        router.refresh();
+      }
+      setComplete(false);
+    }
+  }
+
+  return (
+    <span className="inline-grid w-[5.625rem] items-center justify-items-center">
+      <Badge
+        className="meeting-join-badge col-start-1 row-start-1 hidden transition-opacity"
+        variant="destructive"
+      >
+        Failed
+      </Badge>
+      <Button
+        aria-haspopup="dialog"
+        aria-label={`Rejoin ${meeting.title}`}
+        className="meeting-join-action col-start-1 row-start-1 h-5 w-[5.625rem] rounded-4xl border-primary bg-background px-2 py-0.5 text-xs text-primary shadow-none hover:bg-primary/10 hover:text-primary [@media(hover:none)]:h-11 [@media(hover:none)]:text-sm"
+        data-state="idle"
+        onClick={() => setOpen(true)}
+        ref={triggerRef}
+        size="xs"
+        type="button"
+        variant="outline"
+      >
+        <RotateCcw aria-hidden="true" />
+        Rejoin
+      </Button>
+      <Dialog onOpenChange={handleOpenChange} open={open}>
+        {open ? (
+          <DialogContent finalFocus={triggerRef}>
+            <DialogTitle>Continue this meeting</DialogTitle>
+            <DialogDescription className="mt-2">
+              {meeting.meetingUrl
+                ? "Tape did not capture a usable record. Send the bot back to the same call or use a new Google Meet or Zoom link."
+                : "Tape did not capture a usable record. Enter a new Google Meet or Zoom link to continue under this meeting record."}
+            </DialogDescription>
+            <div className="mt-5">
+              <MeetingBotRecoveryPanel
+                meetingId={meeting.id}
+                meetingUrl={meeting.meetingUrl ?? null}
+                onComplete={() => setComplete(true)}
+                onStateChange={(state) => setJoining(state === "joining")}
+                presentation="dialog"
+                refreshOnComplete={false}
+              />
+            </div>
+            <div className="mt-5 flex justify-end">
+              <DialogClose
+                className={buttonVariants({
+                  className: "min-h-11",
+                  variant: complete ? "default" : "ghost",
+                })}
+                disabled={joining}
+                ref={doneRef}
+                type="button"
+              >
+                {complete ? "Done" : "Cancel"}
+              </DialogClose>
+            </div>
+          </DialogContent>
+        ) : null}
+      </Dialog>
+    </span>
   );
 }
 
