@@ -10,6 +10,7 @@ import {
   recordAdminImpersonationAudit,
 } from "@/lib/admin-impersonation";
 import { getAuthenticatedUser } from "@/lib/auth";
+import { redirectSeeOther } from "@/lib/http-responses";
 import {
   assertRequestRateLimit,
   requestRateLimitErrorResponse,
@@ -51,7 +52,7 @@ export async function POST(request: Request) {
         });
       }
 
-      return Response.redirect(new URL(redirectTo, request.url), 303);
+      return redirectSeeOther(redirectTo);
     }
 
     const userId = getFormString(formData.get("userId"));
@@ -77,7 +78,7 @@ export async function POST(request: Request) {
       value: target.id,
     });
 
-    return Response.redirect(new URL(redirectTo, request.url), 303);
+    return redirectSeeOther(redirectTo);
   } catch (error) {
     const rateLimitResponse = requestRateLimitErrorResponse(error);
 

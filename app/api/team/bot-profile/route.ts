@@ -1,4 +1,5 @@
 import { getStringFormValue } from "@/lib/form-data";
+import { redirectSeeOther } from "@/lib/http-responses";
 import {
   MeetingBotProfileInputError,
   upsertMeetingBotProfile,
@@ -36,5 +37,5 @@ export async function POST(request: Request) {
     );
   }
 
-  return Response.redirect(new URL("/settings/team", request.url), 303);
+  return redirectSeeOther("/settings/team");
 }

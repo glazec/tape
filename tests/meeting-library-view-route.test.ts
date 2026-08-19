@@ -51,16 +51,14 @@ describe("POST /api/meeting-library-view", () => {
 
     const { POST } = await import("@/app/api/meeting-library-view/route");
     const response = await POST(
-      new Request("https://app.example.com/api/meeting-library-view", {
+      new Request("http://0.0.0.0:8080/api/meeting-library-view", {
         method: "POST",
         body: form,
       }),
     );
 
     expect(response.status).toBe(303);
-    expect(response.headers.get("location")).toBe(
-      "https://app.example.com/dashboard?view=my",
-    );
+    expect(response.headers.get("location")).toBe("/dashboard?view=my");
     expect(saveDefaultMeetingLibraryView).toHaveBeenCalledWith({
       workspace: {
         userId: "user_123",
@@ -82,16 +80,14 @@ describe("POST /api/meeting-library-view", () => {
 
     const { POST } = await import("@/app/api/meeting-library-view/route");
     const response = await POST(
-      new Request("https://app.example.com/api/meeting-library-view", {
+      new Request("http://0.0.0.0:8080/api/meeting-library-view", {
         method: "POST",
         body: new FormData(),
       }),
     );
 
     expect(response.status).toBe(303);
-    expect(response.headers.get("location")).toBe(
-      "https://app.example.com/auth/sign-in",
-    );
+    expect(response.headers.get("location")).toBe("/auth/sign-in");
     expect(saveDefaultMeetingLibraryView).not.toHaveBeenCalled();
   });
 });

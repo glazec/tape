@@ -101,6 +101,7 @@ describe("POST /api/team/bot-profile", () => {
     );
 
     expect(response.status).toBe(303);
+    expect(response.headers.get("location")).toBe("/settings/team");
     expect(values).toHaveBeenCalledWith({
       teamId: "team_123",
       botName: "Deal Scribe",

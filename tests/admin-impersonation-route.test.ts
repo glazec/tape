@@ -58,7 +58,7 @@ vi.mock("@/lib/request-rate-limit", () => ({
 }));
 
 function impersonationRequest(body: URLSearchParams) {
-  return new Request("https://app.example.com/api/admin/impersonation", {
+  return new Request("http://0.0.0.0:8080/api/admin/impersonation", {
     body,
     method: "POST",
   });
@@ -122,9 +122,7 @@ describe("POST /api/admin/impersonation", () => {
     );
 
     expect(response.status).toBe(303);
-    expect(response.headers.get("location")).toBe(
-      "https://app.example.com/dashboard",
-    );
+    expect(response.headers.get("location")).toBe("/dashboard");
     expect(setCookie).toHaveBeenCalledWith({
       httpOnly: true,
       maxAge: 60 * 60 * 8,
@@ -170,9 +168,7 @@ describe("POST /api/admin/impersonation", () => {
     expect(deleteCookie).toHaveBeenCalledWith(
       "meeting_note_impersonated_user_id",
     );
-    expect(response.headers.get("location")).toBe(
-      "https://app.example.com/admin",
-    );
+    expect(response.headers.get("location")).toBe("/admin");
     expect(recordAdminImpersonationAudit).toHaveBeenCalledWith({
       action: "admin_impersonation_cleared",
       actorAuthUserId: "auth_owner",

@@ -1,4 +1,5 @@
 import { getCurrentUser } from "@/lib/auth";
+import { redirectSeeOther } from "@/lib/http-responses";
 import { normalizeMeetingLibraryViewConfig } from "@/lib/meeting-library-view-options";
 import { saveDefaultMeetingLibraryView } from "@/lib/meeting-library-views";
 import { getOrCreateWorkspaceForSessionUser } from "@/lib/workspace";
@@ -9,7 +10,7 @@ export async function POST(request: Request) {
   const user = await getCurrentUser();
 
   if (!user) {
-    return Response.redirect(new URL("/auth/sign-in", request.url), 303);
+    return redirectSeeOther("/auth/sign-in");
   }
 
   const [formData, workspace] = await Promise.all([
@@ -25,5 +26,5 @@ export async function POST(request: Request) {
 
   await saveDefaultMeetingLibraryView({ workspace, config });
 
-  return Response.redirect(new URL("/dashboard?view=my", request.url), 303);
+  return redirectSeeOther("/dashboard?view=my");
 }

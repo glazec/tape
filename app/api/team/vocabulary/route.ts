@@ -1,6 +1,7 @@
 import { db } from "@/db/client";
 import { teamVocabularyTerms } from "@/db/schema";
 import { getNormalizedStringFormValue } from "@/lib/form-data";
+import { redirectSeeOther } from "@/lib/http-responses";
 import { getAdminTeamSettingsWorkspace } from "@/lib/team-settings-access";
 
 export const runtime = "nodejs";
@@ -37,5 +38,5 @@ export async function POST(request: Request) {
       },
     });
 
-  return Response.redirect(new URL("/settings/team", request.url), 303);
+  return redirectSeeOther("/settings/team");
 }

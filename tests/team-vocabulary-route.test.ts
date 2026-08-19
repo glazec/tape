@@ -93,6 +93,7 @@ describe("POST /api/team/vocabulary", () => {
     }));
 
     expect(response.status).toBe(303);
+    expect(response.headers.get("location")).toBe("/settings/team");
     expect(values).toHaveBeenCalledWith({
       teamId: "team_123",
       term: "TCG platform",
