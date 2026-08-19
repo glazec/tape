@@ -84,7 +84,7 @@ export async function recordAdminImpersonationAudit(input: {
       ${input.action},
       'user',
       target.id::text,
-      jsonb_build_object('actorAuthUserId', ${input.actorAuthUserId}),
+      jsonb_build_object('actorAuthUserId', ${input.actorAuthUserId}::text),
       now()
     from users target
     join lateral (
