@@ -1572,7 +1572,6 @@ export function TranscriptViewer({
           onPlaybackReady={handlePlaybackReady}
           onSeek={seekPlayback}
           onSkipBy={skipPlayback}
-          onTimelineSeek={scrollTranscriptToTime}
           onTogglePlayback={togglePlayback}
           setIsPlaying={setIsPlaying}
         />
@@ -2152,7 +2151,6 @@ function TranscriptAudioPlayer({
   onPlaybackReady,
   onSeek,
   onSkipBy,
-  onTimelineSeek,
   onTogglePlayback,
   setIsPlaying,
 }: {
@@ -2175,7 +2173,6 @@ function TranscriptAudioPlayer({
   onPlaybackReady: (audio: HTMLAudioElement) => void;
   onSeek: (timeSecond: number) => void;
   onSkipBy: (seconds: number) => void;
-  onTimelineSeek: (timeSecond: number) => void;
   onTogglePlayback: () => void;
   setIsPlaying: (value: boolean) => void;
 }) {
@@ -2362,11 +2359,10 @@ function TranscriptAudioPlayer({
     const nextTime = Number(event.currentTarget.value);
 
     onSeek(nextTime);
-    onTimelineSeek(nextTime);
   }
 
-  function seekFromWaveform(event: PointerEvent<HTMLButtonElement>) {
-    if (!timelineDuration) {
+  function seekFromWaveform(event: MouseEvent<HTMLButtonElement>) {
+    if (!timelineDuration || event.detail === 0) {
       return;
     }
 
@@ -2375,7 +2371,6 @@ function TranscriptAudioPlayer({
     const nextTime = position * timelineDuration;
 
     onSeek(nextTime);
-    onTimelineSeek(nextTime);
   }
 
   function updateWpmHover(event: PointerEvent<HTMLSpanElement>) {
@@ -2429,7 +2424,7 @@ function TranscriptAudioPlayer({
               : waveformAccessibleName
           }
           className="relative h-24 w-full overflow-hidden rounded-lg border bg-background px-2 outline-none focus-visible:ring-3 focus-visible:ring-ring/50 sm:px-1"
-          onPointerDown={seekFromWaveform}
+          onClick={seekFromWaveform}
           type="button"
         >
           <span
