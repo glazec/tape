@@ -46,6 +46,23 @@ function makeSegment(id: string, speaker: string): TranscriptSegment {
 }
 
 describe("TranscriptViewer", () => {
+  it("places mobile support after speakers and before transcript lines", () => {
+    const html = renderToStaticMarkup(
+      <TranscriptViewer
+        mobileAfterSpeakers={<div>Mobile meeting support</div>}
+        segments={segments}
+      />,
+    );
+
+    expect(html).toContain("lg:hidden");
+    expect(html.indexOf(">Speakers<")).toBeLessThan(
+      html.indexOf("Mobile meeting support"),
+    );
+    expect(html.indexOf("Mobile meeting support")).toBeLessThan(
+      html.indexOf("0:00"),
+    );
+  });
+
   it("hides speaker editing when no meeting id is provided", () => {
     const html = renderToStaticMarkup(<TranscriptViewer segments={segments} />);
 

@@ -99,6 +99,7 @@ vi.mock("@/components/transcript-viewer", () => ({
     audioParts,
     audioUrl,
     meetingId,
+    mobileAfterSpeakers,
     preferredTranslationLanguage,
     segments,
     translationLanguage,
@@ -106,16 +107,22 @@ vi.mock("@/components/transcript-viewer", () => ({
     audioParts?: Array<{ audioUrl: string }>;
     audioUrl?: string | null;
     meetingId: string | null;
+    mobileAfterSpeakers?: React.ReactNode;
     preferredTranslationLanguage: string;
     segments: Array<{ startMs: number }>;
     translationLanguage: string;
   }) => (
-    <span>
-      transcript:{meetingId ?? "readonly"}:languages:{translationLanguage}:
-      {preferredTranslationLanguage}:audio:{audioUrl ?? "none"}:starts:
-      {segments.map((segment) => segment.startMs).join(",")}:sources:
-      {audioParts?.map((part) => part.audioUrl).join(",") ?? "single"}
-    </span>
+    <div>
+      <span>
+        transcript:{meetingId ?? "readonly"}:languages:{translationLanguage}:
+        {preferredTranslationLanguage}:audio:{audioUrl ?? "none"}:starts:
+        {segments.map((segment) => segment.startMs).join(",")}:sources:
+        {audioParts?.map((part) => part.audioUrl).join(",") ?? "single"}
+      </span>
+      <span>speaker summary</span>
+      {mobileAfterSpeakers}
+      <span>transcript lines</span>
+    </div>
   ),
 }));
 
@@ -155,6 +162,15 @@ describe("meeting page", () => {
     expect(html).toContain("Google Meet:Failed");
     expect(html).toContain("transcript:meeting_1");
     expect(html).toContain("lg:grid-cols-[1fr_20rem]");
+    expect(html.indexOf("speaker summary")).toBeLessThan(
+      html.indexOf("entity links"),
+    );
+    expect(html.indexOf("entity links")).toBeLessThan(
+      html.indexOf("share dialog"),
+    );
+    expect(html.indexOf("share dialog")).toBeLessThan(
+      html.indexOf("transcript lines"),
+    );
     expect(mocks.listRecipients).toHaveBeenCalled();
   });
 

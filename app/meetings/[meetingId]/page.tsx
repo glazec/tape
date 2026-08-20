@@ -106,6 +106,26 @@ export default async function MeetingPage({
     canManage &&
     (canAddMeetingSource || shouldOfferBotRecovery) &&
     meeting.segments.length === 0;
+  const renderShareDialog = (instanceId: string) =>
+    canShare ? (
+      <ShareDialog
+        allowRelated={canManage}
+        canRemoveAccess={canManage}
+        customAudience={
+          teamConfiguration?.shareAudience
+            ? {
+                memberCount: teamConfiguration.shareAudience.emails.length,
+                name: teamConfiguration.shareAudience.name,
+              }
+            : null
+        }
+        initialAccessPeople={meeting.accessPeople}
+        initialShares={activeShares}
+        instanceId={instanceId}
+        meetingId={meetingId}
+        teamMembers={shareRecipients}
+      />
+    ) : null;
   return (
     <AppShell
       activeHref="/dashboard"
@@ -250,6 +270,12 @@ export default async function MeetingPage({
                     translationStatus: meeting.translationSummary.status,
                   })}
                   meetingId={canManage ? meetingId : null}
+                  mobileAfterSpeakers={
+                    <>
+                      <MeetingEntityLinks entities={meeting.entities} />
+                      {renderShareDialog("meeting-sharing-mobile")}
+                    </>
+                  }
                   preferredTranslationLanguage={
                     teamConfiguration?.translationLanguage ??
                     meeting.translationLanguage
@@ -261,7 +287,9 @@ export default async function MeetingPage({
                   translationSummary={meeting.translationSummary}
                   visualAssets={continuousVisualAssets}
                 />
-                <MeetingEntityLinks entities={meeting.entities} />
+                <div className="hidden lg:block">
+                  <MeetingEntityLinks entities={meeting.entities} />
+                </div>
               </>
             )}
           </div>
@@ -281,25 +309,8 @@ export default async function MeetingPage({
               {canManage ? (
                 <>
                   {canShare ? (
-                    <div>
-                      <ShareDialog
-                        allowRelated
-                        canRemoveAccess
-                        customAudience={
-                          teamConfiguration?.shareAudience
-                            ? {
-                                memberCount:
-                                  teamConfiguration.shareAudience.emails.length,
-                                name: teamConfiguration.shareAudience.name,
-                              }
-                            : null
-                        }
-                        initialAccessPeople={meeting.accessPeople}
-                        initialShares={activeShares}
-                        instanceId="meeting-sharing"
-                        meetingId={meetingId}
-                        teamMembers={shareRecipients}
-                      />
+                    <div className="hidden lg:block">
+                      {renderShareDialog("meeting-sharing-desktop")}
                     </div>
                   ) : null}
                   {canAddMeetingSource ? (
@@ -314,24 +325,9 @@ export default async function MeetingPage({
               ) : (
                 <>
                   {canShare ? (
-                    <ShareDialog
-                      allowRelated={false}
-                      canRemoveAccess={false}
-                      customAudience={
-                        teamConfiguration?.shareAudience
-                          ? {
-                              memberCount:
-                                teamConfiguration.shareAudience.emails.length,
-                              name: teamConfiguration.shareAudience.name,
-                            }
-                          : null
-                      }
-                      initialAccessPeople={meeting.accessPeople}
-                      initialShares={activeShares}
-                      instanceId="meeting-sharing"
-                      meetingId={meetingId}
-                      teamMembers={shareRecipients}
-                    />
+                    <div className="hidden lg:block">
+                      {renderShareDialog("meeting-sharing-desktop")}
+                    </div>
                   ) : null}
                   <div
                     className={`rounded-lg border bg-card p-5 ${
