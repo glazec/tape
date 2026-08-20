@@ -138,6 +138,7 @@ describe("TeamSettingsPage", () => {
     ]);
     listWorkspaceMembers.mockResolvedValue([
       {
+        calendarStatus: "connected",
         email: "member@iosg.vc",
         id: "user_123",
         isCurrentUser: true,
@@ -146,6 +147,7 @@ describe("TeamSettingsPage", () => {
         role: "member",
       },
       {
+        calendarStatus: "not_connected",
         email: "alice@iosg.vc",
         id: "user_456",
         isCurrentUser: false,
@@ -154,6 +156,7 @@ describe("TeamSettingsPage", () => {
         role: "member",
       },
       ...Array.from({ length: 7 }, (_, index) => ({
+        calendarStatus: index === 0 ? ("needs_attention" as const) : null,
         email: `member${index + 3}@iosg.vc`,
         id: `user_${index + 3}`,
         isCurrentUser: false,
@@ -204,6 +207,12 @@ describe("TeamSettingsPage", () => {
     expect(html).toContain("Alice");
     expect(html).toContain("alice@iosg.vc");
     expect(html).toContain("Momir Amidzic");
+    expect(html).toContain("Calendar connected");
+    expect(html).toContain("Calendar not connected");
+    expect(html).toContain("Calendar needs attention");
+    expect(
+      html.match(/Calendar (connected|not connected|needs attention)/g),
+    ).toHaveLength(3);
     expect(html).toContain("You");
     expect(html).toContain(">9<");
     expect(html).not.toContain("max-h-80");
