@@ -101,7 +101,13 @@ describe("ShareDialog interactions", () => {
     render(<ShareDialog {...props} />);
 
     changeRecipient("guest@example.com");
-    fireEvent.click(screen.getByLabelText("Include past and future related meetings"));
+    const input = screen.getByRole("combobox");
+    const relatedScope = screen.getByLabelText(
+      "Include past and future related meetings",
+    );
+    fireEvent.pointerDown(relatedScope, { pointerType: "touch" });
+    fireEvent.click(relatedScope);
+    expect((input as HTMLInputElement).value).toBe("guest@example.com");
     fireEvent.click(screen.getByRole("button", { name: "Review share" }));
 
     expect(await screen.findByText("Share 2 meetings?")).toBeTruthy();
@@ -109,6 +115,19 @@ describe("ShareDialog interactions", () => {
     fireEvent.click(screen.getByRole("button", { name: "Confirm" }));
     expect(await screen.findByText(/Future related meetings are included/)).toBeTruthy();
     expect(navigator.clipboard.writeText).toHaveBeenCalledTimes(1);
+  });
+
+  it("allows a recipient draft to be cleared by typing", () => {
+    render(<ShareDialog {...props} />);
+
+    const input = screen.getByRole("combobox");
+    changeRecipient("guest@example.com");
+    fireEvent.input(input, {
+      inputType: "deleteContentBackward",
+      target: { value: "" },
+    });
+
+    expect((input as HTMLInputElement).value).toBe("");
   });
 
   it("shares with organization and reports audience failures", async () => {
