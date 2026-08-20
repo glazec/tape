@@ -1,17 +1,22 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-const { finalizeMeetingTranscriptGeneration, select, update } = vi.hoisted(
-  () => ({
-    finalizeMeetingTranscriptGeneration: vi.fn(),
-    select: vi.fn(),
-    update: vi.fn(),
-  }),
-);
+const {
+  findRecallRecordingMediaUrl,
+  markTranscriptJobFailedSafely,
+  retrieveRecallBot,
+  retrieveRecallRecording,
+  select,
+} = vi.hoisted(() => ({
+  findRecallRecordingMediaUrl: vi.fn(),
+  markTranscriptJobFailedSafely: vi.fn(),
+  retrieveRecallBot: vi.fn(),
+  retrieveRecallRecording: vi.fn(),
+  select: vi.fn(),
+}));
 
 vi.mock("@/db/client", () => ({
   db: {
     select,
-    update,
   },
 }));
 
@@ -21,14 +26,25 @@ vi.mock("@/inngest/client", () => ({
 
 vi.mock("@/lib/elevenlabs-transcripts", () => ({
   applyElevenLabsTranscriptEvent: vi.fn(),
-  finalizeMeetingTranscriptGeneration,
+}));
+
+vi.mock("@/lib/transcript-job-failure", () => ({
+  markTranscriptJobFailedSafely,
+}));
+
+vi.mock("@/lib/vendors/recall", () => ({
+  findRecallRecordingMediaUrl,
+  retrieveRecallBot,
+  retrieveRecallRecording,
 }));
 
 describe("transcript chunk worker", () => {
   afterEach(() => {
     select.mockReset();
-    update.mockReset();
-    finalizeMeetingTranscriptGeneration.mockReset();
+    findRecallRecordingMediaUrl.mockReset();
+    markTranscriptJobFailedSafely.mockReset();
+    retrieveRecallBot.mockReset();
+    retrieveRecallRecording.mockReset();
   });
 
   it("renders and stores only chunks at or below sixty minutes", async () => {
@@ -115,11 +131,59 @@ describe("transcript chunk worker", () => {
     expect(runProcess).not.toHaveBeenCalled();
   });
 
+  it("retrieves a fresh Recall URL when the recovery worker starts", async () => {
+    select.mockReturnValue({
+      from: () => ({
+        where: () => ({
+          limit: vi
+            .fn()
+            .mockResolvedValue([
+              { teamId: "11111111-1111-4111-8111-111111111111" },
+            ]),
+        }),
+      }),
+    });
+    const artifact = { id: "recall_bot_123" };
+    retrieveRecallBot.mockResolvedValue(artifact);
+    findRecallRecordingMediaUrl.mockReturnValue(
+      "https://recallai-production-bot-data.s3.amazonaws.com/fresh.mp3",
+    );
+    const runProcess = vi
+      .fn()
+      .mockResolvedValueOnce(new TextEncoder().encode("60"))
+      .mockResolvedValueOnce(new Uint8Array([1, 2, 3]));
+    const { createTranscriptChunkWorkerAdapter } = await import(
+      "@/lib/transcript-chunk-worker"
+    );
+    const adapter = createTranscriptChunkWorkerAdapter({
+      createReadUrl: vi.fn(),
+      ffmpegPath: "ffmpeg",
+      ffprobePath: "ffprobe",
+      putObject: vi.fn(),
+      runProcess,
+    });
+
+    await adapter.prepareTranscriptAudioChunks({
+      keyterms: [],
+      meetingId: "22222222-2222-4222-8222-222222222222",
+      recallBotId: "recall_bot_123",
+      recallRecordingId: "recall_recording_123",
+      transcriptJobId: "33333333-3333-4333-8333-333333333333",
+    });
+
+    expect(retrieveRecallBot).toHaveBeenCalledWith("recall_bot_123");
+    expect(findRecallRecordingMediaUrl).toHaveBeenCalledWith(
+      artifact,
+      "recall_recording_123",
+    );
+    expect(retrieveRecallRecording).not.toHaveBeenCalled();
+  });
+
   it("waits for aggregate finalization after a chunked job fails", async () => {
-    const where = vi.fn().mockResolvedValue(undefined);
-    const set = vi.fn().mockReturnValue({ where });
-    update.mockReturnValue({ set });
-    finalizeMeetingTranscriptGeneration.mockResolvedValue(false);
+    markTranscriptJobFailedSafely.mockResolvedValue({
+      jobUpdated: true,
+      meetingFinalized: false,
+    });
     const { markChunkedTranscriptJobFailed } =
       await import("@/lib/transcript-chunk-worker");
 
@@ -129,16 +193,10 @@ describe("transcript chunk worker", () => {
       transcriptJobId: "33333333-3333-4333-8333-333333333333",
     });
 
-    expect(set).toHaveBeenCalledWith(
-      expect.objectContaining({
-        errorMessage: "chunk failed",
-        status: "failed",
-      }),
-    );
-    expect(update).toHaveBeenCalledOnce();
-    expect(finalizeMeetingTranscriptGeneration).toHaveBeenCalledWith(
-      "22222222-2222-4222-8222-222222222222",
-      expect.any(Date),
-    );
+    expect(markTranscriptJobFailedSafely).toHaveBeenCalledWith({
+      errorMessage: "chunk failed",
+      meetingId: "22222222-2222-4222-8222-222222222222",
+      transcriptJobId: "33333333-3333-4333-8333-333333333333",
+    });
   });
 });

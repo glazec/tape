@@ -3,6 +3,7 @@ import {
   asc,
   eq,
   gte,
+  isNotNull,
   isNull,
   or,
 } from "drizzle-orm";
@@ -48,7 +49,10 @@ export async function dispatchQueuedUploadTranscriptions(
     )
     .where(
       and(
-        or(eq(meetings.platform, "upload"), eq(mediaAssets.source, "upload")),
+        or(
+          eq(meetings.platform, "upload"),
+          isNotNull(transcriptJobs.mediaAssetId),
+        ),
         eq(transcriptJobs.provider, "elevenlabs"),
         eq(transcriptJobs.status, "queued"),
         isNull(transcriptJobs.providerJobId),

@@ -1,9 +1,14 @@
+import type { SQL } from "drizzle-orm";
+import { PgDialect } from "drizzle-orm/pg-core";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-const { select, send } = vi.hoisted(() => ({
+const { select, send, where } = vi.hoisted(() => ({
   select: vi.fn(),
   send: vi.fn(),
+  where: vi.fn(),
 }));
+
+const dialect = new PgDialect();
 
 vi.mock("@/db/client", () => ({
   db: { select },
@@ -14,15 +19,19 @@ vi.mock("@/inngest/client", () => ({
 }));
 
 function mockQueuedJobs(rows: unknown[]) {
+  where.mockImplementation((condition: SQL) => {
+    void condition;
+    return {
+      orderBy: () => ({
+        limit: vi.fn().mockResolvedValue(rows),
+      }),
+    };
+  });
   select.mockReturnValue({
     from: () => ({
       innerJoin: () => ({
         leftJoin: () => ({
-          where: () => ({
-            orderBy: () => ({
-              limit: vi.fn().mockResolvedValue(rows),
-            }),
-          }),
+          where,
         }),
       }),
     }),
@@ -33,6 +42,7 @@ describe("queued upload transcription dispatch", () => {
   afterEach(() => {
     select.mockReset();
     send.mockReset();
+    where.mockReset();
     vi.resetModules();
   });
 
@@ -73,6 +83,13 @@ describe("queued upload transcription dispatch", () => {
       failedCount: 0,
       skippedCount: 0,
     });
+    const selection = dialect.sqlToQuery(where.mock.calls[0][0]);
+
+    expect(selection.sql).toContain('"meetings"."platform" =');
+    expect(selection.sql).toContain(
+      '"transcript_jobs"."media_asset_id" is not null',
+    );
+    expect(selection.params).toContain("upload");
     expect(send).toHaveBeenNthCalledWith(1, {
       id: "upload-transcription:55555555-5555-4555-8555-555555555555",
       name: "meeting/transcribe.audio",

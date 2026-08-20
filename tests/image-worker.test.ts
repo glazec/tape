@@ -247,6 +247,36 @@ describe("image worker", () => {
     expect(markChunkedTranscriptJobFailed).not.toHaveBeenCalled();
   });
 
+  it("accepts stable Recall identifiers for empty transcript recovery", async () => {
+    const error = new Error("stop after schema validation");
+    prepareTranscriptAudioChunks.mockRejectedValue(error);
+    const { transcribeMeetingInChunks } = await import(
+      "@/services/image-worker/functions"
+    );
+    const data = {
+      keyterms: [],
+      meetingId: "22222222-2222-4222-8222-222222222222",
+      recallBotId: "recall_bot_123",
+      recallRecordingId: "recall_recording_123",
+      transcriptJobId: "44444444-4444-4444-8444-444444444444",
+    };
+
+    await expect(
+      (transcribeMeetingInChunks as unknown as RunnableInngestFunction).fn({
+        attempt: 0,
+        event: { data },
+        step: {
+          run: vi.fn(
+            async (_name: string, handler: () => Promise<unknown>) =>
+              handler(),
+          ),
+        },
+      }),
+    ).rejects.toThrow(error.message);
+    expect(prepareTranscriptAudioChunks).toHaveBeenCalledWith(data);
+    expect(markChunkedTranscriptJobFailed).not.toHaveBeenCalled();
+  });
+
   it.each([
     ["enrichment dispatch", "queue-chunked-transcript-enrichment"],
     ["chunk cleanup", "cleanup-transcript-chunks"],

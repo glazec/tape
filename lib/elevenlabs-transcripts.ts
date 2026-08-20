@@ -1,4 +1,4 @@
-import { eq, sql } from "drizzle-orm";
+import { and, eq, inArray, ne, sql } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 
 import { databaseSql, db } from "@/db/client";
@@ -24,6 +24,13 @@ import {
 } from "@/lib/meeting-intelligence";
 import { getPreferredParticipantSpeakerName } from "@/lib/speaker-labels";
 import { recordElevenLabsTranscriptUsage } from "@/lib/provider-usage";
+import { inngest } from "@/inngest/client";
+import {
+  buildEmptyTranscriptRecoveryEvent,
+  EMPTY_TRANSCRIPT_RECOVERY_QUEUED,
+  shouldRecoverEmptyTranscript,
+} from "@/lib/empty-transcript-recovery";
+import { finalizeMeetingTranscriptGeneration } from "@/lib/transcript-job-failure";
 import {
   getTwentyCrmCompanyDomains,
   type TwentyCrmCompanyDomain,
@@ -230,6 +237,75 @@ export async function applyElevenLabsTranscriptEvent(
   const now = new Date();
 
   if (persistence.action === "fail") {
+    if (
+      meetingId &&
+      shouldRecoverEmptyTranscript({
+        errorMessage: persistence.errorMessage,
+        providerJobId: persistence.providerJobId,
+      })
+    ) {
+      const objectKey = getMetadataString(
+        event.metadata,
+        "objectKey",
+        "object_key",
+      );
+      const recordingId = getMetadataString(
+        event.metadata,
+        "recordingId",
+        "recording_id",
+      );
+
+      await inngest.send(
+        buildEmptyTranscriptRecoveryEvent({
+          meetingId,
+          ...(objectKey ? { objectKey } : {}),
+          ...(recordingId ? { recordingId } : {}),
+          transcriptJobId: persistence.transcriptJobId,
+        }),
+      );
+
+      const [recoveryJob] = await db
+        .update(transcriptJobs)
+        .set({
+          errorMessage: EMPTY_TRANSCRIPT_RECOVERY_QUEUED,
+          ...(persistence.providerJobId
+            ? { providerJobId: persistence.providerJobId }
+            : {}),
+          status: "running",
+          updatedAt: now,
+        })
+        .where(
+          and(
+            eq(transcriptJobs.id, persistence.transcriptJobId),
+            eq(transcriptJobs.meetingId, meetingId),
+            ne(transcriptJobs.status, "completed"),
+          ),
+        )
+        .returning({ id: transcriptJobs.id });
+
+      if (recoveryJob) {
+        await db
+          .update(meetings)
+          .set({ status: "processing", updatedAt: now })
+          .where(
+            and(
+              eq(meetings.id, meetingId),
+              inArray(meetings.status, ["processing", "failed", "missed"]),
+            ),
+          );
+      }
+
+      await recordElevenLabsTranscriptUsage({
+        transcriptJobId: persistence.transcriptJobId,
+      });
+
+      return {
+        action: "recover" as const,
+        recovery: "chunked" as const,
+        transcriptJobId: persistence.transcriptJobId,
+      };
+    }
+
     await db
       .update(transcriptJobs)
       .set({
@@ -383,6 +459,7 @@ export async function applyElevenLabsTranscriptEvent(
     txn`
       update transcript_jobs
       set
+        error_message = null,
         provider_job_id = coalesce(
           ${persistence.providerJobId ?? null}::text,
           provider_job_id
@@ -407,67 +484,7 @@ export async function applyElevenLabsTranscriptEvent(
   };
 }
 
-export async function finalizeMeetingTranscriptGeneration(
-  meetingId: string,
-  now: Date,
-) {
-  const rows = await databaseSql`
-    with latest_replace as (
-      select id, created_at, generation_id
-      from transcript_jobs
-      where meeting_id = ${meetingId}::uuid
-        and mode = 'replace'
-      order by created_at desc, id desc
-      limit 1
-    ), active_generation as (
-      select active_job.id, active_job.status
-      from transcript_jobs active_job
-      where active_job.meeting_id = ${meetingId}::uuid
-        and (
-          active_job.id = (select id from latest_replace)
-          or (
-          active_job.mode = 'append'
-          and (
-              active_job.generation_id = (
-                select generation_id from latest_replace
-              )
-              or (
-                active_job.generation_id is null
-                and (
-                  active_job.created_at > (select created_at from latest_replace)
-                  or (
-                    active_job.created_at = (select created_at from latest_replace)
-                    and active_job.id > (select id from latest_replace)
-                  )
-                )
-              )
-            )
-          )
-        )
-    )
-    update meetings
-    set
-      status = case
-        when exists (
-          select 1 from active_generation where status = 'failed'
-        ) then 'failed'::meeting_status
-        else 'ready'::meeting_status
-      end,
-      updated_at = ${now}
-    where id = ${meetingId}::uuid
-      and status = 'processing'
-      and not exists (
-        select 1
-        from active_generation
-        where status in ('queued', 'running')
-      )
-    returning status
-  `;
-
-  return Boolean(
-    rows?.some((row: { status?: string }) => row.status === "ready"),
-  );
-}
+export { finalizeMeetingTranscriptGeneration } from "@/lib/transcript-job-failure";
 
 async function shouldApplyTranscriptJob(
   meetingId: string,
