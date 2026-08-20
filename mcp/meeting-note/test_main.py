@@ -127,6 +127,102 @@ class SqlSafetyTests(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     main._normalize_sql_params(params)
 
+    def test_accepts_safe_string_position_and_json_helpers(self):
+        sql = """
+select
+  strpos(title, 'Marvin') as strpos_match,
+  position('Marvin' in title) as position_match,
+  json_build_object('id', id, 'title', title) as meeting
+from readable_meetings
+""".strip()
+
+        self.assertEqual(main._validate_agent_sql(sql), sql)
+
+    def test_escapes_literal_percents_but_preserves_named_params(self):
+        query = (
+            "select * from readable_meetings "
+            "where title ilike '%Marvin%' "
+            "or title ilike %(query)s "
+            "or title like '%%'"
+        )
+
+        self.assertEqual(
+            main._escape_psycopg_literal_percents(query),
+            (
+                "select * from readable_meetings "
+                "where title ilike '%%Marvin%%' "
+                "or title ilike %(query)s "
+                "or title like '%%%%'"
+            ),
+        )
+
+
+class IdentityResolutionTests(unittest.IsolatedAsyncioTestCase):
+    async def test_google_oauth_subject_falls_back_to_verified_email(self):
+        user = {
+            "id": "11111111-1111-4111-8111-111111111111",
+            "auth_user_id": "neon-auth-user",
+            "email": "momir@iosg.vc",
+            "name": "Momir",
+        }
+
+        with patch.object(
+            main,
+            "_fetch_one",
+            AsyncMock(side_effect=[None, user]),
+        ) as fetch_one:
+            resolved = await main._resolve_tape_user(
+                "google-oauth-subject",
+                "Momir@iosg.vc",
+            )
+
+        self.assertEqual(resolved.id, user["id"])
+        self.assertEqual(resolved.auth_user_id, "neon-auth-user")
+        self.assertEqual(resolved.email, "momir@iosg.vc")
+        self.assertEqual(fetch_one.await_count, 2)
+
+    async def test_api_key_identity_uses_the_same_verified_email_fallback(self):
+        user = {
+            "id": "11111111-1111-4111-8111-111111111111",
+            "auth_user_id": "neon-auth-user",
+            "email": "momir@iosg.vc",
+            "name": "Momir",
+        }
+
+        with patch.object(
+            main,
+            "_fetch_one",
+            AsyncMock(side_effect=[None, user]),
+        ):
+            resolved = await main._resolve_tape_user(
+                "apikey:momir@iosg.vc",
+                "momir@iosg.vc",
+            )
+
+        self.assertEqual(resolved.id, user["id"])
+        self.assertEqual(resolved.email, "momir@iosg.vc")
+
+    async def test_neon_auth_subject_resolves_directly(self):
+        user = {
+            "id": "11111111-1111-4111-8111-111111111111",
+            "auth_user_id": "neon-auth-user",
+            "email": "momir@iosg.vc",
+            "name": "Momir",
+        }
+
+        with patch.object(
+            main,
+            "_fetch_one",
+            AsyncMock(return_value=user),
+        ) as fetch_one:
+            resolved = await main._resolve_tape_user(
+                "neon-auth-user",
+                "momir@iosg.vc",
+            )
+
+        self.assertEqual(resolved.id, user["id"])
+        fetch_one.assert_awaited_once()
+
 
 class MeetingBackendRequestTests(unittest.TestCase):
     class Response:
@@ -339,7 +435,9 @@ class RlsQueryContextTests(unittest.IsolatedAsyncioTestCase):
             ),
             patch.object(main, "_current_user_claims", return_value=claims),
         ):
-            rows = await main._fetch_all("select id from readable_meetings")
+            rows = await main._fetch_all(
+                "select id from readable_meetings where title ilike '%Marvin%'",
+            )
 
         self.assertEqual(rows, [{"id": "meeting-1"}])
         self.assertEqual(
@@ -352,7 +450,7 @@ class RlsQueryContextTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(
             cursor.execute.await_args_list[3].args[0],
-            "select id from readable_meetings",
+            "select id from readable_meetings where title ilike '%%Marvin%%'",
         )
 
     async def test_records_mcp_onboarding_use_with_verified_claims(self):
@@ -611,6 +709,141 @@ class MeetingAccessConditionTests(unittest.TestCase):
 
         self.assertIn("m.team_id", condition)
         self.assertEqual(params["access_team_id"], workspace.team_id)
+
+
+class AccessibleMeetingInventoryTests(unittest.IsolatedAsyncioTestCase):
+    async def test_lists_the_complete_authorized_inventory_without_topic_filters(self):
+        workspace = main.Workspace(
+            email="momir@iosg.vc",
+            user_id="11111111-1111-4111-8111-111111111111",
+            team_id="22222222-2222-4222-8222-222222222222",
+            can_create_meetings=True,
+            can_manage_team_meetings=False,
+        )
+        rows = [
+            {
+                "id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+                "team_id": workspace.team_id,
+                "owner_user_id": "33333333-3333-4333-8333-333333333333",
+                "title": "Yiping",
+                "platform": "zoom",
+                "status": "ready",
+                "started_at": None,
+                "ended_at": None,
+                "created_at": None,
+                "total_count": 92,
+            },
+            {
+                "id": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+                "team_id": workspace.team_id,
+                "owner_user_id": "44444444-4444-4444-8444-444444444444",
+                "title": "IOSG Weekly Team Meeting",
+                "platform": "zoom",
+                "status": "ready",
+                "started_at": None,
+                "ended_at": None,
+                "created_at": None,
+                "total_count": 92,
+            },
+        ]
+
+        with (
+            patch.object(
+                main,
+                "_workspace_for_current_user",
+                AsyncMock(return_value=workspace),
+            ),
+            patch.object(
+                main,
+                "_fetch_all",
+                AsyncMock(return_value=rows),
+            ) as fetch_all,
+        ):
+            result = await main.list_accessible_meetings(limit=50, offset=0)
+
+        query, params = fetch_all.await_args.args
+        self.assertIn("m.status::text <> 'cancelled'", query)
+        self.assertIn("access_ma.revoked_at is null", query)
+        self.assertNotIn("marvin", query.lower())
+        self.assertEqual(params["inventory_access_user_id"], workspace.user_id)
+        self.assertNotIn("inventory_access_team_id", params)
+        self.assertEqual(result["returned_count"], 2)
+        self.assertEqual(result["total_count"], 92)
+        self.assertTrue(result["has_more"])
+        self.assertEqual(result["meetings"][0]["access_scope"], "shared")
+
+    async def test_normalizes_inventory_pagination(self):
+        workspace = main.Workspace(
+            email="member@example.com",
+            user_id="11111111-1111-4111-8111-111111111111",
+            team_id="22222222-2222-4222-8222-222222222222",
+            can_create_meetings=True,
+            can_manage_team_meetings=False,
+        )
+
+        with (
+            patch.object(
+                main,
+                "_workspace_for_current_user",
+                AsyncMock(return_value=workspace),
+            ),
+            patch.object(
+                main,
+                "_fetch_all",
+                AsyncMock(return_value=[]),
+            ) as fetch_all,
+        ):
+            result = await main.list_accessible_meetings(limit=5000, offset=-10)
+
+        params = fetch_all.await_args.args[1]
+        self.assertEqual(params["inventory_limit"], 500)
+        self.assertEqual(params["inventory_offset"], 0)
+        self.assertEqual(result["total_count"], 0)
+        self.assertFalse(result["has_more"])
+
+    async def test_preserves_total_count_when_offset_is_past_the_last_meeting(self):
+        workspace = main.Workspace(
+            email="member@example.com",
+            user_id="11111111-1111-4111-8111-111111111111",
+            team_id="22222222-2222-4222-8222-222222222222",
+            can_create_meetings=True,
+            can_manage_team_meetings=False,
+        )
+        empty_page = [
+            {
+                "id": None,
+                "team_id": None,
+                "owner_user_id": None,
+                "title": None,
+                "platform": None,
+                "status": None,
+                "started_at": None,
+                "ended_at": None,
+                "created_at": None,
+                "total_count": 92,
+            },
+        ]
+
+        with (
+            patch.object(
+                main,
+                "_workspace_for_current_user",
+                AsyncMock(return_value=workspace),
+            ),
+            patch.object(
+                main,
+                "_fetch_all",
+                AsyncMock(return_value=empty_page),
+            ) as fetch_all,
+        ):
+            result = await main.list_accessible_meetings(limit=50, offset=100)
+
+        query = fetch_all.await_args.args[0]
+        self.assertIn("left join lateral", query.lower())
+        self.assertEqual(result["meetings"], [])
+        self.assertEqual(result["returned_count"], 0)
+        self.assertEqual(result["total_count"], 92)
+        self.assertFalse(result["has_more"])
 
 
 if __name__ == "__main__":
