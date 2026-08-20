@@ -5,6 +5,7 @@ node_modules/
 .env.local
 .superpowers/
 .worktrees/
+.codex-worktrees/
 test-results/
 playwright-report/
 coverage/
