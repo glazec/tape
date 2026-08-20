@@ -173,6 +173,25 @@ SQL_SCHEMA = {
 }
 COMMON_SQL_QUERIES = [
     {
+        "id": "meeting_inventory",
+        "category": "meeting_inventory",
+        "title": "Inspect readable meeting metadata before topic filtering",
+        "params": {},
+        "sql": """
+select
+  id,
+  title,
+  platform,
+  status,
+  access_scope,
+  started_at,
+  ended_at,
+  created_at
+from readable_meetings
+order by coalesce(started_at, created_at) desc
+""".strip(),
+    },
+    {
         "id": "keyword_context",
         "category": "transcript_search",
         "title": "Search every transcript for a keyword with nearby context",
@@ -388,6 +407,7 @@ ALLOWED_SQL_FUNCTIONS = {
     "floor",
     "greatest",
     "json_agg",
+    "json_build_object",
     "lag",
     "last_value",
     "lead",
@@ -398,6 +418,7 @@ ALLOWED_SQL_FUNCTIONS = {
     "max",
     "min",
     "nullif",
+    "position",
     "rank",
     "regexp_replace",
     "right",
@@ -405,6 +426,7 @@ ALLOWED_SQL_FUNCTIONS = {
     "row_number",
     "string_agg",
     "substring",
+    "strpos",
     "sum",
     "to_char",
     "trim",
@@ -891,7 +913,10 @@ async def _fetch_all(
                 "select set_config('request.jwt.claims', %s, true)",
                 (json.dumps(_current_user_claims()),),
             )
-            await cur.execute(query, params or {})
+            await cur.execute(
+                _escape_psycopg_literal_percents(query),
+                params or {},
+            )
             rows = await cur.fetchall()
     return [dict(row) for row in rows]
 
@@ -1171,6 +1196,14 @@ def _limit(value: int, default: int, maximum: int) -> int:
     return max(1, min(parsed, maximum))
 
 
+def _offset(value: int, maximum: int = 1_000_000) -> int:
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return 0
+    return max(0, min(parsed, maximum))
+
+
 def _iso(value: Any) -> str | None:
     if value is None:
         return None
@@ -1202,6 +1235,26 @@ def _json_safe_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
 def _strip_sql_literals_and_comments(sql: str) -> str:
     without_comments = re.sub(r"(--.*?$|/\*.*?\*/)", " ", sql, flags=re.M | re.S)
     return re.sub(r"'([^']|'')*'", " ", without_comments)
+
+
+def _escape_psycopg_literal_percents(query: str) -> str:
+    escaped: list[str] = []
+    index = 0
+    named_param = re.compile(r"%\([A-Za-z_][A-Za-z0-9_]*\)s")
+
+    while index < len(query):
+        match = named_param.match(query, index)
+        if match:
+            escaped.append(match.group(0))
+            index = match.end()
+            continue
+        if query[index] == "%":
+            escaped.append("%%")
+        else:
+            escaped.append(query[index])
+        index += 1
+
+    return "".join(escaped)
 
 
 def _contains_sql_word(sql: str, word: str) -> bool:
@@ -1503,6 +1556,22 @@ def _meeting_summary(
     }
 
 
+def _meeting_inventory_item(
+    row: dict[str, Any],
+    workspace: Workspace,
+) -> dict[str, Any]:
+    return {
+        "id": str(row["id"]),
+        "title": row["title"],
+        "platform": row["platform"],
+        "status": row["status"],
+        "started_at": _iso(row.get("started_at") or row.get("created_at")),
+        "ended_at": _iso(row.get("ended_at")),
+        "created_at": _iso(row.get("created_at")),
+        "access_scope": _meeting_access_scope(row, workspace),
+    }
+
+
 async def _get_accessible_meeting(
     meeting_id: str,
     workspace: Workspace,
@@ -1793,6 +1862,80 @@ def list_common_meeting_queries(category: str | None = None) -> dict[str, Any]:
 
 
 @mcp.tool
+async def list_accessible_meetings(
+    limit: int = 100,
+    offset: int = 0,
+) -> dict[str, Any]:
+    """List the caller's complete authorized meeting inventory before applying topic or transcript filters. Excludes cancelled meetings and returns a total count so a filtered SQL result is never mistaken for the full inventory."""
+    workspace = await _workspace_for_current_user()
+    query_params: dict[str, Any] = {
+        "inventory_limit": _limit(limit, 100, 500),
+        "inventory_offset": _offset(offset),
+    }
+    access_sql = _access_condition(
+        workspace,
+        query_params,
+        meeting_alias="m",
+        param_prefix="inventory_access",
+    )
+    rows = await _fetch_all(
+        f"""
+        with accessible_meetings as (
+            select
+                m.id,
+                m.team_id,
+                m.owner_user_id,
+                m.title,
+                m.platform::text as platform,
+                m.status::text as status,
+                m.started_at,
+                m.ended_at,
+                m.created_at
+            from meetings m
+            where m.status::text <> 'cancelled'
+              and {access_sql}
+        )
+        select
+            page.*,
+            inventory.total_count
+        from (
+            select count(*)::int as total_count
+            from accessible_meetings
+        ) inventory
+        left join lateral (
+            select *
+            from accessible_meetings
+            order by coalesce(started_at, created_at) desc, id
+            limit %(inventory_limit)s
+            offset %(inventory_offset)s
+        ) page on true
+        order by coalesce(page.started_at, page.created_at) desc, page.id
+        """,
+        query_params,
+    )
+    total_count = int(rows[0]["total_count"]) if rows else 0
+    meeting_rows = [row for row in rows if row.get("id") is not None]
+    normalized_limit = query_params["inventory_limit"]
+    normalized_offset = query_params["inventory_offset"]
+
+    return {
+        "meetings": [
+            _meeting_inventory_item(row, workspace) for row in meeting_rows
+        ],
+        "returned_count": len(meeting_rows),
+        "total_count": total_count,
+        "limit": normalized_limit,
+        "offset": normalized_offset,
+        "has_more": normalized_offset + len(meeting_rows) < total_count,
+        "scope_note": (
+            "This is the caller's full authorized inventory page. "
+            "Use execute_meeting_sql only after this when filtering by topic, "
+            "participant, entity, or transcript text."
+        ),
+    }
+
+
+@mcp.tool
 async def get_meeting_audio(meeting_id: str) -> dict[str, Any]:
     """Return the protected app audio route for one readable meeting. The tool returns a URL, not audio bytes."""
     workspace = await _workspace_for_current_user()
@@ -1905,6 +2048,11 @@ async def execute_meeting_sql(
         "row_count": len(rows),
         "limit": query_params["sql_outer_limit"],
         "safe_ctes": sorted(SAFE_SQL_CTES),
+        "scope_note": (
+            "row_count is the number of rows matched by this SQL query, not the "
+            "caller's total readable meeting count. Use list_accessible_meetings "
+            "for the complete authorized inventory."
+        ),
     }
 
 

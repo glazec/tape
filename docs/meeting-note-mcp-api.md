@@ -8,7 +8,7 @@ This MCP exposes authenticated Tape reads and local audio meeting uploads. It re
 
 ## Design Choice
 
-SQL is the primary retrieval surface. One off tools like `search_meetings`, `get_meeting_transcript`, `get_meeting_entities`, `find_related_meetings`, and `get_person_speaking_timeline` are no longer exposed because `execute_meeting_sql` can express those queries more flexibly.
+SQL is the primary analytical retrieval surface. `list_accessible_meetings` is the canonical inventory tool so an agent cannot mistake one keyword result for the caller's complete meeting library. More specialized one off tools like `search_meetings`, `get_meeting_transcript`, `get_meeting_entities`, `find_related_meetings`, and `get_person_speaking_timeline` are not exposed because `execute_meeting_sql` can express those queries more flexibly.
 
 Media retrieval remains in dedicated tools because audio and image access must stay behind authenticated application routes instead of exposing storage or Recall URLs from MCP.
 
@@ -21,11 +21,12 @@ Visible tools:
 3. `list_meeting_sql_schema`
 4. `describe_meeting_sql_table`
 5. `list_common_meeting_queries`
-6. `execute_meeting_sql`
-7. `get_meeting_audio`
-8. `get_meeting_images`
-9. `prepare_meeting_upload`
-10. `complete_meeting_upload`
+6. `list_accessible_meetings`
+7. `execute_meeting_sql`
+8. `get_meeting_audio`
+9. `get_meeting_images`
+10. `prepare_meeting_upload`
+11. `complete_meeting_upload`
 
 ## Access Model
 
@@ -33,15 +34,16 @@ Interactive MCP callers authenticate with Google OAuth through FastMCP's OAuth p
 
 MCP data access mirrors the app read policy:
 
-1. Workspace members can read non cancelled meetings in their workspace team.
-2. Shared only users can read only non cancelled meetings explicitly shared with them through `meeting_access`.
-3. Workspace members can also read explicit shares from other teams.
-4. Pending share invites, calendar attendees, transcript speakers, and meeting ownership are not separate MCP authorization paths.
-5. Cancelled meetings are hidden from the SQL tables.
-6. Shared scoped SQL rows keep transcript content available but hide workspace team ids, join URLs, URL derived grouping keys, and participant email lists.
-7. Duplicate allowed domains fail closed unless the user already has explicit team membership.
+1. Workspace owners and admins can read non cancelled meetings in their workspace team.
+2. Regular workspace members can read meetings they own plus non cancelled meetings explicitly shared with them through `meeting_access`.
+3. Shared only users can read only non cancelled meetings explicitly shared with them through `meeting_access`.
+4. Workspace users can also read explicit shares from other teams.
+5. Pending share invites, calendar attendees, and transcript speakers are not separate MCP authorization paths.
+6. Cancelled meetings are hidden from the inventory and SQL tables.
+7. Shared scoped SQL rows keep transcript content available but hide workspace team ids, join URLs, URL derived grouping keys, and participant email lists.
+8. Duplicate allowed domains fail closed unless the user already has explicit team membership.
 
-The MCP does not create users, memberships, shares, or translations. Users must already exist in the app because the MCP resolves access through `users.auth_user_id`. Workspace members with meeting creation rights can create an uploaded meeting. Shared only users cannot prepare or complete uploads.
+The MCP does not create users, memberships, shares, or translations. Users must already exist in the app. Neon Auth subjects resolve through `users.auth_user_id`; Google OAuth and shared API key identities can fall back to an exact verified email match, and the matched Tape user must still have a canonical `auth_user_id`. Workspace members with meeting creation rights can create an uploaded meeting. Shared only users cannot prepare or complete uploads.
 
 MCP database access stays read only. Upload preparation and completion use HMAC signed requests to dedicated Tape web routes. The web backend applies the same workspace, provider credit, rate limit, media validation, R2, and transcription dispatch rules as the browser upload flow.
 
@@ -106,11 +108,23 @@ Arguments:
 
 Current categories:
 
-1. `transcript_search`
-2. `speaker`
-3. `meeting_search`
-4. `related`
-5. `transcript`
+1. `meeting_inventory`
+2. `transcript_search`
+3. `speaker`
+4. `meeting_search`
+5. `related`
+6. `transcript`
+
+### list_accessible_meetings
+
+List the caller's complete authorized, non cancelled meeting inventory before applying topic or transcript filters.
+
+Arguments:
+
+1. `limit`: default 100, max 500
+2. `offset`: default 0, max 1,000,000
+
+Returns the inventory page, total authorized meeting count, pagination state, meeting metadata, and each meeting's `workspace` or `shared` access scope.
 
 ### execute_meeting_sql
 
@@ -121,6 +135,8 @@ Arguments:
 1. `sql`: `select` or `with` query that references at least one safe table
 2. `params`: optional named parameters for psycopg placeholders such as `%(keyword)s`
 3. `limit`: default 100, max 500
+
+`row_count` describes only the rows matched by the supplied SQL. It is not the caller's total readable meeting count. Use `list_accessible_meetings` first whenever the user asks what meetings are available.
 
 ### get_meeting_audio
 
@@ -237,6 +253,22 @@ For shared scoped meetings, this table only includes transcript derived `organiz
 This table is workspace scoped only. Shared scoped meetings do not expose participant email lists.
 
 ## Common Query Examples
+
+Inspect readable meeting metadata before analytical filtering. Use `list_accessible_meetings` when a complete paginated inventory or total count is required:
+
+```sql
+select
+  id,
+  title,
+  platform,
+  status,
+  access_scope,
+  started_at,
+  ended_at,
+  created_at
+from readable_meetings
+order by coalesce(started_at, created_at) desc
+```
 
 Keyword hits with nearby transcript context:
 
