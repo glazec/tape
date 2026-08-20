@@ -63,6 +63,18 @@ const TRANSLATION_BATCH_CHARACTER_LIMIT = 1800;
 const OPENROUTER_COMPLETION_ATTEMPTS = 3;
 const MEETING_CHAT_MAX_TOKENS = 900;
 
+class OpenRouterHttpError extends Error {
+  constructor(
+    readonly status: number,
+    statusText: string,
+  ) {
+    super(
+      `OpenRouter chat completion failed with ${status}${statusText ? ` ${statusText}` : ""}`,
+    );
+    this.name = "OpenRouterHttpError";
+  }
+}
+
 const searchWebToolArgumentsSchema = z.object({
   query: z.string().trim().min(1),
 });
@@ -227,9 +239,7 @@ async function createMeetingChatCompletion(input: {
     });
 
     if (!response.ok) {
-      throw new Error(
-        `OpenRouter chat completion failed with ${response.status} ${response.statusText}`,
-      );
+      throw new OpenRouterHttpError(response.status, response.statusText);
     }
 
     const parsed = await parseOpenRouterResponse(
@@ -368,6 +378,10 @@ async function translateBatchWithRecovery(
     } catch (error) {
       lastError = error;
 
+      if (!isRetryableOpenRouterError(error)) {
+        throw createTranslationFailure(batch, attempt, error);
+      }
+
       if (error instanceof TranslationResponseError && batch.length > 1) {
         return translateSplitBatch(
           batch,
@@ -383,13 +397,25 @@ async function translateBatchWithRecovery(
     return translateSplitBatch(batch, targetLanguage, onTranslated, meetingId);
   }
 
+  throw createTranslationFailure(
+    batch,
+    OPENROUTER_COMPLETION_ATTEMPTS,
+    lastError,
+  );
+}
+
+function createTranslationFailure(
+  batch: TranscriptSegment[],
+  attempts: number,
+  error: unknown,
+) {
   const message =
-    lastError instanceof Error && lastError.message.trim()
-      ? lastError.message
+    error instanceof Error && error.message.trim()
+      ? error.message
       : "unknown OpenRouter error";
-  throw new Error(
-    `OpenRouter translation failed for segment ${batch[0]?.id ?? "unknown"} after ${OPENROUTER_COMPLETION_ATTEMPTS} attempts: ${message}`,
-    { cause: lastError },
+  return new Error(
+    `OpenRouter translation failed for segment ${batch[0]?.id ?? "unknown"} after ${attempts} ${attempts === 1 ? "attempt" : "attempts"}: ${message}`,
+    { cause: error },
   );
 }
 
@@ -555,9 +581,7 @@ async function createOpenRouterChatCompletion(input: {
       );
 
       if (!response.ok) {
-        throw new Error(
-          `OpenRouter chat completion failed with ${response.status} ${response.statusText}`,
-        );
+        throw new OpenRouterHttpError(response.status, response.statusText);
       }
 
       const parsed = await parseOpenRouterResponse(
@@ -578,6 +602,10 @@ async function createOpenRouterChatCompletion(input: {
       lastError = new Error("OpenRouter completion response missing content");
     } catch (error) {
       lastError = error;
+
+      if (!isRetryableOpenRouterError(error)) {
+        throw error;
+      }
     }
   }
 
@@ -589,6 +617,14 @@ async function createOpenRouterChatCompletion(input: {
     `OpenRouter model ${env.OPENROUTER_MODEL} failed after ${attempts} attempts${detail}`,
     { cause: lastError },
   );
+}
+
+function isRetryableOpenRouterError(error: unknown) {
+  if (!(error instanceof OpenRouterHttpError)) {
+    return true;
+  }
+
+  return error.status === 408 || error.status === 429 || error.status >= 500;
 }
 
 type OpenRouterUsageContext = {

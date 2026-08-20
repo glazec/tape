@@ -173,6 +173,65 @@ describe("OpenRouter translation", () => {
     expect(fetchMock).toHaveBeenCalledTimes(3);
   });
 
+  it("does not retry permanent OpenRouter authorization failures", async () => {
+    vi.stubEnv("OPENROUTER_API_KEY", "openrouter-key");
+    vi.stubEnv("OPENROUTER_MODEL", "qwen/qwen3.7-plus");
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(null, { status: 403, statusText: "Forbidden" }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { translateTranscriptSegmentsToChinese } = await import(
+      "@/lib/vendors/openrouter"
+    );
+
+    await expect(
+      translateTranscriptSegmentsToChinese([
+        { id: "segment_1", text: "Hello team" },
+      ]),
+    ).rejects.toThrow(
+      "OpenRouter translation failed for segment segment_1 after 1 attempt: OpenRouter chat completion failed with 403 Forbidden",
+    );
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("retries transient OpenRouter rate limits", async () => {
+    vi.stubEnv("OPENROUTER_API_KEY", "openrouter-key");
+    vi.stubEnv("OPENROUTER_MODEL", "qwen/qwen3.7-plus");
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(null, { status: 429, statusText: "Too Many Requests" }),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            choices: [
+              {
+                message: {
+                  content:
+                    '{"translations":[{"id":"segment_1","text":"大家好"}]}',
+                },
+              },
+            ],
+          }),
+          { status: 200 },
+        ),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { translateTranscriptSegmentsToChinese } = await import(
+      "@/lib/vendors/openrouter"
+    );
+
+    await expect(
+      translateTranscriptSegmentsToChinese([
+        { id: "segment_1", text: "Hello team" },
+      ]),
+    ).resolves.toEqual([{ id: "segment_1", text: "大家好" }]);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
   it("retries only blank or missing translation positions", async () => {
     vi.stubEnv("OPENROUTER_API_KEY", "openrouter-key");
     vi.stubEnv("OPENROUTER_MODEL", "qwen/qwen3.7-plus");
