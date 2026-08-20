@@ -6,6 +6,7 @@ import {
   type MouseEvent,
   type PointerEvent,
   type RefObject,
+  type ReactNode,
   Fragment,
   useEffect,
   useMemo,
@@ -148,6 +149,7 @@ type TranscriptViewerProps = {
   audioParts?: AudioPlaylistPart[];
   audioUrl?: string | null;
   meetingId?: string | null;
+  mobileAfterSpeakers?: ReactNode;
   preferredTranslationLanguage?: TranslationLanguage;
   segments: TranscriptSegment[];
   speakerAliases?: SpeakerAlias[];
@@ -368,6 +370,7 @@ export function TranscriptViewer({
   audioParts,
   audioUrl,
   meetingId,
+  mobileAfterSpeakers,
   preferredTranslationLanguage,
   segments: initialSegments,
   speakerAliases = [],
@@ -1314,6 +1317,11 @@ export function TranscriptViewer({
                 })}
               </div>
             </div>
+            {mobileAfterSpeakers ? (
+              <div className="mb-8 space-y-6 lg:hidden [&>:first-child]:mt-0">
+                {mobileAfterSpeakers}
+              </div>
+            ) : null}
             <ol className="space-y-2">
               {visualAssetPlacements.leading.length > 0
                 ? renderInlineVisualAssets(
