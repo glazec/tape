@@ -1,7 +1,9 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import { CalendarCheck, CalendarX, TriangleAlert } from "lucide-react";
 
 import { AppShell } from "@/components/app-shell";
+import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
 import {
   Card,
@@ -448,11 +450,35 @@ export default async function TeamSettingsPage() {
                         </p>
                       ) : null}
                     </div>
-                    {member.isCurrentUser ? (
-                      <span className="rounded-md border px-2 py-1 text-xs font-medium">
-                        You
-                      </span>
-                    ) : null}
+                    <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
+                      {member.calendarStatus ? (
+                        <Badge
+                          variant={
+                            member.calendarStatus === "connected"
+                              ? "secondary"
+                              : member.calendarStatus === "needs_attention"
+                                ? "destructive"
+                                : "outline"
+                          }
+                        >
+                          {member.calendarStatus === "connected" ? (
+                            <CalendarCheck data-icon="inline-start" />
+                          ) : member.calendarStatus === "needs_attention" ? (
+                            <TriangleAlert data-icon="inline-start" />
+                          ) : (
+                            <CalendarX data-icon="inline-start" />
+                          )}
+                          {member.calendarStatus === "connected"
+                            ? "Calendar connected"
+                            : member.calendarStatus === "needs_attention"
+                              ? "Calendar needs attention"
+                              : "Calendar not connected"}
+                        </Badge>
+                      ) : null}
+                      {member.isCurrentUser ? (
+                        <Badge variant="outline">You</Badge>
+                      ) : null}
+                    </div>
                   </li>
                 ))}
               </ul>
