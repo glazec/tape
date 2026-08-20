@@ -76,7 +76,7 @@ describe("MeetingLibrarySearch", () => {
   });
 
   it("keeps the dashboard visible and makes only stale results inert while searching", () => {
-    function PendingResults() {
+    function PendingResults(): never {
       throw pendingNavigation;
     }
 
