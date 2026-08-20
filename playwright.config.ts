@@ -17,6 +17,7 @@ const playwrightServerDirectory =
 process.env.PLAYWRIGHT_SERVER_DIRECTORY = playwrightServerDirectory;
 
 const authenticatedE2EEnabled = process.env.PLAYWRIGHT_AUTHENTICATED === "true";
+const authenticatedTestTimeout = 60_000;
 const defaultProtocol = authenticatedE2EEnabled ? "https" : "http";
 const baseURL =
   process.env.PLAYWRIGHT_BASE_URL ?? `${defaultProtocol}://127.0.0.1:${port}`;
@@ -61,6 +62,7 @@ export default defineConfig({
             name: "authenticated-chromium",
             testIgnore: /authenticated-admin\.spec\.ts/,
             testMatch: /authenticated-.*\.spec\.ts/,
+            timeout: authenticatedTestTimeout,
             use: {
               ...devices["Desktop Chrome"],
               storageState: authenticatedStorageStatePath,
@@ -70,6 +72,7 @@ export default defineConfig({
             dependencies: ["authenticated-setup"],
             name: "authenticated-admin-chromium",
             testMatch: /authenticated-admin\.spec\.ts/,
+            timeout: authenticatedTestTimeout,
             use: {
               ...devices["Desktop Chrome"],
               storageState: authenticatedAdminStorageStatePath,
