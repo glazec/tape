@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 const {
   databaseSql,
   execute,
+  inngestSend,
   recordElevenLabsTranscriptUsage,
   select,
   transaction,
@@ -11,11 +12,16 @@ const {
 } = vi.hoisted(() => ({
   databaseSql: vi.fn(),
   execute: vi.fn(),
+  inngestSend: vi.fn(),
   recordElevenLabsTranscriptUsage: vi.fn(),
   select: vi.fn(),
   transaction: vi.fn(),
   txn: vi.fn((strings: TemplateStringsArray) => strings),
   update: vi.fn(),
+}));
+
+vi.mock("@/inngest/client", () => ({
+  inngest: { send: inngestSend },
 }));
 
 vi.mock("@/db/client", () => ({
@@ -43,6 +49,7 @@ describe("applyElevenLabsTranscriptEvent", () => {
   afterEach(() => {
     select.mockReset();
     execute.mockReset();
+    inngestSend.mockReset();
     databaseSql.mockReset();
     recordElevenLabsTranscriptUsage.mockReset();
     transaction.mockReset();
@@ -51,7 +58,7 @@ describe("applyElevenLabsTranscriptEvent", () => {
     vi.resetModules();
   });
 
-  it("marks the transcript job and meeting failed when ElevenLabs returns no transcript text", async () => {
+  it("queues chunked recovery when ElevenLabs returns no transcript text", async () => {
     execute.mockResolvedValue({
       rows: [{ id: "22222222-2222-4222-8222-222222222222" }],
     });
@@ -73,9 +80,19 @@ describe("applyElevenLabsTranscriptEvent", () => {
         }),
       }),
     });
-    const transcriptWhere = vi.fn().mockResolvedValue(undefined);
+    const transcriptReturning = vi
+      .fn()
+      .mockResolvedValue([{ id: "22222222-2222-4222-8222-222222222222" }]);
+    const transcriptWhere = vi
+      .fn()
+      .mockReturnValue({ returning: transcriptReturning });
     const transcriptSet = vi.fn().mockReturnValue({ where: transcriptWhere });
-    update.mockReturnValueOnce({ set: transcriptSet });
+    const meetingWhere = vi.fn().mockResolvedValue(undefined);
+    const meetingSet = vi.fn().mockReturnValue({ where: meetingWhere });
+    update
+      .mockReturnValueOnce({ set: transcriptSet })
+      .mockReturnValueOnce({ set: meetingSet });
+    inngestSend.mockResolvedValue({ ids: ["recovery"] });
 
     const { applyElevenLabsTranscriptEvent } =
       await import("@/lib/elevenlabs-transcripts");
@@ -94,16 +111,33 @@ describe("applyElevenLabsTranscriptEvent", () => {
           transcriptJobId: "22222222-2222-4222-8222-222222222222",
         },
       }),
-    ).resolves.toMatchObject({ action: "fail" });
+    ).resolves.toEqual({
+      action: "recover",
+      recovery: "chunked",
+      transcriptJobId: "22222222-2222-4222-8222-222222222222",
+    });
+
+    expect(inngestSend).toHaveBeenCalledWith({
+      id: "empty-transcript-recovery:22222222-2222-4222-8222-222222222222",
+      name: "meeting/recover.empty-transcript",
+      data: {
+        meetingId: "11111111-1111-4111-8111-111111111111",
+        transcriptJobId: "22222222-2222-4222-8222-222222222222",
+      },
+    });
 
     expect(transcriptSet).toHaveBeenCalledWith({
-      errorMessage: "No transcript text returned",
+      errorMessage:
+        "Direct transcription returned no text; chunked recovery queued",
       providerJobId: "req_123",
-      status: "failed",
+      status: "running",
       updatedAt: expect.any(Date),
     });
-    expect(databaseSql).toHaveBeenCalledOnce();
-    expect(databaseSql.mock.calls[0]?.[0]?.join(" ")).toContain("not exists");
+    expect(meetingSet).toHaveBeenCalledWith({
+      status: "processing",
+      updatedAt: expect.any(Date),
+    });
+    expect(databaseSql).not.toHaveBeenCalled();
     expect(recordElevenLabsTranscriptUsage).toHaveBeenCalledWith({
       transcriptJobId: "22222222-2222-4222-8222-222222222222",
     });
@@ -227,6 +261,9 @@ describe("applyElevenLabsTranscriptEvent", () => {
     );
     expect(txn.mock.calls[5]?.[0].join(" ")).toContain(
       "update transcript_jobs",
+    );
+    expect(txn.mock.calls[5]?.[0].join(" ")).toContain(
+      "error_message = null",
     );
   });
 });

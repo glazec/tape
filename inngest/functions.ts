@@ -49,6 +49,10 @@ import {
   assertWorkspaceHasProviderCredit,
   ProviderCreditExhaustedError,
 } from "@/lib/provider-credit";
+import {
+  markEmptyTranscriptRecoveryFailed,
+  prepareEmptyTranscriptRecovery,
+} from "@/lib/empty-transcript-recovery";
 
 const appUrlSchema = z.string().trim().url();
 
@@ -81,6 +85,13 @@ const transcribeAudioDataSchema = z.union([
   }),
 ]);
 const TRANSCRIBE_AUDIO_RETRIES = 4;
+const EMPTY_TRANSCRIPT_RECOVERY_RETRIES = 4;
+const emptyTranscriptRecoveryDataSchema = z.object({
+  meetingId: z.uuid(),
+  objectKey: z.string().trim().min(1).optional(),
+  recordingId: z.uuid().optional(),
+  transcriptJobId: z.uuid(),
+});
 
 const convertVideoToAudioDataSchema = z.object({
   meetingId: z.uuid(),
@@ -241,6 +252,40 @@ export const transcribeAudio = inngest.createFunction(
         maxAttempts: TRANSCRIBE_AUDIO_RETRIES,
         transcriptJobId: data.transcriptJobId,
       });
+      throw error;
+    }
+  },
+);
+
+export const recoverEmptyTranscript = inngest.createFunction(
+  {
+    id: "recover-empty-transcript",
+    retries: EMPTY_TRANSCRIPT_RECOVERY_RETRIES,
+    triggers: [{ event: "meeting/recover.empty-transcript" }],
+  },
+  async ({ event, step, attempt = 0 }) => {
+    const data = emptyTranscriptRecoveryDataSchema.parse(event.data);
+
+    try {
+      const recovery = await step.run(
+        "prepare-empty-transcript-recovery",
+        () => prepareEmptyTranscriptRecovery(data),
+      );
+
+      return step.sendEvent("queue-empty-transcript-chunked-recovery", {
+        id: `empty-transcript-chunked:${data.transcriptJobId}`,
+        name: "meeting/transcribe.audio-in-chunks",
+        data: recovery,
+      });
+    } catch (error) {
+      if (attempt >= EMPTY_TRANSCRIPT_RECOVERY_RETRIES) {
+        await markEmptyTranscriptRecoveryFailed({
+          error,
+          meetingId: data.meetingId,
+          transcriptJobId: data.transcriptJobId,
+        });
+      }
+
       throw error;
     }
   },
@@ -682,6 +727,7 @@ export const functions = [
   deleteRecallBot,
   deleteRecallCalendarEventBotJob,
   transcribeAudio,
+  recoverEmptyTranscript,
   convertVideoToAudio,
   enrichTranscript,
   sendLocationReminder,

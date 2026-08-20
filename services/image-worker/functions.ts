@@ -23,12 +23,21 @@ const chunkedTranscriptionDataSchema = z
     keyterms: z.array(z.string().trim().min(1)).default([]),
     meetingId: z.uuid(),
     objectKey: z.string().trim().min(1).optional(),
+    recallBotId: z.string().trim().min(1).optional(),
+    recallRecordingId: z.string().trim().min(1).optional(),
     recordingId: z.uuid().optional(),
     transcriptJobId: z.uuid(),
   })
-  .refine((value) => Boolean(value.audioUrl || value.objectKey), {
-    message: "Transcript media is required",
-  });
+  .refine(
+    (value) =>
+      Boolean(
+        value.audioUrl ||
+          value.objectKey ||
+          value.recallBotId ||
+          value.recallRecordingId,
+      ),
+    { message: "Transcript media is required" },
+  );
 
 export const extractMeetingVideoFrames = imageWorkerInngest.createFunction(
   {

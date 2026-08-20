@@ -17,8 +17,10 @@ const {
   markMeetingTranslationFailed,
   markMeetingTranslationFailedIfActive,
   markMeetingTranslationRunning,
+  markEmptyTranscriptRecoveryFailed,
   markLocationReminderDeliveryFailed,
   polishTranscriptSegmentsInOriginalLanguage,
+  prepareEmptyTranscriptRecovery,
   scheduleRecallBot,
   select,
   sendScheduledLocationReminder,
@@ -43,8 +45,10 @@ const {
   markMeetingTranslationFailed: vi.fn(),
   markMeetingTranslationFailedIfActive: vi.fn(),
   markMeetingTranslationRunning: vi.fn(),
+  markEmptyTranscriptRecoveryFailed: vi.fn(),
   markLocationReminderDeliveryFailed: vi.fn(),
   polishTranscriptSegmentsInOriginalLanguage: vi.fn(),
+  prepareEmptyTranscriptRecovery: vi.fn(),
   scheduleRecallBot: vi.fn(),
   select: vi.fn(),
   sendScheduledLocationReminder: vi.fn(),
@@ -58,6 +62,11 @@ vi.mock("@/lib/provider-credit", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/provider-credit")>()),
   assertMeetingHasProviderCredit,
   assertWorkspaceHasProviderCredit,
+}));
+
+vi.mock("@/lib/empty-transcript-recovery", () => ({
+  markEmptyTranscriptRecoveryFailed,
+  prepareEmptyTranscriptRecovery,
 }));
 
 vi.mock("@/db/client", () => ({
@@ -140,7 +149,9 @@ describe("Inngest functions", () => {
     markMeetingTranslationFailed.mockReset();
     markMeetingTranslationFailedIfActive.mockReset();
     markMeetingTranslationRunning.mockReset();
+    markEmptyTranscriptRecoveryFailed.mockReset();
     polishTranscriptSegmentsInOriginalLanguage.mockReset();
+    prepareEmptyTranscriptRecovery.mockReset();
     select.mockReset();
     translateTranscriptSegments.mockReset();
     vi.resetModules();
@@ -171,6 +182,10 @@ describe("Inngest functions", () => {
       {
         id: "transcribe-audio",
         triggers: [{ event: "meeting/transcribe.audio" }],
+      },
+      {
+        id: "recover-empty-transcript",
+        triggers: [{ event: "meeting/recover.empty-transcript" }],
       },
       {
         id: "convert-video-to-audio",
@@ -425,6 +440,77 @@ describe("Inngest functions", () => {
       providerJobId: "provider_job_123",
       status: "running",
       updatedAt: expect.any(Date),
+    });
+  });
+
+  it("resolves fresh media before queuing chunked empty transcript recovery", async () => {
+    const recovery = {
+      keyterms: ["IOSG"],
+      meetingId: "11111111-1111-4111-8111-111111111111",
+      recallBotId: "recall_bot_123",
+      recallRecordingId: "recall_recording_123",
+      recordingId: "33333333-3333-4333-8333-333333333333",
+      transcriptJobId: "22222222-2222-4222-8222-222222222222",
+    };
+    const run = vi.fn(
+      async (_name: string, handler: () => Promise<unknown>) => handler(),
+    );
+    const sendEvent = vi.fn().mockResolvedValue({ ids: ["chunk_recovery"] });
+    prepareEmptyTranscriptRecovery.mockResolvedValue(recovery);
+    const { recoverEmptyTranscript } = await import("@/inngest/functions");
+    const data = {
+      meetingId: recovery.meetingId,
+      recordingId: recovery.recordingId,
+      transcriptJobId: recovery.transcriptJobId,
+    };
+
+    await expect(
+      (recoverEmptyTranscript as unknown as RunnableInngestFunction).fn({
+        event: { data },
+        step: { run, sendEvent },
+      }),
+    ).resolves.toEqual({ ids: ["chunk_recovery"] });
+
+    expect(prepareEmptyTranscriptRecovery).toHaveBeenCalledWith(data);
+    expect(sendEvent).toHaveBeenCalledWith(
+      "queue-empty-transcript-chunked-recovery",
+      {
+        id: `empty-transcript-chunked:${recovery.transcriptJobId}`,
+        name: "meeting/transcribe.audio-in-chunks",
+        data: recovery,
+      },
+    );
+  });
+
+  it("fails empty transcript recovery only after its final retry", async () => {
+    const error = new Error("Recording source is unavailable");
+    prepareEmptyTranscriptRecovery.mockRejectedValue(error);
+    markEmptyTranscriptRecoveryFailed.mockResolvedValue({
+      jobUpdated: true,
+      meetingFinalized: false,
+    });
+    const { recoverEmptyTranscript } = await import("@/inngest/functions");
+    const data = {
+      meetingId: "11111111-1111-4111-8111-111111111111",
+      transcriptJobId: "22222222-2222-4222-8222-222222222222",
+    };
+
+    await expect(
+      (recoverEmptyTranscript as unknown as RunnableInngestFunction).fn({
+        attempt: 4,
+        event: { data },
+        step: {
+          run: vi.fn(
+            async (_name: string, handler: () => Promise<unknown>) =>
+              handler(),
+          ),
+        },
+      }),
+    ).rejects.toThrow(error.message);
+    expect(markEmptyTranscriptRecoveryFailed).toHaveBeenCalledWith({
+      error,
+      meetingId: data.meetingId,
+      transcriptJobId: data.transcriptJobId,
     });
   });
 
