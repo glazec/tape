@@ -432,7 +432,7 @@ export default async function TeamSettingsPage() {
           </summary>
           <div className="border-t p-4">
             {teamMembers.length > 0 ? (
-              <ul className="max-h-80 divide-y overflow-y-auto rounded-lg border">
+              <ul className="divide-y rounded-lg border">
                 {teamMembers.map((member) => (
                   <li
                     className="flex flex-wrap items-center justify-between gap-3 px-3 py-3"
