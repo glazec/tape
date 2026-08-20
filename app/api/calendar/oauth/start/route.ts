@@ -37,7 +37,27 @@ export async function GET(request: Request) {
   const state = randomBytes(32).toString("base64url");
   const returnToSetup =
     new URL(request.url).searchParams.get("setup") === "1";
-  const response = NextResponse.redirect(buildGoogleCalendarOAuthUrl(state));
+  let googleOAuthUrl: string;
+
+  try {
+    googleOAuthUrl = buildGoogleCalendarOAuthUrl(state);
+  } catch (error) {
+    console.error("calendar_oauth_start_failed", {
+      error: serializeError(error),
+      userId: user.id,
+    });
+
+    const dashboardUrl = new URL("/dashboard", getAppUrl());
+    dashboardUrl.searchParams.set("calendarError", "connect_failed");
+
+    if (returnToSetup) {
+      dashboardUrl.searchParams.set("setup", "1");
+    }
+
+    return NextResponse.redirect(dashboardUrl);
+  }
+
+  const response = NextResponse.redirect(googleOAuthUrl);
 
   response.cookies.set(GOOGLE_CALENDAR_OAUTH_STATE_COOKIE, state, {
     httpOnly: true,
@@ -63,4 +83,10 @@ export async function GET(request: Request) {
 
 function getAppUrl() {
   return process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
+}
+
+function serializeError(error: unknown) {
+  return error instanceof Error
+    ? { message: error.message, name: error.name }
+    : { message: "Unknown error", name: "UnknownError" };
 }

@@ -35,6 +35,7 @@ describe("GET /api/calendar/oauth/start", () => {
     getCurrentUser.mockReset();
     getWorkspace.mockReset();
     vi.unstubAllEnvs();
+    vi.restoreAllMocks();
     vi.resetModules();
   });
 
@@ -94,6 +95,49 @@ describe("GET /api/calendar/oauth/start", () => {
     expect(
       response.cookies.get("google-calendar-oauth-return-to-setup")?.value,
     ).toBe("1");
+  });
+
+  it("returns a useful setup error when Google OAuth is not configured", async () => {
+    vi.stubEnv("NEXT_PUBLIC_APP_URL", "https://app.example.com");
+    getCurrentUser.mockResolvedValue({
+      id: "auth_user_123",
+      email: "alice@example.com",
+      name: null,
+    });
+    getWorkspace.mockResolvedValue({
+      userId: "11111111-1111-4111-8111-111111111111",
+      teamId: "22222222-2222-4222-8222-222222222222",
+      domain: "example.com",
+    });
+    assertCanCreateMeetings.mockResolvedValue(undefined);
+    buildGoogleCalendarOAuthUrl.mockImplementation(() => {
+      throw new Error("Google Calendar OAuth configuration is missing");
+    });
+    const consoleError = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => undefined);
+
+    const { GET } = await import("@/app/api/calendar/oauth/start/route");
+    const response = await GET(
+      new Request(
+        "https://app.example.com/api/calendar/oauth/start?setup=1",
+      ),
+    );
+
+    expect(response.status).toBe(307);
+    expect(response.headers.get("location")).toBe(
+      "https://app.example.com/dashboard?calendarError=connect_failed&setup=1",
+    );
+    expect(consoleError).toHaveBeenCalledWith("calendar_oauth_start_failed", {
+      error: {
+        message: "Google Calendar OAuth configuration is missing",
+        name: "Error",
+      },
+      userId: "auth_user_123",
+    });
+    expect(
+      response.cookies.get("google-calendar-oauth-state"),
+    ).toBeUndefined();
   });
 
   it("does not start calendar OAuth for shared only users", async () => {
