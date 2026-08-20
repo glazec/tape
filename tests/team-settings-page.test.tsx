@@ -153,6 +153,14 @@ describe("TeamSettingsPage", () => {
         name: "Alice",
         role: "member",
       },
+      ...Array.from({ length: 7 }, (_, index) => ({
+        email: `member${index + 3}@iosg.vc`,
+        id: `user_${index + 3}`,
+        isCurrentUser: false,
+        joinedAt: new Date(`2026-07-0${index + 1}T12:00:00.000Z`),
+        name: index === 0 ? "Momir Amidzic" : `Member ${index + 3}`,
+        role: "member",
+      })),
     ]);
     getMeetingBotProfile.mockResolvedValue({
       botName: "Deal Scribe",
@@ -195,7 +203,11 @@ describe("TeamSettingsPage", () => {
     expect(html).toContain("member@iosg.vc");
     expect(html).toContain("Alice");
     expect(html).toContain("alice@iosg.vc");
+    expect(html).toContain("Momir Amidzic");
     expect(html).toContain("You");
+    expect(html).toContain(">9<");
+    expect(html).not.toContain("max-h-80");
+    expect(html).not.toContain("overflow-y-auto");
     expect(html).toContain("Only team administrators can edit these settings");
     expect(html).toContain("Billing &amp; credits");
     expect(html).toContain("Credit remaining");
