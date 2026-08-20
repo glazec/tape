@@ -63,6 +63,28 @@ type ShareRecipientOption = {
   value: string;
 };
 
+function shouldPreserveRecipientDraft({
+  currentValue,
+  event,
+  nextValue,
+  reason,
+}: {
+  currentValue: string;
+  event: Event;
+  nextValue: string;
+  reason: string;
+}) {
+  const isTextInputEvent =
+    typeof InputEvent !== "undefined" && event instanceof InputEvent;
+
+  return (
+    currentValue.trim() !== "" &&
+    nextValue === "" &&
+    reason === "input-clear" &&
+    !isTextInputEvent
+  );
+}
+
 export function ShareDialog({
   allowRelated = true,
   canRemoveAccess = true,
@@ -330,7 +352,18 @@ export function ShareDialog({
                 items={recipientOptions}
                 itemToStringLabel={(option) => option.value}
                 itemToStringValue={(option) => option.value}
-                onInputValueChange={(value) => {
+                onInputValueChange={(value, eventDetails) => {
+                  if (
+                    shouldPreserveRecipientDraft({
+                      currentValue: email,
+                      event: eventDetails.event,
+                      nextValue: value,
+                      reason: eventDetails.reason,
+                    })
+                  ) {
+                    return;
+                  }
+
                   setEmail(value);
                   setState("idle");
                   setMessage(null);
