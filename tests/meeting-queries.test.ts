@@ -1443,9 +1443,13 @@ describe("listMeetingsForWorkspace", () => {
       .slice(0, 50)
       .map((meeting) => meeting.id);
     const hiddenMeetingId = matchingRows[50].id;
-    const recordingWhere = vi.fn(() => ({
-      orderBy: vi.fn().mockResolvedValue([]),
-    }));
+    const recordingWhere = vi.fn((condition: SQL) => {
+      void condition;
+
+      return {
+        orderBy: vi.fn().mockResolvedValue([]),
+      };
+    });
 
     select
       .mockReturnValueOnce({
