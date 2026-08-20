@@ -16,7 +16,7 @@ import { databaseSql, db } from "@/db/client";
 import {
   calendarEvents,
   mediaAssets,
-  meetingAccess,
+  meetingAccessSources,
   meetingAttendees,
   meetingEntities,
   meetingParticipantTimeline,
@@ -1979,26 +1979,28 @@ function getMeetingAttendeeEmailsSnapshot() {
   )`;
 }
 
-async function listMeetingAccessPeople(
+export async function listMeetingAccessPeople(
   meetingId: string,
   ownerUserId: string,
 ): Promise<MeetingAccessPerson[]> {
   const rows = await db
     .select({
-      email: users.email,
+      email: meetingAccessSources.recipientEmail,
       id: users.id,
       name: users.name,
     })
-    .from(meetingAccess)
-    .innerJoin(users, eq(meetingAccess.userId, users.id))
+    .from(meetingAccessSources)
+    .leftJoin(
+      users,
+      sql`lower(${users.email}) = ${meetingAccessSources.recipientEmail}`,
+    )
     .where(
       and(
-        eq(meetingAccess.meetingId, meetingId),
-        isNull(meetingAccess.revokedAt),
+        eq(meetingAccessSources.meetingId, meetingId),
+        isNull(meetingAccessSources.revokedAt),
       ),
     )
-    .orderBy(asc(users.email))
-    .limit(100);
+    .orderBy(asc(meetingAccessSources.recipientEmail));
 
   return Array.from(
     new Map(
@@ -2006,7 +2008,7 @@ async function listMeetingAccessPeople(
         .filter(({ id }) => id !== ownerUserId)
         .map(({ email, name }) => [email, { email, name }]),
     ).values(),
-  ).slice(0, 20);
+  );
 }
 
 function normalizeEmotionLabel(value: string | null) {

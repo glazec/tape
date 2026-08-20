@@ -334,11 +334,9 @@ describe("getWorkspaceMeetingTranscript", () => {
       })
       .mockReturnValueOnce({
         from: () => ({
-          innerJoin: () => ({
+          leftJoin: () => ({
             where: () => ({
-              orderBy: () => ({
-                limit: vi.fn().mockResolvedValue([]),
-              }),
+              orderBy: vi.fn().mockResolvedValue([]),
             }),
           }),
         }),
@@ -581,6 +579,64 @@ describe("getWorkspaceMeetingTranscript", () => {
       accessPeople: [],
       audioUrl: "/api/meetings/11111111-1111-4111-8111-111111111111/audio",
     });
+  });
+});
+
+describe("listMeetingAccessPeople", () => {
+  afterEach(() => {
+    select.mockReset();
+    vi.resetModules();
+  });
+
+  it("includes pending participant grants and excludes the owner", async () => {
+    const accessWhere = vi.fn((condition: SQL) => {
+      void condition;
+
+      return {
+        orderBy: vi.fn().mockResolvedValue([
+          {
+            email: "owner@example.com",
+            id: "owner_123",
+            name: "Owner",
+          },
+          {
+            email: "member@example.com",
+            id: "member_123",
+            name: "Member",
+          },
+          {
+            email: "pending@example.com",
+            id: null,
+            name: null,
+          },
+        ]),
+      };
+    });
+    select.mockReturnValue({
+      from: () => ({
+        leftJoin: () => ({ where: accessWhere }),
+      }),
+    });
+    const { listMeetingAccessPeople } = await import(
+      "@/lib/meeting-queries"
+    );
+
+    await expect(
+      listMeetingAccessPeople("meeting_123", "owner_123"),
+    ).resolves.toEqual([
+      {
+        email: "member@example.com",
+        name: "Member",
+      },
+      {
+        email: "pending@example.com",
+        name: null,
+      },
+    ]);
+
+    const query = toQuery(accessWhere.mock.calls[0][0]);
+    expect(query.sql).toContain('"meeting_access_sources"."meeting_id"');
+    expect(query.sql).toContain('"meeting_access_sources"."revoked_at" is null');
   });
 });
 
