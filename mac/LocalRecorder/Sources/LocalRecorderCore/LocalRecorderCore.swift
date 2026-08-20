@@ -398,6 +398,56 @@ public struct LocalRecorderAPIClient: Sendable {
         )
     }
 
+    public func notificationRequest(
+        fallbackIntentId: String,
+        state: String
+    ) throws -> URLRequest {
+        var request = URLRequest(
+            url: serverURL.appending(
+                path: "/api/local-recorder/intents/\(fallbackIntentId)/notification"
+            )
+        )
+        request.httpMethod = "POST"
+        applyRecorderHeaders(to: &request)
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONEncoder.localRecorder.encode(
+            NotificationStateRequest(state: state)
+        )
+        return request
+    }
+
+    public func authorizeNotification(
+        fallbackIntentId: String
+    ) async throws -> NotificationAuthorizationResponse {
+        let request = try notificationRequest(
+            fallbackIntentId: fallbackIntentId,
+            state: "ready"
+        )
+        let (data, response) = try await URLSession.shared.data(for: request)
+        try validateHTTPResponse(data: data, response: response)
+
+        return try JSONDecoder.localRecorder.decode(
+            NotificationAuthorizationResponse.self,
+            from: data
+        )
+    }
+
+    public func markNotificationDelivered(
+        fallbackIntentId: String
+    ) async throws -> NotificationDeliveryResponse {
+        let request = try notificationRequest(
+            fallbackIntentId: fallbackIntentId,
+            state: "shown"
+        )
+        let (data, response) = try await URLSession.shared.data(for: request)
+        try validateHTTPResponse(data: data, response: response)
+
+        return try JSONDecoder.localRecorder.decode(
+            NotificationDeliveryResponse.self,
+            from: data
+        )
+    }
+
     public func manualIntentRequest() throws -> URLRequest {
         var request = URLRequest(
             url: serverURL.appending(path: "/api/local-recorder/manual-intents")
@@ -1058,6 +1108,44 @@ public struct MissedMeeting: Codable, Identifiable, Equatable, Sendable {
     public var id: String { fallbackIntentId }
 }
 
+public struct NotificationAuthorizationResponse: Codable, Equatable, Sendable {
+    public var allowed: Bool
+    public var reason: String?
+}
+
+public struct NotificationDeliveryResponse: Codable, Equatable, Sendable {
+    public var marked: Bool
+    public var reason: String?
+}
+
+public enum LocalRecorderPendingMeetingQueue {
+    public static func merge(
+        existing: [MissedMeeting],
+        incoming: [MissedMeeting],
+        at date: Date
+    ) -> [MissedMeeting] {
+        var meetingsByIntentId = Dictionary(
+            uniqueKeysWithValues: existing
+                .filter { LocalRecorderNotificationBackoffSchedule.canNotify(meeting: $0, at: date) }
+                .map { ($0.fallbackIntentId, $0) }
+        )
+
+        for meeting in incoming where
+            LocalRecorderNotificationBackoffSchedule.canNotify(meeting: meeting, at: date)
+        {
+            meetingsByIntentId[meeting.fallbackIntentId] = meeting
+        }
+
+        return meetingsByIntentId.values.sorted {
+            if $0.displayTimeWindow.startsAt == $1.displayTimeWindow.startsAt {
+                return $0.fallbackIntentId < $1.fallbackIntentId
+            }
+
+            return $0.displayTimeWindow.startsAt > $1.displayTimeWindow.startsAt
+        }
+    }
+}
+
 public struct DisplayTimeWindow: Codable, Equatable, Sendable {
     public var startsAt: Date
     public var endsAt: Date?
@@ -1369,6 +1457,10 @@ private struct FailIntentRequest: Codable {
 
 private struct ClaimIntentRequest: Codable {
     var explicit: Bool
+}
+
+private struct NotificationStateRequest: Codable {
+    var state: String
 }
 
 public struct RecordingManifest: Codable, Equatable, Sendable {

@@ -1,4 +1,5 @@
 import { notFound } from "next/navigation";
+import { Share2 } from "lucide-react";
 
 import { AppShell } from "@/components/app-shell";
 import { MeetingAutoRefresh } from "@/components/meeting-auto-refresh";
@@ -13,6 +14,7 @@ import { MeetingTitleEditor } from "@/components/meeting-title-editor";
 import { RelatedMeetingsCard } from "@/components/related-meetings-card";
 import { ShareDialog } from "@/components/share-dialog";
 import { TranscriptViewer } from "@/components/transcript-viewer";
+import { buttonVariants } from "@/components/ui/button";
 import { requireCurrentUser } from "@/lib/auth-guards";
 import { getMeetingDisplayStatus } from "@/lib/meeting-display-status";
 import {
@@ -100,6 +102,7 @@ export default async function MeetingPage({
   return (
     <AppShell
       activeHref="/dashboard"
+      amplitudeTeamId={workspace.teamId}
       canCreateMeetings={workspace.canCreateMeetings !== false}
       oneSignalExternalId={workspace.userId}
     >
@@ -121,28 +124,42 @@ export default async function MeetingPage({
             <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
               Meeting
             </p>
-            {canManage ? (
-              <MeetingActions
-                audioExportUrls={
-                  recordingParts.length > 1
-                    ? [
-                        `/api/meetings/${encodeURIComponent(
-                          meetingId,
-                        )}/export?format=audio-parts`,
-                      ]
-                    : undefined
-                }
-                audioPartCount={recordingParts.length}
-                canDelete={meeting.canDelete}
-                hasAudio={
-                  Boolean(meeting.audioUrl) || recordingParts.length > 0
-                }
-                hasTranscript={meeting.segments.length > 0}
-                imageCount={meeting.visualAssets.length}
-                instanceId="header"
-                meetingId={meetingId}
-              />
-            ) : null}
+            <div className="flex items-center gap-2">
+              {canShare ? (
+                <a
+                  className={buttonVariants({
+                    className: "min-h-11 lg:hidden",
+                    variant: "outline",
+                  })}
+                  href="#meeting-sharing-section"
+                >
+                  <Share2 data-icon="inline-start" />
+                  Share
+                </a>
+              ) : null}
+              {canManage ? (
+                <MeetingActions
+                  audioExportUrls={
+                    recordingParts.length > 1
+                      ? [
+                          `/api/meetings/${encodeURIComponent(
+                            meetingId,
+                          )}/export?format=audio-parts`,
+                        ]
+                      : undefined
+                  }
+                  audioPartCount={recordingParts.length}
+                  canDelete={meeting.canDelete}
+                  hasAudio={
+                    Boolean(meeting.audioUrl) || recordingParts.length > 0
+                  }
+                  hasTranscript={meeting.segments.length > 0}
+                  imageCount={meeting.visualAssets.length}
+                  instanceId="header"
+                  meetingId={meetingId}
+                />
+              ) : null}
+            </div>
           </div>
           <div className="mt-2 min-w-0">
             {canManage ? (
@@ -349,7 +366,7 @@ export default async function MeetingPage({
               {canManage ? (
                 <>
                   {canShare ? (
-                    <div>
+                    <div id="meeting-sharing-section" className="scroll-mt-4">
                       <ShareDialog
                         allowRelated
                         canRemoveAccess
@@ -382,24 +399,26 @@ export default async function MeetingPage({
               ) : (
                 <>
                   {canShare ? (
-                    <ShareDialog
-                      allowRelated={false}
-                      canRemoveAccess={false}
-                      customAudience={
-                        teamConfiguration?.shareAudience
-                          ? {
-                              memberCount:
-                                teamConfiguration.shareAudience.emails.length,
-                              name: teamConfiguration.shareAudience.name,
-                            }
-                          : null
-                      }
-                      initialAccessPeople={meeting.accessPeople}
-                      initialShares={activeShares}
-                      instanceId="meeting-sharing"
-                      meetingId={meetingId}
-                      teamMembers={shareRecipients}
-                    />
+                    <div id="meeting-sharing-section" className="scroll-mt-4">
+                      <ShareDialog
+                        allowRelated={false}
+                        canRemoveAccess={false}
+                        customAudience={
+                          teamConfiguration?.shareAudience
+                            ? {
+                                memberCount:
+                                  teamConfiguration.shareAudience.emails.length,
+                                name: teamConfiguration.shareAudience.name,
+                              }
+                            : null
+                        }
+                        initialAccessPeople={meeting.accessPeople}
+                        initialShares={activeShares}
+                        instanceId="meeting-sharing"
+                        meetingId={meetingId}
+                        teamMembers={shareRecipients}
+                      />
+                    </div>
                   ) : null}
                   <div
                     className={`rounded-lg border bg-card p-5 ${

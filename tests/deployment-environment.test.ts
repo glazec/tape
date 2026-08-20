@@ -173,4 +173,37 @@ describe("deployment environment", () => {
       "OTEL_EXPORTER_OTLP_LOGS_ENDPOINT must be an absolute HTTP or HTTPS URL",
     ]);
   });
+
+  it("validates optional Sentry error monitoring configuration", () => {
+    const environment = {
+      ...validEnvironment(),
+      DATABASE_AUTHENTICATED_URL:
+        "postgresql://app:password@db.example.com/tape",
+      DATABASE_URL: "postgresql://user:password@db.example.com/tape",
+      NEON_AUTH_ISSUER: "https://auth.example.com",
+      NEON_AUTH_JWKS_URL: "https://auth.example.com/.well-known/jwks.json",
+      NEON_AUTH_COOKIE_SECRET: "a".repeat(32),
+      NEXT_PUBLIC_APP_URL: "https://meetings.example.com",
+      NEXT_PUBLIC_SENTRY_DSN: "http://examplePublicKey@sentry.example.com/1",
+      RECALL_API_BASE_URL: "https://us-east-1.recall.ai",
+      RECALL_WEBHOOK_SECRET: "whsec_example",
+    };
+
+    expect(
+      getDeploymentEnvironmentIssues(environment, { production: true }),
+    ).toEqual([
+      "NEXT_PUBLIC_SENTRY_DSN must be an absolute HTTPS URL",
+    ]);
+
+    expect(
+      getDeploymentEnvironmentIssues(
+        {
+          ...environment,
+          NEXT_PUBLIC_SENTRY_DSN: "",
+          SENTRY_AUTH_TOKEN: "source-map-token",
+        },
+        { production: true },
+      ),
+    ).toContain("SENTRY_AUTH_TOKEN requires NEXT_PUBLIC_SENTRY_DSN");
+  });
 });

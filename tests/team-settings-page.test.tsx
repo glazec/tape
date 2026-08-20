@@ -138,6 +138,7 @@ describe("TeamSettingsPage", () => {
     ]);
     listWorkspaceMembers.mockResolvedValue([
       {
+        calendarStatus: "connected",
         email: "member@iosg.vc",
         id: "user_123",
         isCurrentUser: true,
@@ -146,11 +147,30 @@ describe("TeamSettingsPage", () => {
         role: "member",
       },
       {
+        calendarStatus: "not_connected",
         email: "alice@iosg.vc",
         id: "user_456",
         isCurrentUser: false,
         joinedAt: new Date("2026-06-30T12:00:00.000Z"),
         name: "Alice",
+        role: "member",
+      },
+      {
+        calendarStatus: "needs_attention",
+        email: "casey@iosg.vc",
+        id: "user_789",
+        isCurrentUser: false,
+        joinedAt: new Date("2026-07-01T12:00:00.000Z"),
+        name: "Casey",
+        role: "member",
+      },
+      {
+        calendarStatus: null,
+        email: "private@iosg.vc",
+        id: "user_999",
+        isCurrentUser: false,
+        joinedAt: new Date("2026-07-02T12:00:00.000Z"),
+        name: "Private member",
         role: "member",
       },
     ]);
@@ -195,6 +215,12 @@ describe("TeamSettingsPage", () => {
     expect(html).toContain("member@iosg.vc");
     expect(html).toContain("Alice");
     expect(html).toContain("alice@iosg.vc");
+    expect(html).toContain("Calendar connected");
+    expect(html).toContain("Calendar not connected");
+    expect(html).toContain("Calendar needs attention");
+    expect(
+      html.match(/Calendar (connected|not connected|needs attention)/g),
+    ).toHaveLength(3);
     expect(html).toContain("You");
     expect(html).toContain("Only team administrators can edit these settings");
     expect(html).toContain("Billing &amp; credits");

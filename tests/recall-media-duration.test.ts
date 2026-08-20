@@ -66,7 +66,7 @@ function buildMovieHeader(durationMs: number) {
 }
 
 function rangeResponse(bytes: Uint8Array, contentRange: string) {
-  return new Response(bytes, {
+  return new Response(Uint8Array.from(bytes).buffer, {
     status: 206,
     headers: {
       "content-length": String(bytes.length),

@@ -20,7 +20,11 @@ export default async function NewMeetingPage() {
   }
 
   return (
-    <AppShell activeHref="/meetings/new" oneSignalExternalId={workspace.userId}>
+    <AppShell
+      activeHref="/meetings/new"
+      amplitudeTeamId={workspace.teamId}
+      oneSignalExternalId={workspace.userId}
+    >
       <section className="flex max-w-3xl flex-col gap-6">
         <div>
           <h1 className="text-3xl font-semibold tracking-tight">

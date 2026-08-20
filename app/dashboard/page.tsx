@@ -155,6 +155,7 @@ export default async function DashboardPage({
   return (
     <AppShell
       activeHref="/dashboard"
+      amplitudeTeamId={workspace.teamId}
       canCreateMeetings={canCreateMeetings}
       oneSignalExternalId={workspace.userId}
     >

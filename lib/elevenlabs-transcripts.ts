@@ -23,6 +23,12 @@ import {
 } from "@/lib/meeting-intelligence";
 import { getPreferredParticipantSpeakerName } from "@/lib/speaker-labels";
 import { recordElevenLabsTranscriptUsage } from "@/lib/provider-usage";
+import { inngest } from "@/inngest/client";
+import {
+  buildEmptyTranscriptRecoveryEvent,
+  EMPTY_TRANSCRIPT_RECOVERY_QUEUED,
+  shouldRecoverEmptyTranscript,
+} from "@/lib/empty-transcript-recovery";
 import {
   getTwentyCrmCompanyDomains,
   type TwentyCrmCompanyDomain,
@@ -229,6 +235,65 @@ export async function applyElevenLabsTranscriptEvent(
   const now = new Date();
 
   if (persistence.action === "fail") {
+    if (
+      meetingId &&
+      shouldRecoverEmptyTranscript({
+        errorMessage: persistence.errorMessage,
+        providerJobId: persistence.providerJobId,
+      })
+    ) {
+      await inngest.send(
+        buildEmptyTranscriptRecoveryEvent({
+          meetingId,
+          ...(getMetadataString(event.metadata, "objectKey", "object_key")
+            ? {
+                objectKey: getMetadataString(
+                  event.metadata,
+                  "objectKey",
+                  "object_key",
+                ) as string,
+              }
+            : {}),
+          ...(getMetadataString(event.metadata, "recordingId", "recording_id")
+            ? {
+                recordingId: getMetadataString(
+                  event.metadata,
+                  "recordingId",
+                  "recording_id",
+                ) as string,
+              }
+            : {}),
+          transcriptJobId: persistence.transcriptJobId,
+        }),
+      );
+
+      await db
+        .update(transcriptJobs)
+        .set({
+          errorMessage: EMPTY_TRANSCRIPT_RECOVERY_QUEUED,
+          ...(persistence.providerJobId
+            ? { providerJobId: persistence.providerJobId }
+            : {}),
+          status: "running",
+          updatedAt: now,
+        })
+        .where(eq(transcriptJobs.id, persistence.transcriptJobId));
+      await db
+        .update(meetings)
+        .set({ status: "processing", updatedAt: now })
+        .where(eq(meetings.id, meetingId));
+
+      await recordElevenLabsTranscriptUsage({
+        transcriptJobId: persistence.transcriptJobId,
+      });
+
+      return {
+        action: "recover" as const,
+        recovery: "chunked" as const,
+        transcriptJobId: persistence.transcriptJobId,
+      };
+    }
+
     await db
       .update(transcriptJobs)
       .set({
@@ -388,6 +453,7 @@ export async function applyElevenLabsTranscriptEvent(
     txn`
       update transcript_jobs
       set
+        error_message = null,
         provider_job_id = coalesce(
           ${persistence.providerJobId ?? null}::text,
           provider_job_id
@@ -452,6 +518,24 @@ export function isTranscriptJobApplicable(
       row?.current_mode === "append" ||
       row?.id === transcriptJobId)
   );
+}
+
+export async function reopenTranscriptJobForEnrichmentRetry(
+  transcriptJobId: string,
+) {
+  await db
+    .update(transcriptJobs)
+    .set({
+      errorMessage: "Transcript saved; enrichment retry pending",
+      status: "running",
+      updatedAt: new Date(),
+    })
+    .where(
+      and(
+        eq(transcriptJobs.id, transcriptJobId),
+        eq(transcriptJobs.status, "completed"),
+      ),
+    );
 }
 
 type TranscriptApplicationContext = {

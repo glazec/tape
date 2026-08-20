@@ -15,11 +15,13 @@ const listMissedLocalRecorderMeetings = vi.fn();
 const createManualLocalRecorderIntent = vi.fn();
 const getLocalRecorderMonitoringStatus = vi.fn();
 const claimLocalRecorderIntent = vi.fn();
+const authorizeLocalRecorderNotification = vi.fn();
 const failLocalRecorderIntent = vi.fn();
 const completeLocalRecorderRecordingUpload = vi.fn();
 const prepareLocalRecorderRecordingUpload = vi.fn();
 const createRecallDesktopSdkUploadForLocalRecorder = vi.fn();
 const markRecallDesktopSdkFallback = vi.fn();
+const markLocalRecorderNotificationDelivered = vi.fn();
 const LocalRecorderUploadError = vi.hoisted(() => class LocalRecorderUploadError extends Error {});
 
 vi.mock("@/lib/local-recorder-auth", () => ({
@@ -28,6 +30,7 @@ vi.mock("@/lib/local-recorder-auth", () => ({
 }));
 
 vi.mock("@/lib/local-recorder-records", () => ({
+  authorizeLocalRecorderNotification,
   claimLocalRecorderIntent,
   completeLocalRecorderRecordingUpload,
   createRecallDesktopSdkUploadForLocalRecorder,
@@ -36,6 +39,7 @@ vi.mock("@/lib/local-recorder-records", () => ({
   getLocalRecorderMonitoringStatus,
   listMissedLocalRecorderMeetings,
   markRecallDesktopSdkFallback,
+  markLocalRecorderNotificationDelivered,
   LocalRecorderUploadError,
   prepareLocalRecorderRecordingUpload,
 }));
@@ -66,11 +70,13 @@ describe("local recorder API routes", () => {
     createManualLocalRecorderIntent.mockReset();
     getLocalRecorderMonitoringStatus.mockReset();
     claimLocalRecorderIntent.mockReset();
+    authorizeLocalRecorderNotification.mockReset();
     failLocalRecorderIntent.mockReset();
     completeLocalRecorderRecordingUpload.mockReset();
     prepareLocalRecorderRecordingUpload.mockReset();
     createRecallDesktopSdkUploadForLocalRecorder.mockReset();
     markRecallDesktopSdkFallback.mockReset();
+    markLocalRecorderNotificationDelivered.mockReset();
     vi.resetModules();
   });
 
@@ -178,6 +184,49 @@ describe("local recorder API routes", () => {
         userId: "user_123",
       },
     });
+  });
+
+  it("authorizes and acknowledges a delivered fallback notification", async () => {
+    mockSignedInDevice();
+    authorizeLocalRecorderNotification.mockResolvedValue({ allowed: true });
+    markLocalRecorderNotificationDelivered.mockResolvedValue({ marked: true });
+    const { POST } = await import(
+      "@/app/api/local-recorder/intents/[fallbackIntentId]/notification/route"
+    );
+    const context = {
+      params: Promise.resolve({ fallbackIntentId: "intent_123" }),
+    };
+    const readyResponse = await POST(
+      new Request("https://app.example.com/notification", {
+        body: JSON.stringify({ state: "ready" }),
+        headers: { "x-local-recorder-device-id": "mac_123" },
+        method: "POST",
+      }),
+      context,
+    );
+    const shownResponse = await POST(
+      new Request("https://app.example.com/notification", {
+        body: JSON.stringify({ state: "shown" }),
+        headers: { "x-local-recorder-device-id": "mac_123" },
+        method: "POST",
+      }),
+      context,
+    );
+
+    expect(readyResponse.status).toBe(200);
+    await expect(readyResponse.json()).resolves.toEqual({ allowed: true });
+    expect(shownResponse.status).toBe(200);
+    await expect(shownResponse.json()).resolves.toEqual({ marked: true });
+    const expected = {
+      deviceId: "mac_123",
+      fallbackIntentId: "intent_123",
+      now: expect.any(Date),
+      workspace: { teamId: "team_123", userId: "user_123" },
+    };
+    expect(authorizeLocalRecorderNotification).toHaveBeenCalledWith(expected);
+    expect(markLocalRecorderNotificationDelivered).toHaveBeenCalledWith(
+      expected,
+    );
   });
 
   it("creates a manual recording intent for a signed in Mac device", async () => {

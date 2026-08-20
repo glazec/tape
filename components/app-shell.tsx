@@ -1,6 +1,7 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 
+import { AmplitudeIdentity } from "@/components/amplitude-identity";
 import { OneSignalLogin } from "@/components/onesignal-login";
 import { ProductLogo } from "@/components/product-logo";
 import { SignOutButton } from "@/components/sign-out-button";
@@ -11,6 +12,7 @@ import { cn } from "@/lib/utils";
 type AppShellProps = {
   children: ReactNode;
   activeHref?: string;
+  amplitudeTeamId?: string;
   canCreateMeetings?: boolean;
   oneSignalExternalId?: string;
 };
@@ -24,6 +26,7 @@ const navItems = [
 export function AppShell({
   children,
   activeHref,
+  amplitudeTeamId,
   canCreateMeetings = true,
   oneSignalExternalId,
 }: AppShellProps) {
@@ -40,6 +43,7 @@ export function AppShell({
             href="/dashboard"
             aria-label="Tape home"
             className="inline-flex w-fit rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-4"
+            data-telemetry-action="nav_home"
           >
             <ProductLogo />
           </Link>
@@ -56,6 +60,7 @@ export function AppShell({
                   <Link
                     key={item.href}
                     href={item.href}
+                    data-telemetry-action={`nav_${item.href.slice(1).replaceAll("/", "_")}`}
                     aria-current={isActive ? "page" : undefined}
                     className={cn(
                       buttonVariants({
@@ -83,6 +88,7 @@ export function AppShell({
                   "min-h-11 text-muted-foreground sm:min-h-8",
                 )}
                 href="/dashboard?setup=1"
+                data-telemetry-action="setup_guide_opened"
               >
                 Setup guide
               </Link>
@@ -95,10 +101,16 @@ export function AppShell({
         {children}
       </main>
       {oneSignalExternalId ? (
-        <OneSignalLogin
-          allowedOrigins={oneSignalAllowedOrigins}
-          externalId={oneSignalExternalId}
-        />
+        <>
+          <AmplitudeIdentity
+            teamId={amplitudeTeamId}
+            userId={oneSignalExternalId}
+          />
+          <OneSignalLogin
+            allowedOrigins={oneSignalAllowedOrigins}
+            externalId={oneSignalExternalId}
+          />
+        </>
       ) : null}
     </div>
   );

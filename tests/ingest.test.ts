@@ -30,6 +30,7 @@ const {
   markMeetingTranslationQueued,
   recordVendorWebhookEvent,
   releaseVendorWebhookEventClaim,
+  reopenTranscriptJobForEnrichmentRetry,
   sendInngestEvent,
   MissingWebhookIdempotencyKeyError,
 } = vi.hoisted(() => ({
@@ -42,6 +43,7 @@ const {
   markMeetingTranslationQueued: vi.fn(),
   recordVendorWebhookEvent: vi.fn(),
   releaseVendorWebhookEventClaim: vi.fn(),
+  reopenTranscriptJobForEnrichmentRetry: vi.fn(),
   sendInngestEvent: vi.fn(),
   MissingWebhookIdempotencyKeyError: class MissingWebhookIdempotencyKeyError extends Error {
     constructor() {
@@ -61,6 +63,7 @@ vi.mock("@/lib/vendor-webhook-events", () => {
 
 vi.mock("@/lib/elevenlabs-transcripts", () => ({
   applyElevenLabsTranscriptEvent,
+  reopenTranscriptJobForEnrichmentRetry,
 }));
 
 vi.mock("@/lib/meeting-translation-jobs", () => ({
@@ -216,6 +219,7 @@ describe("vendor webhook normalization", () => {
       shouldProcess: true,
     });
     releaseVendorWebhookEventClaim.mockResolvedValue(undefined);
+    reopenTranscriptJobForEnrichmentRetry.mockResolvedValue(undefined);
     sendInngestEvent.mockResolvedValue(undefined);
     markVendorWebhookEventProcessed.mockResolvedValue(undefined);
     markMeetingTranslationCompleted.mockResolvedValue(undefined);
@@ -237,6 +241,7 @@ describe("vendor webhook normalization", () => {
     getMeetingTranslationLanguage.mockReset();
     recordVendorWebhookEvent.mockReset();
     releaseVendorWebhookEventClaim.mockReset();
+    reopenTranscriptJobForEnrichmentRetry.mockReset();
     sendInngestEvent.mockReset();
     applyElevenLabsTranscriptEvent.mockReset();
     applyRecallMeetingEvent.mockReset();
@@ -510,6 +515,7 @@ describe("vendor webhook normalization", () => {
       action: "complete",
       meetingId: "11111111-1111-4111-8111-111111111111",
       text: "今天我们先聊 IOSG portfolio，然后看 OpenAI API 成本和下周安排。",
+      transcriptJobId: "22222222-2222-4222-8222-222222222222",
     });
 
     const response = await postElevenLabsWebhook({
@@ -533,6 +539,7 @@ describe("vendor webhook normalization", () => {
     );
     expect(markMeetingTranslationQueued).not.toHaveBeenCalled();
     expect(sendInngestEvent).toHaveBeenCalledWith({
+      id: "transcript-enrichment:22222222-2222-4222-8222-222222222222",
       name: "meeting/enrich.transcript",
       data: {
         meetingId: "11111111-1111-4111-8111-111111111111",
@@ -549,6 +556,7 @@ describe("vendor webhook normalization", () => {
       action: "complete",
       meetingId: "11111111-1111-4111-8111-111111111111",
       text: "今天我们先聊基金表现，然后讨论下周安排和后续工作。",
+      transcriptJobId: "22222222-2222-4222-8222-222222222222",
     });
 
     const response = await postElevenLabsWebhook({
@@ -570,6 +578,7 @@ describe("vendor webhook normalization", () => {
       "11111111-1111-4111-8111-111111111111",
     );
     expect(sendInngestEvent).toHaveBeenCalledWith({
+      id: "transcript-enrichment:22222222-2222-4222-8222-222222222222",
       name: "meeting/enrich.transcript",
       data: {
         meetingId: "11111111-1111-4111-8111-111111111111",

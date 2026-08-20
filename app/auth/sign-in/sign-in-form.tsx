@@ -5,6 +5,7 @@ import { AlertCircle } from "lucide-react";
 
 import { authClient } from "@/lib/auth/client";
 import { buildGoogleSignInOptions } from "@/lib/google-auth";
+import { captureClientAction } from "@/lib/telemetry/client";
 
 function GoogleMark() {
   return (
@@ -33,10 +34,12 @@ export function SignInForm({ callbackUrl }: { callbackUrl?: string }) {
       );
 
       if (result.error) {
+        captureClientAction("sign_in_google_failed");
         setError(result.error.message || "Google sign in failed");
         setIsPending(false);
       }
     } catch {
+      captureClientAction("sign_in_google_failed");
       setError("Google sign in failed");
       setIsPending(false);
     }
@@ -45,6 +48,7 @@ export function SignInForm({ callbackUrl }: { callbackUrl?: string }) {
   return (
     <div className="flex w-full flex-col gap-4">
       <button
+        data-telemetry-action="sign_in_google_started"
         type="button"
         onClick={signInWithGoogle}
         disabled={isPending}

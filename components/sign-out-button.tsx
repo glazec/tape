@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { LogOut } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { resetAmplitudeUser } from "@/lib/amplitude/client";
 import { authClient as defaultAuthClient } from "@/lib/auth/client";
 
 type SignOutAuthClient = {
@@ -77,6 +78,7 @@ export function SignOutButton() {
         return;
       }
 
+      resetAmplitudeUser();
       router.replace("/auth/sign-in");
       router.refresh();
     } catch {
@@ -90,6 +92,7 @@ export function SignOutButton() {
       <Button
         className="min-h-11 text-muted-foreground sm:min-h-7"
         disabled={isPending}
+        data-telemetry-action="sign_out_started"
         onClick={signOut}
         type="button"
         variant="ghost"

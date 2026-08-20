@@ -66,6 +66,7 @@ export default async function UsagePage({ searchParams }: UsagePageProps = {}) {
   return (
     <AppShell
       activeHref="/settings/team"
+      amplitudeTeamId={workspace.teamId}
       canCreateMeetings
       oneSignalExternalId={workspace.userId}
     >

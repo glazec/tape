@@ -1,7 +1,7 @@
 import { eq } from "drizzle-orm";
 
 import { db } from "@/db/client";
-import { meetings, transcriptJobs } from "@/db/schema";
+import { meetings } from "@/db/schema";
 import { inngest } from "@/inngest/client";
 import { applyElevenLabsTranscriptEvent } from "@/lib/elevenlabs-transcripts";
 import {
@@ -16,6 +16,7 @@ import {
   type TranscriptChunkPlan,
 } from "@/lib/transcript-chunking";
 import { getMeetingTranslationLanguage } from "@/lib/team-configuration";
+import { markTranscriptJobFailedSafely } from "@/lib/transcript-job-failure";
 import {
   buildMeetingObjectKey,
   createReadUrl,
@@ -30,12 +31,19 @@ import {
   normalizeElevenLabsWebhook,
   transcribeElevenLabsAudioFile,
 } from "@/lib/vendors/elevenlabs";
+import {
+  findRecallRecordingMediaUrl,
+  retrieveRecallBot,
+  retrieveRecallRecording,
+} from "@/lib/vendors/recall";
 
 type ChunkedTranscriptInput = {
   audioUrl?: string;
   keyterms: string[];
   meetingId: string;
   objectKey?: string;
+  recallBotId?: string;
+  recallRecordingId?: string;
   recordingId?: string;
   transcriptJobId: string;
 };
@@ -82,9 +90,7 @@ export function createTranscriptChunkWorkerAdapter(
       throw new Error("Meeting not found");
     }
 
-    const sourceUrl = input.objectKey
-      ? await dependencies.createReadUrl({ key: input.objectKey })
-      : input.audioUrl;
+    const sourceUrl = await resolveTranscriptSourceUrl(input, dependencies);
 
     if (!sourceUrl) {
       throw new Error("Transcript media is unavailable");
@@ -123,6 +129,33 @@ export function createTranscriptChunkWorkerAdapter(
   }
 
   return { prepareTranscriptAudioChunks };
+}
+
+async function resolveTranscriptSourceUrl(
+  input: ChunkedTranscriptInput,
+  dependencies: TranscriptChunkWorkerDependencies,
+) {
+  if (input.objectKey) {
+    return dependencies.createReadUrl({ key: input.objectKey });
+  }
+
+  if (input.recallRecordingId) {
+    const artifact = input.recallBotId
+      ? await retrieveRecallBot(input.recallBotId)
+      : await retrieveRecallRecording(input.recallRecordingId);
+    const audioUrl = findRecallRecordingMediaUrl(
+      artifact,
+      input.recallRecordingId,
+    );
+
+    if (!audioUrl) {
+      throw new Error("Provider audio is unavailable for transcript recovery");
+    }
+
+    return audioUrl;
+  }
+
+  return input.audioUrl;
 }
 
 const transcriptChunkWorker = createTranscriptChunkWorkerAdapter({
@@ -276,16 +309,11 @@ export async function markChunkedTranscriptJobFailed(input: {
     input.error instanceof Error && input.error.message.trim()
       ? input.error.message
       : "Chunked transcription failed";
-  const now = new Date();
-
-  await db
-    .update(transcriptJobs)
-    .set({ errorMessage, status: "failed", updatedAt: now })
-    .where(eq(transcriptJobs.id, input.transcriptJobId));
-  await db
-    .update(meetings)
-    .set({ status: "failed", updatedAt: now })
-    .where(eq(meetings.id, input.meetingId));
+  await markTranscriptJobFailedSafely({
+    errorMessage,
+    meetingId: input.meetingId,
+    transcriptJobId: input.transcriptJobId,
+  });
 }
 
 async function probeMediaDurationMs(

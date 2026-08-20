@@ -211,6 +211,7 @@ describe("getOrCreateWorkspaceForSessionUser", () => {
   it("lists onboarded workspace members with the current user marked", async () => {
     const orderBy = vi.fn().mockResolvedValue([
       {
+        calendarStatus: "connected",
         email: "member@iosg.vc",
         id: "user_123",
         joinedAt: new Date("2026-06-29T12:00:00.000Z"),
@@ -218,6 +219,7 @@ describe("getOrCreateWorkspaceForSessionUser", () => {
         role: "member",
       },
       {
+        calendarStatus: "not_connected",
         email: "alice@iosg.vc",
         id: "user_456",
         joinedAt: new Date("2026-06-30T12:00:00.000Z"),
@@ -245,6 +247,7 @@ describe("getOrCreateWorkspaceForSessionUser", () => {
       }),
     ).resolves.toEqual([
       {
+        calendarStatus: "connected",
         email: "member@iosg.vc",
         id: "user_123",
         isCurrentUser: true,
@@ -253,6 +256,7 @@ describe("getOrCreateWorkspaceForSessionUser", () => {
         role: "member",
       },
       {
+        calendarStatus: "not_connected",
         email: "alice@iosg.vc",
         id: "user_456",
         isCurrentUser: false,

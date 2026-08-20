@@ -338,7 +338,7 @@ export async function listMissedLocalRecorderMeetings(input: {
       expiresAt: eligibility.expiresAt,
       fallbackIntentIdHash,
       meetingId: row.id,
-      notificationState: "shown",
+      notificationState: "pending",
       userId: input.workspace.userId,
     });
 
@@ -775,6 +775,127 @@ export function isLocalRecorderPrimaryClaimConflict(error: unknown) {
     candidate.code === "23505" &&
     candidate.constraint === "local_recording_attempts_primary_active_unique"
   );
+}
+
+export async function authorizeLocalRecorderNotification(input: {
+  deviceId: string;
+  fallbackIntentId: string;
+  now: Date;
+  workspace: WorkspaceContext;
+}) {
+  const deviceIdHash = await hashLocalRecorderValue(input.deviceId);
+  const fallbackIntentIdHash = await hashLocalRecorderValue(
+    input.fallbackIntentId,
+  );
+  const [attempt] = await db
+    .select({
+      activeTranscriptJob: sql<boolean>`exists (
+        select 1 from ${transcriptJobs}
+        where ${transcriptJobs.meetingId} = ${meetings.id}
+          and ${transcriptJobs.status} in ('queued', 'running', 'completed')
+      )`,
+      endedAt: meetings.endedAt,
+      expiresAt: localRecordingAttempts.expiresAt,
+      id: localRecordingAttempts.id,
+      meetingId: localRecordingAttempts.meetingId,
+      meetingUrl: meetings.meetingUrl,
+      recallAudioAsset: sql<boolean>`exists (
+        select 1 from ${mediaAssets}
+        where ${mediaAssets.meetingId} = ${meetings.id}
+          and ${mediaAssets.source} = 'recall'
+          and ${mediaAssets.type} = 'audio'
+      )`,
+      recallBotId: meetings.recallBotId,
+      recallRecordingId: meetings.recallRecordingId,
+      startedAt: meetings.startedAt,
+      status: meetings.status,
+    })
+    .from(localRecordingAttempts)
+    .innerJoin(meetings, eq(meetings.id, localRecordingAttempts.meetingId))
+    .where(
+      and(
+        eq(localRecordingAttempts.userId, input.workspace.userId),
+        eq(localRecordingAttempts.deviceIdHash, deviceIdHash),
+        eq(localRecordingAttempts.fallbackIntentIdHash, fallbackIntentIdHash),
+        eq(localRecordingAttempts.attemptState, "notified"),
+      ),
+    )
+    .limit(1);
+
+  if (!attempt || attempt.expiresAt < input.now) {
+    return { allowed: false, reason: "expired_or_missing" as const };
+  }
+
+  const recallState = await getLatestRecallBotState(attempt.recallBotId);
+  const eligibility = getLocalRecorderEligibility(
+    {
+      activeTranscriptJob: attempt.activeTranscriptJob,
+      endedAt: attempt.endedAt,
+      latestRecallCode: recallState.latestRecallCode,
+      latestRecallStatus: recallState.latestRecallStatus,
+      meetingId: attempt.meetingId,
+      meetingUrl: attempt.meetingUrl,
+      recallAudioAsset: attempt.recallAudioAsset,
+      recallRecordingId: attempt.recallRecordingId,
+      startedAt: attempt.startedAt,
+      status: attempt.status,
+    },
+    { now: input.now },
+  );
+
+  if (!eligibility.eligible) {
+    await db
+      .update(localRecordingAttempts)
+      .set({ notificationState: "cancelled", updatedAt: input.now })
+      .where(eq(localRecordingAttempts.id, attempt.id));
+
+    return { allowed: false, reason: eligibility.reason };
+  }
+
+  await db
+    .update(localRecordingAttempts)
+    .set({ notificationState: "authorized", updatedAt: input.now })
+    .where(eq(localRecordingAttempts.id, attempt.id));
+
+  return { allowed: true };
+}
+
+export async function markLocalRecorderNotificationDelivered(input: {
+  deviceId: string;
+  fallbackIntentId: string;
+  now: Date;
+  workspace: WorkspaceContext;
+}) {
+  const deviceIdHash = await hashLocalRecorderValue(input.deviceId);
+  const fallbackIntentIdHash = await hashLocalRecorderValue(
+    input.fallbackIntentId,
+  );
+  const [attempt] = await db
+    .select({
+      expiresAt: localRecordingAttempts.expiresAt,
+      id: localRecordingAttempts.id,
+    })
+    .from(localRecordingAttempts)
+    .where(
+      and(
+        eq(localRecordingAttempts.userId, input.workspace.userId),
+        eq(localRecordingAttempts.deviceIdHash, deviceIdHash),
+        eq(localRecordingAttempts.fallbackIntentIdHash, fallbackIntentIdHash),
+        eq(localRecordingAttempts.attemptState, "notified"),
+      ),
+    )
+    .limit(1);
+
+  if (!attempt || attempt.expiresAt < input.now) {
+    return { marked: false, reason: "expired_or_missing" as const };
+  }
+
+  await db
+    .update(localRecordingAttempts)
+    .set({ notificationState: "shown", updatedAt: input.now })
+    .where(eq(localRecordingAttempts.id, attempt.id));
+
+  return { marked: true };
 }
 
 export async function failLocalRecorderIntent(input: {

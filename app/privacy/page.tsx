@@ -42,8 +42,9 @@ export default function PrivacyPage() {
               </p>
               <p>
                 Technical data may include browser and device information,
-                security and audit logs, product events, error details, and a
-                push notification identifier when notifications are enabled.
+                security and audit logs, product events, masked session replay
+                data, error details, and a push notification identifier when
+                notifications are enabled.
               </p>
             </>
           ),
@@ -99,7 +100,7 @@ export default function PrivacyPage() {
               storage, Recall for meeting capture and calendar integration,
               ElevenLabs for transcription, OpenRouter for requested language
               and answer features, Inngest for background work, and optional
-              OneSignal and PostHog services for notifications and product
+              OneSignal and Amplitude services for notifications and product
               operations. Providers process data under their own terms and
               privacy commitments.
             </p>

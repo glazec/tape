@@ -8,7 +8,10 @@ import {
   recordVendorWebhookEvent,
   releaseVendorWebhookEventClaim,
 } from "@/lib/vendor-webhook-events";
-import { applyElevenLabsTranscriptEvent } from "@/lib/elevenlabs-transcripts";
+import {
+  applyElevenLabsTranscriptEvent,
+  reopenTranscriptJobForEnrichmentRetry,
+} from "@/lib/elevenlabs-transcripts";
 import { inngest } from "@/inngest/client";
 import {
   markMeetingTranslationCompleted,
@@ -90,20 +93,30 @@ export async function POST(request: Request) {
           );
         }
 
-        await inngest
-          .send({
+        try {
+          await inngest.send({
+            id: `transcript-enrichment:${persistence.transcriptJobId}`,
             name: "meeting/enrich.transcript",
             data: {
               meetingId: persistence.meetingId,
               translateTranscript,
               translationLanguage,
             },
-          })
-          .catch((error) =>
-            translateTranscript
-              ? markMeetingTranslationFailed(persistence.meetingId, error)
-              : Promise.reject(error),
+          });
+        } catch (error) {
+          await reopenTranscriptJobForEnrichmentRetry(
+            persistence.transcriptJobId,
           );
+
+          if (translateTranscript) {
+            await markMeetingTranslationFailed(
+              persistence.meetingId,
+              error,
+            ).catch(() => undefined);
+          }
+
+          throw error;
+        }
       }
 
       await markVendorWebhookEventProcessed({

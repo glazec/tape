@@ -247,7 +247,7 @@ describe("TranscriptViewer interactions", () => {
     fireEvent.ended(audio);
   });
 
-  it("seeks from waveform and updates the hover WPM tooltip", () => {
+  it("seeks only after a completed waveform tap and keeps the page position", () => {
     render(<TranscriptViewer audioUrl="/audio.mp3" segments={segments} />);
     const audio = document.querySelector("audio") as HTMLAudioElement;
     Object.defineProperty(audio, "duration", { configurable: true, value: 60 });
@@ -255,12 +255,29 @@ describe("TranscriptViewer interactions", () => {
     const waveform = screen.getByRole("button", { name: /Audio waveform/ });
     vi.spyOn(waveform, "getBoundingClientRect").mockReturnValue(rect(100, 400));
     fireEvent.pointerDown(waveform, { clientX: 300 });
+    expect(audio.currentTime).toBe(0);
+    fireEvent.click(waveform, { clientX: 300 });
     expect(audio.currentTime).toBe(30);
+    expect(window.scrollTo).not.toHaveBeenCalled();
 
     const trend = screen.getByText("Words per minute trend").previousElementSibling as HTMLElement;
     vi.spyOn(trend, "getBoundingClientRect").mockReturnValue(rect(100, 400));
     fireEvent.pointerMove(trend, { clientX: 200 });
     fireEvent.pointerLeave(trend);
+  });
+
+  it("changes audio progress without moving the transcript viewport", () => {
+    render(<TranscriptViewer audioUrl="/audio.mp3" segments={segments} />);
+    const audio = document.querySelector("audio") as HTMLAudioElement;
+    Object.defineProperty(audio, "duration", { configurable: true, value: 60 });
+    fireEvent.durationChange(audio);
+
+    fireEvent.change(screen.getByLabelText("Audio progress"), {
+      target: { value: "12" },
+    });
+
+    expect(audio.currentTime).toBe(12);
+    expect(window.scrollTo).not.toHaveBeenCalled();
   });
 
   it("fills the listened portion of the recording waveform in green", () => {

@@ -2,6 +2,7 @@ import {
   sanitizeTelemetryRoute,
   sanitizeTelemetryText,
 } from "@/lib/telemetry/sanitize";
+import { captureAmplitudeClientEvent } from "@/lib/amplitude/client";
 
 export type ClientTelemetryEvent = {
   action?: string;
@@ -73,7 +74,7 @@ export function enqueueClientTelemetry(
   event: Pick<ClientTelemetryEvent, "type"> &
     Partial<Omit<ClientTelemetryEvent, "type">>,
 ) {
-  queue.push({
+  const queuedEvent: ClientTelemetryEvent = {
     ...event,
     occurredAt: event.occurredAt ?? new Date().toISOString(),
     route:
@@ -81,6 +82,27 @@ export function enqueueClientTelemetry(
     sessionId: event.sessionId ?? getTelemetrySessionId(),
     testSessionId:
       event.testSessionId ?? getTelemetryTestSessionId(),
+  };
+  queue.push(queuedEvent);
+  captureAmplitudeClientEvent(`tape_${queuedEvent.type}`, {
+    ...(queuedEvent.action ? { action: queuedEvent.action } : {}),
+    ...(queuedEvent.destinationRoute
+      ? { destination_route: queuedEvent.destinationRoute }
+      : {}),
+    ...(queuedEvent.durationMs !== undefined
+      ? { duration_ms: queuedEvent.durationMs }
+      : {}),
+    ...(queuedEvent.errorMessage
+      ? { error_message: queuedEvent.errorMessage }
+      : {}),
+    ...(queuedEvent.errorName ? { error_name: queuedEvent.errorName } : {}),
+    ...(queuedEvent.errorStack ? { error_stack: queuedEvent.errorStack } : {}),
+    ...(queuedEvent.navigationType
+      ? { navigation_type: queuedEvent.navigationType }
+      : {}),
+    route: queuedEvent.route,
+    telemetry_session_id: queuedEvent.sessionId,
+    ...(queuedEvent.targetType ? { target_type: queuedEvent.targetType } : {}),
   });
 
   if (queue.length >= MAX_BATCH_SIZE) {
@@ -94,6 +116,13 @@ export function enqueueClientTelemetry(
       void flushClientTelemetry();
     }, FLUSH_DELAY_MS);
   }
+}
+
+export function captureClientAction(action: string) {
+  captureAmplitudeClientEvent("tape_product_action", {
+    action,
+    route: sanitizeTelemetryRoute(window.location.pathname),
+  });
 }
 
 export async function flushClientTelemetry(useBeacon = false) {

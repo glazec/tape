@@ -28,6 +28,7 @@ vi.mock("@/lib/meeting-write-policy", () => ({ getMeetingManagerCondition }));
 import {
   isMeetingBotRecoveryEligible,
   isMeetingRecordingResumeEligible,
+  isRecentFailedMeetingBotRecoveryEligible,
 } from "@/lib/meeting-bot-recovery-policy";
 
 describe("meeting bot recovery policy", () => {
@@ -47,14 +48,14 @@ describe("meeting bot recovery policy", () => {
     ).toBe(true);
   });
 
-  it("does not offer recovery after fifteen minutes or with a transcript", () => {
+  it("does not offer recovery after one hour or with a transcript", () => {
     expect(
       isMeetingBotRecoveryEligible({
         canManage: true,
         now,
         platform: "zoom",
         segmentCount: 0,
-        startedAt: "2026-07-22T11:54:59.000Z",
+        startedAt: "2026-07-22T11:09:59.000Z",
         status: "failed",
       }),
     ).toBe(false);
@@ -68,6 +69,48 @@ describe("meeting bot recovery policy", () => {
         status: "failed",
       }),
     ).toBe(false);
+  });
+
+  it("keeps the missed meeting recovery window at fifteen minutes", () => {
+    expect(
+      isMeetingBotRecoveryEligible({
+        canManage: true,
+        now,
+        platform: "zoom",
+        segmentCount: 0,
+        startedAt: "2026-07-22T11:54:59.999Z",
+        status: "missed",
+      }),
+    ).toBe(false);
+  });
+
+  it("limits the failed row action to manageable empty remote meetings from the last hour", () => {
+    const eligible = {
+      canManage: true,
+      now,
+      platform: "zoom",
+      segmentCount: 0,
+      status: "failed",
+      updatedAt: "2026-07-22T11:10:00.000Z",
+    };
+
+    expect(isRecentFailedMeetingBotRecoveryEligible(eligible)).toBe(true);
+    expect(
+      isRecentFailedMeetingBotRecoveryEligible({
+        ...eligible,
+        updatedAt: "2026-07-22T11:09:59.999Z",
+      }),
+    ).toBe(false);
+
+    for (const ineligible of [
+      { ...eligible, canManage: false },
+      { ...eligible, platform: "microsoft_teams" },
+      { ...eligible, segmentCount: 1 },
+      { ...eligible, status: "missed" },
+      { ...eligible, updatedAt: "2026-07-22T12:10:00.001Z" },
+    ]) {
+      expect(isRecentFailedMeetingBotRecoveryEligible(ineligible)).toBe(false);
+    }
   });
 
   it("uses the meeting end time for a long meeting", () => {

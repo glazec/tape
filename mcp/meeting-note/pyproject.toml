@@ -8,7 +8,6 @@ dependencies = [
     "asyncpg==0.30.0",
     "fastmcp==3.4.2",
     "python-dotenv==1.2.2",
-    "posthog==7.19.2",
     "psycopg[binary]==3.3.4",
     "pyjwt[crypto]==2.13.0",
     "sqlglot==30.11.0",

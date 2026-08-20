@@ -1423,7 +1423,6 @@ export function TranscriptViewer({
           }}
           onPlaybackReady={() => setFailedPlaybackAudioUrl(null)}
           onPreviewCancel={clearSpeakerPreview}
-          onTimelineSeek={scrollTranscriptToTime}
           setCurrentTime={setCurrentTime}
           setDuration={setDuration}
           setIsPlaying={setIsPlaying}
@@ -2000,7 +1999,6 @@ function TranscriptAudioPlayer({
   onPlaybackError,
   onPlaybackReady,
   onPreviewCancel,
-  onTimelineSeek,
   setCurrentTime,
   setDuration,
   setIsPlaying,
@@ -2020,7 +2018,6 @@ function TranscriptAudioPlayer({
   onPlaybackError: () => void;
   onPlaybackReady: () => void;
   onPreviewCancel: () => void;
-  onTimelineSeek: (timeSecond: number) => void;
   setCurrentTime: (value: number) => void;
   setDuration: (value: number) => void;
   setIsPlaying: (value: boolean) => void;
@@ -2256,10 +2253,9 @@ function TranscriptAudioPlayer({
     onPreviewCancel();
     audio.currentTime = nextTime;
     setCurrentTime(nextTime);
-    onTimelineSeek(nextTime);
   }
 
-  function seekFromWaveform(event: PointerEvent<HTMLButtonElement>) {
+  function seekFromWaveform(event: MouseEvent<HTMLButtonElement>) {
     const audio = audioRef.current;
 
     if (!audio || !timelineDuration) {
@@ -2274,7 +2270,6 @@ function TranscriptAudioPlayer({
 
     audio.currentTime = nextTime;
     setCurrentTime(nextTime);
-    onTimelineSeek(nextTime);
   }
 
   function updateWpmHover(event: PointerEvent<HTMLSpanElement>) {
@@ -2336,7 +2331,7 @@ function TranscriptAudioPlayer({
               : waveformAccessibleName
           }
           className="relative h-24 w-full overflow-hidden rounded-lg border bg-background px-2 outline-none focus-visible:ring-3 focus-visible:ring-ring/50 sm:px-1"
-          onPointerDown={seekFromWaveform}
+          onClick={seekFromWaveform}
           type="button"
         >
           <span

@@ -366,6 +366,89 @@ import Testing
     #expect(response.meetings.first?.displayTimeWindow.endsAt?.timeIntervalSince1970 == 1782824400.789)
 }
 
+@Test func notificationRequestIdentifiesIntentAndDeliveryState() throws {
+    let client = LocalRecorderAPIClient(
+        serverURL: URL(string: "https://app.example.com")!,
+        bearerToken: "token_123",
+        deviceId: "device_123"
+    )
+    let request = try client.notificationRequest(
+        fallbackIntentId: "intent_123",
+        state: "shown"
+    )
+    let body = try #require(request.httpBody)
+    let json = try JSONSerialization.jsonObject(with: body) as? [String: String]
+
+    #expect(
+        request.url?.absoluteString ==
+            "https://app.example.com/api/local-recorder/intents/intent_123/notification"
+    )
+    #expect(request.httpMethod == "POST")
+    #expect(request.value(forHTTPHeaderField: "Authorization") == "Bearer token_123")
+    #expect(request.value(forHTTPHeaderField: "x-local-recorder-device-id") == "device_123")
+    #expect(json?["state"] == "shown")
+}
+
+@Test func pendingMeetingQueueSurvivesEmptyPollsAndRemovesExpiredIntents() {
+    let now = Date(timeIntervalSince1970: 1_000)
+    let active = MissedMeeting(
+        fallbackIntentId: "active",
+        title: "Active meeting",
+        expiresAt: now.addingTimeInterval(900),
+        displayTimeWindow: DisplayTimeWindow(
+            startsAt: now.addingTimeInterval(-120),
+            endsAt: now.addingTimeInterval(600)
+        )
+    )
+    let expired = MissedMeeting(
+        fallbackIntentId: "expired",
+        title: "Expired meeting",
+        expiresAt: now.addingTimeInterval(-1),
+        displayTimeWindow: DisplayTimeWindow(
+            startsAt: now.addingTimeInterval(-300),
+            endsAt: now.addingTimeInterval(-1)
+        )
+    )
+
+    let merged = LocalRecorderPendingMeetingQueue.merge(
+        existing: [active, expired],
+        incoming: [],
+        at: now
+    )
+
+    #expect(merged == [active])
+}
+
+@Test func pendingMeetingQueueAddsEveryNewFallbackWithoutDuplicates() {
+    let now = Date(timeIntervalSince1970: 1_000)
+    let first = MissedMeeting(
+        fallbackIntentId: "first",
+        title: "First meeting",
+        expiresAt: now.addingTimeInterval(900),
+        displayTimeWindow: DisplayTimeWindow(
+            startsAt: now.addingTimeInterval(-60),
+            endsAt: now.addingTimeInterval(600)
+        )
+    )
+    let second = MissedMeeting(
+        fallbackIntentId: "second",
+        title: "Second meeting",
+        expiresAt: now.addingTimeInterval(900),
+        displayTimeWindow: DisplayTimeWindow(
+            startsAt: now.addingTimeInterval(-120),
+            endsAt: now.addingTimeInterval(600)
+        )
+    )
+
+    let merged = LocalRecorderPendingMeetingQueue.merge(
+        existing: [second],
+        incoming: [first, second],
+        at: now
+    )
+
+    #expect(merged == [first, second])
+}
+
 @Test func recordingManifestKeepsSeparateTrackMetadata() throws {
     let manifest = RecordingManifest(
         appVersion: "0.1.0",

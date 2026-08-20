@@ -4,6 +4,8 @@ import { useTransition, type FormEvent, type ReactNode } from "react";
 import { LoaderCircle } from "lucide-react";
 import { useRouter } from "next/navigation";
 
+import { captureClientAction } from "@/lib/telemetry/client";
+
 export function MeetingLibrarySearch({
   children,
   controls,
@@ -26,6 +28,7 @@ export function MeetingLibrarySearch({
     }
 
     const query = params.toString();
+    captureClientAction("meeting_library_search_applied");
 
     startTransition(() => {
       router.replace(query ? `/dashboard?${query}` : "/dashboard", {

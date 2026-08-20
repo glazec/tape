@@ -58,6 +58,7 @@ vi.mock("@/lib/vendors/recall", () => ({
 }));
 
 import {
+  authorizeLocalRecorderNotification,
   buildLocalRecorderTranscriptionEvent,
   completeLocalRecorderRecordingUpload,
   claimLocalRecorderIntent,
@@ -70,6 +71,7 @@ import {
   isLocalRecorderMonitoringMeetingCurrent,
   isLocalRecorderPrimaryClaimConflict,
   listMissedLocalRecorderMeetings,
+  markLocalRecorderNotificationDelivered,
   markRecallDesktopSdkFallback,
   prepareLocalRecorderRecordingUpload,
 } from "@/lib/local-recorder-records";
@@ -459,6 +461,59 @@ describe("local recorder records", () => {
     expect(attemptValues).not.toHaveBeenCalled();
   });
 
+  it("creates a fallback intent while the Recall bot remains in the waiting room", async () => {
+    const deviceOnConflictDoUpdate = vi.fn().mockResolvedValue(undefined);
+    const deviceValues = vi.fn(() => ({
+      onConflictDoUpdate: deviceOnConflictDoUpdate,
+    }));
+    const attemptValues = vi.fn().mockResolvedValue(undefined);
+
+    db.insert
+      .mockReturnValueOnce({ values: deviceValues })
+      .mockReturnValueOnce({ values: attemptValues });
+    db.select
+      .mockReturnValueOnce(
+        selectRows([
+          {
+            activeTranscriptJob: false,
+            endedAt: new Date("2026-07-01T12:30:00.000Z"),
+            id: "meeting_123",
+            meetingUrl: "https://meet.google.com/abc-defg-hij",
+            recallAudioAsset: false,
+            recallBotId: "bot_123",
+            recallRecordingId: null,
+            startedAt: new Date("2026-07-01T12:00:00.000Z"),
+            status: "scheduled",
+            title: "Weekly sync",
+          },
+        ]),
+      )
+      .mockReturnValueOnce(selectRows([]));
+    retrieveRecallBot.mockResolvedValue({
+      status_changes: [{ code: "in_waiting_room", sub_code: null }],
+    });
+
+    await expect(
+      listMissedLocalRecorderMeetings({
+        deviceId: "mac_123",
+        now: new Date("2026-07-01T12:02:00.000Z"),
+        workspace: workspace(),
+      }),
+    ).resolves.toEqual([
+      expect.objectContaining({
+        title: "Weekly sync",
+      }),
+    ]);
+    expect(retrieveRecallBot).toHaveBeenCalledWith("bot_123");
+    expect(attemptValues).toHaveBeenCalledWith(
+      expect.objectContaining({
+        attemptState: "notified",
+        meetingId: "meeting_123",
+        notificationState: "pending",
+      }),
+    );
+  });
+
   it("creates one fallback intent for an eligible Microsoft Teams meeting", async () => {
     const deviceConflict = vi.fn().mockResolvedValue(undefined);
     const attemptValues = vi.fn().mockResolvedValue(undefined);
@@ -501,8 +556,113 @@ describe("local recorder records", () => {
     expect(attemptValues).toHaveBeenCalledWith(expect.objectContaining({
       attemptState: "notified",
       meetingId: "meeting_123",
-      notificationState: "shown",
+      notificationState: "pending",
     }));
+  });
+
+  it("authorizes a notification only while Recall still has no join evidence", async () => {
+    const where = vi.fn().mockResolvedValue(undefined);
+    const set = vi.fn(() => ({ where }));
+    db.select.mockReturnValueOnce(
+      selectRows([
+        {
+          activeTranscriptJob: false,
+          endedAt: new Date("2026-07-01T12:30:00.000Z"),
+          expiresAt: new Date("2026-07-01T12:45:00.000Z"),
+          id: "attempt_123",
+          meetingId: "meeting_123",
+          meetingUrl: "https://meet.google.com/abc-defg-hij",
+          recallAudioAsset: false,
+          recallBotId: null,
+          recallRecordingId: null,
+          startedAt: new Date("2026-07-01T12:00:00.000Z"),
+          status: "scheduled",
+        },
+      ]),
+    );
+    db.update.mockReturnValue({ set });
+
+    await expect(
+      authorizeLocalRecorderNotification({
+        deviceId: "mac_123",
+        fallbackIntentId: "intent_123",
+        now: new Date("2026-07-01T12:02:00.000Z"),
+        workspace: workspace(),
+      }),
+    ).resolves.toEqual({ allowed: true });
+    expect(set).toHaveBeenCalledWith({
+      notificationState: "authorized",
+      updatedAt: new Date("2026-07-01T12:02:00.000Z"),
+    });
+  });
+
+  it("cancels a notification when Recall joined after the intent was created", async () => {
+    const where = vi.fn().mockResolvedValue(undefined);
+    const set = vi.fn(() => ({ where }));
+    db.select.mockReturnValueOnce(
+      selectRows([
+        {
+          activeTranscriptJob: false,
+          endedAt: new Date("2026-07-01T12:30:00.000Z"),
+          expiresAt: new Date("2026-07-01T12:45:00.000Z"),
+          id: "attempt_123",
+          meetingId: "meeting_123",
+          meetingUrl: "https://meet.google.com/abc-defg-hij",
+          recallAudioAsset: false,
+          recallBotId: "bot_123",
+          recallRecordingId: null,
+          startedAt: new Date("2026-07-01T12:00:00.000Z"),
+          status: "scheduled",
+        },
+      ]),
+    );
+    retrieveRecallBot.mockResolvedValue({
+      status_changes: [{ code: "in_call_recording" }],
+    });
+    db.update.mockReturnValue({ set });
+
+    await expect(
+      authorizeLocalRecorderNotification({
+        deviceId: "mac_123",
+        fallbackIntentId: "intent_123",
+        now: new Date("2026-07-01T12:02:00.000Z"),
+        workspace: workspace(),
+      }),
+    ).resolves.toEqual({
+      allowed: false,
+      reason: "recall_has_join_or_recording_evidence",
+    });
+    expect(set).toHaveBeenCalledWith({
+      notificationState: "cancelled",
+      updatedAt: new Date("2026-07-01T12:02:00.000Z"),
+    });
+  });
+
+  it("marks a Notification Center submission as shown", async () => {
+    const where = vi.fn().mockResolvedValue(undefined);
+    const set = vi.fn(() => ({ where }));
+    db.select.mockReturnValueOnce(
+      selectRows([
+        {
+          expiresAt: new Date("2026-07-01T12:45:00.000Z"),
+          id: "attempt_123",
+        },
+      ]),
+    );
+    db.update.mockReturnValue({ set });
+
+    await expect(
+      markLocalRecorderNotificationDelivered({
+        deviceId: "mac_123",
+        fallbackIntentId: "intent_123",
+        now: new Date("2026-07-01T12:02:00.000Z"),
+        workspace: workspace(),
+      }),
+    ).resolves.toEqual({ marked: true });
+    expect(set).toHaveBeenCalledWith({
+      notificationState: "shown",
+      updatedAt: new Date("2026-07-01T12:02:00.000Z"),
+    });
   });
 
   it("returns the next monitored meeting with the bot status", async () => {

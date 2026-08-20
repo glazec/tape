@@ -60,6 +60,7 @@ export async function completeMeetingAudioUpload(input: {
       mediaAssetId: asset.id,
       meetingId: input.meetingId,
       provider: "elevenlabs",
+      recordingId: recording.id,
       status: "queued",
     })
     .returning({ id: transcriptJobs.id });

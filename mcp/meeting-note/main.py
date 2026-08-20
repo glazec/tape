@@ -13,7 +13,6 @@ from typing import Any
 from urllib.parse import urlparse
 from uuid import UUID
 import asyncio
-import atexit
 import hashlib
 import json
 import logging
@@ -727,64 +726,6 @@ def _build_auth_provider() -> AuthProvider | None:
 mcp = FastMCP(name=SERVICE_NAME, auth=_build_auth_provider())
 
 
-def _init_posthog():
-    api_key = os.environ.get("POSTHOG_API_KEY", "").strip()
-    if not api_key:
-        class NoOpPostHog:
-            def capture(self, *args: Any, **kwargs: Any) -> None:
-                return None
-
-            def capture_exception(self, *args: Any, **kwargs: Any) -> None:
-                return None
-
-            def flush(self) -> None:
-                return None
-
-            def shutdown(self) -> None:
-                return None
-
-        return NoOpPostHog()
-
-    from posthog import Posthog
-
-    client = Posthog(
-        project_api_key=api_key,
-        host=os.environ.get("POSTHOG_HOST", "https://us.i.posthog.com"),
-        enable_exception_autocapture=True,
-        disable_geoip=True,
-        super_properties={"service": SERVICE_NAME},
-    )
-    atexit.register(client.shutdown)
-    return client
-
-
-_ph = _init_posthog()
-
-
-def _ph_capture(
-    event: str,
-    distinct_id: str | None,
-    properties: dict[str, Any] | None = None,
-) -> None:
-    _ph.capture(
-        event,
-        distinct_id=distinct_id or "anonymous",
-        properties=properties or {},
-    )
-
-
-def _ph_capture_exception(
-    exc: Exception,
-    distinct_id: str | None,
-    properties: dict[str, Any] | None = None,
-) -> None:
-    _ph.capture_exception(
-        exc,
-        distinct_id=distinct_id or "anonymous",
-        properties=properties or {},
-    )
-
-
 def _current_user_claims() -> dict[str, Any]:
     if DISABLE_AUTH:
         email = os.environ.get("MCP_DEV_USER_EMAIL", "").strip()
@@ -1493,8 +1434,6 @@ def get_version() -> str:
 @mcp.tool
 def list_meeting_sql_schema() -> dict[str, Any]:
     """List the safe SQL tables available to execute_meeting_sql."""
-    user_id = _current_user_id()
-    _ph_capture("list_meeting_sql_schema_called", user_id)
     return {
         "tables": [
             {
@@ -1515,25 +1454,14 @@ def list_meeting_sql_schema() -> dict[str, Any]:
 @mcp.tool
 def describe_meeting_sql_table(table_name: str) -> dict[str, Any]:
     """Describe one safe SQL table for execute_meeting_sql."""
-    user_id = _current_user_id()
     normalized_name = table_name.strip().lower()
     schema = SQL_SCHEMA.get(normalized_name)
     if not schema:
-        _ph_capture(
-            "describe_meeting_sql_table_failed",
-            user_id,
-            {"table_name": table_name},
-        )
         return {
             "error": "Unknown table",
             "table_name": table_name,
             "available_tables": sorted(SQL_SCHEMA),
         }
-    _ph_capture(
-        "describe_meeting_sql_table_called",
-        user_id,
-        {"table_name": normalized_name},
-    )
     return {
         "name": normalized_name,
         "description": schema["description"],
@@ -1544,18 +1472,12 @@ def describe_meeting_sql_table(table_name: str) -> dict[str, Any]:
 @mcp.tool
 def list_common_meeting_queries(category: str | None = None) -> dict[str, Any]:
     """Return common execute_meeting_sql query templates and their params."""
-    user_id = _current_user_id()
     normalized_category = category.strip().lower() if category else None
     queries = [
         query
         for query in COMMON_SQL_QUERIES
         if not normalized_category or query["category"] == normalized_category
     ]
-    _ph_capture(
-        "list_common_meeting_queries_called",
-        user_id,
-        {"category": normalized_category, "query_count": len(queries)},
-    )
     return {
         "queries": queries,
         "categories": sorted({query["category"] for query in COMMON_SQL_QUERIES}),
@@ -1565,34 +1487,28 @@ def list_common_meeting_queries(category: str | None = None) -> dict[str, Any]:
 @mcp.tool
 async def get_meeting_audio(meeting_id: str) -> dict[str, Any]:
     """Return the protected app audio route for one readable meeting. The tool returns a URL, not audio bytes."""
-    user_id = _current_user_id()
-    try:
-        workspace = await _workspace_for_current_user()
-        meeting = await _get_accessible_meeting(meeting_id, workspace)
+    workspace = await _workspace_for_current_user()
+    meeting = await _get_accessible_meeting(meeting_id, workspace)
 
-        if not meeting.get("has_audio"):
-            result = {
-                "available": False,
-                "reason": "Meeting has no stored audio or Recall recording.",
-            }
-        elif APP_BASE_URL:
-            result = {
-                "available": True,
-                "source": "app_route",
-                "url_type": "authenticated_app_route",
-                "audio_url": f"{APP_BASE_URL}/api/meetings/{meeting['id']}/audio?download=1",
-                "requires_app_session": True,
-            }
-        else:
-            result = {
-                "available": False,
-                "reason": "APP_BASE_URL is required so MCP audio uses the authenticated app route.",
-            }
-    except Exception as exc:
-        _ph_capture_exception(exc, user_id, {"tool": "get_meeting_audio"})
-        raise
+    if not meeting.get("has_audio"):
+        result = {
+            "available": False,
+            "reason": "Meeting has no stored audio or Recall recording.",
+        }
+    elif APP_BASE_URL:
+        result = {
+            "available": True,
+            "source": "app_route",
+            "url_type": "authenticated_app_route",
+            "audio_url": f"{APP_BASE_URL}/api/meetings/{meeting['id']}/audio?download=1",
+            "requires_app_session": True,
+        }
+    else:
+        result = {
+            "available": False,
+            "reason": "APP_BASE_URL is required so MCP audio uses the authenticated app route.",
+        }
 
-    _ph_capture("get_meeting_audio_called", user_id, {"meeting_id": meeting_id})
     return {
         "meeting": _meeting_summary(meeting, workspace),
         **result,
@@ -1629,30 +1545,20 @@ def _meeting_images_payload(
 @mcp.tool
 async def get_meeting_images(meeting_id: str) -> dict[str, Any]:
     """List captured meeting images (screenshots and video frames) for one readable meeting with transcript timestamps. The tool returns protected app route URLs, not image bytes."""
-    user_id = _current_user_id()
-    try:
-        workspace = await _workspace_for_current_user()
-        meeting = await _get_accessible_meeting(meeting_id, workspace)
-        rows = await _fetch_all(
-            """
-            select ma.id, ma.mime_type, ma.timestamp_ms, ma.captured_at
-            from media_assets ma
-            where ma.meeting_id = %(meeting_id)s::uuid
-              and ma.type::text in ('screenshot', 'video_frame')
-            order by ma.timestamp_ms asc nulls last, ma.created_at asc
-            """,
-            {"meeting_id": str(meeting["id"])},
-        )
-        result = _meeting_images_payload(str(meeting["id"]), rows)
-    except Exception as exc:
-        _ph_capture_exception(exc, user_id, {"tool": "get_meeting_images"})
-        raise
-
-    _ph_capture(
-        "get_meeting_images_called",
-        user_id,
-        {"meeting_id": meeting_id, "image_count": len(rows)},
+    workspace = await _workspace_for_current_user()
+    meeting = await _get_accessible_meeting(meeting_id, workspace)
+    rows = await _fetch_all(
+        """
+        select ma.id, ma.mime_type, ma.timestamp_ms, ma.captured_at
+        from media_assets ma
+        where ma.meeting_id = %(meeting_id)s::uuid
+          and ma.type::text in ('screenshot', 'video_frame')
+        order by ma.timestamp_ms asc nulls last, ma.created_at asc
+        """,
+        {"meeting_id": str(meeting["id"])},
     )
+    result = _meeting_images_payload(str(meeting["id"]), rows)
+
     return {
         "meeting": _meeting_summary(meeting, workspace),
         **result,
@@ -1666,36 +1572,26 @@ async def execute_meeting_sql(
     limit: int = 100,
 ) -> dict[str, Any]:
     """Execute read only SQL over caller scoped CTEs: readable_meetings, readable_transcript_segments, readable_meeting_entities, readable_meeting_participants."""
-    user_id = _current_user_id()
-    try:
-        user_sql = _validate_agent_sql(sql)
-        workspace = await _workspace_for_current_user()
-        query_params = _normalize_sql_params(params)
-        query_params["sql_outer_limit"] = _limit(limit, 100, 500)
-        access_sql = _access_condition(
-            workspace,
-            query_params,
-            meeting_alias="m",
-            param_prefix="sql_access",
-        )
-        access_scope_sql = _access_scope_expression(
-            workspace,
-            meeting_alias="m",
-            param_prefix="sql_access",
-        )
-        rows = await _fetch_all(
-            _build_sql_tool_query(user_sql, access_sql, access_scope_sql),
-            query_params,
-        )
-    except Exception as exc:
-        _ph_capture_exception(exc, user_id, {"tool": "execute_meeting_sql"})
-        raise
-
-    _ph_capture(
-        "execute_meeting_sql_called",
-        user_id,
-        {"row_count": len(rows), "limit": query_params["sql_outer_limit"]},
+    user_sql = _validate_agent_sql(sql)
+    workspace = await _workspace_for_current_user()
+    query_params = _normalize_sql_params(params)
+    query_params["sql_outer_limit"] = _limit(limit, 100, 500)
+    access_sql = _access_condition(
+        workspace,
+        query_params,
+        meeting_alias="m",
+        param_prefix="sql_access",
     )
+    access_scope_sql = _access_scope_expression(
+        workspace,
+        meeting_alias="m",
+        param_prefix="sql_access",
+    )
+    rows = await _fetch_all(
+        _build_sql_tool_query(user_sql, access_sql, access_scope_sql),
+        query_params,
+    )
+
     return {
         "rows": _json_safe_rows(rows),
         "row_count": len(rows),

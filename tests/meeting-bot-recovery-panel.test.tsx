@@ -76,6 +76,40 @@ describe("MeetingBotRecoveryPanel", () => {
       screen.queryByRole("button", { name: "Ask bot to rejoin" }),
     ).toBeNull();
   });
+
+  it("announces loading and keeps a failed rejoin recoverable", async () => {
+    let resolveRequest: (value: Response) => void = () => undefined;
+    vi.mocked(fetch).mockImplementationOnce(
+      () =>
+        new Promise<Response>((resolve) => {
+          resolveRequest = resolve;
+        }),
+    );
+    render(
+      <MeetingBotRecoveryPanel
+        meetingId="meeting_123"
+        meetingUrl="https://meet.google.com/original"
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Ask bot to rejoin" }));
+
+    expect(
+      screen
+        .getByRole("button", { name: "Rejoining..." })
+        .getAttribute("aria-busy"),
+    ).toBe("true");
+    resolveRequest(response({ error: "Meeting is no longer available" }, 409));
+
+    expect((await screen.findByRole("alert")).textContent).toContain(
+      "Meeting is no longer available",
+    );
+    expect(
+      (screen.getByRole("button", {
+        name: "Ask bot to rejoin",
+      }) as HTMLButtonElement).disabled,
+    ).toBe(false);
+  });
 });
 
 function response(body: unknown, status = 200) {

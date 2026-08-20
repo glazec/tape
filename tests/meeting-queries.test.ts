@@ -772,6 +772,63 @@ describe("listMeetingsForWorkspace", () => {
     vi.resetModules();
   });
 
+  it("marks a manageable failed remote meeting from the last hour as recoverable", async () => {
+    select
+      .mockReturnValueOnce({
+        from: () => ({
+          leftJoin: () => ({
+            where: () => ({
+              orderBy: vi.fn().mockResolvedValue([
+                {
+                  calendarAttendeeEmails: [],
+                  canManage: true,
+                  createdAt: new Date("2026-08-03T11:00:00.000Z"),
+                  endedAt: new Date("2026-08-03T11:30:00.000Z"),
+                  id: "55555555-5555-4555-8555-555555555555",
+                  meetingUrl: "https://zoom.us/j/123456789",
+                  platform: "zoom",
+                  recallBotId: "bot_123",
+                  startedAt: new Date("2026-08-03T11:00:00.000Z"),
+                  status: "failed",
+                  teamId: "team_123",
+                  title: "Partner call",
+                  transcriptJobStatus: null,
+                  updatedAt: new Date("2026-08-03T11:45:00.000Z"),
+                },
+              ]),
+            }),
+          }),
+        }),
+      })
+      .mockReturnValueOnce({
+        from: () => ({
+          where: () => ({
+            orderBy: vi.fn().mockResolvedValue([]),
+          }),
+        }),
+      });
+    const { listMeetingsForWorkspace } = await import("@/lib/meeting-queries");
+
+    await expect(
+      listMeetingsForWorkspace(
+        {
+          teamId: "team_123",
+          userId: "user_123",
+          domain: "iosg.vc",
+          canCreateMeetings: true,
+        },
+        undefined,
+        { now: new Date("2026-08-03T12:30:00.000Z") },
+      ),
+    ).resolves.toMatchObject([
+      {
+        canRecoverBot: true,
+        id: "55555555-5555-4555-8555-555555555555",
+        meetingUrl: "https://zoom.us/j/123456789",
+      },
+    ]);
+  });
+
   it("uses recording timestamps when formatting dashboard rows", async () => {
     select
       .mockReturnValueOnce({
@@ -1330,9 +1387,13 @@ describe("listMeetingsForWorkspace", () => {
       .slice(0, 50)
       .map((meeting) => meeting.id);
     const hiddenMeetingId = matchingRows[50].id;
-    const recordingWhere = vi.fn(() => ({
-      orderBy: vi.fn().mockResolvedValue([]),
-    }));
+    const recordingWhere = vi.fn((condition: SQL) => {
+      void condition;
+
+      return {
+        orderBy: vi.fn().mockResolvedValue([]),
+      };
+    });
 
     select
       .mockReturnValueOnce({

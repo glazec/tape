@@ -1,11 +1,16 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-const { execute, select, transaction, txn, update } = vi.hoisted(() => ({
+const { execute, inngestSend, select, transaction, txn, update } = vi.hoisted(() => ({
   execute: vi.fn(),
+  inngestSend: vi.fn(),
   select: vi.fn(),
   transaction: vi.fn(),
   txn: vi.fn((strings: TemplateStringsArray) => strings),
   update: vi.fn(),
+}));
+
+vi.mock("@/inngest/client", () => ({
+  inngest: { send: inngestSend },
 }));
 
 vi.mock("@/db/client", () => ({
@@ -33,13 +38,14 @@ describe("applyElevenLabsTranscriptEvent", () => {
   afterEach(() => {
     select.mockReset();
     execute.mockReset();
+    inngestSend.mockReset();
     transaction.mockReset();
     txn.mockClear();
     update.mockReset();
     vi.resetModules();
   });
 
-  it("marks the transcript job and meeting failed when ElevenLabs returns no transcript text", async () => {
+  it("queues chunked recovery when ElevenLabs returns no transcript text", async () => {
     execute.mockResolvedValue({
       rows: [{ id: "22222222-2222-4222-8222-222222222222" }],
     });
@@ -86,16 +92,30 @@ describe("applyElevenLabsTranscriptEvent", () => {
           transcriptJobId: "22222222-2222-4222-8222-222222222222",
         },
       }),
-    ).resolves.toMatchObject({ action: "fail" });
+    ).resolves.toEqual({
+      action: "recover",
+      recovery: "chunked",
+      transcriptJobId: "22222222-2222-4222-8222-222222222222",
+    });
+
+    expect(inngestSend).toHaveBeenCalledWith({
+      id: "empty-transcript-recovery:22222222-2222-4222-8222-222222222222",
+      name: "meeting/recover.empty-transcript",
+      data: {
+        meetingId: "11111111-1111-4111-8111-111111111111",
+        transcriptJobId: "22222222-2222-4222-8222-222222222222",
+      },
+    });
 
     expect(transcriptSet).toHaveBeenCalledWith({
-      errorMessage: "No transcript text returned",
+      errorMessage:
+        "Direct transcription returned no text; chunked recovery queued",
       providerJobId: "req_123",
-      status: "failed",
+      status: "running",
       updatedAt: expect.any(Date),
     });
     expect(meetingSet).toHaveBeenCalledWith({
-      status: "failed",
+      status: "processing",
       updatedAt: expect.any(Date),
     });
   });
@@ -253,5 +273,26 @@ describe("isTranscriptJobApplicable", () => {
         "22222222-2222-4222-8222-222222222222",
       ),
     ).toBe(true);
+  });
+});
+
+describe("reopenTranscriptJobForEnrichmentRetry", () => {
+  it("makes a completed transcript job eligible for webhook retry", async () => {
+    const where = vi.fn().mockResolvedValue(undefined);
+    const set = vi.fn(() => ({ where }));
+    update.mockReturnValue({ set });
+    const { reopenTranscriptJobForEnrichmentRetry } = await import(
+      "@/lib/elevenlabs-transcripts"
+    );
+
+    await reopenTranscriptJobForEnrichmentRetry(
+      "22222222-2222-4222-8222-222222222222",
+    );
+
+    expect(set).toHaveBeenCalledWith({
+      errorMessage: "Transcript saved; enrichment retry pending",
+      status: "running",
+      updatedAt: expect.any(Date),
+    });
   });
 });

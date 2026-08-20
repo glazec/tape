@@ -151,6 +151,11 @@ describe("meeting page", () => {
     expect(html).toContain("Google Meet:Failed");
     expect(html).toContain("transcript:meeting_1");
     expect(html).toContain("lg:grid-cols-[1fr_20rem]");
+    expect(html).toContain('href="#meeting-sharing-section"');
+    expect(html).toContain('id="meeting-sharing-section"');
+    expect(html.indexOf('href="#meeting-sharing-section"')).toBeLessThan(
+      html.indexOf("transcript:meeting_1"),
+    );
     expect(mocks.listRecipients).toHaveBeenCalled();
   });
 

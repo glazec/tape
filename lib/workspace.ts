@@ -6,6 +6,7 @@ import { db } from "@/db/client";
 import { setDatabaseWorkspace } from "@/db/rls-context";
 import {
   allowedDomains,
+  calendarConnections,
   meetingAccess,
   meetings,
   teamMemberships,
@@ -29,6 +30,7 @@ export type WorkspaceContext = {
 };
 
 export type WorkspaceMember = {
+  calendarStatus: "connected" | "needs_attention" | "not_connected" | null;
   email: string;
   id: string;
   isCurrentUser: boolean;
@@ -250,6 +252,41 @@ export async function listWorkspaceMembers(
 ): Promise<WorkspaceMember[]> {
   const members = await db
     .select({
+      calendarStatus: sql<WorkspaceMember["calendarStatus"]>`case
+        when ${users.id} = ${workspace.userId}::uuid
+          or exists (
+            select 1
+            from ${teamMemberships}
+            where ${teamMemberships.teamId} = ${workspace.teamId}::uuid
+              and ${teamMemberships.userId} = ${workspace.userId}::uuid
+              and ${teamMemberships.role} in ('admin', 'owner')
+          )
+        then case
+          when exists (
+            select 1
+            from ${calendarConnections}
+            where ${calendarConnections.teamId} = ${teamMemberships.teamId}
+              and ${calendarConnections.userId} = ${users.id}
+              and ${calendarConnections.provider} = 'google'
+              and ${calendarConnections.oauthRefreshToken} is not null
+              and ${calendarConnections.recallCalendarId} is not null
+              and ${calendarConnections.recallCalendarStatus} = 'connected'
+          ) then 'connected'
+          when exists (
+            select 1
+            from ${calendarConnections}
+            where ${calendarConnections.teamId} = ${teamMemberships.teamId}
+              and ${calendarConnections.userId} = ${users.id}
+              and ${calendarConnections.provider} = 'google'
+              and (
+                ${calendarConnections.oauthRefreshToken} is not null
+                or ${calendarConnections.recallCalendarId} is not null
+              )
+          ) then 'needs_attention'
+          else 'not_connected'
+        end
+        else null
+      end`,
       email: users.email,
       id: users.id,
       joinedAt: teamMemberships.createdAt,

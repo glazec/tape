@@ -169,6 +169,14 @@ describe("meeting recovery uploads", () => {
         type: "audio",
       }),
     );
+    expect(values).toHaveBeenNthCalledWith(
+      3,
+      expect.objectContaining({
+        mediaAssetId: "asset_123",
+        recordingId: "recording_123",
+        status: "queued",
+      }),
+    );
     expect(set).toHaveBeenCalledWith(
       expect.objectContaining({ status: "processing" }),
     );

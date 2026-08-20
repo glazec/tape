@@ -1,6 +1,14 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-const { select } = vi.hoisted(() => ({
+const {
+  findRecallRecordingMediaUrl,
+  retrieveRecallBot,
+  retrieveRecallRecording,
+  select,
+} = vi.hoisted(() => ({
+  findRecallRecordingMediaUrl: vi.fn(),
+  retrieveRecallBot: vi.fn(),
+  retrieveRecallRecording: vi.fn(),
   select: vi.fn(),
 }));
 
@@ -19,9 +27,18 @@ vi.mock("@/lib/elevenlabs-transcripts", () => ({
   applyElevenLabsTranscriptEvent: vi.fn(),
 }));
 
+vi.mock("@/lib/vendors/recall", () => ({
+  findRecallRecordingMediaUrl,
+  retrieveRecallBot,
+  retrieveRecallRecording,
+}));
+
 describe("transcript chunk worker", () => {
   afterEach(() => {
     select.mockReset();
+    findRecallRecordingMediaUrl.mockReset();
+    retrieveRecallBot.mockReset();
+    retrieveRecallRecording.mockReset();
   });
 
   it("renders and stores only chunks at or below sixty minutes", async () => {
@@ -110,5 +127,53 @@ describe("transcript chunk worker", () => {
       }),
     ).rejects.toThrow("unsafe");
     expect(runProcess).not.toHaveBeenCalled();
+  });
+
+  it("retrieves a fresh Recall URL when the recovery worker starts", async () => {
+    select.mockReturnValue({
+      from: () => ({
+        where: () => ({
+          limit: vi
+            .fn()
+            .mockResolvedValue([
+              { teamId: "11111111-1111-4111-8111-111111111111" },
+            ]),
+        }),
+      }),
+    });
+    const artifact = { id: "recall_bot_123" };
+    retrieveRecallBot.mockResolvedValue(artifact);
+    findRecallRecordingMediaUrl.mockReturnValue(
+      "https://recallai-production-bot-data.s3.amazonaws.com/fresh.mp3",
+    );
+    const runProcess = vi
+      .fn()
+      .mockResolvedValueOnce(new TextEncoder().encode("60"))
+      .mockResolvedValueOnce(new Uint8Array([1, 2, 3]));
+    const { createTranscriptChunkWorkerAdapter } = await import(
+      "@/lib/transcript-chunk-worker"
+    );
+    const adapter = createTranscriptChunkWorkerAdapter({
+      createReadUrl: vi.fn(),
+      ffmpegPath: "ffmpeg",
+      ffprobePath: "ffprobe",
+      putObject: vi.fn(),
+      runProcess,
+    });
+
+    await adapter.prepareTranscriptAudioChunks({
+      keyterms: [],
+      meetingId: "22222222-2222-4222-8222-222222222222",
+      recallBotId: "recall_bot_123",
+      recallRecordingId: "recall_recording_123",
+      transcriptJobId: "33333333-3333-4333-8333-333333333333",
+    });
+
+    expect(retrieveRecallBot).toHaveBeenCalledWith("recall_bot_123");
+    expect(findRecallRecordingMediaUrl).toHaveBeenCalledWith(
+      artifact,
+      "recall_recording_123",
+    );
+    expect(retrieveRecallRecording).not.toHaveBeenCalled();
   });
 });

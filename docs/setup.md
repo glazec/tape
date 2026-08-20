@@ -81,9 +81,17 @@ REST API key are configured.
 | Exa web search for live answers | `EXA_API_KEY` |
 | OneSignal reminders | `NEXT_PUBLIC_ONESIGNAL_APP_ID`, `NEXT_PUBLIC_ONESIGNAL_ALLOWED_ORIGINS`, `ONESIGNAL_REST_API_KEY` |
 | Twenty CRM vocabulary | `TWENTY_API_BASE_URL`, `TWENTY_API_KEY`; restricted to the team owning `iosg.vc` |
-| PostHog events | `POSTHOG_API_KEY`, `POSTHOG_HOST` |
+| Amplitude browser analytics | No environment variable; the public project key is initialized in `instrumentation-client.ts` |
 | SigNoz telemetry | `OTEL_EXPORTER_OTLP_ENDPOINT`, `OTEL_EXPORTER_OTLP_HEADERS`, `OTEL_SERVICE_NAME` |
+| Sentry error monitoring | `NEXT_PUBLIC_SENTRY_DSN`; optional source map upload via `SENTRY_AUTH_TOKEN` |
 | Cloudflare tunnel | `CLOUDFLARED_TOKEN` |
+
+Amplitude records sessions, campaign attribution, web vitals, main thread
+blocks, safe interaction and frustration signals for heatmaps, and the app's
+semantic product events.
+Session Replay samples all sessions while usage is low. Its conservative privacy
+mode masks all text and form values, and blocks images, audio, video, canvases,
+iframes, and elements marked with `data-amplitude-block`.
 
 Leave optional variables empty when their feature is not used. `NEON_AUTH_BASE_URL` can remain empty when `NEON_AUTH_JWKS_URL` ends with `/.well-known/jwks.json`.
 
@@ -123,6 +131,22 @@ Error logs include `error.fingerprint`, `error.handled`, `error.type`,
 `operation.name`, and `telemetry.source`. Final Inngest failures also include
 `inngest.function.id`, `inngest.run.id`, and `inngest.attempt`, so retries and
 terminal failures can be separated without parsing log messages.
+
+## Sentry error monitoring
+
+Tape sends uncaught browser, server, edge, React render, and Next.js request
+errors to the `tape` project in the `iosg` Sentry organization. Set the public
+project DSN as `NEXT_PUBLIC_SENTRY_DSN` on the Railway web service. For readable
+production stack traces, also set a source map upload token as
+`SENTRY_AUTH_TOKEN`. The token must have the `org:ci` scope and must never be
+exposed to the browser or committed.
+
+Production captures every error and samples ten percent of traces. Development
+captures every trace when a DSN is configured. Session replay and Sentry logs
+remain disabled. The SDK also excludes user identity, cookies, headers, request
+and response bodies, query parameters, database values, GraphQL documents and
+variables, AI inputs and outputs, stack variables, console breadcrumbs, and UI
+interaction breadcrumbs. Client source maps are removed after upload.
 
 ## Database
 
