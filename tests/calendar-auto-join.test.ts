@@ -592,6 +592,159 @@ describe("calendar auto join", () => {
     );
   });
 
+  it("schedules distinct bots for simultaneous meetings and deduplicates a repeated event", async () => {
+    vi.stubEnv("NEXT_PUBLIC_APP_URL", "https://app.example.com");
+
+    const firstTeamMeetingKey =
+      "team:22222222-2222-4222-8222-222222222222:start:2099-08-20T15:00:00.000Z:url:https://meet.google.com/aaa-bbbb-ccc";
+    const secondTeamMeetingKey =
+      "team:22222222-2222-4222-8222-222222222222:start:2099-08-20T15:00:00.000Z:url:https://zoom.us/j/2345678901";
+    const firstCalendarEventValues = vi.fn().mockReturnValue({
+      onConflictDoUpdate: vi.fn().mockReturnValue({
+        returning: vi.fn().mockResolvedValue([
+          {
+            id: "33333333-3333-4333-8333-333333333333",
+            teamMeetingKey: firstTeamMeetingKey,
+          },
+        ]),
+      }),
+    });
+    const secondCalendarEventValues = vi.fn().mockReturnValue({
+      onConflictDoUpdate: vi.fn().mockReturnValue({
+        returning: vi.fn().mockResolvedValue([
+          {
+            id: "66666666-6666-4666-8666-666666666666",
+            teamMeetingKey: secondTeamMeetingKey,
+          },
+        ]),
+      }),
+    });
+    const repeatedCalendarEventValues = vi.fn().mockReturnValue({
+      onConflictDoUpdate: vi.fn().mockReturnValue({
+        returning: vi.fn().mockResolvedValue([]),
+      }),
+    });
+    const firstMeetingValues = vi.fn().mockResolvedValue(undefined);
+    const secondMeetingValues = vi.fn().mockResolvedValue(undefined);
+    const updateWhere = vi.fn().mockResolvedValue(undefined);
+    const updateSet = vi.fn().mockReturnValue({ where: updateWhere });
+
+    insert
+      .mockReturnValueOnce({ values: firstCalendarEventValues })
+      .mockReturnValueOnce({ values: firstMeetingValues })
+      .mockReturnValueOnce({ values: secondCalendarEventValues })
+      .mockReturnValueOnce({ values: secondMeetingValues })
+      .mockReturnValueOnce({ values: repeatedCalendarEventValues });
+    select
+      .mockReturnValueOnce(selectRows([]))
+      .mockReturnValueOnce(selectRows([]))
+      .mockReturnValueOnce(
+        selectRows([
+          {
+            id: "33333333-3333-4333-8333-333333333333",
+            teamMeetingKey: firstTeamMeetingKey,
+          },
+        ]),
+      )
+      .mockReturnValueOnce(
+        selectRows([
+          {
+            id: "44444444-4444-4444-8444-444444444444",
+            ownerUserId: "55555555-5555-4555-8555-555555555555",
+            calendarEventId: "33333333-3333-4333-8333-333333333333",
+            teamMeetingKey: firstTeamMeetingKey,
+            title: "Overlap A",
+            titleSource: "calendar",
+            platform: "google_meet",
+            recallBotId: "bot_one",
+            recallRecordingId: null,
+            meetingUrl: "https://meet.google.com/aaa-bbbb-ccc",
+            startedAt: new Date("2099-08-20T15:00:00.000Z"),
+            endedAt: new Date("2099-08-20T15:30:00.000Z"),
+            status: "scheduled",
+          },
+        ]),
+      );
+    update.mockReturnValue({ set: updateSet });
+    randomUUID
+      .mockReturnValueOnce("44444444-4444-4444-8444-444444444444")
+      .mockReturnValueOnce("77777777-7777-4777-8777-777777777777");
+    scheduleRecallBot
+      .mockResolvedValueOnce({ id: "bot_one" })
+      .mockResolvedValueOnce({ id: "bot_two" });
+
+    const { autoJoinCalendarEvent } = await import("@/lib/calendar-auto-join");
+    const connection = {
+      id: "11111111-1111-4111-8111-111111111111",
+      teamId: "22222222-2222-4222-8222-222222222222",
+      userId: "55555555-5555-4555-8555-555555555555",
+      autoJoinEnabled: true,
+    };
+    const firstEvent = {
+      externalEventId: "overlap_event_one",
+      title: "Overlap A",
+      startsAt: "2099-08-20T15:00:00.000Z",
+      endsAt: "2099-08-20T15:30:00.000Z",
+      meetingUrl: "https://meet.google.com/aaa-bbbb-ccc",
+    };
+
+    await expect(
+      autoJoinCalendarEvent({ connection, event: firstEvent }),
+    ).resolves.toMatchObject({
+      action: "scheduled",
+      meetingId: "44444444-4444-4444-8444-444444444444",
+      recallBotId: "bot_one",
+    });
+    await expect(
+      autoJoinCalendarEvent({
+        connection,
+        event: {
+          externalEventId: "overlap_event_two",
+          title: "Overlap B",
+          startsAt: "2099-08-20T15:00:00.000Z",
+          endsAt: "2099-08-20T15:45:00.000Z",
+          meetingUrl: "https://zoom.us/j/2345678901",
+        },
+      }),
+    ).resolves.toMatchObject({
+      action: "scheduled",
+      meetingId: "77777777-7777-4777-8777-777777777777",
+      recallBotId: "bot_two",
+    });
+    await expect(
+      autoJoinCalendarEvent({ connection, event: firstEvent }),
+    ).resolves.toMatchObject({
+      action: "skipped",
+      meetingId: "44444444-4444-4444-8444-444444444444",
+      reason: "already_scheduled",
+    });
+
+    const firstMeeting = firstMeetingValues.mock.calls[0]?.[0] as {
+      teamMeetingKey: string;
+    };
+    const secondMeeting = secondMeetingValues.mock.calls[0]?.[0] as {
+      teamMeetingKey: string;
+    };
+    expect(firstMeeting.teamMeetingKey).toBe(firstTeamMeetingKey);
+    expect(secondMeeting.teamMeetingKey).toBe(secondTeamMeetingKey);
+    expect(firstMeeting.teamMeetingKey).not.toBe(secondMeeting.teamMeetingKey);
+    expect(scheduleRecallBot).toHaveBeenCalledTimes(2);
+    expect(scheduleRecallBot).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        meetingUrl: "https://meet.google.com/aaa-bbbb-ccc",
+        startAt: "2099-08-20T15:00:00.000Z",
+      }),
+    );
+    expect(scheduleRecallBot).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        meetingUrl: "https://zoom.us/j/2345678901",
+        startAt: "2099-08-20T15:00:00.000Z",
+      }),
+    );
+  });
+
   it("creates a local recorder meeting for a past Microsoft Teams repair event", async () => {
     const teamsUrl =
       "https://teams.microsoft.com/l/meetup-join/19%3ameeting_example%40thread.v2/0";
