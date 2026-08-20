@@ -98,6 +98,34 @@ describe("local recorder policy", () => {
     });
   });
 
+  it.each(["in_call_recording", "in_call_not_recording", "recording_done"])(
+    "recognizes compound Recall join state %s",
+    (latestRecallCode) => {
+      expect(
+        getLocalRecorderEligibility(
+          { ...baseMeeting, latestRecallCode },
+          { now: new Date("2026-06-30T12:01:10.000Z") },
+        ),
+      ).toEqual({
+        eligible: false,
+        reason: "recall_has_join_or_recording_evidence",
+      });
+    },
+  );
+
+  it("keeps a bot in the waiting room eligible for local fallback", () => {
+    expect(
+      getLocalRecorderEligibility(
+        { ...baseMeeting, latestRecallCode: "in_waiting_room" },
+        { now: new Date("2026-06-30T12:01:10.000Z") },
+      ),
+    ).toEqual({
+      eligible: true,
+      expiresAt: new Date("2026-06-30T14:00:00.000Z"),
+      reason: "eligible",
+    });
+  });
+
   it("allows processing meetings only when no transcript job exists", () => {
     expect(
       getLocalRecorderEligibility(

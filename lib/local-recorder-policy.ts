@@ -75,7 +75,7 @@ export function isWithinLocalRecorderAutoClaimWindow(input: {
   );
 }
 const recallPositivePattern =
-  /\b(in_call|joined|recording|recording_done|complete)\b/;
+  /\b(?:in_call|joined|recording|recording_done|complete)(?:\b|_)/;
 
 export function getLocalRecorderEligibility(
   meeting: LocalRecorderCandidate,
