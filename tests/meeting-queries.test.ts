@@ -1705,12 +1705,16 @@ describe("listMeetingsForWorkspace", () => {
     const { listMeetingsForWorkspace } = await import("@/lib/meeting-queries");
 
     await expect(
-      listMeetingsForWorkspace({
-        teamId: "team_123",
-        userId: "user_123",
-        domain: "iosg.vc",
-        canCreateMeetings: true,
-      }),
+      listMeetingsForWorkspace(
+        {
+          teamId: "team_123",
+          userId: "user_123",
+          domain: "iosg.vc",
+          canCreateMeetings: true,
+        },
+        undefined,
+        { now: new Date("2026-06-28T12:00:00.000Z") },
+      ),
     ).resolves.toMatchObject([
       expect.objectContaining({
         id: "22222222-2222-4222-8222-222222222222",
