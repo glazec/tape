@@ -151,30 +151,28 @@ export default async function MeetingPage({
             <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
               Meeting
             </p>
-            {canManage ? (
-              <MeetingActions
-                audioExportUrls={
-                  recordingParts.length > 1
-                    ? recordingParts.map(
-                        (part) =>
-                          `/api/meetings/${encodeURIComponent(
-                            meetingId,
-                          )}/audio?recording=${encodeURIComponent(
-                            part.id,
-                          )}&download=1`,
-                      )
-                    : undefined
-                }
-                canDelete={meeting.canDelete}
-                hasAudio={
-                  Boolean(meeting.audioUrl) || recordingParts.length > 0
-                }
-                hasTranscript={meeting.segments.length > 0}
-                imageCount={meeting.visualAssets.length}
-                instanceId="header"
-                meetingId={meetingId}
-              />
-            ) : null}
+            <MeetingActions
+              audioExportUrls={
+                recordingParts.length > 1
+                  ? recordingParts.map(
+                      (part) =>
+                        `/api/meetings/${encodeURIComponent(
+                          meetingId,
+                        )}/audio?recording=${encodeURIComponent(
+                          part.id,
+                        )}&download=1`,
+                    )
+                  : undefined
+              }
+              canDelete={meeting.canDelete}
+              hasAudio={
+                Boolean(meeting.audioUrl) || recordingParts.length > 0
+              }
+              hasTranscript={meeting.segments.length > 0}
+              imageCount={meeting.visualAssets.length}
+              instanceId="header"
+              meetingId={meetingId}
+            />
           </div>
           <div className="mt-2 min-w-0">
             {canManage ? (

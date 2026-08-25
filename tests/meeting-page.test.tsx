@@ -412,7 +412,12 @@ describe("meeting page", () => {
 
   it("renders shared meetings without owner controls", async () => {
     mocks.getMeeting.mockResolvedValue(
-      meeting({ canManage: false, platform: "in_person", status: "missed" }),
+      meeting({
+        canDelete: false,
+        canManage: false,
+        platform: "in_person",
+        status: "missed",
+      }),
     );
     const html = renderToStaticMarkup(
       await MeetingPage({
@@ -424,7 +429,7 @@ describe("meeting page", () => {
     expect(html).toContain("read and share this transcript");
     expect(html).toContain("In person:No recording");
     expect(html).toContain("transcript:readonly");
-    expect(html).not.toContain("meeting actions");
+    expect(html).toContain("meeting actions:content:delete:false");
     expect(html).not.toContain("recovery panel");
     expect(mocks.listRecipients).toHaveBeenCalled();
   });
