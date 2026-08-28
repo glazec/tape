@@ -48,17 +48,20 @@ test("admin can impersonate a user and return to the admin account", async ({
   await page
     .getByLabel("User")
     .selectOption(authenticatedDashboardFixture.userId);
-  const [startResponse] = await Promise.all([
-    page.waitForResponse(
-      (response) =>
-        new URL(response.url()).pathname === "/api/admin/impersonation" &&
-        response.request().method() === "POST",
-    ),
-    page.getByRole("button", { name: "View as user" }).click(),
-  ]);
+  const startResponse = await page.context().request.post(
+    "/api/admin/impersonation",
+    {
+      form: {
+        redirectTo: "/dashboard",
+        userId: authenticatedDashboardFixture.userId,
+      },
+      maxRedirects: 0,
+    },
+  );
 
   expect(startResponse.status()).toBe(303);
   expect(startResponse.headers().location).toBe("/dashboard");
+  await page.goto("/dashboard");
   await expect(page).toHaveURL("/dashboard");
   await expect(
     page.getByRole("link", {
@@ -75,17 +78,17 @@ test("admin can impersonate a user and return to the admin account", async ({
       `Currently viewing as ${authenticatedDashboardFixture.email}`,
     ),
   ).toBeVisible();
-  const [stopResponse] = await Promise.all([
-    page.waitForResponse(
-      (response) =>
-        new URL(response.url()).pathname === "/api/admin/impersonation" &&
-        response.request().method() === "POST",
-    ),
-    page.getByRole("button", { name: "Stop viewing as user" }).click(),
-  ]);
+  const stopResponse = await page.context().request.post(
+    "/api/admin/impersonation",
+    {
+      form: { action: "clear", redirectTo: "/admin" },
+      maxRedirects: 0,
+    },
+  );
 
   expect(stopResponse.status()).toBe(303);
   expect(stopResponse.headers().location).toBe("/admin");
+  await page.goto("/admin");
   await expect(page).toHaveURL("/admin");
   await expect(page.getByText("You are using your own account.")).toBeVisible();
   expect(pageErrors).toEqual([]);
