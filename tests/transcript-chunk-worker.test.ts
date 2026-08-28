@@ -86,7 +86,21 @@ describe("transcript chunk worker", () => {
     expect(chunks).toHaveLength(2);
     expect(runProcess).toHaveBeenCalledTimes(3);
     expect(runProcess.mock.calls[1]?.[1]).toEqual(
-      expect.arrayContaining(["-t", "3590.000"]),
+      expect.arrayContaining([
+        "-t",
+        "3590.000",
+        "-reconnect",
+        "1",
+        "-reconnect_on_network_error",
+        "1",
+        "-reconnect_streamed",
+        "1",
+        "-reconnect_delay_max",
+        "5",
+      ]),
+    );
+    expect(runProcess.mock.calls[0]?.[1]).toEqual(
+      expect.arrayContaining(["-reconnect", "1"]),
     );
     expect(putObject).toHaveBeenCalledTimes(2);
     expect(

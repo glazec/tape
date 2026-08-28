@@ -89,19 +89,23 @@ describe("OneSignal vendor", () => {
       ),
     );
 
-    const { sendOneSignalLocationReminder } = await import(
-      "@/lib/vendors/onesignal"
-    );
+    const {
+      OneSignalInvalidExternalAliasError,
+      sendOneSignalLocationReminder,
+    } = await import("@/lib/vendors/onesignal");
 
-    await expect(
-      sendOneSignalLocationReminder({
-        idempotencyKey: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
-        externalUserId: "11111111-1111-4111-8111-111111111111",
-        meetingId: "22222222-2222-4222-8222-222222222222",
-        meetingTitle: "Founder office visit",
-        location: "IOSG 12F",
-      }),
-    ).rejects.toThrow(
+    const result = sendOneSignalLocationReminder({
+      idempotencyKey: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      externalUserId: "11111111-1111-4111-8111-111111111111",
+      meetingId: "22222222-2222-4222-8222-222222222222",
+      meetingTitle: "Founder office visit",
+      location: "IOSG 12F",
+    });
+
+    await expect(result).rejects.toBeInstanceOf(
+      OneSignalInvalidExternalAliasError,
+    );
+    await expect(result).rejects.toThrow(
       "OneSignal notification failed: invalid_aliases.external_id",
     );
   });

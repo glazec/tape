@@ -5,7 +5,10 @@ import { and, eq, inArray, isNull, lt, ne, sql } from "drizzle-orm";
 import { db } from "@/db/client";
 import { calendarEvents, meetingReminders, meetings } from "@/db/schema";
 import { inngest } from "@/inngest/client";
-import { sendOneSignalLocationReminder } from "@/lib/vendors/onesignal";
+import {
+  OneSignalInvalidExternalAliasError,
+  sendOneSignalLocationReminder,
+} from "@/lib/vendors/onesignal";
 
 type LocationReminderSchedule = {
   id: string;
@@ -241,6 +244,19 @@ export async function sendScheduledLocationReminder(
 
     return { action: "sent" as const };
   } catch (error) {
+    if (error instanceof OneSignalInvalidExternalAliasError) {
+      await markLocationReminderFailed({
+        errorMessage: error.message,
+        reminderId: reminder.id,
+        scheduleVersion: reminder.scheduleVersion,
+        now,
+      });
+      return {
+        action: "skipped" as const,
+        reason: "no_push_subscription" as const,
+      };
+    }
+
     await db
       .update(meetingReminders)
       .set({

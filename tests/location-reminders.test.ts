@@ -1,9 +1,16 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-const { inngestSend, insert, select, sendOneSignalLocationReminder, update } =
-  vi.hoisted(() => ({
+const {
+  inngestSend,
+  insert,
+  OneSignalInvalidExternalAliasError,
+  select,
+  sendOneSignalLocationReminder,
+  update,
+} = vi.hoisted(() => ({
     inngestSend: vi.fn(),
     insert: vi.fn(),
+    OneSignalInvalidExternalAliasError: class extends Error {},
     select: vi.fn(),
     sendOneSignalLocationReminder: vi.fn(),
     update: vi.fn(),
@@ -18,6 +25,7 @@ vi.mock("@/inngest/client", () => ({
 }));
 
 vi.mock("@/lib/vendors/onesignal", () => ({
+  OneSignalInvalidExternalAliasError,
   sendOneSignalLocationReminder,
 }));
 
@@ -414,6 +422,45 @@ describe("location reminders", () => {
     expect(retrySet).toHaveBeenCalledWith({
       errorMessage: "OneSignal notification failed with 503 Unavailable",
       status: "pending",
+      updatedAt: now,
+    });
+  });
+
+  it("marks a missing push subscription failed without retrying", async () => {
+    const now = new Date("2026-06-30T11:58:00.000Z");
+    mockReminderSelection([currentReminder]);
+    const claimReturning = vi
+      .fn()
+      .mockResolvedValue([{ id: currentReminder.id }]);
+    const claimWhere = vi.fn().mockReturnValue({ returning: claimReturning });
+    const claimSet = vi.fn().mockReturnValue({ where: claimWhere });
+    const failedWhere = vi.fn().mockResolvedValue(undefined);
+    const failedSet = vi.fn().mockReturnValue({ where: failedWhere });
+    update
+      .mockReturnValueOnce({ set: claimSet })
+      .mockReturnValueOnce({ set: failedSet });
+    const error = new OneSignalInvalidExternalAliasError();
+    sendOneSignalLocationReminder.mockRejectedValue(error);
+
+    const { sendScheduledLocationReminder } =
+      await import("@/lib/location-reminders");
+
+    await expect(
+      sendScheduledLocationReminder(
+        {
+          reminderId: currentReminder.id,
+          scheduleVersion: 3,
+          scheduledFor: "2026-06-30T11:58:00.000Z",
+        },
+        { now },
+      ),
+    ).resolves.toEqual({
+      action: "skipped",
+      reason: "no_push_subscription",
+    });
+    expect(failedSet).toHaveBeenCalledWith({
+      errorMessage: error.message,
+      status: "failed",
       updatedAt: now,
     });
   });

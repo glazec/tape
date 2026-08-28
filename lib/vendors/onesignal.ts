@@ -14,6 +14,13 @@ type OneSignalNotificationResponse = {
   errors?: unknown;
 };
 
+export class OneSignalInvalidExternalAliasError extends Error {
+  constructor() {
+    super("OneSignal notification failed: invalid_aliases.external_id");
+    this.name = "OneSignalInvalidExternalAliasError";
+  }
+}
+
 export async function sendOneSignalLocationReminder(input: {
   idempotencyKey: string;
   externalUserId: string;
@@ -56,6 +63,10 @@ export async function sendOneSignalLocationReminder(input: {
   }
 
   if (data?.errors) {
+    if (hasInvalidExternalAlias(data.errors)) {
+      throw new OneSignalInvalidExternalAliasError();
+    }
+
     throw new Error(
       `OneSignal notification failed: ${formatOneSignalErrors(data.errors)}`,
     );
@@ -66,6 +77,21 @@ export async function sendOneSignalLocationReminder(input: {
   }
 
   return data;
+}
+
+function hasInvalidExternalAlias(errors: unknown) {
+  if (!errors || typeof errors !== "object") {
+    return false;
+  }
+
+  const invalidAliases = (errors as { invalid_aliases?: unknown })
+    .invalid_aliases;
+
+  return Boolean(
+    invalidAliases &&
+    typeof invalidAliases === "object" &&
+    "external_id" in invalidAliases,
+  );
 }
 
 function formatOneSignalErrors(errors: unknown) {

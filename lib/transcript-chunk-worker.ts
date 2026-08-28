@@ -70,6 +70,16 @@ type TranscriptChunkWorkerDependencies = {
 const TRANSCRIPT_CHUNK_MAX_BYTES = 64 * 1024 * 1024;
 const TRANSCRIPT_RESULT_MAX_BYTES = 16 * 1024 * 1024;
 const MEDIA_PROCESS_TIMEOUT_MS = 2 * 60 * 60 * 1_000;
+const REMOTE_MEDIA_RECONNECT_OPTIONS = [
+  "-reconnect",
+  "1",
+  "-reconnect_on_network_error",
+  "1",
+  "-reconnect_streamed",
+  "1",
+  "-reconnect_delay_max",
+  "5",
+];
 const TRUSTED_RECALL_MEDIA_HOSTS = new Set([
   "recallai-production-bot-data.s3.amazonaws.com",
   "ap-northeast-1-recallai-production-bot-data.s3.amazonaws.com",
@@ -330,6 +340,7 @@ async function probeMediaDurationMs(
     [
       "-v",
       "error",
+      ...REMOTE_MEDIA_RECONNECT_OPTIONS,
       "-show_entries",
       "format=duration",
       "-of",
@@ -362,6 +373,7 @@ async function extractAudioChunk(
       formatSeconds(plan.startMs),
       "-t",
       formatSeconds(plan.endMs - plan.startMs),
+      ...REMOTE_MEDIA_RECONNECT_OPTIONS,
       "-i",
       sourceUrl.href,
       "-vn",
