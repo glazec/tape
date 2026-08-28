@@ -126,9 +126,8 @@ vi.mock("@/components/transcript-viewer", () => ({
   ),
 }));
 
-import MeetingPage, {
-  getTranscriptViewerRenderKey,
-} from "@/app/meetings/[meetingId]/page";
+import MeetingPage from "@/app/meetings/[meetingId]/page";
+import { getTranscriptViewerRenderKey } from "@/lib/meeting-transcript-render-key";
 
 describe("meeting page", () => {
   beforeEach(() => {

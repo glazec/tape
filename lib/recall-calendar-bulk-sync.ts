@@ -12,6 +12,7 @@ type SyncAllInput = {
 type SyncFailure = {
   connectionId: string;
   error: string;
+  failedEventCount?: number;
 };
 
 type SyncAllResult = {
@@ -67,8 +68,18 @@ export async function syncRecallCalendarEventsForAllConnectedUsers(
         now: input.now,
       });
 
-      syncedConnectionCount += 1;
       syncedEventCount += result.syncedEventCount;
+
+      if (result.failedEventCount > 0) {
+        failures.push({
+          connectionId: connection.connectionId,
+          error: `${result.failedEventCount} calendar event${result.failedEventCount === 1 ? "" : "s"} failed to sync`,
+          failedEventCount: result.failedEventCount,
+        });
+        continue;
+      }
+
+      syncedConnectionCount += 1;
     } catch (error) {
       failures.push({
         connectionId: connection.connectionId,

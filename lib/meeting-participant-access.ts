@@ -29,6 +29,7 @@ export async function syncMeetingParticipantAccess(input: {
   ownerUserId: string;
   teamId: string;
 }) {
+  const startedAt = Date.now();
   const domains = await db
     .select({ domain: allowedDomains.domain })
     .from(allowedDomains)
@@ -109,23 +110,56 @@ export async function syncMeetingParticipantAccess(input: {
       ),
     );
 
+  const grantResults = [];
+
   for (const email of eligibleEmails) {
-    await grantMeetingAccessByEmail({
-      createdByUserId: input.ownerUserId,
-      email,
-      meetingId: input.meetingId,
-      role: "attendee",
-      source: "participant",
-      sourceId: participantSourceId,
-    });
+    grantResults.push(
+      await grantMeetingAccessByEmail({
+        createdByUserId: input.ownerUserId,
+        email,
+        meetingId: input.meetingId,
+        role: "attendee",
+        source: "participant",
+        sourceId: participantSourceId,
+      }),
+    );
   }
 
   await reconcileEffectiveMeetingAccess(input.meetingId, input.ownerUserId);
+
+  await emitParticipantAccessTelemetry({
+    attributes: {
+      attendee_count: attendeeEmails.length,
+      eligible_participant_count: eligibleEmails.length,
+      excluded_participant_count:
+        internalEmails.length - eligibleEmails.length,
+      external_attendee_count:
+        attendeeEmails.length - internalEmails.length,
+      account_recipient_count: grantResults.filter((result) => !result.pending)
+        .length,
+      pending_invite_count: grantResults.filter((result) => result.pending)
+        .length,
+      duration_ms: Date.now() - startedAt,
+    },
+    eventName: "meeting.participant_access.synced",
+  });
 
   return {
     attendeeCount: attendeeEmails.length,
     internalParticipantCount: eligibleEmails.length,
   };
+}
+
+async function emitParticipantAccessTelemetry(input: {
+  attributes: Record<string, unknown>;
+  eventName: string;
+}) {
+  try {
+    const { emitTelemetryLog } = await import("@/lib/telemetry/server");
+    emitTelemetryLog(input);
+  } catch {
+    // Telemetry must not change the access reconciliation result.
+  }
 }
 
 function getAutomaticParticipantRecipients(

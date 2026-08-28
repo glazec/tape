@@ -5,7 +5,11 @@ import { SpanStatusCode, trace } from "@opentelemetry/api";
 
 import { imageWorkerInngest } from "@/services/image-worker/client";
 import { functions } from "@/services/image-worker/functions";
-import { registerServerTelemetry } from "@/lib/telemetry/server";
+import {
+  emitTelemetryLog,
+  flushTelemetry,
+  registerServerTelemetry,
+} from "@/lib/telemetry/server";
 
 registerServerTelemetry({ defaultServiceName: "tape-image-worker" });
 
@@ -52,6 +56,14 @@ export function createImageWorkerServer(): Server {
         response.once("close", endSpan);
 
         if (pathname === "/health") {
+          emitTelemetryLog({
+            attributes: {
+              "http.request.method": method,
+              "http.response.status_code": 200,
+              "http.route": "/health",
+            },
+            eventName: "image_worker.heartbeat",
+          });
           response.writeHead(200, { "content-type": "application/json" });
           response.end(
             JSON.stringify({ ok: true, service: "meeting-image-worker" }),
@@ -72,6 +84,28 @@ export function createImageWorkerServer(): Server {
   });
 }
 
+export async function startImageWorkerServer(port: number) {
+  const server = createImageWorkerServer();
+  await new Promise<void>((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(port, "0.0.0.0", () => {
+      server.off("error", reject);
+      resolve();
+    });
+  });
+  const address = server.address();
+  const listeningPort =
+    address && typeof address === "object" ? address.port : port;
+
+  emitTelemetryLog({
+    attributes: { "server.port": listeningPort },
+    eventName: "image_worker.started",
+  });
+  await flushTelemetry();
+
+  return server;
+}
+
 const entrypointUrl = process.argv[1]
   ? pathToFileURL(process.argv[1]).href
   : undefined;
@@ -79,7 +113,5 @@ const entrypointUrl = process.argv[1]
 if (entrypointUrl === import.meta.url) {
   const port = Number.parseInt(process.env.PORT ?? "3001", 10);
 
-  createImageWorkerServer().listen(port, "0.0.0.0", () => {
-    console.log(`Meeting image worker listening on port ${port}`);
-  });
+  void startImageWorkerServer(port);
 }

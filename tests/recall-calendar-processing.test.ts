@@ -506,7 +506,7 @@ describe("processRecallCalendarWebhook", () => {
     );
   });
 
-  it("keeps repair sync healthy when one Recall event bot update fails", async () => {
+  it("reports a recoverable event failure without advancing the sync cursor", async () => {
     select.mockReturnValue({
       from: () => ({
         where: () => ({
@@ -574,6 +574,7 @@ describe("processRecallCalendarWebhook", () => {
       syncedEventCount: 1,
     });
     expect(autoJoinCalendarEvent).toHaveBeenCalledTimes(2);
+    expect(update).not.toHaveBeenCalled();
   });
 
   it("reconciles recently started Recall calendar events that have not ended", async () => {

@@ -11,6 +11,7 @@ const {
   update,
   values,
   where,
+  emitTelemetryLog,
 } = vi.hoisted(() => ({
   deleteRows: vi.fn(),
   grantMeetingAccessByEmail: vi.fn(),
@@ -22,6 +23,7 @@ const {
   update: vi.fn(),
   values: vi.fn(),
   where: vi.fn(),
+  emitTelemetryLog: vi.fn(),
 }));
 
 vi.mock("@/db/client", () => ({
@@ -31,6 +33,7 @@ vi.mock("@/lib/meeting-access-grants", () => ({
   grantMeetingAccessByEmail,
   reconcileEffectiveMeetingAccess,
 }));
+vi.mock("@/lib/telemetry/server", () => ({ emitTelemetryLog }));
 
 import {
   classifyMeetingAttendeeEmails,
@@ -58,7 +61,7 @@ describe("meeting participant access", () => {
     });
   });
 
-  it("does not grant automatic participant access to an external member", async () => {
+  it("preserves participant sync when telemetry fails", async () => {
     select
       .mockReturnValueOnce({
         from: () => ({ where: vi.fn().mockResolvedValue([{ domain: "example.com" }]) }),
@@ -86,6 +89,9 @@ describe("meeting participant access", () => {
     where.mockResolvedValue(undefined);
     grantMeetingAccessByEmail.mockResolvedValue({ pending: false });
     reconcileEffectiveMeetingAccess.mockResolvedValue(undefined);
+    emitTelemetryLog.mockImplementationOnce(() => {
+      throw new Error("telemetry unavailable");
+    });
 
     await expect(
       syncMeetingParticipantAccess({
@@ -105,6 +111,21 @@ describe("meeting participant access", () => {
     );
     expect(onConflictDoUpdate).toHaveBeenCalledWith(
       expect.objectContaining({ setWhere: expect.anything() }),
+    );
+    expect(emitTelemetryLog).toHaveBeenCalledWith({
+      attributes: {
+        attendee_count: 2,
+        duration_ms: expect.any(Number),
+        eligible_participant_count: 1,
+        excluded_participant_count: 1,
+        external_attendee_count: 0,
+        account_recipient_count: 1,
+        pending_invite_count: 0,
+      },
+      eventName: "meeting.participant_access.synced",
+    });
+    expect(JSON.stringify(emitTelemetryLog.mock.calls)).not.toContain(
+      "member@example.com",
     );
   });
 });

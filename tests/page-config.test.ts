@@ -1,5 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
+import { getTranscriptViewerRenderKey } from "@/lib/meeting-transcript-render-key";
+
 vi.mock("@/lib/auth", () => ({
   getCurrentUser: vi.fn(),
 }));
@@ -63,9 +65,8 @@ describe("page rendering configuration", () => {
     expect(page.dynamic).toBe("force-dynamic");
   });
 
-  it("remounts meeting transcript when translation progress changes", async () => {
-    const page = await import("@/app/meetings/[meetingId]/page");
-    const baseKey = page.getTranscriptViewerRenderKey({
+  it("remounts meeting transcript when translation progress changes", () => {
+    const baseKey = getTranscriptViewerRenderKey({
       displayStatus: "ready",
       meetingId: "meeting_123",
       polishedSegments: 0,
@@ -75,7 +76,7 @@ describe("page rendering configuration", () => {
     });
 
     expect(
-      page.getTranscriptViewerRenderKey({
+      getTranscriptViewerRenderKey({
         displayStatus: "ready",
         meetingId: "meeting_123",
         polishedSegments: 0,
@@ -85,7 +86,7 @@ describe("page rendering configuration", () => {
       }),
     ).not.toBe(baseKey);
     expect(
-      page.getTranscriptViewerRenderKey({
+      getTranscriptViewerRenderKey({
         displayStatus: "ready",
         meetingId: "meeting_123",
         polishedSegments: 0,
@@ -96,11 +97,9 @@ describe("page rendering configuration", () => {
     ).not.toBe(baseKey);
   });
 
-  it("remounts meeting transcript when original polish progress changes", async () => {
-    const page = await import("@/app/meetings/[meetingId]/page");
-
+  it("remounts meeting transcript when original polish progress changes", () => {
     expect(
-      page.getTranscriptViewerRenderKey({
+      getTranscriptViewerRenderKey({
         displayStatus: "ready",
         meetingId: "meeting_123",
         polishedSegments: 1,
@@ -109,7 +108,7 @@ describe("page rendering configuration", () => {
         translationStatus: "not_needed",
       }),
     ).not.toBe(
-      page.getTranscriptViewerRenderKey({
+      getTranscriptViewerRenderKey({
         displayStatus: "ready",
         meetingId: "meeting_123",
         polishedSegments: 0,

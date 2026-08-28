@@ -2,9 +2,16 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+const { captureMessage } = vi.hoisted(() => ({
+  captureMessage: vi.fn(),
+}));
+
+vi.mock("@sentry/nextjs", () => ({ captureMessage }));
+
 describe("browser telemetry", () => {
   beforeEach(() => {
     vi.useFakeTimers();
+    captureMessage.mockReset();
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(null)));
     window.history.replaceState({}, "", "/dashboard?private=yes");
     sessionStorage.clear();
@@ -92,6 +99,59 @@ describe("browser telemetry", () => {
           type: "client_error",
         }),
       ]),
+    );
+  });
+
+  it("reports a rejected telemetry batch once without retrying", async () => {
+    vi.mocked(fetch).mockResolvedValue(
+      new Response(null, { status: 503 }),
+    );
+    const { enqueueClientTelemetry, flushClientTelemetry } = await import(
+      "@/lib/telemetry/client"
+    );
+
+    enqueueClientTelemetry({ type: "page_view" });
+    await flushClientTelemetry();
+    enqueueClientTelemetry({ type: "page_load" });
+    await flushClientTelemetry();
+
+    expect(fetch).toHaveBeenCalledTimes(2);
+    expect(captureMessage).toHaveBeenCalledOnce();
+    expect(captureMessage).toHaveBeenCalledWith(
+      "client.observability.failure",
+      expect.objectContaining({
+        level: "warning",
+        tags: expect.objectContaining({
+          "observability.failure_reason": "rejected",
+          "observability.phase": "delivery",
+          "observability.provider": "browser_telemetry",
+          "observability.status_code": "503",
+        }),
+      }),
+    );
+  });
+
+  it("reports a telemetry transport exception without retrying", async () => {
+    vi.mocked(fetch).mockRejectedValue(new Error("private transport detail"));
+    const { enqueueClientTelemetry, flushClientTelemetry } = await import(
+      "@/lib/telemetry/client"
+    );
+
+    enqueueClientTelemetry({ type: "page_view" });
+    await flushClientTelemetry();
+
+    expect(fetch).toHaveBeenCalledOnce();
+    expect(captureMessage).toHaveBeenCalledWith(
+      "client.observability.failure",
+      expect.objectContaining({
+        tags: expect.objectContaining({
+          "observability.failure_reason": "exception",
+          "observability.provider": "browser_telemetry",
+        }),
+      }),
+    );
+    expect(JSON.stringify(captureMessage.mock.calls)).not.toContain(
+      "private transport detail",
     );
   });
 });

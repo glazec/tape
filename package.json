@@ -48,6 +48,7 @@
     "@opentelemetry/exporter-logs-otlp-http": "^0.221.0",
     "@opentelemetry/resources": "^2.10.0",
     "@opentelemetry/sdk-logs": "^0.221.0",
+    "@opentelemetry/sdk-trace-base": "^2.8.0",
     "@react-three/drei": "^10.7.7",
     "@react-three/fiber": "^9.6.1",
     "@sanity/image-url": "^2.1.1",

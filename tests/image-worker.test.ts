@@ -3,20 +3,26 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 const {
   cleanupCompletedTranscriptChunks,
+  emitTelemetryLog,
+  flushTelemetry,
   markChunkedTranscriptJobFailed,
   persistCompletedTranscriptChunks,
   persistRecallMeetingVideoFrames,
   prepareTranscriptAudioChunks,
   queueChunkedTranscriptEnrichment,
+  registerServerTelemetry,
   serve,
   transcribePreparedTranscriptChunk,
 } = vi.hoisted(() => ({
   cleanupCompletedTranscriptChunks: vi.fn(),
+  emitTelemetryLog: vi.fn(),
+  flushTelemetry: vi.fn().mockResolvedValue(undefined),
   markChunkedTranscriptJobFailed: vi.fn(),
   persistCompletedTranscriptChunks: vi.fn(),
   persistRecallMeetingVideoFrames: vi.fn(),
   prepareTranscriptAudioChunks: vi.fn(),
   queueChunkedTranscriptEnrichment: vi.fn(),
+  registerServerTelemetry: vi.fn(),
   serve: vi.fn(() => (_request: unknown, response: {
     end: (body: string) => void;
     writeHead: (status: number, headers?: Record<string, string>) => void;
@@ -42,6 +48,12 @@ vi.mock("@/lib/transcript-chunk-worker", () => ({
 
 vi.mock("inngest/node", () => ({ serve }));
 
+vi.mock("@/lib/telemetry/server", () => ({
+  emitTelemetryLog,
+  flushTelemetry,
+  registerServerTelemetry,
+}));
+
 type RunnableInngestFunction = {
   fn: (input: unknown) => Promise<unknown>;
 };
@@ -49,11 +61,14 @@ type RunnableInngestFunction = {
 describe("image worker", () => {
   afterEach(() => {
     persistRecallMeetingVideoFrames.mockReset();
+    emitTelemetryLog.mockClear();
+    flushTelemetry.mockClear();
     cleanupCompletedTranscriptChunks.mockReset();
     markChunkedTranscriptJobFailed.mockReset();
     persistCompletedTranscriptChunks.mockReset();
     prepareTranscriptAudioChunks.mockReset();
     queueChunkedTranscriptEnrichment.mockReset();
+    registerServerTelemetry.mockClear();
     transcribePreparedTranscriptChunk.mockReset();
     serve.mockClear();
     vi.resetModules();
@@ -355,6 +370,15 @@ describe("image worker", () => {
         ok: true,
         service: "meeting-image-worker",
       });
+      expect(emitTelemetryLog).toHaveBeenCalledWith({
+        attributes: {
+          "http.request.method": "GET",
+          "http.response.status_code": 200,
+          "http.route": "/health",
+        },
+        eventName: "image_worker.heartbeat",
+      });
+      expect(flushTelemetry).not.toHaveBeenCalled();
 
       const inngest = await fetch(`http://127.0.0.1:${port}/api/inngest`);
       expect(inngest.status).toBe(200);
@@ -363,6 +387,28 @@ describe("image worker", () => {
       const missing = await fetch(`http://127.0.0.1:${port}/admin`);
       expect(missing.status).toBe(404);
       await expect(missing.text()).resolves.toBe("Not found");
+    } finally {
+      await new Promise<void>((resolve, reject) =>
+        server.close((error) => (error ? reject(error) : resolve())),
+      );
+    }
+  });
+
+  it("flushes a structured startup event before reporting readiness", async () => {
+    const { startImageWorkerServer } = await import(
+      "@/services/image-worker/server"
+    );
+    const server = await startImageWorkerServer(0);
+
+    try {
+      expect(registerServerTelemetry).toHaveBeenCalledWith({
+        defaultServiceName: "tape-image-worker",
+      });
+      expect(emitTelemetryLog).toHaveBeenCalledWith({
+        attributes: { "server.port": expect.any(Number) },
+        eventName: "image_worker.started",
+      });
+      expect(flushTelemetry).toHaveBeenCalledOnce();
     } finally {
       await new Promise<void>((resolve, reject) =>
         server.close((error) => (error ? reject(error) : resolve())),

@@ -1,4 +1,5 @@
 import { captureAmplitudeClientEvent } from "@/lib/amplitude/client";
+import { captureClientObservabilityFailure } from "@/lib/sentry/client-diagnostics";
 import {
   sanitizeTelemetryRoute,
   sanitizeTelemetryText,
@@ -147,14 +148,27 @@ export async function flushClientTelemetry(useBeacon = false) {
       }
     }
 
-    await fetch("/api/telemetry/events", {
+    const response = await fetch("/api/telemetry/events", {
       body,
       headers: { "Content-Type": "application/json" },
       keepalive: true,
       method: "POST",
     });
+
+    if (!response.ok) {
+      captureClientObservabilityFailure({
+        phase: "delivery",
+        provider: "browser_telemetry",
+        reason: "rejected",
+        statusCode: response.status,
+      });
+    }
   } catch {
-    // Observability must not affect the user workflow.
+    captureClientObservabilityFailure({
+      phase: "delivery",
+      provider: "browser_telemetry",
+      reason: "exception",
+    });
   }
 }
 

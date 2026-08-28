@@ -213,6 +213,67 @@ export function getIgnoredCalendarEventSource(
 }
 
 export async function autoJoinCalendarEvent(input: AutoJoinInput) {
+  const startedAt = Date.now();
+  const detectedPlatform = detectCalendarEventPlatform(input.event);
+
+  try {
+    const result = await autoJoinCalendarEventInternal(input);
+    const outcome = result as {
+      action: string;
+      platform?: unknown;
+      reason?: unknown;
+    };
+
+    await emitAutoJoinOutcome({
+      attributes: {
+        action: outcome.action,
+        duration_ms: Date.now() - startedAt,
+        platform:
+          typeof outcome.platform === "string"
+            ? outcome.platform
+            : detectedPlatform,
+        reason:
+          typeof outcome.reason === "string" ? outcome.reason : "completed",
+      },
+      eventName: "calendar.auto_join.outcome",
+    });
+
+    return result;
+  } catch (error) {
+    await emitAutoJoinOutcome({
+      attributes: {
+        action: "failed",
+        duration_ms: Date.now() - startedAt,
+        platform: detectedPlatform,
+        reason: "unhandled_error",
+      },
+      eventName: "calendar.auto_join.outcome",
+      severity: "ERROR",
+    });
+    throw error;
+  }
+}
+
+async function emitAutoJoinOutcome(input: {
+  attributes: Record<string, unknown>;
+  eventName: string;
+  severity?: "ERROR";
+}) {
+  try {
+    const { emitTelemetryLog } = await import("@/lib/telemetry/server");
+    emitTelemetryLog(input);
+  } catch {
+    // Telemetry must not change the calendar sync result.
+  }
+}
+
+function detectCalendarEventPlatform(event: SyncedCalendarEvent) {
+  const meetingUrl = event.isDeleted ? null : findCalendarMeetingUrl(event);
+
+  return meetingUrl ? detectMeetingPlatform(meetingUrl) ?? "unsupported" : "none";
+}
+
+async function autoJoinCalendarEventInternal(input: AutoJoinInput) {
   const attendeeEmails = getCalendarAttendeeEmails(input.event);
   const canonicalAttendeeEmails = [...attendeeEmails].sort();
   const declinedByExternalAttendees =

@@ -14,7 +14,10 @@ export async function register() {
     const { registerServerTelemetry } = await import(
       "@/lib/telemetry/server"
     );
-    registerServerTelemetry({ defaultServiceName: "tape-web" });
+    registerServerTelemetry({
+      defaultServiceName: "tape-web",
+      tracingOwner: Sentry.isEnabled() ? "sentry" : "standalone",
+    });
   }
 
   if (process.env.NEXT_RUNTIME === "edge") {

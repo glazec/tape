@@ -3,20 +3,39 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 const {
   exporterOptions,
   forceFlush,
+  loggerProviderOptions,
   loggerEmit,
+  logExport,
   processorOptions,
   registerOTel,
+  setGlobalLoggerProvider,
+  spanProcessorOptions,
+  traceExport,
+  traceForceFlush,
 } = vi.hoisted(() => ({
   exporterOptions: vi.fn(),
   forceFlush: vi.fn().mockResolvedValue(undefined),
+  loggerProviderOptions: vi.fn(),
   loggerEmit: vi.fn(),
+  logExport: vi.fn(
+    (_records: unknown, callback: (result: { code: number }) => void) =>
+      callback({ code: 0 }),
+  ),
   processorOptions: vi.fn(),
   registerOTel: vi.fn(),
+  setGlobalLoggerProvider: vi.fn((provider: unknown) => provider),
+  spanProcessorOptions: vi.fn(),
+  traceExport: vi.fn(
+    (_spans: unknown, callback: (result: { code: number }) => void) =>
+      callback({ code: 0 }),
+  ),
+  traceForceFlush: vi.fn().mockResolvedValue(undefined),
 }));
 
 vi.mock("@opentelemetry/api-logs", () => ({
   logs: {
     getLogger: vi.fn(() => ({ emit: loggerEmit })),
+    setGlobalLoggerProvider,
   },
   SeverityNumber: {
     DEBUG: 5,
@@ -31,6 +50,10 @@ vi.mock("@opentelemetry/exporter-logs-otlp-http", () => ({
     constructor(options: unknown) {
       exporterOptions(options);
     }
+
+    export(records: unknown, callback: (result: { code: number }) => void) {
+      logExport(records, callback);
+    }
   },
 }));
 
@@ -42,12 +65,35 @@ vi.mock("@opentelemetry/sdk-logs", () => ({
 
     forceFlush = forceFlush;
   },
+  LoggerProvider: class {
+    constructor(options: unknown) {
+      loggerProviderOptions(options);
+    }
+  },
+}));
+
+vi.mock("@opentelemetry/resources", () => ({
+  resourceFromAttributes: vi.fn((attributes: unknown) => attributes),
+}));
+
+vi.mock("@opentelemetry/sdk-trace-base", () => ({
+  BatchSpanProcessor: class {
+    constructor(options: unknown) {
+      spanProcessorOptions(options);
+    }
+
+    forceFlush = traceForceFlush;
+  },
 }));
 
 vi.mock("@vercel/otel", () => ({
   OTLPHttpJsonTraceExporter: class {
     constructor(options: unknown) {
       exporterOptions(options);
+    }
+
+    export(spans: unknown, callback: (result: { code: number }) => void) {
+      traceExport(spans, callback);
     }
   },
   registerOTel,
@@ -68,14 +114,42 @@ describe("server telemetry", () => {
     Object.assign(console, originalConsole);
     delete (
       globalThis as typeof globalThis & {
+        __tapeTelemetryFailures?: unknown;
         __tapeTelemetryState?: unknown;
+        __tapeTelemetryTraceProcessor?: unknown;
       }
     ).__tapeTelemetryState;
+    delete (
+      globalThis as typeof globalThis & {
+        __tapeTelemetryFailures?: unknown;
+        __tapeTelemetryTraceProcessor?: unknown;
+      }
+    ).__tapeTelemetryFailures;
+    delete (
+      globalThis as typeof globalThis & {
+        __tapeTelemetryTraceProcessor?: unknown;
+      }
+    ).__tapeTelemetryTraceProcessor;
     exporterOptions.mockClear();
     forceFlush.mockClear();
+    forceFlush.mockResolvedValue(undefined);
+    loggerProviderOptions.mockClear();
     loggerEmit.mockClear();
+    logExport.mockClear();
+    logExport.mockImplementation(
+      (_records: unknown, callback: (result: { code: number }) => void) =>
+        callback({ code: 0 }),
+    );
     processorOptions.mockClear();
-    registerOTel.mockClear();
+    registerOTel.mockReset();
+    setGlobalLoggerProvider.mockClear();
+    setGlobalLoggerProvider.mockImplementation(
+      (provider: unknown) => provider,
+    );
+    spanProcessorOptions.mockClear();
+    traceExport.mockClear();
+    traceForceFlush.mockClear();
+    traceForceFlush.mockResolvedValue(undefined);
     vi.resetModules();
   });
 
@@ -180,5 +254,120 @@ describe("server telemetry", () => {
         severityNumber: 17,
       }),
     );
+  });
+
+  it("uses Sentry's tracer provider while retaining OTLP traces and logs", async () => {
+    process.env.OTEL_EXPORTER_OTLP_ENDPOINT =
+      "https://otel-collector.example.com";
+    delete process.env.OTEL_SERVICE_NAME;
+    process.env.OTEL_RESOURCE_ATTRIBUTES = "custom.attribute=preserved";
+    process.env.RAILWAY_ENVIRONMENT_NAME = "production";
+    const {
+      createServerTraceProcessor,
+      emitTelemetryLog,
+      flushTelemetry,
+      registerServerTelemetry,
+    } = await import("@/lib/telemetry/server");
+
+    const traceProcessor = createServerTraceProcessor({
+      defaultServiceName: "tape-web",
+    });
+
+    expect(traceProcessor).not.toBeNull();
+    expect(process.env.OTEL_SERVICE_NAME).toBe("tape-web");
+    expect(process.env.OTEL_RESOURCE_ATTRIBUTES).toContain(
+      "custom.attribute=preserved",
+    );
+    expect(process.env.OTEL_RESOURCE_ATTRIBUTES).toContain(
+      "service.namespace=tape",
+    );
+    expect(process.env.OTEL_RESOURCE_ATTRIBUTES).toContain(
+      "deployment.environment.name=production",
+    );
+    expect(spanProcessorOptions).toHaveBeenCalledOnce();
+    expect(
+      registerServerTelemetry({
+        defaultServiceName: "tape-web",
+        tracingOwner: "sentry",
+      }),
+    ).toBe(true);
+    expect(registerOTel).not.toHaveBeenCalled();
+    expect(loggerProviderOptions).toHaveBeenCalledWith(
+      expect.objectContaining({
+        resource: expect.objectContaining({ "service.name": "tape-web" }),
+      }),
+    );
+    expect(setGlobalLoggerProvider).toHaveBeenCalledOnce();
+
+    emitTelemetryLog({ eventName: "web.request.completed" });
+    await flushTelemetry();
+
+    expect(loggerEmit).toHaveBeenCalledWith(
+      expect.objectContaining({ eventName: "web.request.completed" }),
+    );
+    expect(forceFlush).toHaveBeenCalledOnce();
+    expect(traceForceFlush).not.toHaveBeenCalled();
+  });
+
+  it("reports registration failures once through sanitized stderr", async () => {
+    process.env.OTEL_EXPORTER_OTLP_ENDPOINT =
+      "https://otel-collector.example.com";
+    const stderr = vi
+      .spyOn(process.stderr, "write")
+      .mockImplementation(() => true);
+    registerOTel.mockImplementation(() => {
+      throw new Error(
+        "collector rejected https://example.com/v1/traces?token=secret",
+      );
+    });
+    const { registerServerTelemetry } = await import(
+      "@/lib/telemetry/server"
+    );
+
+    expect(registerServerTelemetry()).toBe(false);
+    expect(registerServerTelemetry()).toBe(false);
+
+    expect(stderr).toHaveBeenCalledOnce();
+    expect(stderr.mock.calls[0]?.[0]).toContain(
+      '"eventName":"telemetry.pipeline.failure"',
+    );
+    expect(stderr.mock.calls[0]?.[0]).toContain('"stage":"registration"');
+    expect(stderr.mock.calls[0]?.[0]).not.toContain("token=secret");
+    stderr.mockRestore();
+  });
+
+  it("reports rejected OTLP log exports once without recursion", async () => {
+    process.env.OTEL_EXPORTER_OTLP_ENDPOINT =
+      "https://otel-collector.example.com";
+    const stderr = vi
+      .spyOn(process.stderr, "write")
+      .mockImplementation(() => true);
+    logExport.mockImplementation(
+      (
+        _records: unknown,
+        callback: (result: { code: number; error?: Error }) => void,
+      ) => callback({ code: 1, error: new Error("collector unavailable") }),
+    );
+    const { registerServerTelemetry } = await import(
+      "@/lib/telemetry/server"
+    );
+
+    registerServerTelemetry();
+    const exporter = (
+      processorOptions.mock.calls[0]?.[0] as {
+        exporter: {
+          export: (
+            records: unknown[],
+            callback: (result: { code: number }) => void,
+          ) => void;
+        };
+      }
+    ).exporter;
+    exporter.export([], vi.fn());
+    exporter.export([], vi.fn());
+
+    expect(stderr).toHaveBeenCalledOnce();
+    expect(stderr.mock.calls[0]?.[0]).toContain('"stage":"log_export"');
+    stderr.mockRestore();
   });
 });

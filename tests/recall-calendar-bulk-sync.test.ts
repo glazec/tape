@@ -55,8 +55,8 @@ describe("syncRecallCalendarEventsForAllConnectedUsers", () => {
       },
     ]);
     syncRecallCalendarEventsForWorkspace
-      .mockResolvedValueOnce({ syncedEventCount: 3 })
-      .mockResolvedValueOnce({ syncedEventCount: 5 });
+      .mockResolvedValueOnce({ failedEventCount: 0, syncedEventCount: 3 })
+      .mockResolvedValueOnce({ failedEventCount: 0, syncedEventCount: 5 });
 
     const { syncRecallCalendarEventsForAllConnectedUsers } = await import(
       "@/lib/recall-calendar-bulk-sync"
@@ -115,6 +115,7 @@ describe("syncRecallCalendarEventsForAllConnectedUsers", () => {
       },
     ]);
     syncRecallCalendarEventsForWorkspace.mockResolvedValue({
+      failedEventCount: 0,
       syncedEventCount: 3,
     });
 
@@ -161,7 +162,7 @@ describe("syncRecallCalendarEventsForAllConnectedUsers", () => {
     ]);
     syncRecallCalendarEventsForWorkspace
       .mockRejectedValueOnce(new Error("Recall unavailable"))
-      .mockResolvedValueOnce({ syncedEventCount: 4 });
+      .mockResolvedValueOnce({ failedEventCount: 0, syncedEventCount: 4 });
 
     const { syncRecallCalendarEventsForAllConnectedUsers } = await import(
       "@/lib/recall-calendar-bulk-sync"
@@ -185,6 +186,55 @@ describe("syncRecallCalendarEventsForAllConnectedUsers", () => {
     ).rejects.toMatchObject({
       message: "Recall calendar sync failed for 1 of 2 connections",
       result: expectedResult,
+    });
+    expect(syncRecallCalendarEventsForWorkspace).toHaveBeenCalledTimes(2);
+  });
+
+  it("reports a connection as failed when one of its calendar events fails", async () => {
+    mockConnectedCalendarRows([
+      {
+        connectionId: "connection_1",
+        creditLimitUsdMicros: null,
+        recallCalendarStatus: "connected",
+        teamId: "team_1",
+        userId: "user_1",
+        userEmail: "alice@iosg.vc",
+        autoJoinEnabled: true,
+      },
+      {
+        connectionId: "connection_2",
+        creditLimitUsdMicros: null,
+        recallCalendarStatus: "connected",
+        teamId: "team_2",
+        userId: "user_2",
+        userEmail: "bob@example.com",
+        autoJoinEnabled: true,
+      },
+    ]);
+    syncRecallCalendarEventsForWorkspace
+      .mockResolvedValueOnce({ failedEventCount: 2, syncedEventCount: 3 })
+      .mockResolvedValueOnce({ failedEventCount: 0, syncedEventCount: 4 });
+
+    const { syncRecallCalendarEventsForAllConnectedUsers } = await import(
+      "@/lib/recall-calendar-bulk-sync"
+    );
+
+    await expect(
+      syncRecallCalendarEventsForAllConnectedUsers(),
+    ).rejects.toMatchObject({
+      result: {
+        connectionCount: 2,
+        failedConnectionCount: 1,
+        failures: [
+          {
+            connectionId: "connection_1",
+            error: "2 calendar events failed to sync",
+            failedEventCount: 2,
+          },
+        ],
+        syncedConnectionCount: 1,
+        syncedEventCount: 7,
+      },
     });
     expect(syncRecallCalendarEventsForWorkspace).toHaveBeenCalledTimes(2);
   });

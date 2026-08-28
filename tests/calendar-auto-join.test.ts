@@ -9,6 +9,7 @@ const {
   applyMeetingShareRules,
   deleteRecallCalendarEventBot,
   deleteScheduledRecallBot,
+  emitTelemetryLog,
   getDatabaseClaimsJson,
   getMeetingBotProfile,
   cancelLocationRemindersForMeeting,
@@ -29,6 +30,7 @@ const {
   applyMeetingShareRules: vi.fn(),
   deleteRecallCalendarEventBot: vi.fn(),
   deleteScheduledRecallBot: vi.fn(),
+  emitTelemetryLog: vi.fn(),
   getDatabaseClaimsJson: vi.fn(),
   getMeetingBotProfile: vi.fn(),
   cancelLocationRemindersForMeeting: vi.fn(),
@@ -73,6 +75,8 @@ vi.mock("@/lib/location-reminders", () => ({
 vi.mock("@/lib/meeting-participant-access", () => ({
   syncMeetingParticipantAccess,
 }));
+
+vi.mock("@/lib/telemetry/server", () => ({ emitTelemetryLog }));
 
 vi.mock("@/db/client", () => ({
   db: {
@@ -161,6 +165,7 @@ describe("calendar auto join", () => {
     applyMeetingShareRules.mockReset();
     deleteRecallCalendarEventBot.mockReset();
     deleteScheduledRecallBot.mockReset();
+    emitTelemetryLog.mockReset();
     getDatabaseClaimsJson.mockReset();
     getMeetingBotProfile.mockReset();
     cancelLocationRemindersForMeeting.mockReset();
@@ -269,7 +274,7 @@ describe("calendar auto join", () => {
     ).toBeNull();
   });
 
-  it("cancels an active Luma bot and stale reminder when auto join is disabled", async () => {
+  it("preserves a successful auto-join outcome when telemetry fails", async () => {
     const calendarEventReturning = vi
       .fn()
       .mockResolvedValue([
@@ -313,6 +318,9 @@ describe("calendar auto join", () => {
       }),
     });
     update.mockReturnValue({ set: updateSet });
+    emitTelemetryLog.mockImplementationOnce(() => {
+      throw new Error("telemetry unavailable");
+    });
 
     const { autoJoinCalendarEvent } = await import("@/lib/calendar-auto-join");
 
@@ -742,6 +750,36 @@ describe("calendar auto join", () => {
         meetingUrl: "https://zoom.us/j/2345678901",
         startAt: "2099-08-20T15:00:00.000Z",
       }),
+    );
+    expect(emitTelemetryLog).toHaveBeenNthCalledWith(1, {
+      attributes: {
+        action: "scheduled",
+        duration_ms: expect.any(Number),
+        platform: "google_meet",
+        reason: "completed",
+      },
+      eventName: "calendar.auto_join.outcome",
+    });
+    expect(emitTelemetryLog).toHaveBeenNthCalledWith(2, {
+      attributes: {
+        action: "scheduled",
+        duration_ms: expect.any(Number),
+        platform: "zoom",
+        reason: "completed",
+      },
+      eventName: "calendar.auto_join.outcome",
+    });
+    expect(emitTelemetryLog).toHaveBeenNthCalledWith(3, {
+      attributes: {
+        action: "skipped",
+        duration_ms: expect.any(Number),
+        platform: "google_meet",
+        reason: "already_scheduled",
+      },
+      eventName: "calendar.auto_join.outcome",
+    });
+    expect(JSON.stringify(emitTelemetryLog.mock.calls)).not.toContain(
+      "https://",
     );
   });
 
@@ -1558,7 +1596,7 @@ describe("calendar auto join", () => {
     );
   });
 
-  it("rejects unrelated Recall Calendar V2 bot responses", async () => {
+  it("preserves the original auto-join error when telemetry fails", async () => {
     const calendarEventReturning = vi
       .fn()
       .mockResolvedValue([{ id: "33333333-3333-4333-8333-333333333333" }]);
@@ -1597,6 +1635,9 @@ describe("calendar auto join", () => {
         },
       ],
     });
+    emitTelemetryLog.mockImplementationOnce(() => {
+      throw new Error("telemetry unavailable");
+    });
 
     const { autoJoinCalendarEvent } = await import("@/lib/calendar-auto-join");
 
@@ -1618,6 +1659,20 @@ describe("calendar auto join", () => {
         },
       }),
     ).rejects.toThrow("Recall bot response missing id");
+
+    expect(emitTelemetryLog).toHaveBeenCalledWith({
+      attributes: {
+        action: "failed",
+        duration_ms: expect.any(Number),
+        platform: "google_meet",
+        reason: "unhandled_error",
+      },
+      eventName: "calendar.auto_join.outcome",
+      severity: "ERROR",
+    });
+    expect(JSON.stringify(emitTelemetryLog.mock.calls)).not.toContain(
+      "Partner sync",
+    );
 
     expect(updateSet).toHaveBeenCalledWith(
       expect.objectContaining({

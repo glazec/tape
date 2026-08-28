@@ -19,6 +19,7 @@ import {
   isMeetingRecordingResumeEligible,
 } from "@/lib/meeting-bot-recovery-policy";
 import { listActiveMeetingShares } from "@/lib/meeting-share-service";
+import { getTranscriptViewerRenderKey } from "@/lib/meeting-transcript-render-key";
 import {
   getMeetingTranscriptForWorkspace,
   listMeetingDetailRelatedMeetingsForWorkspace,
@@ -353,31 +354,6 @@ export default async function MeetingPage({
       </div>
     </AppShell>
   );
-}
-
-export function getTranscriptViewerRenderKey({
-  displayStatus,
-  meetingId,
-  polishedSegments,
-  segmentCount,
-  translatedSegments,
-  translationStatus,
-}: {
-  displayStatus: string;
-  meetingId: string;
-  polishedSegments: number;
-  segmentCount: number;
-  translatedSegments: number;
-  translationStatus?: string | null;
-}) {
-  return [
-    meetingId,
-    displayStatus,
-    segmentCount,
-    polishedSegments,
-    translationStatus ?? "unknown",
-    translatedSegments,
-  ].join(":");
 }
 
 function formatPlatform(platform: string) {

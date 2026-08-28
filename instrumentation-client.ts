@@ -1,6 +1,7 @@
 import * as amplitude from "@amplitude/unified";
 import * as Sentry from "@sentry/nextjs";
 
+import { captureAmplitudeInitializationFailure } from "@/lib/amplitude/client";
 import { getSentryInitOptions } from "@/lib/sentry/config";
 import {
   captureNavigationStart,
@@ -23,6 +24,15 @@ function shouldTrackSafeInteraction(_actionType: string, element: Element) {
       ),
   );
 }
+
+Sentry.init(
+  getSentryInitOptions({
+    development: process.env.NODE_ENV === "development",
+    dsn: process.env.NEXT_PUBLIC_SENTRY_DSN,
+    environment:
+      process.env.NEXT_PUBLIC_VERCEL_ENV || process.env.NODE_ENV,
+  }),
+);
 
 if (!amplitudeWindow.__tapeAmplitudeInitialization) {
   amplitudeWindow.__tapeAmplitudeInitialization = amplitude.initAll(
@@ -69,17 +79,10 @@ if (!amplitudeWindow.__tapeAmplitudeInitialization) {
       },
     },
   );
-  void amplitudeWindow.__tapeAmplitudeInitialization.catch(() => undefined);
+  void amplitudeWindow.__tapeAmplitudeInitialization.catch(
+    captureAmplitudeInitializationFailure,
+  );
 }
-
-Sentry.init(
-  getSentryInitOptions({
-    development: process.env.NODE_ENV === "development",
-    dsn: process.env.NEXT_PUBLIC_SENTRY_DSN,
-    environment:
-      process.env.NEXT_PUBLIC_VERCEL_ENV || process.env.NODE_ENV,
-  }),
-);
 
 initializeClientTelemetry();
 

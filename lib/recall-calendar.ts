@@ -338,7 +338,9 @@ export async function syncRecallCalendarEventsForWorkspace(input: {
     }
   }
 
-  await advanceRecallCalendarSyncCursor(connection, now);
+  if (failedCount === 0) {
+    await advanceRecallCalendarSyncCursor(connection, now);
+  }
 
   return {
     connectionId: connection.id,

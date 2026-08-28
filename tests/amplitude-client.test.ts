@@ -3,21 +3,31 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const {
+  captureMessage,
   captureNavigationStart,
   initAll,
   initializeClientTelemetry,
+  initializeSentry,
   reset,
   setGroup,
   setUserId,
   track,
 } = vi.hoisted(() => ({
+  captureMessage: vi.fn(),
   captureNavigationStart: vi.fn(),
   initAll: vi.fn(),
   initializeClientTelemetry: vi.fn(),
+  initializeSentry: vi.fn(),
   reset: vi.fn(),
   setGroup: vi.fn(),
   setUserId: vi.fn(),
   track: vi.fn(),
+}));
+
+vi.mock("@sentry/nextjs", () => ({
+  captureMessage,
+  captureRouterTransitionStart: vi.fn(),
+  init: initializeSentry,
 }));
 
 vi.mock("@amplitude/unified", () => ({
@@ -40,12 +50,15 @@ type AmplitudeWindow = Window & {
 describe("Amplitude browser analytics", () => {
   beforeEach(() => {
     captureNavigationStart.mockReset();
+    captureMessage.mockReset();
     initAll.mockReset().mockResolvedValue(undefined);
     initializeClientTelemetry.mockReset();
+    initializeSentry.mockReset();
     reset.mockReset();
     setGroup.mockReset();
     setUserId.mockReset();
     track.mockReset();
+    sessionStorage.clear();
     delete (window as AmplitudeWindow).__tapeAmplitudeInitialization;
     vi.resetModules();
   });
@@ -56,6 +69,7 @@ describe("Amplitude browser analytics", () => {
     await import("@/instrumentation-client");
 
     expect(initAll).toHaveBeenCalledOnce();
+    expect(initializeSentry).toHaveBeenCalledBefore(initAll);
     expect(initAll).toHaveBeenCalledWith(
       "5836fffe3657ee0cf0058fb4c044329",
       {
@@ -144,5 +158,91 @@ describe("Amplitude browser analytics", () => {
     expect(setUserId).toHaveBeenCalledWith("user-id");
     expect(setGroup).toHaveBeenCalledWith("workspace_id", "workspace-id");
     expect(reset).toHaveBeenCalledOnce();
+  });
+
+  it("reports initialization failure once with no error details", async () => {
+    initAll.mockRejectedValue(new Error("private initialization detail"));
+
+    await import("@/instrumentation-client");
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(captureMessage).toHaveBeenCalledOnce();
+    expect(captureMessage).toHaveBeenCalledWith(
+      "client.observability.failure",
+      expect.objectContaining({
+        tags: expect.objectContaining({
+          "observability.failure_reason": "exception",
+          "observability.phase": "initialization",
+          "observability.provider": "amplitude",
+        }),
+      }),
+    );
+    expect(JSON.stringify(captureMessage.mock.calls)).not.toContain(
+      "private initialization detail",
+    );
+  });
+
+  it("reports rejected event delivery once per browser session", async () => {
+    track.mockReturnValue({
+      promise: Promise.resolve({ code: 429 }),
+    });
+    await import("@/instrumentation-client");
+    const { captureAmplitudeClientEvent } = await import(
+      "@/lib/amplitude/client"
+    );
+
+    captureAmplitudeClientEvent("tape_product_action", {
+      action: "meeting_share_completed",
+    });
+    captureAmplitudeClientEvent("tape_product_action", {
+      action: "meeting_share_completed",
+    });
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(track).toHaveBeenCalledTimes(2);
+    expect(captureMessage).toHaveBeenCalledOnce();
+    expect(captureMessage).toHaveBeenCalledWith(
+      "client.observability.failure",
+      expect.objectContaining({
+        tags: expect.objectContaining({
+          "observability.failure_reason": "rejected",
+          "observability.phase": "delivery",
+          "observability.provider": "amplitude",
+          "observability.status_code": "429",
+        }),
+      }),
+    );
+  });
+
+  it("reports an event delivery exception without error details", async () => {
+    track.mockReturnValue({
+      promise: Promise.reject(new Error("private delivery detail")),
+    });
+    await import("@/instrumentation-client");
+    const { captureAmplitudeClientEvent } = await import(
+      "@/lib/amplitude/client"
+    );
+
+    captureAmplitudeClientEvent("tape_product_action", {
+      action: "meeting_share_completed",
+    });
+    await vi.waitFor(() => {
+      expect(captureMessage).toHaveBeenCalledWith(
+        "client.observability.failure",
+        expect.objectContaining({
+          tags: expect.objectContaining({
+            "observability.failure_reason": "exception",
+            "observability.phase": "delivery",
+            "observability.provider": "amplitude",
+          }),
+        }),
+      );
+    });
+    expect(JSON.stringify(captureMessage.mock.calls)).not.toContain(
+      "private delivery detail",
+    );
   });
 });

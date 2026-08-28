@@ -11,7 +11,7 @@ import {
 } from "@/lib/sentry/config";
 
 describe("Sentry configuration", () => {
-  it("enables logs and samples production traces", () => {
+  it("keeps client production trace sampling at ten percent", () => {
     expect(
       getSentryInitOptions({
         development: false,
