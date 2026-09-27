@@ -300,7 +300,10 @@ export function groupRelatedMeetings(
   const roots: MeetingForGrouping[] = [];
 
   for (const meeting of sorted) {
-    const keys = getMeetingSimilarityKeys(meeting, options);
+    const audienceKey = getMeetingAudienceKey(meeting.externalParticipantKeys);
+    const keys = getMeetingSimilarityKeys(meeting, options).map((key) =>
+      JSON.stringify([audienceKey, key]),
+    );
 
     if (keys.length === 0) {
       roots.push(meeting);
@@ -540,6 +543,31 @@ export function getMeetingSimilarityKeys(
   }
 
   return keys;
+}
+
+// A shared attendee must not connect a bilateral call to a multi-company intro.
+// Corporate attendees represent their organization; personal emails represent
+// individual people because their provider is not an organization signal.
+export function getMeetingAudienceKey(participantKeys: string[] = []) {
+  const audience = new Set<string>();
+
+  for (const rawKey of participantKeys) {
+    const key = rawKey.trim().toLowerCase();
+    if (!key) continue;
+
+    const email = key.startsWith("email:") ? key.slice(6) : key;
+    const domain = key.startsWith("domain:")
+      ? key.slice(7)
+      : getEmailDomain(email);
+
+    if (domain && !isCommonPersonalEmailDomain(domain)) {
+      audience.add(`domain:${domain}`);
+    } else if (!key.startsWith("domain:")) {
+      audience.add(email);
+    }
+  }
+
+  return JSON.stringify([...audience].sort());
 }
 
 export function getExternalParticipantKeys(

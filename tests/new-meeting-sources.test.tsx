@@ -13,11 +13,11 @@ vi.mock("next/navigation", () => ({
 }));
 
 vi.mock("@/components/meeting-link-form", () => ({
-  MeetingLinkForm: () => <span>Meeting link form</span>,
+  MeetingLinkForm: () => <label>Meeting link form<input aria-label="Meeting link" /></label>,
 }));
 
 vi.mock("@/components/upload-dropzone", () => ({
-  UploadDropzone: () => <span>Recording upload form</span>,
+  UploadDropzone: () => <label>Recording upload form<input aria-label="Recording files" type="file" /></label>,
 }));
 
 import { NewMeetingSources } from "@/components/new-meeting-sources";
@@ -27,6 +27,34 @@ describe("NewMeetingSources", () => {
     push.mockReset();
     refresh.mockReset();
     vi.stubGlobal("fetch", vi.fn());
+    HTMLElement.prototype.scrollIntoView = vi.fn();
+  });
+
+  it.each([
+    [/Meeting link/, "Meeting link"],
+    [/Recording file/, "Recording files"],
+    [/Transcript/, "Transcript text"],
+    [/Record on phone/, "Meeting title"],
+  ] as const)("centers the input when selecting %s, including repeated clicks", (option, label) => {
+    render(<NewMeetingSources />);
+    expect(HTMLElement.prototype.scrollIntoView).not.toHaveBeenCalled();
+    const button = screen.getByRole("button", { name: option });
+    fireEvent.click(button);
+    const input = screen.getByLabelText(label);
+    const scroll = vi.mocked(input.scrollIntoView);
+    expect(scroll).toHaveBeenLastCalledWith({ behavior: "smooth", block: "center" });
+    expect(scroll.mock.instances.at(-1)).toBe(input);
+    expect(document.activeElement).not.toBe(input);
+    fireEvent.click(button);
+    expect(scroll).toHaveBeenCalledTimes(2);
+  });
+
+  it("respects reduced motion when revealing an input", () => {
+    const matchMedia = vi.spyOn(window, "matchMedia").mockReturnValue({ matches: true } as MediaQueryList);
+    render(<NewMeetingSources />);
+    fireEvent.click(screen.getByRole("button", { name: /Meeting link/ }));
+    expect(HTMLElement.prototype.scrollIntoView).toHaveBeenCalledWith({ behavior: "instant", block: "center" });
+    matchMedia.mockRestore();
   });
 
   it("shows four clear sources and reveals only the selected form", () => {

@@ -114,6 +114,69 @@ describe("parseManualTranscriptText", () => {
       },
     ]);
   });
+
+  it("parses Spark meeting notes without importing its header or footer", () => {
+    expect(
+      parseManualTranscriptText(
+        [
+          "Emperor One",
+          "",
+          "2:35 下午 - 3:06 下午 GMT-04:00",
+          "",
+          "00:00 Founder: We built a continual learning model.",
+          "",
+          "20:01 Investor: I think I heard you several times.",
+          "",
+          "29:54 Please share the deck with us. [00:09:59]",
+          "",
+          "由 Spark +AI 会议记录 驱动",
+        ].join("\n"),
+      ),
+    ).toEqual([
+      {
+        speaker: "Founder",
+        startMs: 0,
+        text: "We built a continual learning model.",
+      },
+      {
+        speaker: "Investor",
+        startMs: 20 * 60 * 1000 + 1000,
+        text: "I think I heard you several times.",
+      },
+      {
+        speaker: "Speaker 1",
+        startMs: 29 * 60 * 1000 + 54_000,
+        text: "Please share the deck with us.",
+      },
+    ]);
+  });
+
+  it("keeps SRT and VTT timing when a Spark footer is present", () => {
+    expect(
+      parseManualTranscriptText(
+        "1\n00:00:03,250 --> 00:00:05,750\nAlice: Hello\n\n由 Spark +AI 会议记录 驱动",
+      ),
+    ).toEqual([
+      {
+        endMs: 5750,
+        speaker: "Alice",
+        startMs: 3250,
+        text: "Hello",
+      },
+    ]);
+    expect(
+      parseManualTranscriptText(
+        "WEBVTT\n\n00:03.250 --> 00:05.750\nAlice: Hello\n\n由 Spark +AI 会议记录 驱动",
+      ),
+    ).toEqual([
+      {
+        endMs: 5750,
+        speaker: "Alice",
+        startMs: 3250,
+        text: "Hello",
+      },
+    ]);
+  });
 });
 
 describe("meeting recovery uploads", () => {

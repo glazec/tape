@@ -86,6 +86,7 @@ import {
 import {
   buildSmartMeetingTitle,
   getExternalParticipantKeys,
+  getMeetingAudienceKey,
   groupRelatedMeetings,
 } from "@/lib/meeting-intelligence";
 import {
@@ -441,7 +442,7 @@ export async function listMeetingLibraryPageForWorkspace(
 }
 
 export function buildMeetingLibraryPage(
-  meetingsForLibrary: MeetingListItem[],
+  meetingsForLibrary: (MeetingListItem & { externalParticipantKeys?: string[] })[],
   options: MeetingLibraryPageOptions = {},
 ): MeetingLibraryPage {
   const now = options.now ?? new Date();
@@ -521,8 +522,15 @@ export function buildMeetingLibraryPage(
   const hasOlderMeetings = allRootMeetings.some(
     (meeting) => !isMeetingInsideHistoryWindow(meeting, historyCutoff),
   );
-  const visibleMeetings =
-    sort === "smart" ? foldSimilarMeetings(sortedMeetings) : sortedMeetings;
+  const visibleMeetings = sort === "smart"
+    ? foldSimilarMeetings(
+        sortedMeetings,
+        new Map(eligibleMeetingsForLibrary.map((meeting) => [
+          meeting.id,
+          getMeetingAudienceKey(meeting.externalParticipantKeys),
+        ])),
+      )
+    : sortedMeetings;
   const page = normalizePage(options.page);
   const pageSize = normalizePageSize(options.pageSize);
   const start = (page - 1) * pageSize;
@@ -560,12 +568,18 @@ function getRelatedMeetingsByRoot(
   );
 }
 
-function foldSimilarMeetings(meetingsForLibrary: MeetingListItem[]) {
+function foldSimilarMeetings(
+  meetingsForLibrary: MeetingListItem[],
+  audienceByMeetingId: Map<string, string>,
+) {
   const roots: MeetingListItem[] = [];
   const rootByTitle = new Map<string, MeetingListItem>();
 
   for (const meeting of meetingsForLibrary) {
-    const titleKey = getSimilarMeetingTitleKey(meeting.title);
+    const title = getSimilarMeetingTitleKey(meeting.title);
+    const titleKey = title
+      ? JSON.stringify([audienceByMeetingId.get(meeting.id), title])
+      : null;
 
     if (!titleKey) {
       roots.push(meeting);

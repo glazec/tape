@@ -1,6 +1,6 @@
 "use client";
 
-import { ChangeEvent, FormEvent, useRef, useState } from "react";
+import { ChangeEvent, FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Bot, FileText, Mic, UploadCloud } from "lucide-react";
 
@@ -50,6 +50,23 @@ const sourceOptions = [
 
 export function NewMeetingSources() {
   const [source, setSource] = useState<MeetingSource | null>(null);
+  const formRef = useRef<HTMLDivElement>(null);
+
+  const centerInput = useCallback(() => {
+    const input = formRef.current?.querySelector<HTMLElement>(
+      source === "transcript" ? "textarea" : "input:not([type=hidden])",
+    );
+    input?.scrollIntoView({
+      behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches
+        ? "instant"
+        : "smooth",
+      block: "center",
+    });
+  }, [source]);
+
+  useEffect(() => {
+    centerInput();
+  }, [centerInput]);
 
   return (
     <div className="space-y-5">
@@ -70,7 +87,10 @@ export function NewMeetingSources() {
                 selected && "border-primary bg-primary/5",
               )}
               key={option.value}
-              onClick={() => setSource(option.value)}
+              onClick={() => {
+                if (source === option.value) centerInput();
+                else setSource(option.value);
+              }}
               type="button"
             >
               <Icon
@@ -88,10 +108,14 @@ export function NewMeetingSources() {
         })}
       </div>
 
-      {source === "link" ? <MeetingLinkForm /> : null}
-      {source === "recording" ? <UploadDropzone /> : null}
-      {source === "transcript" ? <NewTranscriptForm /> : null}
-      {source === "phone" ? <PhoneRecordingForm /> : null}
+      {source ? (
+        <div className="pb-[50svh]" ref={formRef}>
+          {source === "link" ? <MeetingLinkForm /> : null}
+          {source === "recording" ? <UploadDropzone /> : null}
+          {source === "transcript" ? <NewTranscriptForm /> : null}
+          {source === "phone" ? <PhoneRecordingForm /> : null}
+        </div>
+      ) : null}
     </div>
   );
 }

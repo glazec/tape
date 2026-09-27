@@ -128,7 +128,7 @@ export async function GET(
     const audioUrl = await createReadUrl({ key: objectKey });
 
     return shouldProxy
-      ? proxyAudio(audioUrl, downloadFilename)
+      ? proxyAudio(request, audioUrl, downloadFilename)
       : Response.redirect(audioUrl);
   }
 
@@ -139,7 +139,7 @@ export async function GET(
 
   if (recallAudioUrl) {
     return shouldProxy
-      ? proxyAudio(recallAudioUrl, downloadFilename)
+      ? proxyAudio(request, recallAudioUrl, downloadFilename)
       : Response.redirect(recallAudioUrl);
   }
 
@@ -177,23 +177,54 @@ async function resolveRecallAudioUrl(input: {
   return findRecallRecordingMediaUrl(recording, input.recallRecordingId);
 }
 
-async function proxyAudio(audioUrl: string, filename?: string) {
-  const response = await fetch(audioUrl);
+async function proxyAudio(request: Request, audioUrl: string, filename?: string) {
+  const upstreamHeaders = new Headers();
+
+  for (const name of ["range", "if-range"]) {
+    const value = request.headers.get(name);
+    if (value) upstreamHeaders.set(name, value);
+  }
+
+  const response = await fetch(audioUrl, {
+    headers: upstreamHeaders,
+    cache: "no-store",
+    signal: request.signal,
+  });
+
+  if (response.status === 416) {
+    const headers = new Headers({ "cache-control": "private, no-store" });
+    const contentRange = response.headers.get("content-range");
+    if (contentRange) headers.set("content-range", contentRange);
+    await response.body?.cancel();
+    return new Response(null, { status: 416, headers });
+  }
 
   if (!response.ok || !response.body) {
     return Response.json({ error: "Audio not found" }, { status: 404 });
   }
 
   const headers: Record<string, string> = {
-    "cache-control": "private, max-age=300",
+    "cache-control": "private, no-store",
     "content-type": response.headers.get("content-type") ?? "audio/mpeg",
   };
+
+  for (const name of [
+    "accept-ranges",
+    "content-range",
+    "content-length",
+    "etag",
+    "last-modified",
+  ]) {
+    const value = response.headers.get(name);
+    if (value) headers[name] = value;
+  }
 
   if (filename) {
     headers["content-disposition"] = `attachment; filename="${filename}"`;
   }
 
   return new Response(response.body, {
+    status: response.status,
     headers,
   });
 }

@@ -351,6 +351,13 @@
       "when": 1786934581276,
       "tag": "0049_transcript_job_generation",
       "breakpoints": true
+    },
+    {
+      "idx": 50,
+      "version": "7",
+      "when": 1790091816562,
+      "tag": "0050_fix_meeting_insert_returning",
+      "breakpoints": true
     }
   ]
 }

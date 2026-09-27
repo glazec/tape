@@ -71,10 +71,11 @@ vi.mock("@/db/client", () => ({
 
 async function getMeetingAudio(
   url = "https://app.example.com/api/meetings/11111111-1111-4111-8111-111111111111/audio",
+  headers?: HeadersInit,
 ) {
   const { GET } = await import("@/app/api/meetings/[meetingId]/audio/route");
 
-  return GET(new Request(url), {
+  return GET(new Request(url, { headers }), {
     params: Promise.resolve({
       meetingId: "11111111-1111-4111-8111-111111111111",
     }),
@@ -215,8 +216,65 @@ describe("GET /api/meetings/[meetingId]/audio", () => {
     expect(response.status).toBe(200);
     expect(response.headers.get("content-type")).toBe("audio/mpeg");
     expect(response.headers.get("location")).toBeNull();
-    expect(fetchMock).toHaveBeenCalledWith("https://r2.example.com/audio.mp3");
+    expect(fetchMock).toHaveBeenCalledWith("https://r2.example.com/audio.mp3", expect.objectContaining({ cache: "no-store" }));
     await expect(response.text()).resolves.toBe("fake mp3");
+  });
+
+  it.each(["r2", "recall"])("preserves seek ranges and refreshes %s URLs for each request", async (source) => {
+    getCurrentUser.mockResolvedValue({ id: "user_123", email: "user@example.com" });
+    getWorkspace.mockResolvedValue({ teamId: "team_123" });
+    limit.mockResolvedValue([source === "r2"
+      ? { objectKey: "audio.mp3" }
+      : { recallRecordingId: "recording_123" }]);
+    retrieveRecallRecording.mockResolvedValue({ id: "recording_123" });
+    const resolveUrl = source === "r2" ? createReadUrl : findRecallRecordingMediaUrl;
+    resolveUrl.mockReturnValueOnce("https://media.example.com/first")
+      .mockReturnValueOnce("https://media.example.com/refreshed");
+    const fetchMock = vi.fn().mockImplementation(() => new Response("part", {
+      status: 206,
+      headers: {
+        "content-type": "audio/mpeg",
+        "accept-ranges": "bytes",
+        "content-range": "bytes 100-103/10000",
+        "content-length": "4",
+        "etag": '"recording-v1"',
+      },
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+    for (const url of ["first", "refreshed"]) {
+      const response = await getMeetingAudio(
+        "https://app.example.com/api/meetings/11111111-1111-4111-8111-111111111111/audio?proxy=1",
+        { Range: "bytes=100-103", "If-Range": '"recording-v1"' },
+      );
+      expect(response.status).toBe(206);
+      expect(response.headers.get("content-range")).toBe("bytes 100-103/10000");
+      expect(response.headers.get("accept-ranges")).toBe("bytes");
+      expect(response.headers.get("content-length")).toBe("4");
+      expect(response.headers.get("etag")).toBe('"recording-v1"');
+      expect(fetchMock).toHaveBeenLastCalledWith(`https://media.example.com/${url}`, expect.objectContaining({
+        headers: expect.any(Headers),
+      }));
+      const forwarded = fetchMock.mock.calls.at(-1)?.[1].headers as Headers;
+      expect(forwarded.get("range")).toBe("bytes=100-103");
+      expect(forwarded.get("if-range")).toBe('"recording-v1"');
+      await expect(response.text()).resolves.toBe("part");
+    }
+  });
+
+  it("preserves unsatisfiable range responses", async () => {
+    getCurrentUser.mockResolvedValue({ id: "user_123", email: "user@example.com" });
+    getWorkspace.mockResolvedValue({ teamId: "team_123" });
+    limit.mockResolvedValue([{ objectKey: "audio.mp3" }]);
+    createReadUrl.mockResolvedValue("https://media.example.com/audio.mp3");
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(null, {
+      status: 416, headers: { "content-range": "bytes */10000" },
+    })));
+    const response = await getMeetingAudio(
+      "https://app.example.com/api/meetings/11111111-1111-4111-8111-111111111111/audio?proxy=1",
+      { Range: "bytes=20000-" },
+    );
+    expect(response.status).toBe(416);
+    expect(response.headers.get("content-range")).toBe("bytes */10000");
   });
 
   it("streams authenticated R2 audio as an attachment when download is requested", async () => {
@@ -251,7 +309,7 @@ describe("GET /api/meetings/[meetingId]/audio", () => {
       'attachment; filename="Nascent Sync audio.mp3"',
     );
     expect(response.headers.get("location")).toBeNull();
-    expect(fetchMock).toHaveBeenCalledWith("https://r2.example.com/audio.mp3");
+    expect(fetchMock).toHaveBeenCalledWith("https://r2.example.com/audio.mp3", expect.objectContaining({ cache: "no-store" }));
     await expect(response.text()).resolves.toBe("fake mp3");
   });
 

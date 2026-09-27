@@ -2173,6 +2173,17 @@ describe("buildMeetingLibraryPage", () => {
     });
   });
 
+  it("keeps introductions separate even when smart folding sees identical titles", async () => {
+    const { buildMeetingLibraryPage } = await import("@/lib/meeting-queries");
+    const page = buildMeetingLibraryPage([
+      libraryMeeting({ id: "a", title: "Partner catchup", platform: "zoom", startedAt: "2026-06-27T10:00:00.000Z", externalParticipantKeys: ["domain:alpha.test"] }),
+      libraryMeeting({ id: "intro", title: "Partner catchup", platform: "zoom", startedAt: "2026-03-27T10:00:00.000Z", externalParticipantKeys: ["domain:alpha.test", "domain:beta.test"] }),
+    ], { now: new Date("2026-06-28T12:00:00.000Z"), sort: "smart" });
+
+    expect(page.meetings.map((meeting) => meeting.id)).toEqual(["a", "intro"]);
+    expect(page.meetings.every((meeting) => meeting.relatedMeetings?.length === 0)).toBe(true);
+  });
+
   it("keeps a ready transcript visible when a newer related scheduled meeting is capped", async () => {
     const { buildMeetingLibraryPage } = await import("@/lib/meeting-queries");
 

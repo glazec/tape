@@ -153,6 +153,9 @@ The probe fails when its target email or required credentials are missing. It re
 Pull requests and pushes to `main` run four jobs in `.github/workflows/test.yml`:
 
 1. `migration-integrity` checks migration lineage, detects schema drift, replays every migration on an empty PostgreSQL database, and verifies the billing ledger queries.
+   It also runs `tests/meeting-insert-rls.sql` to verify meeting creation with
+   `INSERT ... RETURNING`, ownership, workspace isolation, administrator access,
+   and active versus revoked shares using the application and MCP roles.
 2. `web` migrates and seeds the isolated authenticated fixture database when
    its secrets are available, then runs `npm run verify` and Playwright on
    Node.js 24 with ffmpeg.

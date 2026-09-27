@@ -29,6 +29,7 @@ describe("TranscriptViewer interactions", () => {
       addEventListener: vi.fn(),
       removeEventListener: vi.fn(),
     } as unknown as MediaQueryList);
+    vi.spyOn(HTMLMediaElement.prototype, "readyState", "get").mockReturnValue(1);
     vi.spyOn(HTMLMediaElement.prototype, "play").mockResolvedValue();
     vi.spyOn(HTMLMediaElement.prototype, "pause").mockImplementation(() => undefined);
     vi.spyOn(window, "scrollTo").mockImplementation(() => undefined);
@@ -525,6 +526,52 @@ describe("TranscriptViewer interactions", () => {
     audio.currentTime = 3.1;
     fireEvent.timeUpdate(audio);
     expect(HTMLMediaElement.prototype.pause).toHaveBeenCalled();
+  });
+
+  it("streams protected recordings through the range proxy", () => {
+    render(<TranscriptViewer audioUrl="/api/meetings/meeting_1/audio?recording=part_1" segments={segments} />);
+    expect(document.querySelector("audio")?.getAttribute("src")).toBe(
+      "/api/meetings/meeting_1/audio?recording=part_1&proxy=1",
+    );
+  });
+
+  it("waits for metadata before seeking to a speaker in a long recording", async () => {
+    vi.mocked(HTMLMediaElement.prototype.play).mockClear();
+    render(<TranscriptViewer audioUrl="/audio.mp3" segments={[
+      { id: "late", speaker: "Alice", startMs: 3_600_000, endMs: 3_610_000, text: "hello" },
+    ]} />);
+    const audio = document.querySelector("audio") as HTMLAudioElement;
+    Object.defineProperty(audio, "readyState", { configurable: true, value: 0 });
+    fireEvent.click(screen.getByRole("button", { name: "Preview Alice" }));
+    expect(audio.currentTime).toBe(0);
+    expect(HTMLMediaElement.prototype.play).not.toHaveBeenCalled();
+    Object.defineProperty(audio, "readyState", { configurable: true, value: 1 });
+    fireEvent.loadedMetadata(audio);
+    await waitFor(() => expect(audio.currentTime).toBe(3600));
+    expect(HTMLMediaElement.prototype.play).toHaveBeenCalled();
+  });
+
+  it("does not finish a speaker preview while a backwards seek is pending", async () => {
+    render(<TranscriptViewer audioUrl="/audio.mp3" segments={segments} />);
+    const audio = document.querySelector("audio") as HTMLAudioElement;
+    fireEvent.click(screen.getByRole("button", { name: "Preview Speaker 1" }));
+    await waitFor(() => expect(HTMLMediaElement.prototype.play).toHaveBeenCalled());
+    Object.defineProperty(audio, "seeking", { configurable: true, value: true });
+    audio.currentTime = 50;
+    fireEvent.timeUpdate(audio);
+    expect(HTMLMediaElement.prototype.pause).not.toHaveBeenCalled();
+    Object.defineProperty(audio, "seeking", { configurable: true, value: false });
+    audio.currentTime = 30;
+    fireEvent.timeUpdate(audio);
+    expect(HTMLMediaElement.prototype.pause).toHaveBeenCalled();
+  });
+
+  it("does not report interrupted play requests as broken recordings", async () => {
+    vi.mocked(HTMLMediaElement.prototype.play).mockRejectedValueOnce(new DOMException("interrupted", "AbortError"));
+    render(<TranscriptViewer audioUrl="/audio.mp3" segments={segments} />);
+    fireEvent.click(screen.getByRole("button", { name: "Preview Speaker 1" }));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(screen.queryByRole("alert")).toBeNull();
   });
 
   it("shows an image in its transcript row and covers translation status variants", () => {

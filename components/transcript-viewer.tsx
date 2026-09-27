@@ -644,6 +644,14 @@ export function TranscriptViewer({
       return;
     }
 
+    if (audio.readyState === 0) {
+      pendingPlaybackRef.current = {
+        localTimeSeconds: position.localTimeSeconds,
+        shouldPlay: options.shouldPlay,
+      };
+      return;
+    }
+
     audio.currentTime = position.localTimeSeconds;
 
     if (!options.shouldPlay) {
@@ -653,13 +661,16 @@ export function TranscriptViewer({
     try {
       await audio.play();
       setIsPlaying(true);
-    } catch {
+    } catch (error) {
+      if (error instanceof DOMException && error.name === "AbortError") return;
       setFailedPlaybackAudioUrl(activeAudioUrl);
       setIsPlaying(false);
     }
   }
 
   async function handlePlaybackReady(audio: HTMLAudioElement) {
+    if (audio.readyState === 0) return;
+
     setFailedPlaybackAudioUrl(null);
     audio.playbackRate = playbackRate;
     const pendingPlayback = pendingPlaybackRef.current;
@@ -678,7 +689,8 @@ export function TranscriptViewer({
     try {
       await audio.play();
       setIsPlaying(true);
-    } catch {
+    } catch (error) {
+      if (error instanceof DOMException && error.name === "AbortError") return;
       setFailedPlaybackAudioUrl(activeAudioUrl);
       setIsPlaying(false);
     }
@@ -697,7 +709,8 @@ export function TranscriptViewer({
       try {
         await audio.play();
         setIsPlaying(true);
-      } catch {
+      } catch (error) {
+        if (error instanceof DOMException && error.name === "AbortError") return;
         setFailedPlaybackAudioUrl(activeAudioUrl);
         setIsPlaying(false);
       }
@@ -762,6 +775,9 @@ export function TranscriptViewer({
   }
 
   function handleAudioTimeUpdate(audio: HTMLAudioElement) {
+    // Source changes and seeks can emit timeupdate for the previous position.
+    if (pendingPlaybackRef.current || audio.seeking) return;
+
     const nextTime =
       getAudioPlaylistPartOffsetSeconds(
         playbackParts,
@@ -2396,6 +2412,7 @@ function TranscriptAudioPlayer({
   return (
     <div className="fixed inset-x-0 bottom-0 z-40 border-t bg-background/95 backdrop-blur">
       <audio
+        onLoadedMetadata={(event) => onPlaybackReady(event.currentTarget)}
         onCanPlay={(event) => onPlaybackReady(event.currentTarget)}
         onDurationChange={(event) =>
           onDurationChange(event.currentTarget.duration || 0)
@@ -2413,7 +2430,11 @@ function TranscriptAudioPlayer({
         onTimeUpdate={(event) => onAudioTimeUpdate(event.currentTarget)}
         preload="metadata"
         ref={audioRef}
-        src={audioUrl}
+        src={
+          audioUrl.startsWith("/api/meetings/")
+            ? getWaveformAudioUrl(audioUrl)
+            : audioUrl
+        }
       />
       <div className="mx-auto flex max-w-6xl flex-col gap-2 px-4 py-3">
         <button

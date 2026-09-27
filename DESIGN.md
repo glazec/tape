@@ -186,6 +186,8 @@ Do not expose every detected entity, provider detail, or repeated meeting relati
 
 Related meeting groups start expanded when related rows exist, so users can see the meeting history without another action. Manual collapse controls should preserve the user’s place. Keep page size and rendered length small enough that the next meeting and pagination remain easy to reach.
 
+Automatic groups require the same set of external organizations from attendee email domains. A conversation with A stays separate from an introduction involving A and B, even if the title or an attendee overlaps. Personal email addresses identify individual participants. Meetings without attendee evidence may match each other by title, but must not bridge groups with known participants.
+
 The initial parent result set and the related rows loaded for each group must be bounded. Keep older related history behind an explicit load action so expanded groups do not hide pagination behind an unbounded archive.
 
 ### Transcript

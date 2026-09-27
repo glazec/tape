@@ -6,10 +6,47 @@ import {
   buildTranscriptionKeyterms,
   classifySegmentEmotion,
   extractMeetingEntities,
+  getExternalParticipantKeys,
   groupRelatedMeetings,
 } from "@/lib/meeting-intelligence";
 
 describe("meeting intelligence helpers", () => {
+  it.each([true, false])("separates introductions by the complete organization set (title matching: %s)", (includeTitleKeys) => {
+    const meeting = (id: string, emails: string[], day: number) => ({
+      id,
+      title: "Partner catchup",
+      startedAt: `2026-06-${day}T10:00:00.000Z`,
+      externalParticipantKeys: getExternalParticipantKeys(emails, "host.test"),
+    });
+    const groups = groupRelatedMeetings([
+      meeting("a", ["alice@alpha.test"], 20),
+      meeting("b", ["bob@beta.test"], 21),
+      meeting("intro", ["alice@alpha.test", "bob@beta.test"], 22),
+      meeting("a-followup", ["colleague@alpha.test"], 23),
+      meeting("intro-followup", ["bob@beta.test", "colleague@alpha.test", "me@host.test"], 24),
+    ], { includeTitleKeys });
+
+    expect(groups.map((group) => [group.id, group.relatedMeetings.map((meeting) => meeting.id)]))
+      .toEqual([["intro-followup", ["intro"]], ["a-followup", ["a"]], ["b", []]]);
+  });
+
+  it("does not let missing attendees bridge distinct organizations through a title", () => {
+    const groups = groupRelatedMeetings([
+      { id: "unknown", title: "Catchup", startedAt: "2026-06-24" },
+      { id: "a", title: "Catchup", startedAt: "2026-06-23", externalParticipantKeys: ["domain:alpha.test"] },
+      { id: "b", title: "Catchup", startedAt: "2026-06-22", externalParticipantKeys: ["domain:beta.test"] },
+    ]);
+    expect(groups.map((group) => group.relatedMeetings)).toEqual([[], [], []]);
+  });
+
+  it("keeps personal email participants distinct instead of treating Gmail as an organization", () => {
+    const groups = groupRelatedMeetings([
+      { id: "a", title: "Catchup", startedAt: "2026-06-24", externalParticipantKeys: getExternalParticipantKeys(["alice@gmail.com"], "host.test") },
+      { id: "intro", title: "Catchup", startedAt: "2026-06-23", externalParticipantKeys: getExternalParticipantKeys(["alice@gmail.com", "bob@gmail.com"], "host.test") },
+    ]);
+    expect(groups.map((group) => group.relatedMeetings)).toEqual([[], []]);
+  });
+
   it("deduplicates team vocabulary before transcription", () => {
     expect(
       buildTeamVocabularyKeyterms([
