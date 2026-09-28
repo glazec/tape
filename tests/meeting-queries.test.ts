@@ -828,6 +828,31 @@ describe("listMeetingsForWorkspace", () => {
     vi.resetModules();
   });
 
+  it("excludes previously imported flights and reservations before library pagination", async () => {
+    const rows = [
+      { id: "flight", title: "Flight to Newark (UA 274)", calendarTitle: "Flight to Newark (UA 274)", status: "scheduled" },
+      { id: "reservation", title: "Reservation at Blue Blossom", calendarTitle: "Reservation at Blue Blossom", status: "scheduled" },
+      { id: "recorded_reservation", title: "Reservation at Blue Blossom", calendarTitle: "Reservation at Blue Blossom", status: "ready" },
+      { id: "meeting", title: "Flight planning meeting", calendarTitle: "Flight planning meeting", status: "scheduled" },
+      { id: "recorded", title: "Flight to Newark (UA 274)", calendarTitle: "Flight to Newark (UA 274)", status: "ready" },
+      { id: "manual", title: "Flight to Newark (UA 274)", calendarTitle: null, status: "scheduled" },
+    ].map(row => ({
+      ...row, platform: "in_person", canManage: true, teamId: "team_123",
+      calendarAttendeeEmails: [], transcriptJobStatus: null,
+      createdAt: new Date("2026-08-03T11:00:00Z"),
+      startedAt: new Date("2026-08-03T11:00:00Z"), endedAt: null,
+    }));
+    select.mockReturnValueOnce({ from: () => ({ leftJoin: () => ({
+      where: () => ({ orderBy: vi.fn().mockResolvedValue(rows) }),
+    }) }) });
+    const { listMeetingLibraryPageForWorkspace } = await import("@/lib/meeting-queries");
+    const page = await listMeetingLibraryPageForWorkspace({
+      teamId: "team_123", userId: "user_123", domain: "iosg.vc", canCreateMeetings: true,
+    }, { now: new Date("2026-08-03T12:30:00Z") });
+    expect(page.meetings.flatMap(meeting => [meeting.id, ...(meeting.relatedMeetings ?? []).map(related => related.id)]).sort()).toEqual(["manual", "meeting", "recorded", "recorded_reservation"]);
+    expect(page.hasNextPage).toBe(false);
+  });
+
   it("marks a manageable failed remote meeting from the last hour as recoverable", async () => {
     select
       .mockReturnValueOnce({

@@ -388,7 +388,12 @@ describe("calendar auto join", () => {
     expect(applyMeetingShareRules).not.toHaveBeenCalled();
   });
 
-  it("preserves completed recordings for newly ignored event imports", async () => {
+  it.each([
+    ["Build Your First App with Replit Workshop", "ready", "https://partiful.com/e/601HMiX2MyXcqNSetMPK"],
+    ["Flight to Newark (UA 274)", "recording", null],
+    ["Reservation at Blue Blossom", "recording", null],
+    ["Reservation at Blue Blossom", "ready", null],
+  ])("preserves %s when its recording is %s", async (title, status, description) => {
     const calendarEventReturning = vi
       .fn()
       .mockResolvedValue([
@@ -411,7 +416,7 @@ describe("calendar auto join", () => {
         recallBotId: "recorded_bot",
         recallRecordingId: "recording_123",
         meetingUrl: "https://meet.google.com/abc-defg-hij",
-        status: "ready",
+        status,
       },
     ]);
 
@@ -436,12 +441,11 @@ describe("calendar auto join", () => {
         },
         event: {
           externalEventId: "google_event_123",
-          title: "Build Your First App with Replit Workshop",
+          title,
           startsAt: "2026-07-01T16:00:00.000Z",
           endsAt: "2026-07-01T17:00:00.000Z",
           meetingUrl: "https://meet.google.com/abc-defg-hij",
-          description:
-            "For the latest information, visit: https://partiful.com/e/601HMiX2MyXcqNSetMPK",
+          description,
         },
       }),
     ).resolves.toEqual({
@@ -1228,6 +1232,32 @@ describe("calendar auto join", () => {
     });
     expect(applyMeetingShareRules).not.toHaveBeenCalled();
     expect(update).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["Flight to Newark (UA 274)", "San Francisco SFO"],
+    ["Reservation at Blue Blossom", "Blue Blossom, New York"],
+  ])("does not turn %s into a meeting", async (title, location) => {
+    const returning = vi.fn().mockResolvedValue([{ id: "calendar_flight" }]);
+    const values = vi.fn().mockReturnValue({
+      onConflictDoUpdate: vi.fn().mockReturnValue({ returning }),
+    });
+    insert.mockReturnValueOnce({ values });
+    select.mockReturnValue({ from: () => ({ where: () => ({
+      limit: vi.fn().mockResolvedValue([]),
+    }) }) });
+    const { autoJoinCalendarEvent } = await import("@/lib/calendar-auto-join");
+    await expect(autoJoinCalendarEvent({
+      connection: { id: "connection", teamId: "team", userId: "user", autoJoinEnabled: true },
+      event: {
+        externalEventId: "excluded_event", title,
+        startsAt: "2099-06-30T12:00:00.000Z", location,
+      },
+    })).resolves.toMatchObject({ action: "skipped", reason: "ignored_event" });
+    expect(insert).toHaveBeenCalledTimes(1);
+    expect(scheduleLocationReminder).not.toHaveBeenCalled();
+    expect(scheduleRecallBot).not.toHaveBeenCalled();
+    expect(scheduleRecallCalendarEventBot).not.toHaveBeenCalled();
   });
 
   it("creates an in person meeting reminder when a calendar event has a location and no meeting link", async () => {

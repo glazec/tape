@@ -16,6 +16,14 @@ Tape tests each runtime at the boundary where its behavior can regress. Provider
 
 Playwright starts an isolated Next.js development server on port 3100 unless `PLAYWRIGHT_BASE_URL` points to an existing deployment.
 
+Dashboard scroll restoration is covered by `tests/dashboard-scroll-restoration.test.tsx`,
+including history entry isolation, streamed content taking longer than ten seconds,
+and cancellation on user interaction. For browser verification, scroll the meeting
+index, open a visible meeting, and use browser Back. Check both the scroll position
+and the meeting's viewport position. Repeat after reloading the detail page so the
+index must load again, and with delayed meeting data. Run this against local fixtures
+or an authenticated test environment; component tests do not prove deployed behavior.
+
 The page rendering contract discovers every `app/**/page.tsx` route and compares
 it with the explicit public and authenticated route contracts. Public pages
 must render their own heading. Protected pages run with the authenticated

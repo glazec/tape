@@ -18,6 +18,11 @@ Turn meetings into dependable team memory. Success means colleagues can understa
 
 1. Add a Google Meet or Zoom link and send the meeting bot.
 2. Connect Google Calendar for automatic Google Meet and Zoom capture and repair, while Microsoft Teams meetings stay visible and prompt local recording.
+
+   Flight itineraries titled like “Flight to Newark (UA 274)” and reservations
+   titled like “Reservation at Blue Blossom” are excluded from calendar meeting
+   creation. Previously imported scheduled or missed in person itineraries and
+   reservations are hidden from the meeting library; recorded meetings remain visible.
 3. Upload audio or video, paste a transcript, or record on a phone.
 4. Use the macOS recorder for in-person meetings, ad hoc calls, and any meeting cloud capture misses.
 5. Search the meeting library by title, participant, entity, or transcript text.

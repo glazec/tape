@@ -20,6 +20,7 @@ import {
 } from "@/components/dashboard-loading";
 import { DashboardStats } from "@/components/dashboard-stats";
 import { MeetingLibrarySearch } from "@/components/meeting-library-search";
+import { DashboardScrollRestoration } from "@/components/dashboard-scroll-restoration";
 import { MeetingList } from "@/components/meeting-list";
 import { OnboardingTutorial } from "@/components/onboarding-tutorial";
 import {
@@ -160,6 +161,7 @@ export default async function DashboardPage({
       oneSignalExternalId={workspace.userId}
     >
       <section className="flex flex-col gap-6">
+        <DashboardScrollRestoration />
         {canCreateMeetings ? (
           <Suspense fallback={<DashboardOverviewSkeleton />}>
             <DashboardOverview

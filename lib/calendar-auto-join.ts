@@ -22,6 +22,7 @@ import {
 } from "@/db/schema";
 import { getDatabaseClaimsJson } from "@/db/rls-context";
 import { normalizeEmail } from "@/lib/access";
+import { getExcludedCalendarEventKind } from "@/lib/calendar-event-filter";
 import {
   buildAppUrl,
   detectMeetingPlatform,
@@ -176,7 +177,12 @@ export function findCalendarMeetingUrl(event: SyncedCalendarEvent) {
 
 export function getIgnoredCalendarEventSource(
   event: SyncedCalendarEvent,
-): "luma" | "partiful" | null {
+): "luma" | "partiful" | "flight" | "reservation" | null {
+  const excludedKind = getExcludedCalendarEventKind(event.title);
+  if (excludedKind) {
+    return excludedKind;
+  }
+
   const urls = [
     event.meetingUrl,
     event.location,
@@ -563,7 +569,10 @@ async function autoJoinCalendarEventInternal(input: AutoJoinInput) {
       if (
         ignoredImportedEvent &&
         existingMeeting &&
-        shouldPreserveIgnoredCalendarMeeting(existingMeeting)
+        (shouldPreserveIgnoredCalendarMeeting(existingMeeting) ||
+          (existingMeeting.status === "recording" &&
+            (ignoredCalendarEventSource === "flight" ||
+              ignoredCalendarEventSource === "reservation")))
       ) {
         await cancelLocationRemindersForMeeting(existingMeeting.id);
 

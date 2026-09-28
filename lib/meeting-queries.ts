@@ -13,6 +13,7 @@ import {
 import { z } from "zod";
 
 import { databaseSql, db } from "@/db/client";
+import { getExcludedCalendarEventKind } from "@/lib/calendar-event-filter";
 import {
   calendarEvents,
   mediaAssets,
@@ -274,12 +275,13 @@ export async function listMeetingLibraryPageForWorkspace(
     else 1
   end`;
 
-  const rows = await db
+  const storedRows = await db
     .select({
       id: meetings.id,
       teamId: meetings.teamId,
       canManage: getMeetingManagerCondition(workspace),
       title: meetings.title,
+      calendarTitle: calendarEvents.title,
       platform: meetings.platform,
       status: meetings.status,
       transcriptJobStatus: sql<TranscriptJobStatus | null>`(
@@ -324,6 +326,14 @@ export async function listMeetingLibraryPageForWorkspace(
       desc(meetings.createdAt),
     );
 
+  // Hide previously imported itineraries before grouping and pagination.
+  // Keep completed and in-progress meeting records visible.
+  const rows = storedRows.filter((meeting) => !(
+    meeting.calendarTitle &&
+    getExcludedCalendarEventKind(meeting.calendarTitle) &&
+    meeting.platform === "in_person" &&
+    (meeting.status === "scheduled" || meeting.status === "missed")
+  ));
   const meetingIds = rows.map((meeting) => meeting.id);
   const baseDetailsByMeetingId = new Map<string, MeetingLibraryBaseDetails>();
   const baseItems: MeetingListItem[] = rows.map((meeting) => {
