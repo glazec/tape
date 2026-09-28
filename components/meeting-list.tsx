@@ -69,6 +69,7 @@ export type MeetingListItem = MeetingListBaseItem & {
   relatedHistoryHref?: string;
   relatedHistoryMonths?: number;
   relatedMeetings?: MeetingListRelatedItem[];
+  olderRelatedMeetings?: MeetingListRelatedItem[];
 };
 
 export type MeetingListRelatedItem = MeetingListBaseItem;
@@ -111,6 +112,8 @@ export function MeetingList({
   const [expandedMeetingIds, setExpandedMeetingIds] = useState<Set<string>>(
     () => getDefaultExpandedMeetingIds(meetings),
   );
+
+  const [visibleRelatedCounts, setVisibleRelatedCounts] = useState<Record<string, number>>({});
 
   function toggleMeeting(meetingId: string) {
     setExpandedMeetingIds((current) => {
@@ -187,7 +190,10 @@ export function MeetingList({
             </TableRow>
           ) : (
             meetings.map((meeting) => {
-              const relatedMeetings = meeting.relatedMeetings ?? [];
+              const recentMeetings = meeting.relatedMeetings ?? [];
+              const relatedMeetings = [...recentMeetings, ...(meeting.olderRelatedMeetings ?? [])];
+              const visibleCount = visibleRelatedCounts[meeting.id] ?? Math.min(3, recentMeetings.length);
+              const hasMore = visibleCount < relatedMeetings.length;
               const isExpanded = expandedMeetingIds.has(meeting.id);
 
               return (
@@ -196,18 +202,35 @@ export function MeetingList({
                     isExpanded={isExpanded}
                     meeting={meeting}
                     onToggle={() => toggleMeeting(meeting.id)}
-                    relatedCount={relatedMeetings.length}
+                    relatedCount={relatedMeetings.length || (meeting.hasMoreRelatedMeetings ? 1 : 0)}
                   />
                   {isExpanded
                     ? [
-                        ...relatedMeetings.map((relatedMeeting) => (
+                        ...relatedMeetings.slice(0, visibleCount).map((relatedMeeting) => (
                           <MeetingTableRow
                             isChild
                             key={relatedMeeting.id}
                             meeting={relatedMeeting}
                           />
                         )),
-                        meeting.hasMoreRelatedMeetings &&
+                        hasMore ? (
+                          <TableRow key={`${meeting.id}:load-more`} className="bg-muted/15">
+                            <TableCell colSpan={6} className="py-3 pl-16">
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                aria-label={`Load more meetings for ${meeting.title}`}
+                                onClick={() => setVisibleRelatedCounts((counts) => ({
+                                  ...counts,
+                                  [meeting.id]: visibleCount + 4,
+                                }))}
+                              >
+                                Load more meetings
+                              </Button>
+                            </TableCell>
+                          </TableRow>
+                        ) : meeting.hasMoreRelatedMeetings &&
+                        !meeting.olderRelatedMeetings &&
                         meeting.relatedHistoryHref ? (
                           <RelatedHistoryRow
                             href={meeting.relatedHistoryHref}
@@ -241,9 +264,10 @@ function RelatedHistoryRow({
           <Link
             className="inline-flex h-8 items-center gap-2 rounded-lg px-3 text-sm font-medium text-foreground hover:bg-muted"
             href={href}
+            scroll={false}
           >
             <History aria-hidden="true" className="size-4" />
-            Load older related
+            Load more meetings
           </Link>
           <span>Search before last {months ?? 6} months</span>
         </div>
@@ -255,7 +279,7 @@ function RelatedHistoryRow({
 function getDefaultExpandedMeetingIds(meetings: MeetingListItem[]) {
   return new Set(
     meetings
-      .filter((meeting) => (meeting.relatedMeetings?.length ?? 0) > 0)
+      .filter((meeting) => (meeting.relatedMeetings?.length ?? 0) + (meeting.olderRelatedMeetings?.length ?? 0) > 0 || meeting.hasMoreRelatedMeetings)
       .map((meeting) => meeting.id),
   );
 }

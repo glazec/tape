@@ -1027,6 +1027,7 @@ describe("listMeetingsForWorkspace", () => {
         participantNames: ["Alice", "Founder"],
         accessScope: "workspace",
         relatedMeetings: [],
+        olderRelatedMeetings: [],
       },
     ]);
   });
@@ -2054,6 +2055,7 @@ describe("buildMeetingLibraryPage", () => {
     expect(
       page.meetings[0]?.relatedMeetings?.map((meeting) => meeting.title),
     ).toEqual(["Nascent monthly check in"]);
+    expect(page.meetings[0]?.olderRelatedMeetings?.map((meeting) => meeting.title)).toEqual(["Nascent old intro"]);
     expect(page.meetings[1]?.relatedMeetings).toEqual([]);
   });
 

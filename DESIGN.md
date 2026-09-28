@@ -184,7 +184,7 @@ Meeting rows should prioritize title, time, people, and actionable state. Hide l
 
 Do not expose every detected entity, provider detail, or repeated meeting relationship in the default row. Reveal supporting context when it helps disambiguate a meeting.
 
-Related meeting groups start expanded when related rows exist, so users can see the meeting history without another action. Manual collapse controls should preserve the user’s place. Keep page size and rendered length small enough that the next meeting and pagination remain easy to reach.
+Related meeting groups start expanded with at most four visible meetings, including the parent, and only related meetings from the past two months. A “Load more meetings” button at the end reveals up to four additional meetings in that group, including older history once recent meetings are exhausted. Manual collapse controls should preserve the user’s place. Keep page size and rendered length small enough that the next meeting and pagination remain easy to reach.
 
 Automatic groups require the same set of external organizations from attendee email domains. A conversation with A stays separate from an introduction involving A and B, even if the title or an attendee overlaps. Personal email addresses identify individual participants. Meetings without attendee evidence may match each other by title, but must not bridge groups with known participants.
 

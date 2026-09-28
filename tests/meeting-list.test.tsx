@@ -216,7 +216,7 @@ describe("MeetingList", () => {
     );
 
     expect(html).toContain("1 related");
-    expect(html).toContain("Load older related");
+    expect(html).toContain("Load more meetings");
     expect(html).toContain("Search before last 6 months");
     expect(html).toContain('href="/dashboard?relatedMonths=12"');
   });

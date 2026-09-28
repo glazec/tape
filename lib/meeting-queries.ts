@@ -515,6 +515,9 @@ export function buildMeetingLibraryPage(
         hasMoreRelatedMeetings:
           hasMoreRelatedMeetingByRoot.get(meeting.id) ?? false,
         relatedMeetings: relatedMeetingsByRoot.get(meeting.id) ?? [],
+        olderRelatedMeetings: (allRelatedMeetingsByRoot.get(meeting.id) ?? []).filter(
+          (related) => !isMeetingInsideHistoryWindow(related, relatedHistoryCutoff),
+        ),
       }),
     );
   const allRootMeetings = eligibleMeetingsForLibrary
@@ -546,7 +549,14 @@ export function buildMeetingLibraryPage(
   const start = (page - 1) * pageSize;
 
   return {
-    meetings: visibleMeetings.slice(start, start + pageSize),
+    meetings: visibleMeetings.slice(start, start + pageSize).map((meeting) => {
+      const related = mergeRelatedMeetings(meeting.relatedMeetings, meeting.olderRelatedMeetings ?? []);
+      return {
+        ...meeting,
+        relatedMeetings: related.filter((item) => isMeetingInsideHistoryWindow(item, relatedHistoryCutoff)),
+        olderRelatedMeetings: related.filter((item) => !isMeetingInsideHistoryWindow(item, relatedHistoryCutoff)),
+      };
+    }),
     page,
     pageSize,
     hasNextPage: start + pageSize < visibleMeetings.length,
@@ -612,6 +622,10 @@ function foldSimilarMeetings(
     existingRoot.relatedMeetings = mergeRelatedMeetings(
       existingRoot.relatedMeetings,
       [toRelatedMeeting(meeting), ...(meeting.relatedMeetings ?? [])],
+    );
+    existingRoot.olderRelatedMeetings = mergeRelatedMeetings(
+      existingRoot.olderRelatedMeetings,
+      meeting.olderRelatedMeetings ?? [],
     );
     existingRoot.hasMoreRelatedMeetings =
       Boolean(existingRoot.hasMoreRelatedMeetings) ||
@@ -686,6 +700,7 @@ function toLibraryRootMeeting(input: {
   meeting: MeetingListItem;
   hasMoreRelatedMeetings: boolean;
   relatedMeetings: MeetingListRelatedItem[];
+  olderRelatedMeetings?: MeetingListRelatedItem[];
 }): MeetingListItem {
   return {
     id: input.meeting.id,
@@ -709,6 +724,7 @@ function toLibraryRootMeeting(input: {
       : {}),
     ...(input.hasMoreRelatedMeetings ? { hasMoreRelatedMeetings: true } : {}),
     relatedMeetings: input.relatedMeetings,
+    ...(input.olderRelatedMeetings ? { olderRelatedMeetings: input.olderRelatedMeetings } : {}),
   };
 }
 
@@ -1758,7 +1774,7 @@ function getMeetingLibraryPageMeetingIds(meetingsForPage: MeetingListItem[]) {
   for (const meeting of meetingsForPage) {
     meetingIds.add(meeting.id);
 
-    for (const relatedMeeting of meeting.relatedMeetings ?? []) {
+    for (const relatedMeeting of [...(meeting.relatedMeetings ?? []), ...(meeting.olderRelatedMeetings ?? [])]) {
       meetingIds.add(relatedMeeting.id);
     }
   }
@@ -1822,6 +1838,11 @@ function enrichMeetingLibraryItem({
       transcriptSegmentCount: transcriptStats?.segmentCount,
       status: baseDetails.status,
     }),
+    ...(meeting.olderRelatedMeetings ? {
+      olderRelatedMeetings: meeting.olderRelatedMeetings.map((relatedMeeting) =>
+        enrichMeetingLibraryItem({ baseDetailsByMeetingId, meeting: relatedMeeting, now,
+          recordingStatsByMeetingId, transcriptStatsByMeetingId })),
+    } : {}),
     ...(meeting.relatedMeetings
       ? {
           relatedMeetings: meeting.relatedMeetings.map((relatedMeeting) =>
