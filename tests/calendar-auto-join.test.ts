@@ -209,6 +209,35 @@ describe("calendar auto join", () => {
     ).toBe("https://meet.google.com/abc-defg-hij");
   });
 
+  it.each([
+    ["IOSG 12F", true],
+    ["123 Main St, New York", true],
+    ["Room 2 https://meet.google.com/abc-defg-hij", true],
+    ["https://maps.google.com/?q=HQ", true],
+    ["https://maps.app.goo.gl/example", true],
+    ["Online", false],
+    ["Virtual", false],
+    ["Google Meet https://meet.google.com/abc-defg-hij", false],
+    ["https://zoom.us/j/1234567890", false],
+    ["Zoom.us/j/1234567890", false],
+    ["Microsoft Teams", false],
+    ["Microsoft Teams Meeting", false],
+    ["Zoom Meeting", false],
+    ["meet.google.com/abc-defg-hij", false],
+    ["", false],
+    [null, false],
+  ])("classifies physical location %s as %s", async (location, expected) => {
+    const { hasPhysicalCalendarLocation, findCalendarMeetingUrl } = await import("@/lib/calendar-auto-join");
+    expect(hasPhysicalCalendarLocation(location)).toBe(expected);
+    expect(findCalendarMeetingUrl({
+      externalEventId: "event",
+      startsAt: "2099-06-30T12:00:00.000Z",
+      title: "Lunch",
+      location,
+      meetingUrl: "https://meet.google.com/abc-defg-hij",
+    })).toBe(expected ? null : "https://meet.google.com/abc-defg-hij");
+  });
+
   it("normalizes bare Zoom links from calendar text", async () => {
     const { findCalendarMeetingUrl } = await import("@/lib/calendar-auto-join");
 
@@ -1260,7 +1289,7 @@ describe("calendar auto join", () => {
     expect(scheduleRecallCalendarEventBot).not.toHaveBeenCalled();
   });
 
-  it("creates an in person meeting reminder when a calendar event has a location and no meeting link", async () => {
+  it.each([null, "https://meet.google.com/abc-defg-hij", "https://zoom.us/j/1234567890", "https://teams.microsoft.com/l/meetup-join/example"])("creates an in person meeting for a physical location with link %s", async (meetingUrl) => {
     const calendarEventReturning = vi
       .fn()
       .mockResolvedValue([{ id: "33333333-3333-4333-8333-333333333333" }]);
@@ -1302,6 +1331,7 @@ describe("calendar auto join", () => {
         event: {
           externalEventId: "google_event_123",
           title: "Office visit",
+          meetingUrl,
           startsAt: "2026-06-30T12:00:00.000Z",
           endsAt: null,
           attendeeEmails: ["founder@nascent.xyz"],
@@ -1328,6 +1358,78 @@ describe("calendar auto join", () => {
       scheduledFor: new Date("2026-06-30T11:58:00.000Z"),
       userId: "55555555-5555-4555-8555-555555555555",
     });
+  });
+
+  it.each([
+    ["scheduled", null],
+    ["scheduled", "recall_event"],
+    ["missed", null],
+    ["cancelled", null],
+    ["recording", null],
+    ["ready", null],
+  ])("reclassifies an existing %s hybrid event with calendar bot %s", async (status, recallCalendarEventId) => {
+    const calendarEventId = "33333333-3333-4333-8333-333333333333";
+    const meetingId = "44444444-4444-4444-8444-444444444444";
+    insert.mockReturnValue({ values: vi.fn().mockReturnValue({
+      onConflictDoUpdate: vi.fn().mockReturnValue({
+        returning: vi.fn().mockResolvedValue([{ id: calendarEventId }]),
+      }),
+    }) });
+    select.mockReturnValue({ from: () => ({ where: () => ({
+      limit: vi.fn().mockResolvedValue([{
+        id: meetingId,
+        calendarEventId,
+        ownerUserId: "55555555-5555-4555-8555-555555555555",
+        title: "Lunch",
+        platform: "google_meet",
+        meetingUrl: "https://meet.google.com/abc-defg-hij",
+        recallBotId: "bot_123",
+        startedAt: new Date("2099-06-30T12:00:00.000Z"),
+        endedAt: null,
+        status,
+      }]),
+    }) }) });
+    const updateSet = vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) });
+    update.mockReturnValue({ set: updateSet });
+    const { autoJoinCalendarEvent } = await import("@/lib/calendar-auto-join");
+
+    await autoJoinCalendarEvent({
+      connection: {
+        id: "11111111-1111-4111-8111-111111111111",
+        teamId: "22222222-2222-4222-8222-222222222222",
+        userId: "55555555-5555-4555-8555-555555555555",
+        autoJoinEnabled: true,
+      },
+      event: {
+        externalEventId: "google_event_123",
+        recallCalendarEventId,
+        title: "Lunch",
+        startsAt: "2099-06-30T12:00:00.000Z",
+        location: "123 Main Street",
+        meetingUrl: "https://meet.google.com/abc-defg-hij",
+      },
+    });
+
+    expect(scheduleRecallBot).not.toHaveBeenCalled();
+    expect(scheduleRecallCalendarEventBot).not.toHaveBeenCalled();
+    if (["scheduled", "missed", "cancelled"].includes(status)) {
+      expect(updateSet).toHaveBeenCalledWith(expect.objectContaining({
+        platform: "in_person", status: "scheduled", recallBotId: null,
+      }));
+      expect(scheduleLocationReminder).toHaveBeenCalled();
+      if (recallCalendarEventId) {
+        expect(retireRecallCalendarEventBot).toHaveBeenCalledWith({
+          botId: "bot_123", calendarEventId: recallCalendarEventId,
+        });
+      } else {
+        expect(retireScheduledRecallBot).toHaveBeenCalledWith("bot_123");
+      }
+    } else {
+      expect(updateSet).toHaveBeenCalledWith({ platform: "in_person", updatedAt: expect.any(Date) });
+      expect(retireScheduledRecallBot).not.toHaveBeenCalled();
+      expect(retireRecallCalendarEventBot).not.toHaveBeenCalled();
+      expect(scheduleLocationReminder).not.toHaveBeenCalled();
+    }
   });
 
   it("accepts an unread canonical location meeting conflict", async () => {
@@ -2242,7 +2344,7 @@ describe("calendar auto join", () => {
           title: "Partner sync moved",
           startsAt: "2026-06-30T13:00:00.000Z",
           endsAt: null,
-          location: "New room https://meet.google.com/new-link",
+          location: "Google Meet https://meet.google.com/new-link",
         },
       }),
     ).resolves.toEqual({
@@ -2569,7 +2671,7 @@ describe("calendar auto join", () => {
           title: "Calendar renamed title",
           startsAt: "2026-06-30T13:00:00.000Z",
           endsAt: null,
-          location: "New room https://meet.google.com/new-link",
+          location: "Google Meet https://meet.google.com/new-link",
         },
       }),
     ).resolves.toEqual({

@@ -158,6 +158,8 @@ type CalendarEventRow = {
 };
 
 export function findCalendarMeetingUrl(event: SyncedCalendarEvent) {
+  if (hasPhysicalCalendarLocation(event.location)) return null;
+
   const structuredCandidates = [
     event.meetingUrl,
     ...getConferenceEntryPointUris(event),
@@ -173,6 +175,20 @@ export function findCalendarMeetingUrl(event: SyncedCalendarEvent) {
     structuredCandidates.find(isHttpUrl) ??
     null
   );
+}
+
+export function hasPhysicalCalendarLocation(location?: string | null) {
+  if (!location?.trim()) return false;
+
+  // A conference URL or a virtual venue label is not a physical location.
+  const text = location
+    .replace(/https?:\/\/[^\s<>"']+/gi, "")
+    .replace(/\b(?:(?:[a-z0-9-]+\.)*zoom\.us\/j\/|meet\.google\.com\/|teams\.microsoft\.com\/)[^\s<>"']+/gi, "")
+    .replace(/\b(?:online|virtual|remote|zoom|google meet|microsoft teams|teams|webex|skype)(?:\s+meeting)?\b/gi, "")
+    .replace(/\b(?:meeting link|join)\b/gi, "")
+    .replace(/[\s:;,().\[\]\-–—/]+/g, "");
+
+  return text.length > 0 || /https?:\/\/(?:(?:maps\.app\.goo\.gl|maps\.google\.com|maps\.apple\.com)(?:[/?#]|$)|(?:www\.)?google\.com\/maps(?:[/?#]|$))/i.test(location);
 }
 
 export function getIgnoredCalendarEventSource(
@@ -551,6 +567,39 @@ async function autoJoinCalendarEventInternal(input: AutoJoinInput) {
     }
 
     if (location && !input.event.isDeleted && !autoJoinSuppressed) {
+      if (
+        existingMeeting &&
+        (existingMeeting.recallRecordingId ||
+          existingMeeting.status === "recording" ||
+          existingMeeting.status === "processing" ||
+          existingMeeting.status === "ready" ||
+          ((existingMeeting.status === "missed" ||
+            existingMeeting.status === "cancelled") &&
+            isPastCalendarEvent({ startsAt, endsAt })))
+      ) {
+        if (existingMeeting.platform !== "in_person") {
+          await db.update(meetings).set({
+            platform: "in_person",
+            updatedAt: new Date(),
+          }).where(eq(meetings.id, existingMeeting.id));
+        }
+        return {
+          action: "skipped" as const,
+          calendarEventId: calendarEvent.id,
+          meetingId: existingMeeting.id,
+          reason: "already_scheduled" as const,
+        };
+      }
+      if (existingMeeting?.recallBotId) {
+        if (input.event.recallCalendarEventId) {
+          await retireRecallCalendarEventBot({
+            botId: existingMeeting.recallBotId,
+            calendarEventId: input.event.recallCalendarEventId,
+          });
+        } else {
+          await retireScheduledRecallBot(existingMeeting.recallBotId);
+        }
+      }
       return syncLocationCalendarMeeting({
         connection: input.connection,
         calendarEvent,
@@ -1308,7 +1357,7 @@ async function syncLocationCalendarMeeting(input: {
         endedAt: input.endsAt,
         meetingUrl: null,
         platform: "in_person",
-        recallBotId: meeting.recallBotId,
+        recallBotId: null,
         startsAt: input.startsAt,
         teamMeetingKey: input.teamMeetingKey,
         title,
@@ -1325,6 +1374,7 @@ async function syncLocationCalendarMeeting(input: {
           titleSource,
           platform: "in_person",
           status: "scheduled",
+          recallBotId: null,
           meetingUrl: null,
           startedAt: input.startsAt,
           endedAt: input.endsAt,
@@ -2211,6 +2261,14 @@ function needsUnchangedCalendarEventRepair(input: {
   teamMeetingKey?: string | null;
   title: string;
 }) {
+  if (
+    !input.event.isDeleted &&
+    hasPhysicalCalendarLocation(input.event.location) &&
+    input.existingMeeting.platform !== "in_person"
+  ) {
+    return true;
+  }
+
   const ownedByActiveSiblingCalendarEvent =
     isMeetingOwnedByActiveSiblingCalendarEvent({
       currentCalendarEventId: input.calendarEventId,

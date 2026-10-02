@@ -19,6 +19,8 @@ Turn meetings into dependable team memory. Success means colleagues can understa
 1. Add a Google Meet or Zoom link and send the meeting bot.
 2. Connect Google Calendar for automatic Google Meet and Zoom capture and repair, while Microsoft Teams meetings stay visible and prompt local recording.
 
+   Events with a physical location are classified as in person even when they include a meeting link. They use location reminders instead of scheduled meeting bots. A conference URL or a virtual location label such as “Online” does not count as a physical location.
+
    Flight itineraries titled like “Flight to Newark (UA 274)” and reservations
    titled like “Reservation at Blue Blossom” are excluded from calendar meeting
    creation. Previously imported scheduled or missed in person itineraries and
