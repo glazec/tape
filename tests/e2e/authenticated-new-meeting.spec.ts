@@ -1,6 +1,7 @@
 import { expect, test } from "@playwright/test";
 
-test.use({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+test.use({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true,
+  screenshot: "only-on-failure", trace: "retain-on-failure" });
 
 test("new meeting source choices center their inputs on mobile", async ({ page }) => {
   await page.goto("/meetings/new");
