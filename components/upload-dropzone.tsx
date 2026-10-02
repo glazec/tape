@@ -1,6 +1,6 @@
 "use client";
 
-import { ChangeEvent, FormEvent, useRef, useState } from "react";
+import { ChangeEvent, DragEvent, FormEvent, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { AlertCircle, CheckCircle2, UploadCloud } from "lucide-react";
 
@@ -42,13 +42,20 @@ export function UploadDropzone() {
   const [message, setMessage] = useState<string | null>(null);
   const [signInRequired, setSignInRequired] = useState(false);
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
+  const [isDragging, setIsDragging] = useState(false);
+  const dragDepthRef = useRef(0);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const selectedDurationPromisesRef = useRef<
     Promise<number | undefined>[]
   >([]);
   const [startTime, setStartTime] = useState("");
 
   function handleFileChange(event: ChangeEvent<HTMLInputElement>) {
-    const files = Array.from(event.currentTarget.files ?? []);
+    selectFiles(Array.from(event.currentTarget.files ?? []));
+  }
+
+  function selectFiles(files: File[]) {
+    if (state === "uploading") return;
 
     setSelectedFiles(files);
     selectedDurationPromisesRef.current = files.map((file) =>
@@ -57,6 +64,28 @@ export function UploadDropzone() {
     setState("idle");
     setMessage(null);
     setSignInRequired(false);
+  }
+
+  function handleDragEnter(event: DragEvent<HTMLDivElement>) {
+    event.preventDefault();
+    if (!event.dataTransfer.types.includes("Files") || state === "uploading") return;
+    dragDepthRef.current += 1;
+    setIsDragging(true);
+  }
+
+  function handleDragLeave(event: DragEvent<HTMLDivElement>) {
+    event.preventDefault();
+    dragDepthRef.current = Math.max(0, dragDepthRef.current - 1);
+    if (dragDepthRef.current === 0) setIsDragging(false);
+  }
+
+  function handleDrop(event: DragEvent<HTMLDivElement>) {
+    event.preventDefault();
+    dragDepthRef.current = 0;
+    setIsDragging(false);
+    if (state === "uploading" || event.dataTransfer.files.length === 0) return;
+    if (fileInputRef.current) fileInputRef.current.value = "";
+    selectFiles(Array.from(event.dataTransfer.files));
   }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -246,15 +275,31 @@ export function UploadDropzone() {
       </CardHeader>
       <CardContent>
         <form onSubmit={handleSubmit} className="flex flex-col gap-4">
-          <div className="flex flex-col gap-2">
+          <div
+            onDragEnter={handleDragEnter}
+            onDragOver={(event) => {
+              event.preventDefault();
+              event.dataTransfer.dropEffect = state === "uploading" ? "none" : "copy";
+            }}
+            onDragLeave={handleDragLeave}
+            onDrop={handleDrop}
+            className={`flex flex-col gap-2 rounded-lg border-2 border-dashed p-4 ${
+              isDragging ? "border-primary bg-primary/5" : "border-border"
+            }`}
+          >
             <Label htmlFor="meeting-audio">Recording files</Label>
+            <p className="text-sm" aria-live="polite">
+              {isDragging ? "Drop recording files here" : "Drag and drop files here, or choose files below."}
+            </p>
             <Input
+              ref={fileInputRef}
               id="meeting-audio"
               name="meeting-audio"
               type="file"
               multiple
               accept={uploadMediaAccept}
               onChange={handleFileChange}
+              disabled={state === "uploading"}
               className="min-h-11 bg-background"
               aria-invalid={state === "error" && !startTimeInvalid}
             />

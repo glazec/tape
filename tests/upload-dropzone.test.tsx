@@ -47,14 +47,16 @@ describe("UploadDropzone", () => {
     ).toBeTruthy();
   });
 
-  it("uploads directly and queues transcription", async () => {
+  it.each(["picker", "drop"])("uploads directly and queues transcription via %s", async (method) => {
     readMediaFileDurationMs.mockResolvedValueOnce(45 * 60 * 1_000);
     vi.mocked(fetch)
       .mockResolvedValueOnce(response({ uploadId: "up_1", uploadUrl: "https://upload" }))
       .mockResolvedValueOnce(response({}))
       .mockResolvedValueOnce(response({ redirectTo: "/meetings/new" }));
     render(<UploadDropzone />);
-    selectFile(new File(["audio"], "meeting.mp3", { type: "audio/mpeg" }));
+    const file = new File(["audio"], "meeting.mp3", { type: "audio/mpeg" });
+    if (method === "drop") dropFiles([file]);
+    else selectFile(file);
     fireEvent.change(screen.getByLabelText("When did it start?"), {
       target: { value: "2026-07-20T09:30" },
     });
@@ -84,7 +86,7 @@ describe("UploadDropzone", () => {
     expect(fetch).toHaveBeenNthCalledWith(3, "/api/uploads/audio", expect.objectContaining({ method: "POST" }));
   });
 
-  it("uploads multiple audio files in the selected order", async () => {
+  it.each(["picker", "drop"])("uploads multiple audio files in the selected order via %s", async (method) => {
     readMediaFileDurationMs
       .mockResolvedValueOnce(60_000)
       .mockResolvedValueOnce(120_000);
@@ -104,10 +106,12 @@ describe("UploadDropzone", () => {
       );
 
     render(<UploadDropzone />);
-    selectFiles([
+    const files = [
       new File(["one"], "first.mp3", { type: "audio/mpeg" }),
       new File(["two"], "second.m4a", { type: "audio/mp4" }),
-    ]);
+    ];
+    if (method === "drop") dropFiles(files);
+    else selectFiles(files);
 
     expect(screen.getByText("Plays in this order")).toBeTruthy();
     expect(screen.getByText("first.mp3")).toBeTruthy();
@@ -141,6 +145,46 @@ describe("UploadDropzone", () => {
     });
   });
 
+  it("keeps the drop highlight while dragging over children and clears it on exit", () => {
+    render(<UploadDropzone />);
+    const input = screen.getByLabelText("Recording files");
+    const zone = input.parentElement!;
+    const dataTransfer = { types: ["Files"] };
+    fireEvent.dragEnter(zone, { dataTransfer });
+    fireEvent.dragEnter(input, { dataTransfer });
+    fireEvent.dragLeave(input, { dataTransfer });
+    expect(screen.getByText("Drop recording files here")).toBeTruthy();
+    fireEvent.dragLeave(zone, { dataTransfer });
+    expect(screen.getByText(/Drag and drop files here/)).toBeTruthy();
+  });
+
+  it("validates dropped files and ignores empty drops", async () => {
+    render(<UploadDropzone />);
+    dropFiles([new File(["text"], "notes.txt")]);
+    dropFiles([]);
+    expect(screen.getByText("notes.txt")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Upload recording" }));
+    expect(await screen.findByText(/Only MP3/)).toBeTruthy();
+    const oversized = new File(["audio"], "large.mp3", { type: "audio/mpeg" });
+    Object.defineProperty(oversized, "size", { value: 1024 ** 3 + 1 });
+    dropFiles([oversized]);
+    fireEvent.click(screen.getByRole("button", { name: "Upload recording" }));
+    expect(await screen.findByText("Each recording file must be 1 GB or smaller")).toBeTruthy();
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it("does not replace files during an upload", () => {
+    vi.mocked(fetch).mockReturnValue(new Promise(() => {}));
+    render(<UploadDropzone />);
+    dropFiles([new File(["audio"], "original.mp3", { type: "audio/mpeg" })]);
+    fireEvent.click(screen.getByRole("button", { name: "Upload recording" }));
+    dropFiles([new File(["audio"], "replacement.mp3", { type: "audio/mpeg" })]);
+    expect(screen.getByText("original.mp3")).toBeTruthy();
+    expect(screen.queryByText("replacement.mp3")).toBeNull();
+    expect((screen.getByLabelText("Recording files") as HTMLInputElement).disabled).toBe(true);
+    expect(screen.getByRole("button", { name: "Uploading recordings" })).toBeTruthy();
+  });
+
   it("shows sign in and generic service failures", async () => {
     vi.mocked(fetch).mockResolvedValueOnce(response({}, 401));
     render(<UploadDropzone />);
@@ -157,6 +201,12 @@ describe("UploadDropzone", () => {
 
 function selectFile(file: File) {
   selectFiles([file]);
+}
+
+function dropFiles(files: File[]) {
+  fireEvent.drop(screen.getByLabelText("Recording files").parentElement!, {
+    dataTransfer: { files, types: ["Files"] },
+  });
 }
 
 function selectFiles(files: File[]) {

@@ -23,7 +23,7 @@ Turn meetings into dependable team memory. Success means colleagues can understa
    titled like “Reservation at Blue Blossom” are excluded from calendar meeting
    creation. Previously imported scheduled or missed in person itineraries and
    reservations are hidden from the meeting library; recorded meetings remain visible.
-3. Upload audio or video, paste a transcript, or record on a phone.
+3. Upload audio or video by choosing files or dragging them into the recording upload area, paste a transcript, or record on a phone. Multiple audio files keep their selection order.
 4. Use the macOS recorder for in-person meetings, ad hoc calls, and any meeting cloud capture misses.
 5. Search the meeting library by title, participant, entity, or transcript text.
 6. Query the archive or upload a local audio meeting at a chosen time from an outside assistant over the MCP server, scoped to the caller's access and meeting creation rights.
