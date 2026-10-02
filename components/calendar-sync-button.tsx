@@ -39,6 +39,7 @@ type CalendarSyncResponse = {
   failedEventCount?: number;
   reconnect?: boolean;
   syncedEventCount?: number;
+  historyRepairQueued?: boolean;
 };
 
 export function getCalendarSyncPostSuccessAction(
@@ -66,13 +67,16 @@ export function getCalendarConnectHref(setupMode: boolean) {
 export function formatCalendarSyncMessage(result: CalendarSyncResponse) {
   const count = result.syncedEventCount ?? 0;
   const failedCount = result.failedEventCount ?? 0;
+  const historyMessage = result.historyRepairQueued
+    ? " Checking missing meetings from the past 30 days in the background. Refresh shortly to see recovered meetings."
+    : "";
   const capturedMessage =
     count === 1
       ? "Captured 1 upcoming calendar event."
       : `Captured ${count} upcoming calendar events.`;
 
   if (failedCount === 0) {
-    return capturedMessage;
+    return capturedMessage + historyMessage;
   }
 
   const reviewMessage =
@@ -81,10 +85,10 @@ export function formatCalendarSyncMessage(result: CalendarSyncResponse) {
       : `${failedCount} events need review.`;
 
   if (count === 0) {
-    return `Calendar checked. ${reviewMessage}`;
+    return `Calendar checked. ${reviewMessage}${historyMessage}`;
   }
 
-  return `${capturedMessage} ${reviewMessage}`;
+  return `${capturedMessage} ${reviewMessage}${historyMessage}`;
 }
 
 export function CalendarSyncButton({

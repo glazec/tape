@@ -14,6 +14,8 @@ Tape supports three access modes:
 
 Turn meetings into dependable team memory. Success means colleagues can understand meeting status, find the right conversation, review the original record, correct it, share it safely, and recover failed capture without learning the underlying systems.
 
+Calendar resync keeps recent event capture in the foreground and checks imported events with no meeting record from the past 30 days in the background. Current Google details determine eligibility. Past meetings with a supported conferencing link or location become missed records; deleted events, all day events, excluded invitations, and events still missing both a link and location are skipped. Existing meeting recordings and statuses are preserved.
+
 ## Current Workflows
 
 1. Add a Google Meet or Zoom link and send the meeting bot.

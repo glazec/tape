@@ -6,6 +6,8 @@
 
 This guide covers the web application, provider callbacks, and the optional macOS local recorder.
 
+Manual calendar sync dispatches `calendar/history.repair` to Inngest after recent event sync. Register the `repair-calendar-history` function when deploying. The worker uses the stored Google refresh token to read current details for imported events without meeting records in the past 30 days. It runs one job per connection at a time and persists one retryable step per event. Tokens remain inside each step and are not included in event payloads or step results. Missing Google credentials require reconnecting the calendar.
+
 ## Requirements
 
 1. Node.js 24

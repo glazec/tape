@@ -2,6 +2,8 @@
 
 Tape tests each runtime at the boundary where its behavior can regress. Provider network calls use mocks unless a command is explicitly marked live.
 
+Calendar history repair coverage includes the 30 day window, connection ownership, latest Google event details, deleted and rescheduled events, durable per event steps, queue failure reporting, and retrying a partially created meeting without scheduling a bot or reminder. Run `npx vitest run tests/calendar-history-repair.test.ts tests/calendar-auto-join.test.ts tests/calendar-sync-route.test.ts tests/inngest-functions.test.ts tests/google-calendar-events.test.ts tests/calendar-sync-button.test.tsx`.
+
 ## Test Layers
 
 | Layer | Protects | Command |

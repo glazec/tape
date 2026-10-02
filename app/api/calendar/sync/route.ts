@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { inngest } from "@/inngest/client";
 
 import { getCurrentUser } from "@/lib/auth";
 import {
@@ -44,7 +45,16 @@ export async function POST(request: Request) {
       autoJoinEnabled: result.data.autoJoinEnabled,
     });
 
-    return Response.json(syncResult, { status: 202 });
+    await inngest.send({
+      name: "calendar/history.repair",
+      data: {
+        connectionId: syncResult.connectionId,
+        teamId: workspace.teamId,
+        userId: workspace.userId,
+        requestedAt: new Date().toISOString(),
+      },
+    });
+    return Response.json({ ...syncResult, historyRepairQueued: true }, { status: 202 });
   } catch (error) {
     const creditResponse = providerCreditErrorResponse(error);
 

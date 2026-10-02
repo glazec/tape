@@ -1,17 +1,21 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 const {
+  send,
   assertCanCreateMeetings,
   getCurrentUser,
   getWorkspace,
   syncRecallCalendarEventsForWorkspace,
 } =
   vi.hoisted(() => ({
+    send: vi.fn(),
     assertCanCreateMeetings: vi.fn(),
     getCurrentUser: vi.fn(),
     getWorkspace: vi.fn(),
     syncRecallCalendarEventsForWorkspace: vi.fn(),
   }));
+
+vi.mock("@/inngest/client", () => ({ inngest: { send } }));
 
 class RecallCalendarConnectionError extends Error {}
 
@@ -45,6 +49,7 @@ async function postCalendarSync(body: unknown = { autoJoinEnabled: true }) {
 
 describe("POST /api/calendar/sync", () => {
   afterEach(() => {
+    send.mockReset();
     assertCanCreateMeetings.mockReset();
     getCurrentUser.mockReset();
     getWorkspace.mockReset();
@@ -86,13 +91,28 @@ describe("POST /api/calendar/sync", () => {
 
     expect(response.status).toBe(202);
     await expect(response.json()).resolves.toEqual({
+      historyRepairQueued: true,
       connectionId: "33333333-3333-4333-8333-333333333333",
       syncedEventCount: 2,
     });
+    expect(send).toHaveBeenCalledWith({ name: "calendar/history.repair", data: {
+      connectionId: "33333333-3333-4333-8333-333333333333",
+      teamId: workspace.teamId, userId: workspace.userId, requestedAt: expect.any(String),
+    } });
     expect(syncRecallCalendarEventsForWorkspace).toHaveBeenCalledWith({
       workspace,
       autoJoinEnabled: true,
     });
+  });
+
+  it("does not claim history is queued when the job dispatch fails", async () => {
+    getCurrentUser.mockResolvedValue({ id: "auth-user", email: "alice@example.com" });
+    getWorkspace.mockResolvedValue({ userId: "11111111-1111-4111-8111-111111111111", teamId: "22222222-2222-4222-8222-222222222222" });
+    syncRecallCalendarEventsForWorkspace.mockResolvedValue({ connectionId: "33333333-3333-4333-8333-333333333333", syncedEventCount: 2 });
+    send.mockRejectedValue(new Error("Queue unavailable"));
+    const response = await postCalendarSync();
+    expect(response.status).toBe(502);
+    expect(await response.json()).not.toHaveProperty("historyRepairQueued");
   });
 
   it("returns a reconnect signal when calendar access is missing", async () => {

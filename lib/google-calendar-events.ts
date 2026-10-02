@@ -20,6 +20,19 @@ export class GoogleCalendarReadError extends Error {
   }
 }
 
+/** Read current details for a previously imported primary-calendar event. */
+export async function fetchGoogleCalendarEvent(accessToken: string, eventId: string) {
+  const response = await fetch(`${GOOGLE_EVENTS_URL}/${encodeURIComponent(eventId)}`, {
+    headers: { authorization: `Bearer ${accessToken}` },
+    cache: "no-store",
+  });
+  if (response.status === 404 || response.status === 410) return null;
+  if (!response.ok) {
+    throw new GoogleCalendarReadError("Could not read the Google calendar event", response.status);
+  }
+  return asRecord(await response.json());
+}
+
 function getString(value: unknown) {
   return typeof value === "string" && value.trim() ? value.trim() : null;
 }

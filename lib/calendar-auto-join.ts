@@ -106,6 +106,7 @@ type AutoJoinInput = {
   event: SyncedCalendarEvent;
   forceBotConfigRefresh?: boolean;
   repairMode?: boolean;
+  historicalRepair?: boolean;
 };
 
 type RecallBotResponse = {
@@ -411,7 +412,11 @@ async function autoJoinCalendarEventInternal(input: AutoJoinInput) {
   const activeTeamMeetingKey =
     teamMeetingKey ?? calendarEvent.teamMeetingKey ?? null;
 
-  if (!input.connection.autoJoinEnabled && !ignoredImportedEvent) {
+  if (
+    !input.connection.autoJoinEnabled &&
+    !ignoredImportedEvent &&
+    !input.historicalRepair
+  ) {
     return {
       action: "skipped" as const,
       calendarEventId: calendarEvent.id,
@@ -425,6 +430,68 @@ async function autoJoinCalendarEventInternal(input: AutoJoinInput) {
     externalEventId: input.event.externalEventId,
     teamMeetingKey: activeTeamMeetingKey,
   });
+  // Historical repair only restores the library record; it never schedules capture.
+  if (input.historicalRepair) {
+    if (
+      !isPastCalendarEvent({ startsAt, endsAt }) ||
+      input.event.isDeleted ||
+      autoJoinSuppressed ||
+      (!location && !platform)
+    ) {
+      return {
+        action: "skipped" as const,
+        calendarEventId: calendarEvent.id,
+        reason: "ignored_event" as const,
+      };
+    }
+    if (!existingMeeting) {
+      await db.insert(meetings).values({
+        id: randomUUID(),
+        teamId: input.connection.teamId,
+        ownerUserId: input.connection.userId,
+        calendarEventId: calendarEvent.id,
+        teamMeetingKey: activeTeamMeetingKey,
+        title,
+        titleSource: "calendar",
+        platform: platform ?? "in_person",
+        status: "missed",
+        meetingUrl,
+        startedAt: startsAt,
+        endedAt: endsAt,
+      }).onConflictDoNothing();
+      existingMeeting = await findExistingMeeting({
+        teamId: input.connection.teamId,
+        calendarEventId: calendarEvent.id,
+        externalEventId: input.event.externalEventId,
+        teamMeetingKey: activeTeamMeetingKey,
+      });
+      if (!existingMeeting) {
+        throw new Error("Historical calendar meeting creation failed");
+      }
+    }
+    // Also complete access writes on a retry after a partially successful insert.
+    await syncMeetingParticipantAccess({
+      attendeeEmails,
+      meetingId: existingMeeting.id,
+      ownerUserId: existingMeeting.ownerUserId,
+      teamId: input.connection.teamId,
+    });
+    if (input.connection.workspaceDomain) {
+      await applyMeetingShareRules({
+        attendeeEmails,
+        meetingId: existingMeeting.id,
+        ownerUserId: existingMeeting.ownerUserId,
+        teamId: input.connection.teamId,
+        title: getCalendarMeetingTitle(existingMeeting, title),
+        workspaceDomain: input.connection.workspaceDomain,
+      });
+    }
+    return {
+      action: "repaired" as const,
+      calendarEventId: calendarEvent.id,
+      meetingId: existingMeeting.id,
+    };
+  }
   let participantAccessSynced = false;
   let shareRulesApplied = false;
   const isPastRepairEvent =

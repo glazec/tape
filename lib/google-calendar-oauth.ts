@@ -80,6 +80,14 @@ export async function exchangeGoogleCalendarCode(code: string) {
   });
 }
 
+export async function refreshStoredGoogleCalendarAccessToken(encryptedRefreshToken: string) {
+  const token = await requestGoogleToken({
+    grant_type: "refresh_token",
+    refresh_token: decryptToken(encryptedRefreshToken),
+  });
+  return token.accessToken;
+}
+
 export async function storeGoogleCalendarTokens(input: {
   workspace: WorkspaceContext;
   accessToken: string;

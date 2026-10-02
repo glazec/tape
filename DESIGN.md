@@ -10,6 +10,8 @@ Tape turns meetings into a reliable team memory. It should help colleagues captu
 
 The interface should feel like a calm editorial workspace: clear white space, strong typography, precise controls, and restrained coral accents. It is a working archive, not an analytics console.
 
+Calendar sync feedback distinguishes completed recent sync from a queued check for missing meetings in the past 30 days. It asks the user to refresh shortly and does not claim the background check is complete.
+
 ## Core rule
 
 Hide unnecessary information. Make the next useful action obvious. Keep every screen intuitive and clean.

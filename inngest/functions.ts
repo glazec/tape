@@ -41,6 +41,7 @@ import {
   scheduleRecallBot,
 } from "@/lib/vendors/recall";
 import { syncRecallCalendarEventsForAllConnectedUsers } from "@/lib/recall-calendar-bulk-sync";
+import { listMissingCalendarHistory, repairCalendarHistoryEvent } from "@/lib/calendar-history-repair";
 import { reconcileStaleMeetingJobs } from "@/lib/stale-meeting-jobs";
 import { stopBotsForExhaustedWorkspaces } from "@/lib/provider-credit-enforcement";
 import { dispatchQueuedUploadTranscriptions } from "@/lib/upload-transcription-dispatch";
@@ -701,6 +702,29 @@ export const syncRecallCalendarsHourly = inngest.createFunction(
   async () => syncRecallCalendarEventsForAllConnectedUsers(),
 );
 
+export const repairCalendarHistory = inngest.createFunction(
+  {
+    id: "repair-calendar-history",
+    triggers: [{ event: "calendar/history.repair" }],
+    concurrency: { limit: 1, key: "event.data.connectionId" },
+    retries: 3,
+  },
+  async ({ event, step }) => {
+    const input = z.object({
+      connectionId: z.uuid(), teamId: z.uuid(), userId: z.uuid(),
+      requestedAt: z.iso.datetime(),
+    }).parse(event.data);
+    const candidates = await step.run("find-missing-events", () => listMissingCalendarHistory(input));
+    let repaired = 0;
+    for (const externalEventId of candidates) {
+      const result = await step.run(`repair-${externalEventId}`, () =>
+        repairCalendarHistoryEvent(input, externalEventId));
+      if (result.action === "repaired") repaired += 1;
+    }
+    return { checked: candidates.length, repaired };
+  },
+);
+
 export const enforceProviderCredit = inngest.createFunction(
   {
     id: "enforce-provider-credit",
@@ -733,6 +757,7 @@ export const functions = [
   sendLocationReminder,
   reconcileLocationReminderSchedules,
   syncRecallCalendarsHourly,
+  repairCalendarHistory,
   enforceProviderCredit,
   reconcileStaleJobs,
 ];

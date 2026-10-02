@@ -1,9 +1,30 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { fetchGoogleCalendarEvents } from "@/lib/google-calendar-events";
+import { fetchGoogleCalendarEvent, fetchGoogleCalendarEvents } from "@/lib/google-calendar-events";
 
 afterEach(() => {
   vi.unstubAllGlobals();
+});
+
+describe("fetchGoogleCalendarEvent", () => {
+  it("reads current details with an escaped event ID and no cache", async () => {
+    const event = { summary: "Rui <> YP", location: "Mountain View" };
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify(event)));
+    vi.stubGlobal("fetch", fetchMock);
+    expect(await fetchGoogleCalendarEvent("token", "event/id")).toEqual(event);
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://www.googleapis.com/calendar/v3/calendars/primary/events/event%2Fid",
+      { headers: { authorization: "Bearer token" }, cache: "no-store" },
+    );
+  });
+  it.each([404, 410])("skips removed events (%i)", async (status) => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(null, { status })));
+    expect(await fetchGoogleCalendarEvent("token", "event")).toBeNull();
+  });
+  it("propagates transient provider failures for retry", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(null, { status: 503 })));
+    await expect(fetchGoogleCalendarEvent("token", "event")).rejects.toMatchObject({ status: 503 });
+  });
 });
 
 describe("fetchGoogleCalendarEvents", () => {

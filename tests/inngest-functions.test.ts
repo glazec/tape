@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 const {
+  listMissingCalendarHistory,
+  repairCalendarHistoryEvent,
   assertMeetingHasProviderCredit,
   assertWorkspaceHasProviderCredit,
   createElevenLabsTranscriptJob,
@@ -29,6 +31,8 @@ const {
   translateTranscriptSegments,
   update,
 } = vi.hoisted(() => ({
+  listMissingCalendarHistory: vi.fn(),
+  repairCalendarHistoryEvent: vi.fn(),
   assertMeetingHasProviderCredit: vi.fn(),
   assertWorkspaceHasProviderCredit: vi.fn(),
   createElevenLabsTranscriptJob: vi.fn(),
@@ -111,6 +115,8 @@ vi.mock("@/lib/vendors/recall", () => ({
   deleteScheduledRecallBot,
   scheduleRecallBot,
 }));
+
+vi.mock("@/lib/calendar-history-repair", () => ({ listMissingCalendarHistory, repairCalendarHistoryEvent }));
 
 vi.mock("@/lib/recall-calendar-bulk-sync", () => ({
   syncRecallCalendarEventsForAllConnectedUsers,
@@ -211,6 +217,10 @@ describe("Inngest functions", () => {
         triggers: [{ cron: "0 * * * *" }],
       },
       {
+        id: "repair-calendar-history",
+        triggers: [{ event: "calendar/history.repair" }],
+      },
+      {
         id: "enforce-provider-credit",
         triggers: [{ cron: "*/5 * * * *" }],
       },
@@ -219,6 +229,19 @@ describe("Inngest functions", () => {
         triggers: [{ cron: "*/15 * * * *" }],
       },
     ]);
+  });
+
+  it("repairs history through durable per-event steps with connection-level concurrency", async () => {
+    const { repairCalendarHistory } = await import("@/inngest/functions");
+    const input = { connectionId: "11111111-1111-4111-8111-111111111111", teamId: "22222222-2222-4222-8222-222222222222", userId: "33333333-3333-4333-8333-333333333333", requestedAt: "2026-10-02T21:00:00.000Z" };
+    listMissingCalendarHistory.mockResolvedValue(["event-1", "event-2"]);
+    repairCalendarHistoryEvent.mockResolvedValueOnce({ action: "repaired" }).mockResolvedValueOnce({ action: "skipped" });
+    const run = vi.fn(async (_name, callback) => callback());
+    const worker = repairCalendarHistory as unknown as RunnableInngestFunction;
+    await expect(worker.fn({ event: { data: input }, step: { run } })).resolves.toEqual({ checked: 2, repaired: 1 });
+    expect(run.mock.calls.map(([name]) => name)).toEqual(["find-missing-events", "repair-event-1", "repair-event-2"]);
+    expect(repairCalendarHistory.opts.concurrency).toEqual({ limit: 1, key: "event.data.connectionId" });
+    expect(repairCalendarHistoryEvent).toHaveBeenCalledWith(input, "event-1");
   });
 
   it("checks workspace credit before scheduling a background bot", async () => {

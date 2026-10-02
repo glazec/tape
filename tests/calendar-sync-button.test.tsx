@@ -7,6 +7,9 @@ import {
 } from "@/components/calendar-sync-button";
 
 describe("formatCalendarSyncMessage", () => {
+  it("distinguishes queued history work from completed recent sync", () => {
+    expect(formatCalendarSyncMessage({ syncedEventCount: 2, historyRepairQueued: true })).toContain("Checking missing meetings from the past 30 days in the background.");
+  });
   it("shows the captured event count when sync succeeds cleanly", () => {
     expect(formatCalendarSyncMessage({ syncedEventCount: 2 })).toBe(
       "Captured 2 upcoming calendar events.",

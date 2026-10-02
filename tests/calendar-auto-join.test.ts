@@ -3988,6 +3988,45 @@ describe("calendar auto join", () => {
     );
   });
 
+  it.each([
+    { location: "Mountain View, CA, USA", platform: "in_person" },
+    { title: "tesla", location: "Mountain View, CA, USA", platform: "in_person",
+      startsAt: "2026-09-19T21:00:00Z", endsAt: "2026-09-19T22:00:00Z",
+      attendeeEmails: [], attendees: [] },
+    { meetingUrl: "https://meet.google.com/abc-defg-hij", platform: "google_meet" },
+  ])("restores a missing historical $platform meeting without capture and safely retries", async ({ platform, ...details }) => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-10-02T21:00:00Z"));
+    const calendarEvent = { id: "33333333-3333-4333-8333-333333333333", teamMeetingKey: "historical-key" };
+    const storedMeeting = { id: "44444444-4444-4444-8444-444444444444", ownerUserId: "55555555-5555-4555-8555-555555555555", status: "missed", title: "Rui <> YP", titleSource: "calendar", platform };
+    let created = false;
+    const meetingValues = vi.fn(() => ({ onConflictDoNothing: async () => { created = true; } }));
+    insert.mockImplementation((table) => table === meetingsTable
+      ? { values: meetingValues }
+      : { values: () => ({ onConflictDoUpdate: () => ({ returning: async () => [calendarEvent] }) }) });
+    select.mockImplementation(() => ({ from: () => ({ where: () => ({ limit: async () => created ? [storedMeeting] : [] }) }) }));
+    const { meetings: meetingsTable } = await import("@/db/schema");
+    const { autoJoinCalendarEvent } = await import("@/lib/calendar-auto-join");
+    const input = {
+      historicalRepair: true, repairMode: true,
+      connection: { id: "11111111-1111-4111-8111-111111111111", teamId: "22222222-2222-4222-8222-222222222222", userId: storedMeeting.ownerUserId, autoJoinEnabled: false, workspaceDomain: "iosg.vc" },
+      event: { externalEventId: "google-event", title: "Rui <> YP", startsAt: "2026-09-11T21:00:00Z", endsAt: "2026-09-11T22:00:00Z", ...details },
+    };
+    // Retry after an access write fails must reuse the inserted record.
+    syncMeetingParticipantAccess.mockRejectedValueOnce(new Error("temporary access failure"));
+    await expect(autoJoinCalendarEvent(input)).rejects.toThrow("temporary access failure");
+    await expect(autoJoinCalendarEvent(input)).resolves.toMatchObject({ action: "repaired", meetingId: storedMeeting.id });
+    expect(meetingValues).toHaveBeenCalledTimes(1);
+    expect(meetingValues).toHaveBeenCalledWith(expect.objectContaining({
+      status: "missed", platform, title: input.event.title,
+      startedAt: new Date(input.event.startsAt),
+    }));
+    expect(applyMeetingShareRules).toHaveBeenCalled();
+    expect(scheduleRecallCalendarEventBot).not.toHaveBeenCalled();
+    expect(scheduleRecallBot).not.toHaveBeenCalled();
+    expect(scheduleLocationReminder).not.toHaveBeenCalled();
+  });
+
   it("does not create a new meeting for a past repair event", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-07-02T01:00:00.000Z"));

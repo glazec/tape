@@ -683,7 +683,7 @@ async function findConnectionByWorkspace(workspace: WorkspaceContext) {
     : null;
 }
 
-function normalizeRecallCalendarEvent(event: unknown): SyncedCalendarEvent | null {
+export function normalizeRecallCalendarEvent(event: unknown): SyncedCalendarEvent | null {
   if (!event || typeof event !== "object") {
     return null;
   }
