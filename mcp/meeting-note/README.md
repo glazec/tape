@@ -10,7 +10,7 @@ It exposes caller identity, a canonical authorized meeting inventory, schema dis
 
 Local recordings use two MCP calls. `prepare_meeting_upload` returns a short lived R2 `PUT` URL and opaque completion token. After the client uploads the exact file bytes, `complete_meeting_upload` asks the Tape web backend to validate the object, create the meeting at the chosen time, and queue transcription.
 
-Meetings restored by the web calendar background repair appear in the authorized meeting inventory as missed records. The repair checks imported events without meeting records from the past 30 days and does not create recordings or transcripts.
+Meetings restored by the web calendar background repair appear in the authorized meeting inventory as missed records. The repair checks Google Calendar events, including events never imported, without meeting records from the past 30 days and does not create recordings or transcripts.
 
 ## Local run
 

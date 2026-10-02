@@ -1,7 +1,7 @@
 import { databaseSql } from "@/db/client";
 import { normalizeEmailDomain } from "@/lib/access";
 import { autoJoinCalendarEvent } from "@/lib/calendar-auto-join";
-import { fetchGoogleCalendarEvent } from "@/lib/google-calendar-events";
+import { fetchGoogleCalendarEvent, fetchGoogleCalendarHistoryEventIds } from "@/lib/google-calendar-events";
 import { refreshStoredGoogleCalendarAccessToken } from "@/lib/google-calendar-oauth";
 import { normalizeRecallCalendarEvent } from "@/lib/recall-calendar";
 
@@ -15,8 +15,14 @@ export type CalendarHistoryRepairInput = {
 const HISTORY_MS = 30 * 24 * 60 * 60 * 1000;
 
 export async function listMissingCalendarHistory(input: CalendarHistoryRepairInput) {
+  const connection = await findCalendarHistoryConnection(input);
+  if (!connection) return [];
   const end = new Date(input.requestedAt);
   const start = new Date(end.getTime() - HISTORY_MS);
+  const accessToken = await refreshStoredGoogleCalendarAccessToken(connection.oauth_refresh_token);
+  const eventIds = await fetchGoogleCalendarHistoryEventIds({
+    accessToken, timeMin: start, timeMax: end,
+  });
   const rows = await databaseSql`
     select e.external_event_id
     from calendar_events e
@@ -24,22 +30,17 @@ export async function listMissingCalendarHistory(input: CalendarHistoryRepairInp
     where c.id = ${input.connectionId}::uuid
       and c.team_id = ${input.teamId}::uuid and c.user_id = ${input.userId}::uuid
       and c.provider = 'google' and c.recall_calendar_status = 'connected'
-      and e.starts_at >= ${start} and e.starts_at < ${end}
-      and coalesce(e.ends_at, e.starts_at + interval '1 hour') <= ${end}
-      and not exists (
+      and exists (
         select 1 from meetings m where m.team_id = e.team_id
           and (m.calendar_event_id = e.id or
             (e.team_meeting_key is not null and m.team_meeting_key = e.team_meeting_key))
       )
-    order by e.starts_at, e.id
   `;
-  return rows.map((row) => String(row.external_event_id));
+  const linkedEventIds = new Set(rows.map((row) => String(row.external_event_id)));
+  return eventIds.filter((id) => !linkedEventIds.has(id));
 }
 
-export async function repairCalendarHistoryEvent(
-  input: CalendarHistoryRepairInput,
-  externalEventId: string,
-) {
+async function findCalendarHistoryConnection(input: CalendarHistoryRepairInput) {
   // Load credentials inside the step so tokens never enter durable job payloads.
   const [connection] = await databaseSql`
     select c.id, c.team_id, c.user_id, c.oauth_refresh_token, u.email, t.name
@@ -51,10 +52,23 @@ export async function repairCalendarHistoryEvent(
       and c.provider = 'google' and c.recall_calendar_status = 'connected'
     limit 1
   `;
-  if (!connection) return { action: "disconnected" };
+  if (!connection) return null;
   if (typeof connection.oauth_refresh_token !== "string") {
     throw new Error("Calendar history repair requires reconnecting Google Calendar");
   }
+  return {
+    oauth_refresh_token: connection.oauth_refresh_token,
+    email: String(connection.email),
+    name: String(connection.name),
+  };
+}
+
+export async function repairCalendarHistoryEvent(
+  input: CalendarHistoryRepairInput,
+  externalEventId: string,
+) {
+  const connection = await findCalendarHistoryConnection(input);
+  if (!connection) return { action: "disconnected" };
   const accessToken = await refreshStoredGoogleCalendarAccessToken(connection.oauth_refresh_token);
   const raw = await fetchGoogleCalendarEvent(accessToken, externalEventId);
   if (!raw || raw.status === "cancelled") return { action: "skipped" };

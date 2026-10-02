@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { fetchGoogleCalendarEvent, fetchGoogleCalendarEvents } from "@/lib/google-calendar-events";
+import { fetchGoogleCalendarEvent, fetchGoogleCalendarEvents, fetchGoogleCalendarHistoryEventIds } from "@/lib/google-calendar-events";
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -24,6 +24,38 @@ describe("fetchGoogleCalendarEvent", () => {
   it("propagates transient provider failures for retry", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(null, { status: 503 })));
     await expect(fetchGoogleCalendarEvent("token", "event")).rejects.toMatchObject({ status: 503 });
+  });
+});
+
+describe("fetchGoogleCalendarHistoryEventIds", () => {
+  it("discovers every page without the pricing estimate's eight-page limit", async () => {
+    let page = 0;
+    const fetchMock = vi.fn().mockImplementation(async () => {
+      page += 1;
+      return new Response(JSON.stringify({
+        items: Array.from({ length: 250 }, (_, i) => ({ id: `event-${page}-${i}` })),
+        ...(page < 9 ? { nextPageToken: `page-${page + 1}` } : {}),
+      }));
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const input = { accessToken: "token", timeMin: new Date("2026-09-02T21:00:00Z"), timeMax: new Date("2026-10-02T21:00:00Z") };
+    const ids = await fetchGoogleCalendarHistoryEventIds(input);
+    expect(ids).toHaveLength(2250);
+    expect(ids).toContain("event-9-249");
+    const url = new URL(String(fetchMock.mock.calls[8][0]));
+    expect(url.searchParams.get("pageToken")).toBe("page-9");
+    expect(url.searchParams.get("timeMin")).toBe(input.timeMin.toISOString());
+    expect(url.searchParams.get("timeMax")).toBe(input.timeMax.toISOString());
+    expect(url.searchParams.get("singleEvents")).toBe("true");
+    expect(url.searchParams.get("showDeleted")).toBe("false");
+    expect(url.searchParams.get("fields")).toBe("nextPageToken,items(id)");
+  });
+
+  it("does not return partial discovery when a later page fails", async () => {
+    vi.stubGlobal("fetch", vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ items: [{ id: "first" }], nextPageToken: "next" })))
+      .mockResolvedValueOnce(new Response(null, { status: 503 })));
+    await expect(fetchGoogleCalendarHistoryEventIds({ accessToken: "token", timeMin: new Date(), timeMax: new Date() })).rejects.toMatchObject({ status: 503 });
   });
 });
 

@@ -20,7 +20,7 @@ export class GoogleCalendarReadError extends Error {
   }
 }
 
-/** Read current details for a previously imported primary-calendar event. */
+/** Read current details for a primary-calendar event. */
 export async function fetchGoogleCalendarEvent(accessToken: string, eventId: string) {
   const response = await fetch(`${GOOGLE_EVENTS_URL}/${encodeURIComponent(eventId)}`, {
     headers: { authorization: `Bearer ${accessToken}` },
@@ -31,6 +31,42 @@ export async function fetchGoogleCalendarEvent(accessToken: string, eventId: str
     throw new GoogleCalendarReadError("Could not read the Google calendar event", response.status);
   }
   return asRecord(await response.json());
+}
+
+/** Discover every event in the repair window, including events never imported. */
+export async function fetchGoogleCalendarHistoryEventIds(input: {
+  accessToken: string;
+  timeMin: Date;
+  timeMax: Date;
+}) {
+  const ids = new Set<string>();
+  let pageToken: string | null = null;
+  do {
+    const url = new URL(GOOGLE_EVENTS_URL);
+    url.searchParams.set("singleEvents", "true");
+    url.searchParams.set("showDeleted", "false");
+    url.searchParams.set("maxResults", String(PAGE_SIZE));
+    url.searchParams.set("timeMin", input.timeMin.toISOString());
+    url.searchParams.set("timeMax", input.timeMax.toISOString());
+    url.searchParams.set("fields", "nextPageToken,items(id)");
+    if (pageToken) url.searchParams.set("pageToken", pageToken);
+    const response = await fetch(url, {
+      headers: { authorization: `Bearer ${input.accessToken}` },
+      cache: "no-store",
+    });
+    if (!response.ok) {
+      throw new GoogleCalendarReadError("Could not list Google calendar history", response.status);
+    }
+    const data = asRecord(await response.json());
+    if (Array.isArray(data?.items)) {
+      for (const item of data.items) {
+        const id = getString(asRecord(item)?.id);
+        if (id) ids.add(id);
+      }
+    }
+    pageToken = getString(data?.nextPageToken);
+  } while (pageToken);
+  return [...ids];
 }
 
 function getString(value: unknown) {

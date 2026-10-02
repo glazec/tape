@@ -1,12 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { databaseSql, autoJoinCalendarEvent, fetchGoogleCalendarEvent, refreshStoredGoogleCalendarAccessToken } = vi.hoisted(() => ({
+const { databaseSql, autoJoinCalendarEvent, fetchGoogleCalendarEvent, fetchGoogleCalendarHistoryEventIds, refreshStoredGoogleCalendarAccessToken } = vi.hoisted(() => ({
   databaseSql: vi.fn(), autoJoinCalendarEvent: vi.fn(), fetchGoogleCalendarEvent: vi.fn(),
+  fetchGoogleCalendarHistoryEventIds: vi.fn(),
   refreshStoredGoogleCalendarAccessToken: vi.fn(),
 }));
 vi.mock("@/db/client", () => ({ databaseSql, db: {} }));
 vi.mock("@/lib/calendar-auto-join", () => ({ autoJoinCalendarEvent }));
-vi.mock("@/lib/google-calendar-events", () => ({ fetchGoogleCalendarEvent }));
+vi.mock("@/lib/google-calendar-events", () => ({ fetchGoogleCalendarEvent, fetchGoogleCalendarHistoryEventIds }));
 vi.mock("@/lib/google-calendar-oauth", () => ({ refreshStoredGoogleCalendarAccessToken }));
 
 import { listMissingCalendarHistory, repairCalendarHistoryEvent } from "@/lib/calendar-history-repair";
@@ -33,15 +34,36 @@ describe("calendar history repair", () => {
     autoJoinCalendarEvent.mockResolvedValue({ action: "repaired" });
   });
 
-  it("selects only missing records within 30 days for the requesting connection", async () => {
-    databaseSql.mockResolvedValue([{ external_event_id: "event-1" }]);
-    expect(await listMissingCalendarHistory(input)).toEqual(["event-1"]);
-    const [parts, ...params] = databaseSql.mock.calls[0];
-    expect(parts.join("?")).toContain("not exists");
+  it("discovers Olivia even without a stored calendar record and skips existing meetings", async () => {
+    databaseSql.mockResolvedValueOnce([{ oauth_refresh_token: "encrypted" }])
+      .mockResolvedValueOnce([{ external_event_id: "already-linked" }]);
+    fetchGoogleCalendarHistoryEventIds.mockResolvedValue(["already-linked", "olivia-not-imported", "imported-without-meeting"]);
+    expect(await listMissingCalendarHistory(input)).toEqual(["olivia-not-imported", "imported-without-meeting"]);
+    expect(fetchGoogleCalendarHistoryEventIds).toHaveBeenCalledWith({
+      accessToken: "access-token", timeMin: new Date("2026-09-02T21:00:00.000Z"),
+      timeMax: new Date(input.requestedAt),
+    });
+    const [parts, ...params] = databaseSql.mock.calls[1];
+    expect(parts.join("?")).toContain("and exists");
     expect(parts.join("?")).toContain("m.team_meeting_key = e.team_meeting_key");
     expect(params).toContain(input.userId);
     expect(params).toContain(input.teamId);
-    expect(params).toContainEqual(new Date("2026-09-02T21:00:00.000Z"));
+    fetchGoogleCalendarEvent.mockResolvedValue({ ...googleEvent, summary: "Olivia" });
+    await expect(repairCalendarHistoryEvent(input, "olivia-not-imported")).resolves.toEqual({ action: "repaired" });
+    expect(autoJoinCalendarEvent).toHaveBeenCalledWith(expect.objectContaining({
+      historicalRepair: true, event: expect.objectContaining({ title: "Olivia", externalEventId: "olivia-not-imported" }),
+    }));
+  });
+
+  it("does not list Google history for a disconnected or mismatched connection", async () => {
+    databaseSql.mockResolvedValue([]);
+    expect(await listMissingCalendarHistory(input)).toEqual([]);
+    expect(fetchGoogleCalendarHistoryEventIds).not.toHaveBeenCalled();
+  });
+
+  it("retries discovery instead of silently omitting events when Google fails", async () => {
+    fetchGoogleCalendarHistoryEventIds.mockRejectedValue(new Error("Google unavailable"));
+    await expect(listMissingCalendarHistory(input)).rejects.toThrow("Google unavailable");
   });
 
   it("reads the updated Google event and restores it without enabling capture", async () => {
