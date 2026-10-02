@@ -207,6 +207,47 @@ describe("meeting page", () => {
     expect(html).toContain("languages:zh-CN:en");
   });
 
+  it.each(["scheduled", "missed", "failed"])(
+    "shows participants before content exists for a %s meeting",
+    async (status) => {
+      mocks.getMeeting.mockResolvedValue(
+        meeting({
+          title: "Lunch",
+          platform: "in_person",
+          status,
+          audioUrl: null,
+          segments: [],
+          visualAssets: [],
+          speakerSuggestions: [
+            { email: "alice@example.com", name: "Alice Chen" },
+            { email: "bob@example.com", name: "Bob Lee" },
+            { email: "guest@example.com", name: "" },
+          ],
+        }),
+      );
+
+      const html = renderToStaticMarkup(
+        await MeetingPage({ params: Promise.resolve({ meetingId: "lunch" }) }),
+      );
+
+      expect(html).toContain("Lunch");
+      expect(html).toContain('aria-label="Participants"');
+      expect(html).toContain("Alice Chen");
+      expect(html).toContain("Bob Lee");
+      expect(html).toContain("guest@example.com");
+      expect(html.indexOf("Alice Chen")).toBeLessThan(html.indexOf("recovery panel"));
+      expect(html).not.toContain("transcript lines");
+    },
+  );
+
+  it("omits the participant row when no participants are available", async () => {
+    const html = renderToStaticMarkup(
+      await MeetingPage({ params: Promise.resolve({ meetingId: "meeting_1" }) }),
+    );
+
+    expect(html).not.toContain('aria-label="Participants"');
+  });
+
   it("offers uploads for scheduled in person meetings", async () => {
     mocks.getMeeting.mockResolvedValue(
       meeting({ platform: "in_person", status: "scheduled" }),

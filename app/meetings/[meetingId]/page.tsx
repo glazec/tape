@@ -194,6 +194,18 @@ export default async function MeetingPage({
             startedAt={meeting.startedAt}
             status={formatStatus(displayStatus)}
           />
+          {meeting.speakerSuggestions.length > 0 ? (
+            <div className="mt-3 flex flex-wrap items-baseline gap-x-3 gap-y-1 text-sm">
+              <span className="text-muted-foreground">Participants</span>
+              <ul aria-label="Participants" className="flex min-w-0 flex-wrap gap-x-3 gap-y-1">
+                {meeting.speakerSuggestions.map((participant) => (
+                  <li className="break-all" key={participant.email} title={participant.email}>
+                    {participant.name || participant.email}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
         </section>
 
         <section

@@ -202,6 +202,8 @@ On populated meeting pages, show available translation state, captured images, a
 
 Lead with the editable title and compact, human readable metadata. Put transcript content in the main column. Put sharing, related meetings, and other supporting actions after the primary content in mobile reading order.
 
+Show available participant names below the meeting metadata, including scheduled meetings without a recording or transcript. Omit the participant row when no names or emails are available to the viewer.
+
 For meetings without content, center the add content choice. Show only the source choices that can resolve the current state. Do not show an empty transcript viewer.
 
 On meetings with content, keep Export and Copy secondary. Place Delete in an overflow or a dedicated destructive flow rather than beside frequent actions as a full emphasis button.
