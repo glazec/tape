@@ -673,6 +673,7 @@ describe("Inngest functions", () => {
     const segments = Array.from({ length: 12 }, (_, index) => ({
       id: `${String(index + 1).padStart(8, "0")}-1111-4111-8111-111111111111`,
       text: `Segment ${index + 1}`,
+      jobId: "22222222-2222-4222-8222-222222222222",
     }));
     const selectResponses = [
       segments,
@@ -764,6 +765,7 @@ describe("Inngest functions", () => {
     });
 
     expect(run.mock.calls.map(([name]) => name)).toEqual([
+      "load-transcript-enrichment-generation",
       "prepare-transcript-translation",
       "translate-transcript-batch-0",
       "translate-transcript-batch-1",

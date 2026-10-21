@@ -4,23 +4,21 @@ import { parseManualTranscriptText } from "@/lib/manual-transcript-parser";
 
 const {
   insert,
+  attachUploadedAudioBatch,
   limit,
-  returning,
   set,
   syncMeetingParticipantAccessFromCalendar,
   transaction,
   txn,
-  values,
   where,
 } = vi.hoisted(() => ({
   insert: vi.fn(),
+  attachUploadedAudioBatch: vi.fn(),
   limit: vi.fn(),
-  returning: vi.fn(),
   set: vi.fn(),
   syncMeetingParticipantAccessFromCalendar: vi.fn(),
   transaction: vi.fn(),
   txn: vi.fn((strings: TemplateStringsArray) => strings),
-  values: vi.fn(),
   where: vi.fn(),
 }));
 
@@ -33,6 +31,8 @@ vi.mock("@/db/client", () => ({
     update: () => ({ set }),
   },
 }));
+
+vi.mock("@/lib/meeting-audio-batches", () => ({ attachUploadedAudioBatch }));
 
 vi.mock("@/lib/meeting-write-policy", () => ({
   getManageableMeetingCondition: vi.fn(() => "manageable"),
@@ -55,7 +55,9 @@ const workspace = {
 
 describe("parseManualTranscriptText", () => {
   it("defaults transcript text without speaker names to Speaker 1", () => {
-    expect(parseManualTranscriptText("This transcript has no speaker label.")).toEqual([
+    expect(
+      parseManualTranscriptText("This transcript has no speaker label."),
+    ).toEqual([
       {
         speaker: "Speaker 1",
         startMs: 0,
@@ -185,65 +187,46 @@ describe("meeting recovery uploads", () => {
     vi.resetModules();
   });
 
-  it("creates an audio asset and queued transcript job", async () => {
-    limit.mockResolvedValue([{ id: "meeting_123" }]);
-    values.mockReturnValue({ returning });
-    insert.mockReturnValue({ values });
-    returning
-      .mockResolvedValueOnce([{ id: "recording_123" }])
-      .mockResolvedValueOnce([{ id: "asset_123" }])
-      .mockResolvedValueOnce([{ id: "job_123" }]);
-    set.mockReturnValue({ where });
-    where.mockResolvedValue(undefined);
-    const { completeMeetingAudioUpload } = await import(
-      "@/lib/meeting-recovery-uploads"
-    );
-
-    await expect(
-      completeMeetingAudioUpload({
-        fileSizeBytes: 1234,
-        durationMs: 45 * 60 * 1000,
-        meetingId: "meeting_123",
-        mimeType: "audio/mp4",
-        objectKey: "uploads/recovery.m4a",
-        workspace,
-      }),
-    ).resolves.toEqual({
+  it("registers a single upload through the transactional batch service", async () => {
+    const transcription = {
       mediaAssetId: "asset_123",
       meetingId: "meeting_123",
       objectKey: "uploads/recovery.m4a",
       recordingId: "recording_123",
       transcriptJobId: "job_123",
+    };
+    attachUploadedAudioBatch.mockResolvedValue({
+      meetingId: "meeting_123",
+      transcriptions: [transcription],
     });
-    expect(values).toHaveBeenNthCalledWith(
-      1,
-      expect.objectContaining({
-        durationMs: 45 * 60 * 1000,
+    const { completeMeetingAudioUpload } = await import(
+      "@/lib/meeting-recovery-uploads"
+    );
+    await expect(
+      completeMeetingAudioUpload({
+        fileSizeBytes: 1234,
+        durationMs: 2700000,
         meetingId: "meeting_123",
-        source: "upload",
+        mimeType: "audio/mp4",
+        objectKey: "uploads/recovery.m4a",
+        workspace,
       }),
-    );
-    expect(values).toHaveBeenNthCalledWith(
-      2,
-      expect.objectContaining({
-        bucket: "meeting-audio",
-        meetingId: "meeting_123",
-        recordingId: "recording_123",
-        type: "audio",
-      }),
-    );
-    expect(set).toHaveBeenCalledWith(
-      expect.objectContaining({ status: "processing" }),
-    );
-    expect(values).toHaveBeenNthCalledWith(
-      3,
-      expect.objectContaining({
-        mode: "replace",
-        recordingId: "recording_123",
-      }),
-    );
-    expect(syncMeetingParticipantAccessFromCalendar).not.toHaveBeenCalled();
-    expect(where).toHaveBeenCalled();
+    ).resolves.toEqual(transcription);
+    expect(attachUploadedAudioBatch).toHaveBeenCalledWith({
+      files: [
+        {
+          durationMs: 2700000,
+          fileName: "recording",
+          fileSizeBytes: 1234,
+          mimeType: "audio/mp4",
+          objectKey: "uploads/recovery.m4a",
+        },
+      ],
+      meetingId: "meeting_123",
+      startedAt: undefined,
+      workspace,
+    });
+    expect(insert).not.toHaveBeenCalled();
   });
 
   it("replaces transcript segments and marks a manual recovery ready", async () => {
@@ -281,6 +264,9 @@ describe("meeting recovery uploads", () => {
     const { completeMeetingAudioUpload, MeetingRecoveryUploadError } =
       await import("@/lib/meeting-recovery-uploads");
 
+    attachUploadedAudioBatch.mockRejectedValueOnce(
+      new MeetingRecoveryUploadError("Meeting not found"),
+    );
     await expect(
       completeMeetingAudioUpload({
         meetingId: "meeting_123",

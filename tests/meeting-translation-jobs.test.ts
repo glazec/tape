@@ -1,3 +1,4 @@
+import { PgDialect } from "drizzle-orm/pg-core";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 const { set, where } = vi.hoisted(() => ({
@@ -89,4 +90,26 @@ describe("meeting translation job state", () => {
       expect.objectContaining({ translationErrorMessage: "x".repeat(500) }),
     );
   });
+
+  it("guards translation lifecycle writes against a superseded transcript generation", async () => {
+    set.mockReturnValue({ where });
+    where.mockResolvedValue(undefined);
+    const jobs = await import("@/lib/meeting-translation-jobs");
+    const jobId = "22222222-2222-4222-8222-222222222222";
+    const meetingId = "11111111-1111-4111-8111-111111111111";
+    await jobs.markMeetingTranslationQueued(meetingId, jobId);
+    await jobs.markMeetingTranslationRunning(meetingId, "en", jobId);
+    await jobs.markMeetingTranslationCompleted(meetingId, "en", jobId);
+    await jobs.markMeetingTranslationFailed(meetingId, new Error("old failure"), jobId);
+    await jobs.markMeetingTranslationFailedIfActive(meetingId, new Error("old failure"), jobId);
+
+    for (const [condition] of where.mock.calls) {
+      const query = new PgDialect().sqlToQuery(condition);
+      expect(query.sql).toContain("current_jobs.status = 'completed'");
+      expect(query.sql).toContain("mode = 'replace'");
+      expect(query.params).toContain(jobId);
+      expect(query.params).toContain(meetingId);
+    }
+  });
+
 });

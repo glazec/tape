@@ -4,6 +4,8 @@ Tape tests each runtime at the boundary where its behavior can regress. Provider
 
 Calendar history repair coverage includes discovering events never imported, Google pagination beyond 2,000 events, the 30 day window, connection ownership, latest Google event details, deleted and rescheduled events, durable per event steps, queue failure reporting, and retrying a partially created meeting without scheduling a bot or reminder. Run `npx vitest run tests/calendar-history-repair.test.ts tests/calendar-auto-join.test.ts tests/calendar-sync-route.test.ts tests/inngest-functions.test.ts tests/google-calendar-events.test.ts tests/calendar-sync-button.test.tsx`.
 
+Calendar import tests also cover invitations with multiple participants but no link or location, historical recovery and retries, personal calendar holds, duplicate participant emails, deleted invitations, declined guests, and excluded bookings.
+
 ## Test Layers
 
 | Layer | Protects | Command |
@@ -181,3 +183,7 @@ Railway readiness is enforced by the `/api/health/dashboard` check in `railway.w
 3. Use synthetic people, meetings, links, tokens, and vendor payloads.
 4. Mock provider network calls in deterministic suites.
 5. Keep the live probe explicit so local and CI tests cannot spend provider quota accidentally.
+
+Replacement audio checks are covered by `tests/meeting-recovery-upload-panel.test.tsx` and `tests/meeting-actions.test.tsx`, including cancelling before upload and submitting the corrected file to the existing meeting. Audio selection prioritizes assets belonging to the active transcript generation before synthesized audio format preference.
+
+Replacement generation tests also cover atomic registration and repeat completion, hiding historical images and duration, ignoring obsolete transcript webhooks, and preventing earlier enrichment runs from overwriting new translation state. Run `npx vitest run tests/meeting-audio-batches.test.ts tests/meeting-recovery-uploads.test.ts tests/meeting-image-route.test.ts tests/meeting-audio-route.test.ts tests/elevenlabs-transcript-apply.test.ts tests/inngest-enrich-transcript.test.ts tests/meeting-translation-jobs.test.ts`.

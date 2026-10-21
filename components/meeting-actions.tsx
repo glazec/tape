@@ -8,14 +8,24 @@ import {
   Copy,
   Download,
   MoreHorizontal,
+  UploadCloud,
   Trash2,
 } from "lucide-react";
+
+import { MeetingRecoveryUploadPanel } from "@/components/meeting-recovery-upload-panel";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogTitle,
+} from "@/components/ui/dialog";
 
 import { Button, buttonVariants } from "@/components/ui/button";
 
 type MeetingActionsProps = {
   audioExportUrls?: string[];
   canDelete?: boolean;
+  canReplaceAudio?: boolean;
   hasAudio?: boolean;
   hasTranscript?: boolean;
   meetingId: string;
@@ -28,6 +38,7 @@ type ExportFormat = "transcript" | "mp3" | "images";
 export function MeetingActions({
   audioExportUrls,
   canDelete = true,
+  canReplaceAudio = false,
   hasAudio = true,
   hasTranscript = true,
   meetingId,
@@ -35,6 +46,10 @@ export function MeetingActions({
   instanceId = "default",
 }: MeetingActionsProps) {
   const router = useRouter();
+  const actionsMenuRef = useRef<HTMLDetailsElement>(null);
+  const actionsTriggerRef = useRef<HTMLElement>(null);
+  const [isReplaceOpen, setIsReplaceOpen] = useState(false);
+  const [isReplacing, setIsReplacing] = useState(false);
   const exportMenuRef = useRef<HTMLDivElement>(null);
   const [isExportMenuOpen, setIsExportMenuOpen] = useState(false);
   const [selectedExportFormats, setSelectedExportFormats] = useState<
@@ -215,9 +230,7 @@ export function MeetingActions({
                   onChange={() => toggleExportFormat("mp3")}
                   type="checkbox"
                 />
-                <span className="font-medium">
-                  MP3
-                </span>
+                <span className="font-medium">MP3</span>
               </label>
             ) : null}
             {imageCount > 0 ? (
@@ -258,9 +271,10 @@ export function MeetingActions({
           {copyStatus === "copied" ? "Copied" : "Copy"}
         </Button>
       ) : null}
-      {canDelete ? (
-        <details className="group relative">
+      {canDelete || canReplaceAudio ? (
+        <details className="group relative" ref={actionsMenuRef}>
           <summary
+            ref={actionsTriggerRef}
             aria-label="More meeting actions"
             className={`${buttonVariants({ size: "icon", variant: "ghost" })} min-h-11 min-w-11 list-none text-muted-foreground`}
           >
@@ -268,18 +282,71 @@ export function MeetingActions({
             <span className="sr-only">More meeting actions</span>
           </summary>
           <div className="absolute right-0 z-20 mt-2 w-44 rounded-lg border bg-popover p-1.5 text-popover-foreground shadow-lg">
-            <Button
-              className="w-full justify-start text-destructive hover:bg-destructive/10 hover:text-destructive"
-              disabled={isDeleting}
-              onClick={deleteMeeting}
-              type="button"
-              variant="ghost"
-            >
-              <Trash2 data-icon="inline-start" />
-              {isDeleting ? "Deleting" : "Delete meeting"}
-            </Button>
+            {canReplaceAudio ? (
+              <Button
+                className="w-full justify-start"
+                onClick={() => {
+                  if (actionsMenuRef.current)
+                    actionsMenuRef.current.open = false;
+                  setIsReplaceOpen(true);
+                }}
+                type="button"
+                variant="ghost"
+              >
+                <UploadCloud data-icon="inline-start" />
+                Replace audio
+              </Button>
+            ) : null}
+            {canDelete ? (
+              <Button
+                className="w-full justify-start text-destructive hover:bg-destructive/10 hover:text-destructive"
+                disabled={isDeleting}
+                onClick={deleteMeeting}
+                type="button"
+                variant="ghost"
+              >
+                <Trash2 data-icon="inline-start" />
+                {isDeleting ? "Deleting" : "Delete meeting"}
+              </Button>
+            ) : null}
           </div>
         </details>
+      ) : null}
+      {isReplaceOpen ? (
+        <Dialog
+          open
+          onOpenChange={(open) => {
+            if (!isReplacing) setIsReplaceOpen(open);
+          }}
+        >
+          <DialogContent
+            className="max-h-[85dvh] overflow-y-auto"
+            finalFocus={actionsTriggerRef}
+          >
+            <DialogTitle>Replace audio</DialogTitle>
+            <DialogDescription className="mb-4">
+              Upload the correct recording to replace this meeting’s audio and
+              transcript. The title and sharing stay the same.
+            </DialogDescription>
+            <MeetingRecoveryUploadPanel
+              meetingId={meetingId}
+              onBusyChange={setIsReplacing}
+              onComplete={() => {
+                setIsReplacing(false);
+                setIsReplaceOpen(false);
+              }}
+              replaceAudio
+            />
+            <Button
+              className="mt-4"
+              disabled={isReplacing}
+              onClick={() => setIsReplaceOpen(false)}
+              variant="outline"
+            >
+              Cancel
+            </Button>
+          </DialogContent>
+        </Dialog>
       ) : null}
       {error ? (
         <p className="basis-full text-sm font-medium text-destructive">

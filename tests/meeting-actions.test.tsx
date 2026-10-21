@@ -11,6 +11,17 @@ vi.mock("next/navigation", () => ({
 }));
 
 describe("MeetingActions", () => {
+  it("places replacement beside deletion only when authorized", () => {
+    const html = renderToStaticMarkup(
+      <MeetingActions canReplaceAudio meetingId="meeting" />,
+    );
+    expect(html).toContain("Replace audio");
+    expect(html).toContain("Delete meeting");
+    const readonly = renderToStaticMarkup(
+      <MeetingActions canDelete={false} meetingId="meeting" />,
+    );
+    expect(readonly).not.toContain("Replace audio");
+  });
   it("renders a single export dropdown with transcript and MP3 choices", () => {
     const html = renderToStaticMarkup(
       <MeetingActions meetingId="11111111-1111-4111-8111-111111111111" />,

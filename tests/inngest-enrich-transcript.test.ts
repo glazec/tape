@@ -1,3 +1,4 @@
+import { PgDialect } from "drizzle-orm/pg-core";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 const {
@@ -53,6 +54,7 @@ type RunnableInngestFunction = {
 };
 
 const meetingId = "11111111-1111-4111-8111-111111111111";
+const transcriptJobId = "22222222-2222-4222-8222-222222222222";
 
 function mockSegments(
   overrides: Partial<{
@@ -62,6 +64,7 @@ function mockSegments(
 ) {
   const segment = {
     id: "segment_1",
+    jobId: transcriptJobId,
     polishedText: overrides.polishedText ?? null,
     text: "Um, hello team.",
     translatedText: overrides.translatedText ?? null,
@@ -149,10 +152,12 @@ describe("enrich transcript", () => {
       expect(markMeetingTranslationRunning).toHaveBeenCalledWith(
         meetingId,
         "zh-CN",
+        transcriptJobId,
       );
       expect(markMeetingTranslationCompleted).toHaveBeenCalledWith(
         meetingId,
         "zh-CN",
+        transcriptJobId,
       );
       expect(markMeetingTranslationFailed).not.toHaveBeenCalled();
       expect(translateTranscriptSegments).toHaveBeenCalledWith(
@@ -207,6 +212,7 @@ describe("enrich transcript", () => {
     expect(markMeetingTranslationRunning).toHaveBeenCalledWith(
       meetingId,
       "zh-CN",
+      transcriptJobId,
     );
     expect(markMeetingTranslationFailed).not.toHaveBeenCalled();
   });
@@ -224,6 +230,7 @@ describe("enrich transcript", () => {
           event: {
             data: {
               meetingId,
+              transcriptJobId,
               translateTranscript: true,
               translationLanguage: "zh-CN",
             },
@@ -235,6 +242,7 @@ describe("enrich transcript", () => {
     expect(markMeetingTranslationFailedIfActive).toHaveBeenCalledWith(
       meetingId,
       translationError,
+      transcriptJobId,
     );
   });
 
@@ -285,6 +293,7 @@ describe("enrich transcript", () => {
     expect(markMeetingTranslationCompleted).toHaveBeenCalledWith(
       meetingId,
       "zh-CN",
+      transcriptJobId,
     );
     expect(markMeetingTranslationFailed).not.toHaveBeenCalled();
     expect(translateTranscriptSegments).not.toHaveBeenCalled();
@@ -328,10 +337,113 @@ describe("enrich transcript", () => {
     expect(markMeetingTranslationRunning).toHaveBeenCalledWith(
       meetingId,
       "en",
+      transcriptJobId,
     );
     expect(markMeetingTranslationCompleted).toHaveBeenCalledWith(
       meetingId,
       "en",
+      transcriptJobId,
     );
   });
+
+  it("keeps a legacy run bound to its first generation after replacement and replay", async () => {
+    mockSegments();
+    const completedSteps = new Map<string, unknown>();
+    const run = vi.fn(async (name: string, handler: () => Promise<unknown>) => {
+      if (completedSteps.has(name)) return completedSteps.get(name);
+      const result = await handler();
+      completedSteps.set(name, result);
+      return result;
+    });
+    translateTranscriptSegments.mockRejectedValue(new Error("temporary failure"));
+    const { enrichTranscript } = await import("@/inngest/functions");
+    const worker = enrichTranscript as unknown as RunnableInngestFunction;
+    const input = {
+      event: { data: { meetingId, translateTranscript: true, translationLanguage: "zh-CN" } },
+      step: { run },
+    };
+    await expect(worker.fn(input)).rejects.toThrow("temporary failure");
+    const initialSnapshot = completedSteps.get("load-transcript-enrichment-generation");
+    expect(initialSnapshot).toEqual({
+      transcriptJobId,
+      segments: [{ id: "segment_1", text: "Um, hello team." }],
+    });
+
+    // The database now contains a different active generation.
+    const queriedConditions: unknown[] = [];
+    select.mockImplementation((fields: Record<string, unknown>) => {
+      let condition: Parameters<PgDialect["sqlToQuery"]>[0];
+      const resolve = () => {
+        const query = new PgDialect().sqlToQuery(condition);
+        queriedConditions.push(query);
+        const replacement = { id: "new_segment", jobId: "33333333-3333-4333-8333-333333333333", text: "Replacement" };
+        return Promise.resolve(query.params.includes(transcriptJobId)
+          ? []
+          : [Object.fromEntries(Object.keys(fields).map((key) => [key, replacement[key as keyof typeof replacement]]))]);
+      };
+      const query = {
+        from: () => query,
+        where: (value: typeof condition) => { condition = value; return query; },
+        orderBy: resolve,
+        then: (fulfilled: (value: unknown) => unknown) => resolve().then(fulfilled),
+      };
+      return query;
+    });
+    markMeetingTranslationRunning.mockClear();
+    await expect(worker.fn(input)).resolves.toEqual({ polishedCount: 0, translatedCount: 0 });
+    expect(completedSteps.get("load-transcript-enrichment-generation")).toBe(initialSnapshot);
+    expect(queriedConditions.length).toBeGreaterThan(0);
+    expect(translateTranscriptSegments).toHaveBeenCalledTimes(1);
+    expect(polishTranscriptSegmentsInOriginalLanguage).not.toHaveBeenCalled();
+    expect(markMeetingTranslationRunning).not.toHaveBeenCalled();
+    expect(markMeetingTranslationCompleted).not.toHaveBeenCalled();
+    expect(markMeetingTranslationFailed).not.toHaveBeenCalled();
+  });
+
+  it("does not let a legacy failure callback write state without its captured generation", async () => {
+    const { enrichTranscript } = await import("@/inngest/functions");
+    await (enrichTranscript as unknown as RunnableInngestFunction).onFailureFn({
+      error: new Error("old failure"),
+      event: { data: { event: { data: { meetingId, translateTranscript: true } } } },
+    });
+    expect(markMeetingTranslationFailedIfActive).not.toHaveBeenCalled();
+  });
+
+  it("marks a legacy run failure using its durable job after its final retry", async () => {
+    const { run } = mockSegments();
+    const error = new Error("translation unavailable");
+    translateTranscriptSegments.mockRejectedValue(error);
+    const { enrichTranscript } = await import("@/inngest/functions");
+    await expect((enrichTranscript as unknown as RunnableInngestFunction).fn({
+      attempt: 4,
+      event: { data: { meetingId, translateTranscript: true } },
+      step: { run },
+    })).rejects.toThrow("translation unavailable");
+    expect(markMeetingTranslationFailedIfActive).toHaveBeenCalledWith(meetingId, error, transcriptJobId);
+  });
+
+
+  it("skips a queued legacy event when a newer replacement already exists", async () => {
+    const createdAt = Date.parse("2026-10-21T12:00:00Z");
+    let snapshotCondition: Parameters<PgDialect["sqlToQuery"]>[0];
+    const query = {
+      from: () => query,
+      where: (condition: typeof snapshotCondition) => { snapshotCondition = condition; return query; },
+      orderBy: async () => [],
+    };
+    select.mockReturnValue(query);
+    const run = vi.fn(async (_name: string, handler: () => Promise<unknown>) => handler());
+    const { enrichTranscript } = await import("@/inngest/functions");
+    await expect((enrichTranscript as unknown as RunnableInngestFunction).fn({
+      event: { ts: createdAt, data: { meetingId, translateTranscript: true } },
+      step: { run },
+    })).resolves.toEqual({ action: "skipped", reason: "transcript_superseded" });
+    const compiled = new PgDialect().sqlToQuery(snapshotCondition!);
+    expect(compiled.sql).toContain("replacement.mode = 'replace'");
+    expect(compiled.sql).toContain("replacement.created_at >");
+    expect(compiled.params).toContainEqual(new Date(createdAt));
+    expect(markMeetingTranslationRunning).not.toHaveBeenCalled();
+    expect(translateTranscriptSegments).not.toHaveBeenCalled();
+  });
+
 });

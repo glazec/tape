@@ -48,7 +48,7 @@ export async function POST(
   }
 
   const segmentRows = await db
-    .select({ id: transcriptSegments.id })
+    .select({ id: transcriptSegments.id, jobId: transcriptSegments.jobId })
     .from(transcriptSegments)
     .where(
       and(
@@ -81,11 +81,12 @@ export async function POST(
   }
 
   const { translationLanguage } = await getTeamConfiguration(workspace.teamId);
-  await markMeetingTranslationQueued(parsedMeetingId.data);
+  await markMeetingTranslationQueued(parsedMeetingId.data, segmentRows[0].jobId);
   await inngest.send({
     name: "meeting/enrich.transcript",
     data: {
       meetingId: parsedMeetingId.data,
+      transcriptJobId: segmentRows[0].jobId,
       translateTranscript: true,
       translationLanguage,
     },

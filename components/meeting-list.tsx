@@ -33,6 +33,7 @@ import {
 } from "@/components/ui/table";
 import {
   getMeetingDisplayStatus,
+  getMeetingStatusClassName,
   type MeetingDisplayStatus,
   type MeetingRecordStatus,
   type TranscriptJobStatus,
@@ -346,7 +347,7 @@ function MeetingTableRow({
         meeting.accessScope !== "shared" ? (
           <ScheduledMeetingAction meeting={meeting} />
         ) : (
-          <Badge variant={getStatusVariant(displayStatus)}>
+          <Badge className={getMeetingStatusClassName(displayStatus)} variant={getStatusVariant(displayStatus)}>
             {statusLabels[displayStatus]}
           </Badge>
         )}
@@ -479,7 +480,7 @@ function ScheduledMeetingAction({ meeting }: { meeting: MeetingListBaseItem }) {
     <span className="inline-grid w-[5.625rem] items-center justify-items-center">
       {state === "idle" ? (
         <Badge
-          className="meeting-join-badge col-start-1 row-start-1 hidden transition-opacity"
+          className={cn("meeting-join-badge col-start-1 row-start-1 hidden transition-opacity", getMeetingStatusClassName("scheduled"))}
           variant="outline"
         >
           Scheduled

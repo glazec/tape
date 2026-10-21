@@ -1,3 +1,4 @@
+import { currentAudioAssetPriority } from "@/lib/current-audio-asset";
 import { and, desc, eq, or, sql } from "drizzle-orm";
 import { z } from "zod";
 
@@ -81,6 +82,7 @@ export async function GET(
           ),
         )
         .orderBy(
+          desc(currentAudioAssetPriority()),
           desc(
             sql`case when ${mediaAssets.type} = 'synthesized_audio' then 1 else 0 end`,
           ),
@@ -112,6 +114,7 @@ export async function GET(
           ),
         )
         .orderBy(
+          desc(currentAudioAssetPriority()),
           desc(
             sql`case when ${mediaAssets.type} = 'synthesized_audio' then 1 else 0 end`,
           ),

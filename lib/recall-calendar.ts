@@ -721,6 +721,7 @@ export function normalizeRecallCalendarEvent(event: unknown): SyncedCalendarEven
     description: getString(raw?.description),
     hangoutLink: getString(raw?.hangoutLink),
     isDeleted,
+    ...(getString(getRecord(raw?.start)?.date) ? { isAllDay: true } : {}),
     recallCalendarEventBots: normalizeRecallCalendarEventBots(candidate.bots),
     conferenceData: normalizeConferenceData(raw?.conferenceData),
   };

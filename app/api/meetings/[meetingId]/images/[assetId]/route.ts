@@ -1,3 +1,4 @@
+import { currentVisualAssetCondition } from "@/lib/current-audio-asset";
 import { and, desc, eq, or } from "drizzle-orm";
 import { z } from "zod";
 
@@ -41,6 +42,7 @@ export async function GET(
       and(
         eq(meetings.id, parsedMeetingId.data),
         eq(mediaAssets.id, parsedAssetId.data),
+        currentVisualAssetCondition(parsedMeetingId.data),
         or(eq(mediaAssets.type, "screenshot"), eq(mediaAssets.type, "video_frame")),
         getReadableMeetingsCondition(workspace),
       ),

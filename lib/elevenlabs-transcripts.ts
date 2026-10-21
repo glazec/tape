@@ -447,6 +447,7 @@ export async function applyElevenLabsTranscriptEvent(
         aliases jsonb,
         source text
       )
+      where ${persistence.transcriptJobId}::uuid in ${activeTranscriptJobIdsSubquery(persistence.meetingId)}
       on conflict (meeting_id, type, normalized_value) do nothing
     `,
     txn`
@@ -491,6 +492,7 @@ async function shouldApplyTranscriptJob(
   transcriptJobId: string,
 ) {
   const result = await db.execute<{
+    current_is_active: boolean;
     current_mode: string;
     current_status: string;
     id: string;
@@ -500,7 +502,8 @@ async function shouldApplyTranscriptJob(
       latest.id,
       current.mode as current_mode,
       current.status as current_status,
-      current.recording_id
+      current.recording_id,
+      current.id in ${activeTranscriptJobIdsSubquery(meetingId)} as current_is_active
     from transcript_jobs current
     left join lateral (
       select id
@@ -510,6 +513,7 @@ async function shouldApplyTranscriptJob(
       limit 1
     ) latest on true
     where current.id = ${transcriptJobId}::uuid
+      and current.meeting_id = ${meetingId}::uuid
   `);
 
   return isTranscriptJobApplicable(result.rows[0], transcriptJobId);
@@ -518,6 +522,7 @@ async function shouldApplyTranscriptJob(
 export function isTranscriptJobApplicable(
   row:
     | {
+        current_is_active?: boolean;
         current_mode: string;
         current_status: string;
         id: string;
@@ -527,6 +532,7 @@ export function isTranscriptJobApplicable(
   transcriptJobId: string,
 ) {
   return (
+    row?.current_is_active !== false &&
     row?.current_status !== "completed" &&
     (typeof row?.recording_id === "string" ||
       row?.current_mode === "append" ||

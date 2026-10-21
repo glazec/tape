@@ -12,6 +12,8 @@ Local recordings use two MCP calls. `prepare_meeting_upload` returns a short liv
 
 Meetings restored by the web calendar background repair appear in the authorized meeting inventory as missed records. The repair checks Google Calendar events, including events never imported, without meeting records from the past 30 days and does not create recordings or transcripts.
 
+Eligible invitations include those with at least two distinct participant emails and no meeting link or location. Historical repair exposes these as missed meetings available for recording recovery.
+
 ## Local run
 
 ```bash

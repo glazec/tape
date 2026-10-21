@@ -1,6 +1,14 @@
 "use client";
 
-import { ChangeEvent, FormEvent, useId, useRef, useState } from "react";
+import {
+  ChangeEvent,
+  DragEvent,
+  FormEvent,
+  useEffect,
+  useId,
+  useRef,
+  useState,
+} from "react";
 import { useRouter } from "next/navigation";
 import { AlertCircle, CheckCircle2, FileText, UploadCloud } from "lucide-react";
 
@@ -48,22 +56,34 @@ type MeetingContentSource = "audio" | "transcript";
 
 export function MeetingRecoveryUploadPanel({
   meetingId,
+  replaceAudio = false,
+  onBusyChange,
+  onComplete,
 }: {
   meetingId: string;
+  replaceAudio?: boolean;
+  onBusyChange?: (busy: boolean) => void;
+  onComplete?: () => void;
 }) {
   const router = useRouter();
   const titleId = useId();
+  const audioInputId = useId();
+  const transcriptInputId = useId();
+  const transcriptTextId = useId();
   const audioFormId = useId();
   const transcriptFormId = useId();
   const transcriptFileInputRef = useRef<HTMLInputElement>(null);
+  const audioFileInputRef = useRef<HTMLInputElement>(null);
+  const dragDepthRef = useRef(0);
+  const [isDragging, setIsDragging] = useState(false);
   const [state, setState] = useState<RecoveryState>("idle");
-  const [source, setSource] = useState<MeetingContentSource | null>(null);
+  const [source, setSource] = useState<MeetingContentSource | null>(
+    replaceAudio ? "audio" : null,
+  );
   const [message, setMessage] = useState<string | null>(null);
   const [signInRequired, setSignInRequired] = useState(false);
   const [audioFiles, setAudioFiles] = useState<File[]>([]);
-  const audioDurationPromisesRef = useRef<
-    Promise<number | undefined>[]
-  >([]);
+  const audioDurationPromisesRef = useRef<Promise<number | undefined>[]>([]);
   const [transcriptFile, setTranscriptFile] = useState<File | null>(null);
   const [transcriptText, setTranscriptText] = useState("");
 
@@ -74,7 +94,11 @@ export function MeetingRecoveryUploadPanel({
   }
 
   function handleAudioChange(event: ChangeEvent<HTMLInputElement>) {
-    const files = Array.from(event.currentTarget.files ?? []);
+    selectAudioFiles(Array.from(event.currentTarget.files ?? []));
+  }
+
+  function selectAudioFiles(files: File[]) {
+    if (isBusy) return;
 
     setAudioFiles(files);
     audioDurationPromisesRef.current = files.map((file) =>
@@ -84,7 +108,11 @@ export function MeetingRecoveryUploadPanel({
   }
 
   function handleTranscriptFileChange(event: ChangeEvent<HTMLInputElement>) {
-    const file = event.currentTarget.files?.[0] ?? null;
+    selectTranscriptFile(event.currentTarget.files?.[0] ?? null);
+  }
+
+  function selectTranscriptFile(file: File | null) {
+    if (isBusy) return;
 
     setTranscriptFile(file);
     if (file) {
@@ -108,6 +136,7 @@ export function MeetingRecoveryUploadPanel({
 
   async function handleAudioSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (isBusy || state === "complete") return;
     setState("uploading-audio");
     setMessage(null);
     setSignInRequired(false);
@@ -167,6 +196,7 @@ export function MeetingRecoveryUploadPanel({
         );
         router.replace(queuedResult.redirectTo ?? `/meetings/${meetingId}`);
         router.refresh();
+        onComplete?.();
         return;
       }
 
@@ -184,6 +214,7 @@ export function MeetingRecoveryUploadPanel({
       setMessage("Recording uploaded. Transcription queued");
       router.replace(queuedResult.redirectTo ?? `/meetings/${meetingId}`);
       router.refresh();
+      onComplete?.();
     } catch (error) {
       if (
         error instanceof SignInRequiredError ||
@@ -198,11 +229,15 @@ export function MeetingRecoveryUploadPanel({
 
   async function handleTranscriptSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (isBusy || state === "complete") return;
     setState("uploading-transcript");
     setMessage(null);
     setSignInRequired(false);
 
-    if (!transcriptText.trim() && (!transcriptFile || transcriptFile.size === 0)) {
+    if (
+      !transcriptText.trim() &&
+      (!transcriptFile || transcriptFile.size === 0)
+    ) {
       showError("Add transcript text or choose a transcript file");
       return;
     }
@@ -237,6 +272,7 @@ export function MeetingRecoveryUploadPanel({
       setState("complete");
       setMessage("Transcript added");
       router.refresh();
+      onComplete?.();
     } catch (error) {
       if (error instanceof SignInRequiredError) {
         setSignInRequired(true);
@@ -254,90 +290,145 @@ export function MeetingRecoveryUploadPanel({
   const audioUploading = state === "uploading-audio";
   const transcriptUploading = state === "uploading-transcript";
   const isBusy = audioUploading || transcriptUploading;
+  const dropAreaProps = {
+    onDragEnter(event: DragEvent<HTMLDivElement>) {
+      event.preventDefault();
+      if (isBusy || !event.dataTransfer.types.includes("Files")) return;
+      dragDepthRef.current += 1;
+      setIsDragging(true);
+    },
+    onDragOver(event: DragEvent<HTMLDivElement>) {
+      event.preventDefault();
+      event.dataTransfer.dropEffect = isBusy ? "none" : "copy";
+    },
+    onDragLeave(event: DragEvent<HTMLDivElement>) {
+      event.preventDefault();
+      dragDepthRef.current = Math.max(0, dragDepthRef.current - 1);
+      if (dragDepthRef.current === 0) setIsDragging(false);
+    },
+    onDrop(event: DragEvent<HTMLDivElement>) {
+      event.preventDefault();
+      dragDepthRef.current = 0;
+      setIsDragging(false);
+      const files = Array.from(event.dataTransfer.files);
+      if (isBusy || files.length === 0) return;
+      if (source === "audio") {
+        if (audioFileInputRef.current) audioFileInputRef.current.value = "";
+        selectAudioFiles(files);
+      } else {
+        if (files.length > 1) {
+          showError("Choose one transcript file at a time");
+          return;
+        }
+        if (transcriptFileInputRef.current)
+          transcriptFileInputRef.current.value = "";
+        selectTranscriptFile(files[0]);
+      }
+    },
+    className: cn(
+      "flex flex-col gap-2 rounded-lg border-2 border-dashed p-3",
+      isDragging ? "border-primary bg-primary/5" : "border-border",
+    ),
+  };
+
+  useEffect(() => {
+    onBusyChange?.(isBusy);
+  }, [isBusy, onBusyChange]);
 
   return (
-    <Card aria-labelledby={titleId} role="region" size="sm">
-      <CardHeader className="border-b bg-muted/35">
-        <div className="flex items-start justify-between gap-3">
-          <div>
-            <CardTitle id={titleId}>Add meeting content</CardTitle>
-            <CardDescription>
-              Choose the source you already have.
-            </CardDescription>
+    <Card
+      aria-label={replaceAudio ? "Replacement audio upload" : undefined}
+      aria-labelledby={replaceAudio ? undefined : titleId}
+      role="region"
+      size="sm"
+    >
+      {!replaceAudio ? (
+        <CardHeader className="border-b bg-muted/35">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <CardTitle id={titleId}>Add meeting content</CardTitle>
+              <CardDescription>
+                Choose the source you already have.
+              </CardDescription>
+            </div>
+            <span
+              aria-hidden="true"
+              className="flex size-8 items-center justify-center rounded-lg bg-muted text-muted-foreground"
+            >
+              <UploadCloud className="size-4" />
+            </span>
           </div>
-          <span
-            aria-hidden="true"
-            className="flex size-8 items-center justify-center rounded-lg bg-muted text-muted-foreground"
-          >
-            <UploadCloud className="size-4" />
-          </span>
-        </div>
-      </CardHeader>
+        </CardHeader>
+      ) : null}
       <CardContent className="space-y-4">
-        <div
-          aria-label="Meeting content source"
-          className="grid grid-cols-2 gap-3"
-          role="group"
-        >
-          <button
-            aria-controls={audioFormId}
-            aria-expanded={source === "audio"}
-            aria-label="Audio recording"
-            aria-pressed={source === "audio"}
-            className={cn(
-              "rounded-lg border bg-background p-3 text-left outline-none transition-colors hover:border-primary/50 focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:pointer-events-none disabled:opacity-50",
-              source === "audio" && "border-primary bg-primary/5",
-            )}
-            disabled={isBusy}
-            onClick={() => {
-              setSource("audio");
-              resetMessage();
-            }}
-            type="button"
+        {!replaceAudio ? (
+          <div
+            aria-label="Meeting content source"
+            className="grid grid-cols-2 gap-3"
+            role="group"
           >
-            <UploadCloud
+            <button
+              aria-controls={audioFormId}
+              aria-expanded={source === "audio"}
+              aria-label="Audio recording"
+              aria-pressed={source === "audio"}
               className={cn(
-                "size-4",
-                source === "audio" ? "text-primary" : "text-muted-foreground",
+                "rounded-lg border bg-background p-3 text-left outline-none transition-colors hover:border-primary/50 focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:pointer-events-none disabled:opacity-50",
+                source === "audio" && "border-primary bg-primary/5",
               )}
-            />
-            <span className="mt-2 block text-sm font-semibold">
-              Audio recording
-            </span>
-            <span className="mt-1 block text-xs leading-5 text-muted-foreground">
-              Upload and transcribe automatically
-            </span>
-          </button>
-          <button
-            aria-controls={transcriptFormId}
-            aria-expanded={source === "transcript"}
-            aria-label="Transcript"
-            aria-pressed={source === "transcript"}
-            className={cn(
-              "rounded-lg border bg-background p-3 text-left outline-none transition-colors hover:border-primary/50 focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:pointer-events-none disabled:opacity-50",
-              source === "transcript" && "border-primary bg-primary/5",
-            )}
-            disabled={isBusy}
-            onClick={() => {
-              setSource("transcript");
-              resetMessage();
-            }}
-            type="button"
-          >
-            <FileText
+              disabled={isBusy}
+              onClick={() => {
+                setSource("audio");
+                resetMessage();
+              }}
+              type="button"
+            >
+              <UploadCloud
+                className={cn(
+                  "size-4",
+                  source === "audio" ? "text-primary" : "text-muted-foreground",
+                )}
+              />
+              <span className="mt-2 block text-sm font-semibold">
+                Audio recording
+              </span>
+              <span className="mt-1 block text-xs leading-5 text-muted-foreground">
+                Upload and transcribe automatically
+              </span>
+            </button>
+            <button
+              aria-controls={transcriptFormId}
+              aria-expanded={source === "transcript"}
+              aria-label="Transcript"
+              aria-pressed={source === "transcript"}
               className={cn(
-                "size-4",
-                source === "transcript"
-                  ? "text-primary"
-                  : "text-muted-foreground",
+                "rounded-lg border bg-background p-3 text-left outline-none transition-colors hover:border-primary/50 focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:pointer-events-none disabled:opacity-50",
+                source === "transcript" && "border-primary bg-primary/5",
               )}
-            />
-            <span className="mt-2 block text-sm font-semibold">Transcript</span>
-            <span className="mt-1 block text-xs leading-5 text-muted-foreground">
-              Paste text or upload a file
-            </span>
-          </button>
-        </div>
+              disabled={isBusy}
+              onClick={() => {
+                setSource("transcript");
+                resetMessage();
+              }}
+              type="button"
+            >
+              <FileText
+                className={cn(
+                  "size-4",
+                  source === "transcript"
+                    ? "text-primary"
+                    : "text-muted-foreground",
+                )}
+              />
+              <span className="mt-2 block text-sm font-semibold">
+                Transcript
+              </span>
+              <span className="mt-1 block text-xs leading-5 text-muted-foreground">
+                Paste text or upload a file
+              </span>
+            </button>
+          </div>
+        ) : null}
 
         {source === "audio" ? (
           <form
@@ -345,26 +436,36 @@ export function MeetingRecoveryUploadPanel({
             id={audioFormId}
             onSubmit={handleAudioSubmit}
           >
-            <div className="flex flex-col gap-2">
-              <Label htmlFor="meeting-recovery-audio">Audio files</Label>
+            <div {...dropAreaProps}>
+              <Label htmlFor={audioInputId}>Audio files</Label>
+              <p className="text-sm" aria-live="polite">
+                {isDragging
+                  ? "Drop audio files here"
+                  : "Drag and drop audio files here, or choose files below."}
+              </p>
               <Input
+                ref={audioFileInputRef}
                 accept={audioUploadMediaAccept}
                 className="bg-background"
                 disabled={isBusy}
-                id="meeting-recovery-audio"
+                id={audioInputId}
                 name="meeting-recovery-audio"
                 multiple
                 onChange={handleAudioChange}
                 type="file"
               />
               <p className="text-xs text-muted-foreground">
-                MP3, M4A, or WebM · 1 GB maximum per file · files play in the order shown
+                MP3, M4A, or WebM · 1 GB maximum per file · files play in the
+                order shown
               </p>
             </div>
             {audioFiles.length > 0 ? (
               <ol className="list-decimal space-y-1 rounded-md border bg-background px-3 py-2 pl-8 text-xs text-muted-foreground">
                 {audioFiles.map((file, index) => (
-                  <li className="break-all" key={`${file.name}:${file.size}:${index}`}>
+                  <li
+                    className="break-all"
+                    key={`${file.name}:${file.size}:${index}`}
+                  >
                     {file.name}
                   </li>
                 ))}
@@ -374,9 +475,11 @@ export function MeetingRecoveryUploadPanel({
               <UploadCloud data-icon="inline-start" />
               {audioUploading
                 ? "Uploading..."
-                : audioFiles.length > 1
-                  ? "Upload audio files"
-                  : "Upload audio"}
+                : replaceAudio
+                  ? "Replace audio"
+                  : audioFiles.length > 1
+                    ? "Upload audio files"
+                    : "Upload audio"}
             </Button>
           </form>
         ) : null}
@@ -388,13 +491,11 @@ export function MeetingRecoveryUploadPanel({
             onSubmit={handleTranscriptSubmit}
           >
             <div className="flex flex-col gap-2">
-              <Label htmlFor="meeting-recovery-transcript">
-                Paste transcript
-              </Label>
+              <Label htmlFor={transcriptTextId}>Paste transcript</Label>
               <textarea
                 className="min-h-28 w-full resize-y rounded-lg border border-input bg-background px-2.5 py-2 text-sm outline-none transition-colors placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:pointer-events-none disabled:opacity-50"
                 disabled={isBusy}
-                id="meeting-recovery-transcript"
+                id={transcriptTextId}
                 name="transcriptText"
                 onChange={handleTranscriptTextChange}
                 placeholder="Paste transcript text"
@@ -407,23 +508,27 @@ export function MeetingRecoveryUploadPanel({
               <span className="text-xs text-muted-foreground">or</span>
               <span className="h-px flex-1 bg-border" />
             </div>
-            <div className="flex flex-col gap-2">
-              <Label htmlFor="meeting-recovery-transcript-file">
-                Transcript file
-              </Label>
+            <div {...dropAreaProps}>
+              <Label htmlFor={transcriptInputId}>Transcript file</Label>
+              <p className="text-sm" aria-live="polite">
+                {isDragging
+                  ? "Drop transcript file here"
+                  : "Drag and drop a transcript file here, or choose a file below."}
+              </p>
               <Input
                 accept={transcriptAccept}
                 className="bg-background"
                 disabled={isBusy}
-                id="meeting-recovery-transcript-file"
+                id={transcriptInputId}
                 name="transcript-file"
                 onChange={handleTranscriptFileChange}
                 ref={transcriptFileInputRef}
                 type="file"
               />
-              <p className="text-xs text-muted-foreground">
-                TXT, SRT, or VTT
-              </p>
+              {transcriptFile ? (
+                <p className="break-all text-sm">{transcriptFile.name}</p>
+              ) : null}
+              <p className="text-xs text-muted-foreground">TXT, SRT, or VTT</p>
             </div>
             <Button type="submit" disabled={isBusy} size="sm">
               <FileText data-icon="inline-start" />

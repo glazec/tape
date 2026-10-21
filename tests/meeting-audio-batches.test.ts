@@ -24,7 +24,7 @@ vi.mock("@/db/client", () => ({
     select,
   },
 }));
-vi.mock("@/lib/meeting-recovery-uploads", () => ({
+vi.mock("@/lib/meeting-management", () => ({
   assertCanManageMeeting,
 }));
 vi.mock("@/lib/meeting-share-rules", () => ({
@@ -190,6 +190,11 @@ describe("meeting audio batches", () => {
       .find((value) => value instanceof Date) as Date;
     expect(secondJobDate.getTime()).toBe(firstJobDate.getTime() + 1);
     expect(txn.mock.calls[3]?.[5]).toBe(txn.mock.calls[6]?.[5]);
+    const meetingUpdate = txn.mock.calls[7]![0].join(" ");
+    expect(meetingUpdate).toContain("translation_status = null");
+    expect(meetingUpdate).toContain("translation_error_message = null");
+    expect(meetingUpdate).toContain("translation_started_at = null");
+    expect(meetingUpdate).toContain("translation_completed_at = null");
   });
 
   it("returns an existing complete batch in requested playback order", async () => {

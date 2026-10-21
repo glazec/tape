@@ -166,6 +166,7 @@ export default async function MeetingPage({
                   : undefined
               }
               canDelete={meeting.canDelete}
+              canReplaceAudio={canManage && meeting.status === "ready"}
               hasAudio={
                 Boolean(meeting.audioUrl) || recordingParts.length > 0
               }

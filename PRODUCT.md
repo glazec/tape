@@ -14,13 +14,14 @@ Tape supports three access modes:
 
 Turn meetings into dependable team memory. Success means colleagues can understand meeting status, find the right conversation, review the original record, correct it, share it safely, and recover failed capture without learning the underlying systems.
 
-Calendar resync keeps recent event capture in the foreground and checks Google Calendar events, including events never imported, with no meeting record from the past 30 days in the background. Current Google details determine eligibility. Past meetings with a supported conferencing link or location become missed records; deleted events, all day events, excluded invitations, and events still missing both a link and location are skipped. Existing meeting recordings and statuses are preserved.
+Calendar resync keeps recent event capture in the foreground and checks Google Calendar events, including events never imported, with no meeting record from the past 30 days in the background. Current Google details determine eligibility. Past meetings with a supported conferencing link, location, or at least two distinct participant emails become missed records; deleted events, all day events, excluded invitations, and events without any of these meeting details are skipped. Existing meeting recordings and statuses are preserved.
 
 ## Current Workflows
 
 1. Add a Google Meet or Zoom link and send the meeting bot.
 2. Connect Google Calendar for automatic Google Meet and Zoom capture and repair, while Microsoft Teams meetings stay visible and prompt local recording.
 
+   Timed invitations with at least two distinct participant emails also create local recording meetings when both the meeting link and location are missing.
    Events with a physical location are classified as in person even when they include a meeting link. They use location reminders instead of scheduled meeting bots. A conference URL or a virtual location label such as “Online” does not count as a physical location.
 
    Flight itineraries titled like “Flight to Newark (UA 274)” and reservations
@@ -69,6 +70,8 @@ Dense administration panels, exposed implementation identifiers, decorative anal
 ## Not Product Goals
 
 Tape is not a provider administration console, a general analytics dashboard, or a replacement for the original meeting record with unverified generated notes.
+
+Meeting managers can replace an incorrect recording on a completed meeting through Replace audio in the meeting actions menu. The replacement stays on the same meeting, preserves its title and sharing, and queues a new transcript. Previous stored assets are retained; this is not a permanent media purge.
 
 ## Accessibility and Inclusion
 

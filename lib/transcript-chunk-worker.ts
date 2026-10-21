@@ -266,11 +266,12 @@ export async function persistCompletedTranscriptChunks(input: {
 
   if (result.meetingFinalized) {
     if (translateTranscript) {
-      await markMeetingTranslationQueued(input.meetingId);
+      await markMeetingTranslationQueued(input.meetingId, input.transcriptJobId);
     } else {
       await markMeetingTranslationCompleted(
         input.meetingId,
         translationLanguage,
+        input.transcriptJobId,
       );
     }
   }
@@ -298,6 +299,7 @@ export async function queueChunkedTranscriptEnrichment(input: {
     name: "meeting/enrich.transcript",
     data: {
       meetingId: input.meetingId,
+      transcriptJobId: input.transcriptJobId,
       translateTranscript: input.translateTranscript,
       translationLanguage: input.translationLanguage,
     },

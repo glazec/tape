@@ -1,20 +1,18 @@
-import { and, eq } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 
-import { databaseSql, db } from "@/db/client";
-import {
-  mediaAssets,
-  meetingEntities,
-  meetings,
-  recordings,
-  transcriptJobs,
-} from "@/db/schema";
+import { databaseSql } from "@/db/client";
 import { parseManualTranscriptText } from "@/lib/manual-transcript-parser";
-import { getManageableMeetingCondition } from "@/lib/meeting-write-policy";
-import { parseR2Env } from "@/lib/r2";
+import {
+  assertCanManageMeeting,
+  MeetingRecoveryUploadError,
+} from "@/lib/meeting-management";
+import { attachUploadedAudioBatch } from "@/lib/meeting-audio-batches";
 import type { WorkspaceContext } from "@/lib/workspace";
 
-export class MeetingRecoveryUploadError extends Error {}
+export {
+  assertCanManageMeeting,
+  MeetingRecoveryUploadError,
+} from "@/lib/meeting-management";
 
 export async function completeMeetingAudioUpload(input: {
   durationMs?: number;
@@ -25,67 +23,22 @@ export async function completeMeetingAudioUpload(input: {
   recordingStartedAt?: Date;
   workspace: WorkspaceContext;
 }) {
-  await assertCanManageMeeting(input.workspace, input.meetingId);
-
-  const env = parseR2Env(process.env);
-  const now = new Date();
-  const [recording] = await db
-    .insert(recordings)
-    .values({
-      durationMs: input.durationMs,
-      endedAt:
-        input.recordingStartedAt && input.durationMs
-          ? new Date(input.recordingStartedAt.getTime() + input.durationMs)
-          : undefined,
-      meetingId: input.meetingId,
-      source: "upload",
-      startedAt: input.recordingStartedAt,
-    })
-    .returning({ id: recordings.id });
-  const [asset] = await db
-    .insert(mediaAssets)
-    .values({
-      bucket: env.R2_BUCKET,
-      fileSizeBytes: input.fileSizeBytes,
-      meetingId: input.meetingId,
-      recordingId: recording.id,
-      mimeType: input.mimeType ?? "audio/mpeg",
-      objectKey: input.objectKey,
-      source: "upload",
-      type: "audio",
-    })
-    .returning({ id: mediaAssets.id });
-  const [job] = await db
-    .insert(transcriptJobs)
-    .values({
-      mediaAssetId: asset.id,
-      meetingId: input.meetingId,
-      mode: "replace",
-      provider: "elevenlabs",
-      recordingId: recording.id,
-      status: "queued",
-    })
-    .returning({ id: transcriptJobs.id });
-
-  await db
-    .delete(meetingEntities)
-    .where(eq(meetingEntities.meetingId, input.meetingId));
-
-  await db
-    .update(meetings)
-    .set({
-      status: "processing",
-      updatedAt: now,
-    })
-    .where(eq(meetings.id, input.meetingId));
-
-  return {
-    mediaAssetId: asset.id,
+  const result = await attachUploadedAudioBatch({
+    files: [
+      {
+        durationMs: input.durationMs,
+        fileName: "recording",
+        fileSizeBytes: input.fileSizeBytes,
+        mimeType: input.mimeType ?? "audio/mpeg",
+        objectKey: input.objectKey,
+      },
+    ],
     meetingId: input.meetingId,
-    objectKey: input.objectKey,
-    recordingId: recording.id,
-    transcriptJobId: job.id,
-  };
+    startedAt: input.recordingStartedAt,
+    workspace: input.workspace,
+  });
+
+  return result.transcriptions[0]!;
 }
 
 export async function completeManualTranscriptUpload(input: {
@@ -172,19 +125,4 @@ export async function completeManualTranscriptUpload(input: {
     segmentCount: segments.length,
     transcriptJobId,
   };
-}
-
-export async function assertCanManageMeeting(
-  workspace: WorkspaceContext,
-  meetingId: string,
-) {
-  const [meeting] = await db
-    .select({ id: meetings.id })
-    .from(meetings)
-    .where(and(getManageableMeetingCondition(workspace, meetingId)))
-    .limit(1);
-
-  if (!meeting) {
-    throw new MeetingRecoveryUploadError("Meeting not found");
-  }
 }

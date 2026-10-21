@@ -2,6 +2,8 @@
 
 import { useSyncExternalStore } from "react";
 
+import { getMeetingStatusClassName } from "@/lib/meeting-display-status";
+
 import { Badge } from "@/components/ui/badge";
 
 type MeetingHeaderMetadataProps = {
@@ -33,7 +35,7 @@ export function MeetingHeaderMetadata({
 
   return (
     <div className="mt-3 flex flex-wrap items-center gap-3 text-sm text-muted-foreground tabular-nums">
-      <Badge variant={getStatusBadgeVariant(status)}>{status}</Badge>
+      <Badge className={getMeetingStatusClassName(status)} variant={getStatusBadgeVariant(status)}>{status}</Badge>
       <span>{platform}</span>
       {durationLabel ? <MetadataPart>{durationLabel}</MetadataPart> : null}
       {dateLabel ? <MetadataPart>{dateLabel}</MetadataPart> : null}

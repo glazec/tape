@@ -337,6 +337,12 @@ describe("finalizeMeetingTranscriptGeneration", () => {
 });
 
 describe("isTranscriptJobApplicable", () => {
+  it("rejects an obsolete recording job after a replacement generation starts", async () => {
+    const { isTranscriptJobApplicable } = await import("@/lib/elevenlabs-transcripts");
+    expect(isTranscriptJobApplicable({ current_is_active: false, current_mode: "replace", current_status: "running", recording_id: "old-recording", id: "latest-job" }, "old-job")).toBe(false);
+    expect(isTranscriptJobApplicable({ current_is_active: true, current_mode: "append", current_status: "running", recording_id: "current-recording", id: "latest-job" }, "current-append-job")).toBe(true);
+  });
+
   it("accepts an older recording transcript after a resumed append job exists", async () => {
     const { isTranscriptJobApplicable } =
       await import("@/lib/elevenlabs-transcripts");

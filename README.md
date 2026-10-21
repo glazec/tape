@@ -8,6 +8,8 @@ Tape captures team conversations from Google Meet, Zoom, Microsoft Teams through
 
 This repository is source available for noncommercial use. See [License](#license) before using or redistributing it.
 
+Completed meetings support Replace audio in the meeting actions menu. Uploading the corrected recording keeps the same meeting and queues a replacement transcript.
+
 ## Product Tour
 
 ### Find and manage meetings
@@ -54,6 +56,8 @@ The New meeting page supports four sources:
 4. A focused phone recording flow
 
 Google Calendar can be connected for automatic Recall Calendar V2 capture and repair. Microsoft Teams calendar meetings stay visible in the dashboard and prompt the macOS recorder for local capture instead of scheduling a bot. The recorder also provides a fallback for missed cloud recordings.
+
+Timed invitations with at least two distinct participant emails remain visible as local recording meetings even without a link or location. Past eligible invitations are restored as missed by calendar history repair.
 
 Sync calendar also queues a background check of Google Calendar events, including events never imported, from the past 30 days that have no meeting record. It reads their latest Google details and restores eligible past meetings as missed, without scheduling recordings or reminders. Refresh the dashboard after the background check to see recovered meetings.
 

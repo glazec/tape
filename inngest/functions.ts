@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { and, asc, eq, inArray } from "drizzle-orm";
+import { and, asc, eq, inArray, sql } from "drizzle-orm";
 
 import { db } from "@/db/client";
 import { transcriptJobs, transcriptSegments } from "@/db/schema";
@@ -107,6 +107,7 @@ const CONVERT_VIDEO_TO_AUDIO_RETRIES = 2;
 
 const enrichTranscriptDataSchema = z.object({
   meetingId: z.uuid(),
+  transcriptJobId: z.uuid().optional(),
   translateTranscript: z.boolean().optional(),
   translationLanguage: translationLanguageSchema.optional(),
   translateToChinese: z.boolean().optional(),
@@ -340,31 +341,44 @@ export const enrichTranscript = inngest.createFunction(
       const shouldTranslate =
         data.translateTranscript ?? data.translateToChinese ?? true;
 
-      if (shouldTranslate) {
-        await markMeetingTranslationFailedIfActive(data.meetingId, error);
+      if (shouldTranslate && data.transcriptJobId) {
+        await markMeetingTranslationFailedIfActive(
+          data.meetingId,
+          error,
+          data.transcriptJobId,
+        );
       }
     },
     retries: ENRICH_TRANSCRIPT_RETRIES,
     triggers: [{ event: "meeting/enrich.transcript" }],
   },
-  async ({ event, step }) => {
+  async ({ event, step, attempt = 0 }) => {
     const data = enrichTranscriptDataSchema.parse(event.data);
     const shouldTranslate =
       data.translateTranscript ?? data.translateToChinese ?? true;
     const translationLanguage =
       data.translationLanguage ?? DEFAULT_TRANSLATION_LANGUAGE;
-    try {
-      await assertMeetingHasProviderCredit(data.meetingId);
-
-      const segments = await db
+    const snapshot = await step.run("load-transcript-enrichment-generation", async () => {
+      const rows = await db
         .select({
           id: transcriptSegments.id,
+          jobId: transcriptSegments.jobId,
           text: transcriptSegments.text,
         })
         .from(transcriptSegments)
         .where(
           and(
             eq(transcriptSegments.meetingId, data.meetingId),
+            data.transcriptJobId
+              ? sql`${data.transcriptJobId} in ${currentTranscriptJobIdsSubquery(data.meetingId)}`
+              : event.ts
+                ? sql`not exists (
+                    select 1 from transcript_jobs replacement
+                    where replacement.meeting_id = ${data.meetingId}
+                      and replacement.mode = 'replace'
+                      and replacement.created_at > ${new Date(event.ts)}
+                  )`
+                : undefined,
             inArray(
               transcriptSegments.jobId,
               currentTranscriptJobIdsSubquery(data.meetingId),
@@ -376,6 +390,18 @@ export const enrichTranscript = inngest.createFunction(
           asc(transcriptSegments.endMs),
           asc(transcriptSegments.id),
         );
+      return {
+        transcriptJobId: data.transcriptJobId ?? rows[0]?.jobId ?? null,
+        segments: rows.map(({ id, text }) => ({ id, text })),
+      };
+    });
+    if (!snapshot.transcriptJobId || snapshot.segments.length === 0) {
+      return { action: "skipped", reason: "transcript_superseded" };
+    }
+    const { segments, transcriptJobId } = snapshot;
+    const generationCondition = sql`${transcriptJobId} in ${currentTranscriptJobIdsSubquery(data.meetingId)}`;
+    try {
+      await assertMeetingHasProviderCredit(data.meetingId);
       let newTranslatedCount = 0;
 
       if (shouldTranslate) {
@@ -390,6 +416,7 @@ export const enrichTranscript = inngest.createFunction(
               .where(
                 and(
                   eq(transcriptSegments.meetingId, data.meetingId),
+                  generationCondition,
                   inArray(
                     transcriptSegments.jobId,
                     currentTranscriptJobIdsSubquery(data.meetingId),
@@ -406,6 +433,7 @@ export const enrichTranscript = inngest.createFunction(
             .where(
               and(
                 eq(transcriptSegments.meetingId, data.meetingId),
+                generationCondition,
                 inArray(
                   transcriptSegments.jobId,
                   currentTranscriptJobIdsSubquery(data.meetingId),
@@ -421,6 +449,7 @@ export const enrichTranscript = inngest.createFunction(
             await markMeetingTranslationRunning(
               data.meetingId,
               translationLanguage,
+              transcriptJobId,
             );
           }
         });
@@ -448,6 +477,7 @@ export const enrichTranscript = inngest.createFunction(
                 .where(
                   and(
                     eq(transcriptSegments.meetingId, data.meetingId),
+                    generationCondition,
                     inArray(
                       transcriptSegments.jobId,
                       currentTranscriptJobIdsSubquery(data.meetingId),
@@ -465,7 +495,9 @@ export const enrichTranscript = inngest.createFunction(
                 ]),
               );
               const pendingSegments = batch.filter(
-                (segment) => !translatedById.get(segment.id)?.trim(),
+                (segment) =>
+                  translatedById.has(segment.id) &&
+                  !translatedById.get(segment.id)?.trim(),
               );
 
               if (pendingSegments.length === 0) {
@@ -485,7 +517,12 @@ export const enrichTranscript = inngest.createFunction(
                           translatedText: translation.text,
                           updatedAt: new Date(),
                         })
-                        .where(eq(transcriptSegments.id, translation.id));
+                        .where(
+                          and(
+                            eq(transcriptSegments.id, translation.id),
+                            generationCondition,
+                          ),
+                        );
                     }
                   },
                   targetLanguage: translationLanguage,
@@ -508,6 +545,7 @@ export const enrichTranscript = inngest.createFunction(
               .where(
                 and(
                   eq(transcriptSegments.meetingId, data.meetingId),
+                  generationCondition,
                   inArray(
                     transcriptSegments.jobId,
                     currentTranscriptJobIdsSubquery(data.meetingId),
@@ -518,6 +556,8 @@ export const enrichTranscript = inngest.createFunction(
               segment.translatedText?.trim(),
             ).length;
 
+            if (currentSegments.length === 0) return 0;
+
             if (completedCount < segments.length) {
               throw new Error(
                 `Translation incomplete: ${completedCount} of ${segments.length} lines translated`,
@@ -527,6 +567,7 @@ export const enrichTranscript = inngest.createFunction(
             await markMeetingTranslationCompleted(
               data.meetingId,
               translationLanguage,
+              transcriptJobId,
             );
             return completedCount;
           },
@@ -558,6 +599,7 @@ export const enrichTranscript = inngest.createFunction(
               .where(
                 and(
                   eq(transcriptSegments.meetingId, data.meetingId),
+                  generationCondition,
                   inArray(
                     transcriptSegments.jobId,
                     currentTranscriptJobIdsSubquery(data.meetingId),
@@ -575,7 +617,9 @@ export const enrichTranscript = inngest.createFunction(
               ]),
             );
             const pendingSegments = batch.filter(
-              (segment) => !polishedById.get(segment.id)?.trim(),
+              (segment) =>
+                polishedById.has(segment.id) &&
+                !polishedById.get(segment.id)?.trim(),
             );
 
             if (pendingSegments.length === 0) {
@@ -598,7 +642,12 @@ export const enrichTranscript = inngest.createFunction(
                   polishedText: polishedSegment.text,
                   updatedAt: new Date(),
                 })
-                .where(eq(transcriptSegments.id, polishedSegment.id));
+                .where(
+                  and(
+                    eq(transcriptSegments.id, polishedSegment.id),
+                    generationCondition,
+                  ),
+                );
             }
 
             return polishedSegments.length;
@@ -615,6 +664,7 @@ export const enrichTranscript = inngest.createFunction(
           .where(
             and(
               eq(transcriptSegments.meetingId, data.meetingId),
+              generationCondition,
               inArray(
                 transcriptSegments.jobId,
                 currentTranscriptJobIdsSubquery(data.meetingId),
@@ -624,6 +674,8 @@ export const enrichTranscript = inngest.createFunction(
         const polishedCount = currentSegments.filter((segment) =>
           segment.polishedText?.trim(),
         ).length;
+
+        if (currentSegments.length === 0) return 0;
 
         if (polishedCount < segments.length) {
           throw new Error(
@@ -641,12 +693,19 @@ export const enrichTranscript = inngest.createFunction(
     } catch (error) {
       if (error instanceof ProviderCreditExhaustedError) {
         if (shouldTranslate) {
-          await markMeetingTranslationFailed(data.meetingId, error);
+          await markMeetingTranslationFailed(data.meetingId, error, transcriptJobId);
         }
 
         return { action: "skipped", reason: "credit_exhausted" };
       }
 
+      if (shouldTranslate && attempt >= ENRICH_TRANSCRIPT_RETRIES) {
+        await markMeetingTranslationFailedIfActive(
+          data.meetingId,
+          error,
+          transcriptJobId,
+        );
+      }
       throw error;
     }
   },

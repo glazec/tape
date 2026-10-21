@@ -1,3 +1,4 @@
+import { currentVisualAssetCondition } from "@/lib/current-audio-asset";
 import { and, asc, eq, inArray, or } from "drizzle-orm";
 import { z } from "zod";
 
@@ -119,6 +120,7 @@ async function exportMeetingImages(meeting: { id: string; title: string }) {
     .where(
       and(
         eq(mediaAssets.meetingId, meeting.id),
+        currentVisualAssetCondition(meeting.id),
         or(
           eq(mediaAssets.type, "screenshot"),
           eq(mediaAssets.type, "video_frame"),

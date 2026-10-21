@@ -1,13 +1,17 @@
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 
 import { db } from "@/db/client";
 import { meetings } from "@/db/schema";
+import { currentTranscriptJobIdsSubquery } from "@/lib/current-transcript-job";
 import {
   normalizeTranslationLanguage,
   type TranslationLanguage,
 } from "@/lib/meeting-translation-language";
 
-export async function markMeetingTranslationQueued(meetingId: string) {
+export async function markMeetingTranslationQueued(
+  meetingId: string,
+  transcriptJobId?: string,
+) {
   await db
     .update(meetings)
     .set({
@@ -16,7 +20,12 @@ export async function markMeetingTranslationQueued(meetingId: string) {
       translationStatus: "queued",
       updatedAt: new Date(),
     })
-    .where(eq(meetings.id, meetingId));
+    .where(
+      and(
+        eq(meetings.id, meetingId),
+        translationGenerationCondition(meetingId, transcriptJobId),
+      ),
+    );
 }
 
 export async function getStoredMeetingTranslationLanguage(meetingId: string) {
@@ -36,6 +45,7 @@ export async function getStoredMeetingTranslationLanguage(meetingId: string) {
 export async function markMeetingTranslationRunning(
   meetingId: string,
   translationLanguage: TranslationLanguage,
+  transcriptJobId?: string,
 ) {
   await db
     .update(meetings)
@@ -47,12 +57,18 @@ export async function markMeetingTranslationRunning(
       translationLanguage,
       updatedAt: new Date(),
     })
-    .where(eq(meetings.id, meetingId));
+    .where(
+      and(
+        eq(meetings.id, meetingId),
+        translationGenerationCondition(meetingId, transcriptJobId),
+      ),
+    );
 }
 
 export async function markMeetingTranslationCompleted(
   meetingId: string,
   translationLanguage?: TranslationLanguage,
+  transcriptJobId?: string,
 ) {
   await db
     .update(meetings)
@@ -63,12 +79,18 @@ export async function markMeetingTranslationCompleted(
       ...(translationLanguage ? { translationLanguage } : {}),
       updatedAt: new Date(),
     })
-    .where(eq(meetings.id, meetingId));
+    .where(
+      and(
+        eq(meetings.id, meetingId),
+        translationGenerationCondition(meetingId, transcriptJobId),
+      ),
+    );
 }
 
 export async function markMeetingTranslationFailed(
   meetingId: string,
   error: unknown,
+  transcriptJobId?: string,
 ) {
   await db
     .update(meetings)
@@ -77,12 +99,18 @@ export async function markMeetingTranslationFailed(
       translationStatus: "failed",
       updatedAt: new Date(),
     })
-    .where(eq(meetings.id, meetingId));
+    .where(
+      and(
+        eq(meetings.id, meetingId),
+        translationGenerationCondition(meetingId, transcriptJobId),
+      ),
+    );
 }
 
 export async function markMeetingTranslationFailedIfActive(
   meetingId: string,
   error: unknown,
+  transcriptJobId?: string,
 ) {
   await db
     .update(meetings)
@@ -95,8 +123,18 @@ export async function markMeetingTranslationFailedIfActive(
       and(
         eq(meetings.id, meetingId),
         inArray(meetings.translationStatus, ["queued", "running"]),
+        translationGenerationCondition(meetingId, transcriptJobId),
       ),
     );
+}
+
+function translationGenerationCondition(
+  meetingId: string,
+  transcriptJobId?: string,
+) {
+  return transcriptJobId
+    ? sql`${transcriptJobId} in ${currentTranscriptJobIdsSubquery(meetingId)}`
+    : undefined;
 }
 
 function getTranslationErrorMessage(error: unknown) {

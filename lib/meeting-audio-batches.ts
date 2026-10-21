@@ -10,14 +10,14 @@ import {
   transcriptJobs,
 } from "@/db/schema";
 import { reconcileMeetingSharingForMeeting } from "@/lib/meeting-share-rules";
-import { assertCanManageMeeting } from "@/lib/meeting-recovery-uploads";
+import { assertCanManageMeeting } from "@/lib/meeting-management";
 import { parseR2Env } from "@/lib/r2";
 import type { WorkspaceContext } from "@/lib/workspace";
 
 export type CompletedAudioBatchFile = {
   durationMs?: number;
   fileName: string;
-  fileSizeBytes: number;
+  fileSizeBytes?: number;
   mimeType: string;
   objectKey: string;
 };
@@ -107,7 +107,7 @@ export async function createUploadedAudioBatch(input: {
 export async function attachUploadedAudioBatch(input: {
   files: CompletedAudioBatchFile[];
   meetingId: string;
-  startedAt: Date;
+  startedAt?: Date;
   workspace: WorkspaceContext;
 }) {
   await assertCanManageMeeting(input.workspace, input.meetingId);
@@ -136,7 +136,9 @@ export async function attachUploadedAudioBatch(input: {
     ...buildAudioBatchInsertQueries(txn, transcriptions),
     txn`
       update meetings
-      set status = 'processing', updated_at = ${now}
+      set status = 'processing', translation_status = null,
+          translation_error_message = null, translation_started_at = null,
+          translation_completed_at = null, updated_at = ${now}
       where id = ${input.meetingId}::uuid
     `,
   ]);
@@ -148,7 +150,7 @@ function buildAudioBatchRows(input: {
   files: CompletedAudioBatchFile[];
   meetingId: string;
   modeForIndex: (index: number) => "append" | "replace";
-  startedAt: Date;
+  startedAt?: Date;
 }) {
   if (
     input.files.length > 1 &&
@@ -162,11 +164,13 @@ function buildAudioBatchRows(input: {
   const jobCreatedAtMs = Date.now();
 
   return input.files.map((file, index) => {
-    const startedAt = new Date(input.startedAt.getTime() + offsetMs);
+    const startedAt = input.startedAt
+      ? new Date(input.startedAt.getTime() + offsetMs)
+      : undefined;
     const row = {
       ...file,
       endedAt:
-        file.durationMs === undefined
+        file.durationMs === undefined || !startedAt
           ? undefined
           : new Date(startedAt.getTime() + file.durationMs),
       generationId,
@@ -204,7 +208,7 @@ function buildAudioBatchInsertQueries(
         ${row.recordingId}::uuid,
         ${row.meetingId}::uuid,
         'upload',
-        ${row.startedAt},
+        ${row.startedAt ?? null},
         ${row.endedAt ?? null},
         ${row.durationMs ?? null}
       )
@@ -230,7 +234,7 @@ function buildAudioBatchInsertQueries(
         ${env.R2_BUCKET},
         ${row.objectKey},
         ${row.mimeType},
-        ${row.fileSizeBytes}
+        ${row.fileSizeBytes ?? null}
       )
     `,
     txn`

@@ -89,6 +89,8 @@ Use the existing white and graphite system.
 
 Do not use coral for decoration when it would compete with the primary action. Prefer a border, tonal surface, or spacing before introducing another color.
 
+Meeting status badges use muted slate for Scheduled, green for Ready, amber for In progress, and rose for Recording. Apply the same colors to library rows and meeting details, retaining text labels and readable contrast in both themes.
+
 The brand coral is `#EC4F44`. It drives the shadcn `--primary`, `--ring`, and `--sidebar-primary` tokens plus `--chart-1`, so application buttons, focus rings, sidebar accents, and default charts all follow the brand.
 
 Every neutral in `app/globals.css` is declared in OKLCH and carries a trace of the brand hue (hue 30, chroma 0.002 to 0.024). Nothing is a pure gray and nothing is `#fff` or `#000`, on either surface. The public site uses the landing tokens: `--paper` warm near white canvas, `--mist` warm light surface, `--ink` warm near black, `--graphite` supporting text, `--ash` quiet metadata, `--brand` coral for fills, and `--brand-ink` for coral text.
@@ -208,6 +210,10 @@ Show available participant names below the meeting metadata, including scheduled
 
 For meetings without content, center the add content choice. Show only the source choices that can resolve the current state. Do not show an empty transcript viewer.
 
+The add content panel accepts audio and transcript files through either a file picker or drag and drop. Show the selected files, preserve audio order, and accept only one transcript file at a time. Disable file changes while uploading.
+
+Completed meetings expose Replace audio in the same overflow menu as Delete meeting for users who can manage the meeting. The replacement dialog accepts the corrected audio and explains that it generates a new transcript while preserving the meeting identity. Upload controls and dialog dismissal are locked during upload.
+
 On meetings with content, keep Export and Copy secondary. Place Delete in an overflow or a dedicated destructive flow rather than beside frequent actions as a full emphasis button.
 
 ### Settings
@@ -225,6 +231,10 @@ Keep public and shared pages quieter than the owner workspace, but retain enough
 ### Dashboard
 
 The meeting library and search are the dashboard's primary job. Full workspace users also see a compact greeting, last seven days activity, and calendar automation. Shared only users go directly to the transcripts granted to them.
+
+Scheduled meetings appear only within the next 48 hours. Apply this cutoff before grouping and pagination so distant invitations do not push recent meetings down the dashboard.
+
+Timed invitations with at least two distinct participant emails remain visible without a meeting link or location. Offer local recording for upcoming meetings and recording recovery for past missed meetings.
 
 Activity summaries must use understandable measures and a declared time range. Operational warnings must lead to the affected meetings or a direct repair action. Avoid ambiguous scores and healthy looking status when capture or transcription failed.
 

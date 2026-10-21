@@ -143,9 +143,13 @@ describe("GET /api/meetings/[meetingId]/images/[assetId]", () => {
     const query = toQuery(where.mock.calls[0][0] as SQL);
     expect(query.sql).not.toContain('"meetings"."team_id" =');
     expect(query.sql).toContain('"meeting_access"');
+    expect(query.sql).toContain("active_audio.source = 'upload'");
     expect(query.params).toEqual([
       "11111111-1111-4111-8111-111111111111",
       "22222222-2222-4222-8222-222222222222",
+      "11111111-1111-4111-8111-111111111111",
+      "11111111-1111-4111-8111-111111111111",
+      "11111111-1111-4111-8111-111111111111",
       "screenshot",
       "video_frame",
       "user_123",

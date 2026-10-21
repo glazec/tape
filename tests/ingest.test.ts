@@ -543,6 +543,7 @@ describe("vendor webhook normalization", () => {
     expect(markMeetingTranslationCompleted).toHaveBeenCalledWith(
       "11111111-1111-4111-8111-111111111111",
       "zh-CN",
+      "22222222-2222-4222-8222-222222222222",
     );
     expect(markMeetingTranslationQueued).not.toHaveBeenCalled();
     expect(sendInngestEvent).toHaveBeenCalledWith({
@@ -550,6 +551,7 @@ describe("vendor webhook normalization", () => {
       name: "meeting/enrich.transcript",
       data: {
         meetingId: "11111111-1111-4111-8111-111111111111",
+        transcriptJobId: "22222222-2222-4222-8222-222222222222",
         translateTranscript: false,
         translationLanguage: "zh-CN",
       },
@@ -587,12 +589,14 @@ describe("vendor webhook normalization", () => {
     expect(response.status).toBe(200);
     expect(markMeetingTranslationQueued).toHaveBeenCalledWith(
       "11111111-1111-4111-8111-111111111111",
+      "22222222-2222-4222-8222-222222222222",
     );
     expect(sendInngestEvent).toHaveBeenCalledWith({
       id: "transcript-enrichment:22222222-2222-4222-8222-222222222222",
       name: "meeting/enrich.transcript",
       data: {
         meetingId: "11111111-1111-4111-8111-111111111111",
+        transcriptJobId: "22222222-2222-4222-8222-222222222222",
         translateTranscript: true,
         translationLanguage: "en",
       },
@@ -629,6 +633,7 @@ describe("vendor webhook normalization", () => {
     expect(response.status).toBe(200);
     expect(markMeetingTranslationQueued).toHaveBeenCalledWith(
       "11111111-1111-4111-8111-111111111111",
+      "22222222-2222-4222-8222-222222222222",
     );
   });
 

@@ -1281,6 +1281,7 @@ describe("calendar auto join", () => {
       event: {
         externalEventId: "excluded_event", title,
         startsAt: "2099-06-30T12:00:00.000Z", location,
+        attendeeEmails: ["owner@iosg.vc", "guest@example.com"],
       },
     })).resolves.toMatchObject({ action: "skipped", reason: "ignored_event" });
     expect(insert).toHaveBeenCalledTimes(1);
@@ -1289,7 +1290,36 @@ describe("calendar auto join", () => {
     expect(scheduleRecallCalendarEventBot).not.toHaveBeenCalled();
   });
 
-  it.each([null, "https://meet.google.com/abc-defg-hij", "https://zoom.us/j/1234567890", "https://teams.microsoft.com/l/meetup-join/example"])("creates an in person meeting for a physical location with link %s", async (meetingUrl) => {
+  it.each([
+    { attendeeEmails: [] },
+    { attendeeEmails: ["owner@iosg.vc"] },
+    { attendeeEmails: ["owner@iosg.vc", " OWNER@iosg.vc "] },
+    { attendeeEmails: ["owner@iosg.vc", "guest@example.com"], isDeleted: true },
+    { attendeeEmails: ["owner@iosg.vc", "guest@example.com"], isAllDay: true },
+    { attendeeEmails: ["owner@iosg.vc", "guest@example.com"],
+      attendees: [{ email: "guest@example.com", responseStatus: "declined" }] },
+  ])("skips invitations without another participant or with cancellation: %j", async (details) => {
+    insert.mockReturnValue({ values: () => ({ onConflictDoUpdate: () => ({
+      returning: async () => [{ id: "calendar_event" }],
+    }) }) });
+    select.mockReturnValue({ from: () => ({ where: () => ({ limit: async () => [] }) }) });
+    const { autoJoinCalendarEvent } = await import("@/lib/calendar-auto-join");
+    await expect(autoJoinCalendarEvent({
+      connection: { id: "connection", teamId: "team", userId: "user", autoJoinEnabled: true, workspaceDomain: "iosg.vc" },
+      event: { externalEventId: "event", title: "Hold", startsAt: "2099-06-30T12:00:00Z", ...details },
+    })).resolves.toMatchObject({ action: "skipped" });
+    expect(insert).toHaveBeenCalledTimes(1);
+    expect(scheduleRecallBot).not.toHaveBeenCalled();
+    expect(scheduleLocationReminder).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    { meetingUrl: null, location: "IOSG 12F", attendeeEmails: ["founder@nascent.xyz"] },
+    { meetingUrl: "https://meet.google.com/abc-defg-hij", location: "IOSG 12F", attendeeEmails: ["founder@nascent.xyz"] },
+    { meetingUrl: "https://zoom.us/j/1234567890", location: "IOSG 12F", attendeeEmails: ["founder@nascent.xyz"] },
+    { meetingUrl: "https://teams.microsoft.com/l/meetup-join/example", location: "IOSG 12F", attendeeEmails: ["founder@nascent.xyz"] },
+    { meetingUrl: null, location: null, attendeeEmails: ["yiping@iosg.vc", "yihaoy@sourcem3d.com"] },
+  ])("creates a local recording meeting for $location with link $meetingUrl", async ({ meetingUrl, location, attendeeEmails }) => {
     const calendarEventReturning = vi
       .fn()
       .mockResolvedValue([{ id: "33333333-3333-4333-8333-333333333333" }]);
@@ -1334,8 +1364,8 @@ describe("calendar auto join", () => {
           meetingUrl,
           startsAt: "2026-06-30T12:00:00.000Z",
           endsAt: null,
-          attendeeEmails: ["founder@nascent.xyz"],
-          location: "IOSG 12F",
+          attendeeEmails,
+          location,
         },
       }),
     ).resolves.toEqual({
@@ -1353,6 +1383,8 @@ describe("calendar auto join", () => {
         title: "Office visit",
       }),
     );
+    expect(scheduleRecallBot).not.toHaveBeenCalled();
+    expect(scheduleRecallCalendarEventBot).not.toHaveBeenCalled();
     expect(scheduleLocationReminder).toHaveBeenCalledWith({
       meetingId: "44444444-4444-4444-8444-444444444444",
       scheduledFor: new Date("2026-06-30T11:58:00.000Z"),
@@ -3989,6 +4021,8 @@ describe("calendar auto join", () => {
   });
 
   it.each([
+    { title: "yihao", location: null, meetingUrl: null, platform: "in_person",
+      attendeeEmails: ["yiping@iosg.vc", "yihaoy@sourcem3d.com"] },
     { location: "Mountain View, CA, USA", platform: "in_person" },
     { title: "tesla", location: "Mountain View, CA, USA", platform: "in_person",
       startsAt: "2026-09-19T21:00:00Z", endsAt: "2026-09-19T22:00:00Z",

@@ -1,4 +1,9 @@
 import {
+  currentAudioAssetPriority,
+  currentRecordingCondition,
+  currentVisualAssetCondition,
+} from "@/lib/current-audio-asset";
+import {
   and,
   asc,
   desc,
@@ -465,8 +470,12 @@ export function buildMeetingLibraryPage(
   );
   const historyCutoff = subtractMonths(now, historyMonths);
   const relatedHistoryCutoff = subtractMonths(now, relatedHistoryMonths);
+  const upcomingCutoffTime = nowTime + 2 * 24 * 60 * 60 * 1000;
   const activeMeetingsForLibrary = meetingsForLibrary.filter(
-    (meeting) => meeting.status !== "cancelled",
+    (meeting) =>
+      meeting.status !== "cancelled" &&
+      (meeting.status !== "scheduled" ||
+        new Date(meeting.startedAt).getTime() < upcomingCutoffTime),
   );
   const scheduledBotMeetingIds = new Set(
     activeMeetingsForLibrary
@@ -1079,6 +1088,7 @@ function latestRecordingDurationMsSubquery(meetingId: typeof meetings.id) {
     select ${recordings.durationMs}
     from ${recordings}
     where ${recordings.meetingId} = ${meetingId}
+      and ${currentRecordingCondition(meetingId)}
       and ${recordings.durationMs} > 0
     order by ${recordings.createdAt} desc
     limit 1
@@ -1090,6 +1100,7 @@ function latestRecordingStartedAtSubquery(meetingId: typeof meetings.id) {
     select ${recordings.startedAt}
     from ${recordings}
     where ${recordings.meetingId} = ${meetingId}
+      and ${currentRecordingCondition(meetingId)}
     order by ${recordings.createdAt} desc
     limit 1
   )`.mapWith(recordings.startedAt);
@@ -1100,6 +1111,7 @@ function latestRecordingEndedAtSubquery(meetingId: typeof meetings.id) {
     select ${recordings.endedAt}
     from ${recordings}
     where ${recordings.meetingId} = ${meetingId}
+      and ${currentRecordingCondition(meetingId)}
     order by ${recordings.createdAt} desc
     limit 1
   )`.mapWith(recordings.endedAt);
@@ -1350,6 +1362,7 @@ export async function getMeetingTranscriptForWorkspace(
       ),
     )
     .orderBy(
+      desc(currentAudioAssetPriority()),
       desc(
         sql`case when ${mediaAssets.type} = 'synthesized_audio' then 1 else 0 end`,
       ),
@@ -1429,6 +1442,7 @@ export async function getMeetingTranscriptForWorkspace(
       .where(
         and(
           eq(mediaAssets.meetingId, meeting.id),
+          currentVisualAssetCondition(meeting.id),
           or(
             eq(mediaAssets.type, "screenshot"),
             eq(mediaAssets.type, "video_frame"),

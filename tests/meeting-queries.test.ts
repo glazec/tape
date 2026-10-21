@@ -1916,6 +1916,46 @@ describe("buildMeetingLibraryPage", () => {
     ]);
   });
 
+  it.each(["smart", "time_desc"] as const)(
+    "limits scheduled meetings to 48 hours before grouping and pagination with %s sorting",
+    async (sort) => {
+      const { buildMeetingLibraryPage } = await import("@/lib/meeting-queries");
+      const page = buildMeetingLibraryPage(
+        [
+          ...["in_person", "zoom"].flatMap((platform) =>
+            [
+              ["today", "2026-06-28T14:00:00.000Z"],
+              ["inside", "2026-06-30T11:59:59.999Z"],
+              ["boundary", "2026-06-30T12:00:00.000Z"],
+              ["later", "2026-07-10T12:00:00.000Z"],
+            ].map(([label, startedAt]) => ({
+              ...libraryMeeting({
+                id: `${platform}-${label}`,
+                title: `${platform} ${label}`,
+                platform: platform as "in_person" | "zoom",
+                startedAt,
+              }),
+              status: "scheduled" as const,
+              hasRecallBot: platform === "zoom",
+            })),
+          ),
+          libraryMeeting({
+            id: "past",
+            title: "Past transcript",
+            platform: "zoom",
+            startedAt: "2026-06-28T10:00:00.000Z",
+          }),
+        ],
+        { now: new Date("2026-06-28T12:00:00.000Z"), sort, pageSize: 5 },
+      );
+
+      expect(page.meetings.map((meeting) => meeting.id).sort()).toEqual([
+        "in_person-inside", "in_person-today", "past", "zoom-inside", "zoom-today",
+      ]);
+      expect(page.hasNextPage).toBe(false);
+    },
+  );
+
   it("hides cancelled meetings from the library", async () => {
     const { buildMeetingLibraryPage } = await import("@/lib/meeting-queries");
 
@@ -2164,7 +2204,7 @@ describe("buildMeetingLibraryPage", () => {
             id: "22222222-2222-4222-8222-222222222222",
             title: "David <> YP",
             platform: "zoom",
-            startedAt: "2999-06-29T15:00:00.000Z",
+            startedAt: "2026-06-29T15:00:00.000Z",
           }),
           hasRecallBot: true,
           status: "scheduled" as const,

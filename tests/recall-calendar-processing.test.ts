@@ -63,6 +63,20 @@ describe("processRecallCalendarWebhook", () => {
     vi.resetModules();
   });
 
+  it("preserves the all day distinction for invitations without a venue", async () => {
+    const { normalizeRecallCalendarEvent } = await import("@/lib/recall-calendar");
+    const allDay = normalizeRecallCalendarEvent({
+      id: "all-day-event", start_time: "2099-06-30T00:00:00Z",
+      raw: { summary: "Shared holiday", start: { date: "2099-06-30" }, attendees: [{ email: "a@example.com" }, { email: "b@example.com" }] },
+    });
+    expect(allDay).toMatchObject({ isAllDay: true, attendeeEmails: ["a@example.com", "b@example.com"] });
+    const timed = normalizeRecallCalendarEvent({
+      id: "timed-event", start_time: "2099-06-30T12:00:00Z",
+      raw: { summary: "Lunch", start: { dateTime: "2099-06-30T12:00:00Z" } },
+    });
+    expect(timed?.isAllDay).not.toBe(true);
+  });
+
   it("normalizes update and incremental sync webhooks", async () => {
     const { normalizeRecallCalendarWebhook } = await import("@/lib/recall-calendar");
 

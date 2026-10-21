@@ -90,6 +90,7 @@ export type SyncedCalendarEvent = {
   description?: string | null;
   hangoutLink?: string | null;
   isDeleted?: boolean;
+  isAllDay?: boolean;
   recallCalendarEventId?: string | null;
   recallCalendarEventDeduplicationKey?: string | null;
   recallCalendarEventBots?: Array<{
@@ -322,6 +323,10 @@ async function autoJoinCalendarEventInternal(input: AutoJoinInput) {
   const startsAt = parseEventDate(input.event.startsAt);
   const endsAt = input.event.endsAt ? parseEventDate(input.event.endsAt) : null;
   const location = input.event.location?.trim() || null;
+  // A timed invitation with multiple participants is still a meeting without a venue.
+  const hasParticipantMeetingDetails =
+    !input.event.isAllDay && !meetingUrl && attendeeEmails.length > 1;
+  const hasLocalMeetingDetails = Boolean(location || hasParticipantMeetingDetails);
   const description = input.event.description?.trim() || null;
   const teamMeetingKey =
     meetingUrl && platform
@@ -336,7 +341,9 @@ async function autoJoinCalendarEventInternal(input: AutoJoinInput) {
             startsAt,
             location,
           })
-      : null;
+        : hasParticipantMeetingDetails && !input.event.isDeleted && !autoJoinSuppressed
+        ? `team:${input.connection.teamId}:start:${startsAt.toISOString()}:event:${input.event.externalEventId}`
+        : null;
   const teamMeetingKeyUpdate = ignoredImportedEvent
     ? null
     : teamMeetingKey ??
@@ -436,7 +443,7 @@ async function autoJoinCalendarEventInternal(input: AutoJoinInput) {
       !isPastCalendarEvent({ startsAt, endsAt }) ||
       input.event.isDeleted ||
       autoJoinSuppressed ||
-      (!location && !platform)
+      (!hasLocalMeetingDetails && !platform)
     ) {
       return {
         action: "skipped" as const,
@@ -498,11 +505,11 @@ async function autoJoinCalendarEventInternal(input: AutoJoinInput) {
     input.repairMode && isPastCalendarEvent({ startsAt, endsAt });
   const hasSchedulableNextOccurrence = Boolean(
     (meetingUrl && platform) ||
-      (location && !input.event.isDeleted && !autoJoinSuppressed),
+      (hasLocalMeetingDetails && !input.event.isDeleted && !autoJoinSuppressed),
   );
   const locationReminderNeedsRepair = Boolean(
     existingMeeting &&
-      location &&
+      hasLocalMeetingDetails &&
       !meetingUrl &&
       !input.event.isDeleted &&
       !autoJoinSuppressed &&
@@ -633,7 +640,7 @@ async function autoJoinCalendarEventInternal(input: AutoJoinInput) {
       };
     }
 
-    if (location && !input.event.isDeleted && !autoJoinSuppressed) {
+    if (hasLocalMeetingDetails && !input.event.isDeleted && !autoJoinSuppressed) {
       if (
         existingMeeting &&
         (existingMeeting.recallRecordingId ||
@@ -676,7 +683,6 @@ async function autoJoinCalendarEventInternal(input: AutoJoinInput) {
         title,
         startsAt,
         endsAt,
-        location,
         teamMeetingKey: activeTeamMeetingKey,
       });
     }
@@ -1341,7 +1347,6 @@ async function syncLocationCalendarMeeting(input: {
   title: string;
   startsAt: Date;
   endsAt: Date | null;
-  location: string;
   teamMeetingKey?: string | null;
 }) {
   let meeting = input.existingMeeting;
@@ -2330,7 +2335,9 @@ function needsUnchangedCalendarEventRepair(input: {
 }) {
   if (
     !input.event.isDeleted &&
-    hasPhysicalCalendarLocation(input.event.location) &&
+    (hasPhysicalCalendarLocation(input.event.location) ||
+      (!input.event.isAllDay &&
+        !input.meetingUrl && getCalendarAttendeeEmails(input.event).length > 1)) &&
     input.existingMeeting.platform !== "in_person"
   ) {
     return true;

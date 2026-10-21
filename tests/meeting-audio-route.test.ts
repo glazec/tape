@@ -135,6 +135,23 @@ describe("GET /api/meetings/[meetingId]/audio", () => {
     expect(retrieveRecallBot).not.toHaveBeenCalled();
   });
 
+  it("ranks the replacement transcript generation ahead of older synthesized audio", async () => {
+    const orderBy = vi.fn(() => ({ limit }));
+    where.mockImplementation(() => ({ orderBy }));
+    getCurrentUser.mockResolvedValue({ id: "user_123", email: "user@example.com" });
+    getWorkspace.mockResolvedValue({ teamId: "team_123" });
+    limit.mockResolvedValue([{ objectKey: "replacement.mp3" }]);
+    createReadUrl.mockResolvedValue("https://r2.example.com/replacement.mp3");
+    await getMeetingAudio();
+    const ordering = orderBy.mock.calls[0] as unknown as SQL[];
+    const first = toQuery(ordering[0]).sql;
+    expect(first).toContain("latest_replace");
+    expect(first).toContain("audio_job.media_asset_id");
+    expect(first).toContain("audio_job.recording_id");
+    expect(first).toMatch(/desc$/);
+    expect(toQuery(ordering[1]).sql).toContain("synthesized_audio");
+  });
+
   it("prefers synthesized local recorder audio over raw audio assets", async () => {
     getCurrentUser.mockResolvedValue({
       id: "user_123",

@@ -100,7 +100,7 @@ describe("POST /api/meetings/[meetingId]/translation", () => {
     getTeamConfiguration.mockResolvedValue({ translationLanguage: "en" });
     limit
       .mockResolvedValueOnce([{ id: "11111111-1111-4111-8111-111111111111" }])
-      .mockResolvedValueOnce([{ id: "22222222-2222-4222-8222-222222222222" }]);
+      .mockResolvedValueOnce([{ id: "22222222-2222-4222-8222-222222222222", jobId: "33333333-3333-4333-8333-333333333333" }]);
     set.mockReturnValue({ where });
     where.mockResolvedValue(undefined);
     send.mockResolvedValue(undefined);
@@ -122,6 +122,7 @@ describe("POST /api/meetings/[meetingId]/translation", () => {
       name: "meeting/enrich.transcript",
       data: {
         meetingId: "11111111-1111-4111-8111-111111111111",
+        transcriptJobId: "33333333-3333-4333-8333-333333333333",
         translateTranscript: true,
         translationLanguage: "en",
       },

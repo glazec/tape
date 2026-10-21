@@ -89,11 +89,15 @@ export async function POST(request: Request) {
         );
 
         if (translateTranscript) {
-          await markMeetingTranslationQueued(persistence.meetingId);
+          await markMeetingTranslationQueued(
+            persistence.meetingId,
+            persistence.transcriptJobId,
+          );
         } else {
           await markMeetingTranslationCompleted(
             persistence.meetingId,
             translationLanguage,
+            persistence.transcriptJobId,
           );
         }
 
@@ -103,13 +107,18 @@ export async function POST(request: Request) {
             name: "meeting/enrich.transcript",
             data: {
               meetingId: persistence.meetingId,
+              transcriptJobId: persistence.transcriptJobId,
               translateTranscript,
               translationLanguage,
             },
           })
           .catch((error) =>
             translateTranscript
-              ? markMeetingTranslationFailed(persistence.meetingId, error)
+              ? markMeetingTranslationFailed(
+                  persistence.meetingId,
+                  error,
+                  persistence.transcriptJobId,
+                )
               : Promise.reject(error),
           );
       }
