@@ -162,6 +162,8 @@ The probe fails when its target email or required credentials are missing. It re
 
 ## Continuous Integration
 
+CI uses Python 3.14 for MCP dependencies so a newly released Python ABI cannot invalidate the locked binary wheels.
+
 Pull requests and pushes to `main` run four jobs in `.github/workflows/test.yml`:
 
 1. `migration-integrity` checks migration lineage, detects schema drift, replays every migration on an empty PostgreSQL database, and verifies the billing ledger queries.
