@@ -58,6 +58,8 @@ Use progressive disclosure for filters, advanced options, metadata, exports, and
 
 Generated intelligence is supporting material, not source truth. Detected entities, emotion, talk share, summaries, and similar analysis must follow the transcript or appear behind disclosure. Show confidence or uncertainty when it changes how a colleague should interpret the result. Never let a long machine generated list delay access to the meeting itself.
 
+Configured completion emails contain separate notes and original transcript TXT attachments. Label notes as AI generated and preserve speaker names and timestamps in the transcript. Send only to the meeting owner's login address. Email failure must not change the meeting's transcription or translation state; delivery diagnostics stay in the background job record.
+
 ## Empty, loading, and failure states
 
 Empty space should lead to the next useful action.

@@ -4,6 +4,8 @@ Personal meeting notes: run `npx vitest run tests/meeting-notes.test.ts tests/me
 
 Tape tests each runtime at the boundary where its behavior can regress. Provider network calls use mocks unless a command is explicitly marked live.
 
+Completion email tests cover UTF8 TXT attachments, complete long input, owner recipient selection, current recording guards, audio batch readiness, duplicate events, frozen retry payloads, provider rejection, expired idempotency windows, and ignoring manual translation. Run `npx vitest run tests/meeting-email.test.ts tests/meeting-email-job.test.ts tests/meeting-email-records.test.ts tests/openrouter-notes.test.ts tests/ingest.test.ts tests/transcript-chunk-worker.test.ts tests/inngest-functions.test.ts tests/migrations.test.ts`. These tests mock database results and provider calls; use the [setup guide](setup.md#meeting-email) for actual delivery verification.
+
 Calendar history repair coverage includes discovering events never imported, Google pagination beyond 2,000 events, the 30 day window, connection ownership, latest Google event details, deleted and rescheduled events, durable per event steps, queue failure reporting, and retrying a partially created meeting without scheduling a bot or reminder. Run `npx vitest run tests/calendar-history-repair.test.ts tests/calendar-auto-join.test.ts tests/calendar-sync-route.test.ts tests/inngest-functions.test.ts tests/google-calendar-events.test.ts tests/calendar-sync-button.test.tsx`.
 
 Calendar import tests also cover invitations with multiple participants but no link or location, historical recovery and retries, personal calendar holds, duplicate participant emails, deleted invitations, declined guests, and excluded bookings.

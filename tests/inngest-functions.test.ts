@@ -202,6 +202,14 @@ describe("Inngest functions", () => {
         triggers: [{ event: "meeting/enrich.transcript" }],
       },
       {
+        id: "send-meeting-email",
+        triggers: [{ event: "meeting/enrich.transcript" }, { event: "meeting/send.completion-email" }],
+      },
+      {
+        id: "reconcile-meeting-emails",
+        triggers: [{ cron: "*/5 * * * *" }],
+      },
+      {
         id: "send-location-reminder",
         triggers: [{ event: "meeting/send.location-reminder" }],
       },

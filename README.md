@@ -67,6 +67,8 @@ Sync calendar also queues a background check of Google Calendar events, includin
 
 Meeting owners can rename meetings, correct speakers, start or repair translation, review images at their transcript timestamps, copy transcript text, and export any available combination of transcript text, MP3 audio, and meeting images. Image export returns a ZIP archive.
 
+When Resend is configured, newly completed recordings also email the meeting owner two UTF8 TXT attachments: AI generated notes and the full original transcript with speakers and timestamps. All parts of an audio batch must finish first. Only the owner's login email receives the files. See [setup](docs/setup.md#meeting-email) for activation and delivery verification.
+
 ### Share safely
 
 Workspace members can open workspace meetings. Named users outside the workspace receive explicit meeting access after sign in. Pending email invitations activate when the matching user signs in. Shared only users can read granted transcripts but cannot create, edit, delete, or reshare meetings.

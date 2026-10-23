@@ -12,6 +12,8 @@ Personal notes entered in My notes on the web meeting page are not exposed throu
 
 Local recordings use two MCP calls. `prepare_meeting_upload` returns a short lived R2 `PUT` URL and opaque completion token. After the client uploads the exact file bytes, `complete_meeting_upload` asks the Tape web backend to validate the object, create the meeting at the chosen time, and queue transcription.
 
+When the web backend has completion email configured, recordings uploaded through MCP follow the same owner email delivery flow as other recordings. Email credentials remain on the web service; MCP clients do not select recipients. See [email setup](../../docs/setup.md#meeting-email).
+
 Meetings restored by the web calendar background repair appear in the authorized meeting inventory as missed records. The repair checks Google Calendar events, including events never imported, without meeting records from the past 30 days and does not create recordings or transcripts.
 
 Eligible invitations include those with at least two distinct participant emails and no meeting link or location. Historical repair exposes these as missed meetings available for recording recovery.

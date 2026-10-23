@@ -108,6 +108,7 @@ export async function POST(request: Request) {
             data: {
               meetingId: persistence.meetingId,
               transcriptJobId: persistence.transcriptJobId,
+              sendCompletionEmail: true,
               translateTranscript,
               translationLanguage,
             },

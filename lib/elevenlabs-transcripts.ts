@@ -466,6 +466,7 @@ export async function applyElevenLabsTranscriptEvent(
           provider_job_id
         ),
         status = 'completed',
+        completion_email_ready_at = coalesce(completion_email_ready_at, ${now}),
         updated_at = ${now}
       where id = ${persistence.transcriptJobId}::uuid
     `,

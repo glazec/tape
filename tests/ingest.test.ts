@@ -554,6 +554,7 @@ describe("vendor webhook normalization", () => {
         transcriptJobId: "22222222-2222-4222-8222-222222222222",
         translateTranscript: false,
         translationLanguage: "zh-CN",
+        sendCompletionEmail: true,
       },
     });
     expect(markMeetingTranslationFailed).not.toHaveBeenCalled();
@@ -599,6 +600,7 @@ describe("vendor webhook normalization", () => {
         transcriptJobId: "22222222-2222-4222-8222-222222222222",
         translateTranscript: true,
         translationLanguage: "en",
+        sendCompletionEmail: true,
       },
     });
   });

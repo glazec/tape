@@ -4,6 +4,7 @@ import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import { db } from "@/db/client";
 import { transcriptJobs, transcriptSegments } from "@/db/schema";
 import { inngest } from "./client";
+import { reconcileMeetingEmails, sendMeetingEmail } from "./meeting-email";
 import { currentTranscriptJobIdsSubquery } from "@/lib/current-transcript-job";
 import { convertVideoObjectToAudio } from "@/lib/media-conversion";
 import { createReadUrl } from "@/lib/r2";
@@ -813,6 +814,8 @@ export const functions = [
   recoverEmptyTranscript,
   convertVideoToAudio,
   enrichTranscript,
+  sendMeetingEmail,
+  reconcileMeetingEmails,
   sendLocationReminder,
   reconcileLocationReminderSchedules,
   syncRecallCalendarsHourly,

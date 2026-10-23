@@ -832,6 +832,14 @@ export const transcriptJobs = pgTable(
       .default(false),
     status: jobStatus("status").notNull().default("queued"),
     errorMessage: text("error_message"),
+    completionEmailPayload: jsonb("completion_email_payload").$type<{
+      payload: import("@/lib/meeting-email").MeetingEmail;
+      jobIds: string[];
+    }>(),
+    completionEmailPreparedAt: timestamp("completion_email_prepared_at", { withTimezone: true }),
+    completionEmailSentAt: timestamp("completion_email_sent_at", { withTimezone: true }),
+    completionEmailId: text("completion_email_id"),
+    completionEmailReadyAt: timestamp("completion_email_ready_at", { withTimezone: true }),
     ...timestamps,
   },
   (table) => [
@@ -853,6 +861,9 @@ export const transcriptJobs = pgTable(
       table.meetingId,
       table.generationId,
     ),
+    index("transcript_jobs_pending_completion_email_index")
+      .on(table.completionEmailReadyAt)
+      .where(sql`${table.mode} = 'replace' and ${table.completionEmailReadyAt} is not null and ${table.completionEmailSentAt} is null`),
   ],
 );
 

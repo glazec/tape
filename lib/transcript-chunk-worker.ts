@@ -300,6 +300,7 @@ export async function queueChunkedTranscriptEnrichment(input: {
     data: {
       meetingId: input.meetingId,
       transcriptJobId: input.transcriptJobId,
+      sendCompletionEmail: true,
       translateTranscript: input.translateTranscript,
       translationLanguage: input.translationLanguage,
     },

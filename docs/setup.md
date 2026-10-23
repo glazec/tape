@@ -89,6 +89,7 @@ REST API key are configured.
 | Public R2 media URL | `R2_PUBLIC_BASE_URL` |
 | Admin access | `APP_ADMIN_EMAILS`, `APP_SELF_HOSTED` |
 | Exa web search for live answers | `EXA_API_KEY` |
+| Automatic notes and transcript email | `RESEND_API_KEY`, optional `MEETING_EMAIL_FROM` |
 | OneSignal reminders | `NEXT_PUBLIC_ONESIGNAL_APP_ID`, `NEXT_PUBLIC_ONESIGNAL_ALLOWED_ORIGINS`, `ONESIGNAL_REST_API_KEY` |
 | Twenty CRM vocabulary | `TWENTY_API_BASE_URL`, `TWENTY_API_KEY`; restricted to the team owning `iosg.vc` |
 | Amplitude browser analytics | No environment variable; the public project key is initialized in `instrumentation-client.ts` |
@@ -110,6 +111,24 @@ installation can set `APP_SELF_HOSTED=true`; when `APP_ADMIN_EMAILS` is empty,
 the first registered Tape user becomes the administrator. Set
 `APP_ADMIN_EMAILS` to an explicit comma separated allowlist to override either
 default.
+
+## Meeting email
+
+Email delivery is disabled while `RESEND_API_KEY` is empty. On `tape-web`, set a Resend sending key and optionally `MEETING_EMAIL_FROM`; the default sender is `Tape <tape@inevitable.tech>`. Verify `inevitable.tech` in Resend and install its required DNS records before using that address. Another verified sender can be used by changing `MEETING_EMAIL_FROM`. Never put the key in a public environment variable or commit it.
+
+Apply migration `0056_meeting_completion_email` with `npm run db:migrate`, deploy the web service, and run `npm run inngest:sync` so `send-meeting-email` and `reconcile-meeting-emails` are registered. Deploy the image worker too: its chunked transcription completion event now enables email. Inngest consumes the existing completion enrichment event independently of polishing and translation. No additional workflow service is needed.
+
+New recording completion events enable delivery by default for every meeting owner. Existing meetings are not backfilled, manual translation does not trigger mail, and pasted transcripts do not trigger recording completion. Email uses the owner's stored login address, never calendar attendee addresses or a client supplied recipient. Each recording generation sends once; replacing audio creates a new generation. All active audio parts must complete before sending. A failed part suppresses partial delivery. The job waits up to three hours if completion is still pending.
+
+The email contains two UTF8 TXT attachments: AI generated notes and the complete original transcript with speakers and timestamps. Notes use the existing OpenRouter model and credit checks. Long transcripts are divided without truncation and summarized in persisted steps; part notes are concatenated in recording order. Summary usage is recorded under the existing assistant category.
+
+The first prepared email body, recipient, sender, attachments, and audio job IDs are frozen in `transcript_jobs.completion_email_payload`. Retry uses those exact bytes and `meeting-email/<anchor job ID>` as the Resend idempotency key. Successful API acceptance persists `completion_email_id` and `completion_email_sent_at`, then clears the duplicate private attachment payload. The receipt prevents later duplicate sends. Resend acceptance does not prove inbox delivery.
+
+Transcript completion writes `completion_email_ready_at` in the same database transaction as the transcript. Every five minutes, `reconcile-meeting-emails` checks up to 50 pending current replacement generations whose audio parts have all completed and dispatches email independently of enrichment. Dispatched rows move behind other pending meetings so repeated failures do not starve the queue. This recovers lost completion events and failed deliveries. Meetings completed before this migration have no ready timestamp and are excluded. Completions recorded while email is disabled can be delivered after email is configured.
+
+Resend retains idempotency keys for 24 hours. Automatic retries stop after 23 hours from preparation and require checking provider logs before manual replay. The reconciliation scan also excludes expired prepared requests. Changed audio job membership or a changed owner address suppresses a frozen payload. Delivery failures appear in the separate Inngest function without failing transcription or translation.
+
+To verify live delivery, complete a new short recording, inspect both received TXT files, confirm that only the owner received it, and replay the completion event to confirm no second email. Confirm a provider delivery event or actual inbox receipt in addition to stored API acceptance. Local mocks do not establish domain verification, deployment, or delivery.
 
 ## SigNoz telemetry
 

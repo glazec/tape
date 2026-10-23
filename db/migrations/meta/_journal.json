@@ -393,6 +393,13 @@
       "when": 1792735101595,
       "tag": "0055_consolidate_legacy_iosf_calendar",
       "breakpoints": true
+    },
+    {
+      "idx": 56,
+      "version": "7",
+      "when": 1792776851618,
+      "tag": "0056_meeting_completion_email",
+      "breakpoints": true
     }
   ]
 }

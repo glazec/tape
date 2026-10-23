@@ -37,6 +37,8 @@ Calendar resync keeps recent event capture in the foreground and checks Google C
 9. Share a transcript with workspace members or named external colleagues, optionally including past and future meetings in the same related series.
 10. Review remaining workspace credit and personal or organization provider consumption across useful time periods from Team settings.
 11. Start a personal workspace with any Google account and use up to $5 of included provider credit.
+
+12. With email delivery configured, receive AI generated notes and the complete original transcript as separate TXT attachments at the meeting owner's login email after recording transcription finishes. Batched recordings produce one email after every part completes. Translation requests do not send email.
 12. Write private personal notes on any accessible meeting before, during, or after recording. Each reader has their own note; sharing a meeting does not share these notes.
 
 ## Brand Personality
