@@ -24,6 +24,8 @@ The dashboard combines weekly activity, calendar capture status, and a searchabl
 
 Every meeting includes My notes, a private writing area for each signed in reader. Notes save automatically during a meeting and remain editable afterward. They are separate from generated summaries and shared transcripts.
 
+Questions ending in `?` or `？` receive an answer beneath them after a short pause, using only the available meeting transcript. Factual answers include supporting transcript sources. You can revise the question, regenerate an answer, or edit it yourself; manually edited answers are protected from automatic replacement.
+
 Completed meetings include an AI followup disclosure after the transcript. Meeting managers can generate a compact To do list and Dynamic section with explicit names and transcript evidence links. Saved followups are visible to meeting readers and hidden when the source changes.
 
 Each meeting brings together its status, synchronized audio, transcript, speaker corrections, workspace configured translation, detected entities, captured screen share images, related meetings, and access controls. Missing or failed content leads to the relevant recovery source instead of an empty transcript.

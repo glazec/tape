@@ -14,6 +14,8 @@ Replace audio uses the existing audio upload, storage, and transcription configu
 
 Personal meeting notes require migration `0051_meeting_notes` before deploying the web service. Apply pending migrations using `npm run db:migrate`. No new provider or environment variable is needed. The notes table enforces both the current user identity and meeting read access through row level security. Notes are excluded from transcript exports, completion emails, and MCP access.
 
+Automatic note answers additionally require migration `0058_meeting_note_blocks` and the existing `OPENROUTER_API_KEY` and `OPENROUTER_MODEL`. No new provider is required. Generation uses the current meeting transcript, the existing meeting credit checks and assistant usage accounting, with a limit of 12 answer requests per user per minute. Questions wait when no transcript has been persisted yet. Contexts larger than 180,000 serialized characters show an explicit size limit rather than silently truncating evidence.
+
 ## Requirements
 
 1. Node.js 24

@@ -1,0 +1,1 @@
+ALTER TABLE "meeting_notes" ADD COLUMN "blocks" jsonb;

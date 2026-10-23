@@ -1,5 +1,6 @@
 import { z } from "zod";
 
+import { meetingNoteSchema } from "@/lib/meeting-note-document";
 import { getCurrentUser } from "@/lib/auth";
 import {
   canReadMeetingNotes,
@@ -10,10 +11,6 @@ import { getOrCreateWorkspaceForSessionUser } from "@/lib/workspace";
 
 export const runtime = "nodejs";
 
-const noteSchema = z.strictObject({
-  content: z.string().max(20_000),
-  version: z.number().int().min(0).max(2_147_483_646),
-});
 type Context = { params: Promise<{ meetingId: string }> };
 
 async function authorize(context: Context) {
@@ -44,7 +41,9 @@ export async function GET(_request: Request, context: Context) {
 export async function PUT(request: Request, context: Context) {
   const access = await authorize(context);
   if (access instanceof Response) return access;
-  const parsed = noteSchema.safeParse(await request.json().catch(() => null));
+  const parsed = meetingNoteSchema.safeParse(
+    await request.json().catch(() => null),
+  );
   if (!parsed.success) {
     return Response.json({ error: "Invalid notes" }, { status: 400 });
   }

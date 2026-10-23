@@ -9,7 +9,6 @@ import {
   useState,
 } from "react";
 import { Check, Copy, LockKeyhole } from "lucide-react";
-
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -18,16 +17,35 @@ import {
   DialogDescription,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  MeetingNoteAnswer,
+  type NoteTranscript,
+} from "@/components/meeting-note-answer";
+import { useMeetingNote } from "@/components/use-meeting-note";
+import {
+  noteContent,
+  noteQuestion,
+  type NoteAnswer,
+  type NoteBlock,
+} from "@/lib/meeting-note-document";
 
-type Note = { content: string; version: number };
-type Status =
-  | "loading"
-  | "idle"
-  | "unsaved"
-  | "saving"
-  | "saved"
-  | "error"
-  | "conflict";
+// Enter after a question starts a new writing block. Preserve the exact text.
+function splitAfterQuestions(text: string) {
+  const chunks: string[] = [];
+  let current = "";
+  const lines = text.split("\n");
+  lines.forEach((line, index) => {
+    current += line;
+    if (index < lines.length - 1) {
+      if (noteQuestion(line)) {
+        chunks.push(current);
+        current = "";
+      } else current += "\n";
+    }
+  });
+  chunks.push(current);
+  return chunks;
+}
 
 export function MeetingNotes({
   meetingId,
@@ -36,195 +54,220 @@ export function MeetingNotes({
   meetingId: string;
   userId: string;
 }) {
-  const [content, setContent] = useState("");
-  const [status, setStatus] = useState<Status>("loading");
-  const [loaded, setLoaded] = useState(false);
+  const { blocks, change, status, loaded, save, reload, retry } =
+    useMeetingNote(meetingId, userId);
   const [replaceOpen, setReplaceOpen] = useState(false);
   const [copyStatus, setCopyStatus] = useState<"idle" | "copied" | "error">(
     "idle",
   );
+  const [answerDrafts, setAnswerDrafts] = useState<Set<string>>(new Set());
+  const [composing, setComposing] = useState<string | null>(null);
+  const [transcript, setTranscript] = useState<NoteTranscript | null>(null);
+  const [transcriptError, setTranscriptError] = useState(false);
   const headingId = useId();
   const privacyId = useId();
-  const editor = useRef<HTMLTextAreaElement>(null);
-  const draft = useRef("");
-  const saved = useRef<Note | null>(null);
-  const draftVersion = useRef(0);
-  const saving = useRef(false);
-  const conflict = useRef(false);
-  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const url = `/api/meetings/${encodeURIComponent(meetingId)}/notes`;
-  const draftKey = `meeting-notes:${userId}:${meetingId}`;
-
-  const retainDraft = useCallback(() => {
-    try {
-      if (saved.current && draft.current !== saved.current.content) {
-        sessionStorage.setItem(
-          draftKey,
-          JSON.stringify({
-            content: draft.current,
-            version: draftVersion.current,
-          }),
-        );
-      } else {
-        sessionStorage.removeItem(draftKey);
-      }
-    } catch {
-      // Saving to the server still works when browser storage is unavailable.
-    }
-  }, [draftKey]);
-
-  const load = useCallback(
-    async (signal?: AbortSignal) => {
-      try {
-        const response = await fetch(url, { cache: "no-store", signal });
-        if (!response.ok) throw new Error("Could not load notes");
-        const note: Note = await response.json();
-        if (signal?.aborted) return;
-        let recovered: Note | null = null;
-        try {
-          const stored = JSON.parse(sessionStorage.getItem(draftKey) ?? "null");
-          if (
-            stored &&
-            typeof stored.content === "string" &&
-            Number.isInteger(stored.version)
-          ) {
-            recovered = stored;
-          }
-        } catch {
-          // Browser storage is optional.
-        }
-        saved.current = note;
-        draftVersion.current =
-          recovered && recovered.content !== note.content
-            ? recovered.version
-            : note.version;
-        draft.current = recovered?.content ?? note.content;
-        conflict.current = Boolean(
-          recovered &&
-          recovered.content !== note.content &&
-          recovered.version !== note.version,
-        );
-        retainDraft();
-        setContent(draft.current);
-        setLoaded(true);
-        setStatus(
-          conflict.current
-            ? "conflict"
-            : draft.current === note.content
-              ? note.content
-                ? "saved"
-                : "idle"
-              : "unsaved",
-        );
-      } catch {
-        if (!signal?.aborted) setStatus("error");
-      }
-    },
-    [draftKey, retainDraft, url],
+  const hintId = useId();
+  const editors = useRef(new Map<string, HTMLTextAreaElement>());
+  const copyFallback = useRef<HTMLTextAreaElement>(null);
+  const pendingFocus = useRef<{ id: string; position: number } | null>(null);
+  const blocksRef = useRef(blocks);
+  const metadataRequest = useRef<AbortController | null>(null);
+  const answerUrl = `/api/meetings/${encodeURIComponent(meetingId)}/notes/answer`;
+  const content = noteContent(blocks);
+  const hasQuestions = blocks.some(
+    (block) => noteQuestion(block.text) || block.answer,
   );
+  const hasAnswer = blocks.some((block) => block.answer);
+  const canEnhance = loaded && status !== "conflict" && status !== "error";
+  const copyText = blocks
+    .map((block) => [block.text, block.answer?.text].filter(Boolean).join("\n"))
+    .join("\n");
 
-  const save = useCallback(async () => {
-    if (!saved.current || saving.current || conflict.current) return;
-    saving.current = true;
-    try {
-      while (draft.current !== saved.current.content) {
-        setStatus("saving");
-        const next = { content: draft.current, version: saved.current.version };
-        const response = await fetch(url, {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(next),
-          keepalive: true,
-        });
-        if (response.status === 409) {
-          conflict.current = true;
-          setStatus("conflict");
-          return;
-        }
-        if (!response.ok) throw new Error("Could not save notes");
-        saved.current = (await response.json()) as Note;
-        draftVersion.current = saved.current.version;
-        retainDraft();
-      }
-      setStatus("saved");
-    } catch {
-      setStatus("error");
-    } finally {
-      saving.current = false;
-    }
-  }, [retainDraft, url]);
+  useLayoutEffect(() => {
+    blocksRef.current = blocks;
+  }, [blocks]);
 
-  useEffect(() => {
+  const refreshTranscript = useCallback(async () => {
+    metadataRequest.current?.abort();
     const controller = new AbortController();
-    void load(controller.signal);
-    return () => controller.abort();
-  }, [load]);
+    metadataRequest.current = controller;
+    try {
+      const response = await fetch(answerUrl, {
+        cache: "no-store",
+        signal: controller.signal,
+      });
+      if (!response.ok) throw new Error("Transcript unavailable");
+      const next = await response.json();
+      if (controller.signal.aborted) return;
+      if (
+        typeof next.transcriptRevision !== "string" ||
+        typeof next.hasTranscript !== "boolean"
+      )
+        throw new Error("Invalid transcript metadata");
+      setTranscript((old) =>
+        old?.transcriptRevision === next.transcriptRevision &&
+        old?.hasTranscript === next.hasTranscript
+          ? old
+          : next,
+      );
+      setTranscriptError(false);
+    } catch {
+      if (!controller.signal.aborted) setTranscriptError(true);
+    }
+  }, [answerUrl]);
 
   useEffect(() => {
-    if (!loaded || status !== "unsaved") return;
-    timer.current = setTimeout(() => void save(), 700);
-    return () => {
-      if (timer.current) clearTimeout(timer.current);
+    if (!hasQuestions || !loaded) return;
+    // Refresh external transcript metadata after the note has loaded.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    void refreshTranscript();
+    const check = () => {
+      if (document.visibilityState === "visible") void refreshTranscript();
     };
-  }, [content, loaded, save, status]);
+    const timer = setInterval(check, 30_000);
+    document.addEventListener("visibilitychange", check);
+    return () => {
+      clearInterval(timer);
+      document.removeEventListener("visibilitychange", check);
+      metadataRequest.current?.abort();
+    };
+  }, [hasQuestions, loaded, refreshTranscript]);
 
+  const resizeEditors = useCallback(() => {
+    editors.current.forEach((editor) => {
+      const scrollTop = editor.scrollTop;
+      editor.style.height = "0px";
+      editor.style.height = `${editor.scrollHeight}px`;
+      editor.scrollTop = scrollTop;
+    });
+  }, []);
+  useLayoutEffect(() => {
+    resizeEditors();
+    const target = pendingFocus.current;
+    if (target) {
+      const editor = editors.current.get(target.id);
+      editor?.focus({ preventScroll: true });
+      editor?.setSelectionRange(target.position, target.position);
+      editor?.scrollIntoView?.({ block: "nearest" });
+      pendingFocus.current = null;
+    }
+  }, [blocks, loaded, resizeEditors]);
   useEffect(() => {
-    const beforeUnload = (event: BeforeUnloadEvent) => {
-      if (saved.current && draft.current !== saved.current.content) {
-        event.preventDefault();
-        event.returnValue = "";
-      }
-    };
-    const onVisibilityChange = () => {
-      if (document.visibilityState === "hidden") void save();
-    };
-    window.addEventListener("beforeunload", beforeUnload);
-    document.addEventListener("visibilitychange", onVisibilityChange);
-    return () => {
-      window.removeEventListener("beforeunload", beforeUnload);
-      document.removeEventListener("visibilitychange", onVisibilityChange);
-      void save();
-    };
-  }, [save]);
+    window.addEventListener("resize", resizeEditors);
+    return () => window.removeEventListener("resize", resizeEditors);
+  }, [resizeEditors]);
+  useEffect(() => {
+    if (copyStatus !== "error") return;
+    const editor = copyFallback.current ?? editors.current.get(blocks[0].id);
+    editor?.focus();
+    editor?.select();
+  }, [blocks, copyStatus]);
 
-  const resizeEditor = useCallback(() => {
-    if (!editor.current) return;
-    const scrollTop = editor.current.scrollTop;
-    editor.current.style.height = "0px";
-    editor.current.style.height = `${editor.current.scrollHeight}px`;
-    editor.current.scrollTop = scrollTop;
+  const onEditingChange = useCallback((id: string, dirty: boolean) => {
+    setAnswerDrafts((previous) => {
+      if (previous.has(id) === dirty) return previous;
+      const next = new Set(previous);
+      if (dirty) next.add(id);
+      else next.delete(id);
+      return next;
+    });
   }, []);
 
-  useLayoutEffect(resizeEditor, [content, loaded, resizeEditor]);
+  const onAnswer = useCallback(
+    (id: string, question: string, answer: NoteAnswer) => {
+      let accepted = false;
+      change((current) => {
+        const next = current.map((block) =>
+          block.id === id &&
+          (noteQuestion(block.text) ?? block.text) === question
+            ? { ...block, answer }
+            : block,
+        );
+        if (JSON.stringify(next).length > 200_000) return current;
+        accepted = next.some(
+          (block) => block.id === id && block.answer === answer,
+        );
+        return next;
+      });
+      return accepted;
+    },
+    [change],
+  );
 
-  useEffect(() => {
-    window.addEventListener("resize", resizeEditor);
-    return () => window.removeEventListener("resize", resizeEditor);
-  }, [resizeEditor]);
+  const removeAnswer = useCallback(
+    (id: string) => {
+      change((current) =>
+        current.map((block) =>
+          block.id === id && !noteQuestion(block.text)
+            ? { id: block.id, text: block.text }
+            : block,
+        ),
+      );
+    },
+    [change],
+  );
 
-  async function copyEdits() {
-    const copiedContent = draft.current;
-    try {
-      await navigator.clipboard.writeText(copiedContent);
-      if (draft.current === copiedContent) setCopyStatus("copied");
-    } catch {
-      setCopyStatus("error");
-      editor.current?.focus();
-      editor.current?.select();
+  function updateText(
+    id: string,
+    text: string,
+    cursor: number,
+    isComposing = false,
+  ) {
+    const current = blocksRef.current;
+    const block = current.find((item) => item.id === id);
+    if (
+      !block ||
+      noteContent(current).length - block.text.length + text.length > 20_000
+    )
+      return;
+    const parts = isComposing ? [text] : splitAfterQuestions(text);
+    if (current.length + parts.length - 1 > 100) return;
+    const answerIndex = block.answer
+      ? Math.max(
+          0,
+          parts.findIndex(
+            (part) => noteQuestion(part) === block.answer?.question,
+          ),
+        )
+      : -1;
+    const next: NoteBlock[] = parts.map((part, index) => ({
+      id: index === Math.max(0, answerIndex) ? id : crypto.randomUUID(),
+      text: part,
+      ...(index === answerIndex && block.answer
+        ? { answer: block.answer }
+        : {}),
+    }));
+    if (parts.length > 1) {
+      let offset = 0;
+      for (let index = 0; index < parts.length; index++) {
+        if (
+          cursor <= offset + parts[index].length ||
+          index === parts.length - 1
+        ) {
+          pendingFocus.current = {
+            id: next[index].id,
+            position: Math.max(0, cursor - offset),
+          };
+          break;
+        }
+        offset += parts[index].length + 1;
+      }
     }
+    const updated = current.flatMap((item) => (item.id === id ? next : [item]));
+    if (JSON.stringify(updated).length > 200_000) return;
+    change(updated);
+    setCopyStatus("idle");
   }
 
-  function loadSavedNotes() {
+  async function copyEdits() {
+    const captured = JSON.stringify(blocks);
     try {
-      sessionStorage.removeItem(draftKey);
+      await navigator.clipboard.writeText(copyText);
+      if (JSON.stringify(blocksRef.current) === captured)
+        setCopyStatus("copied");
     } catch {
-      // Browser storage is optional.
+      setCopyStatus("error");
     }
-    setReplaceOpen(false);
-    setStatus("loading");
-    setLoaded(false);
-    setCopyStatus("idle");
-    void load();
   }
 
   return (
@@ -250,7 +293,9 @@ export function MeetingNotes({
           role="status"
           className="flex min-h-6 min-w-16 shrink-0 items-center justify-end gap-1.5 text-xs text-muted-foreground"
         >
-          {status === "loading" ? (
+          {answerDrafts.size > 0 ? (
+            "Editing answer…"
+          ) : status === "loading" ? (
             "Loading…"
           ) : status === "saving" ? (
             "Saving…"
@@ -266,7 +311,7 @@ export function MeetingNotes({
           )}
         </span>
       </div>
-      <div className="relative">
+      <div className="relative max-h-[min(32rem,65dvh)] overflow-y-auto overscroll-contain pr-1">
         {status === "loading" ? (
           <div
             aria-hidden="true"
@@ -277,29 +322,133 @@ export function MeetingNotes({
             <div className="h-2.5 w-2/3 rounded bg-muted" />
           </div>
         ) : null}
-        <textarea
-          ref={editor}
-          aria-labelledby={headingId}
-          aria-describedby={privacyId}
-          aria-busy={status === "loading"}
-          className="block min-h-36 max-h-[min(24rem,60dvh)] w-full resize-none border-0 bg-transparent p-0 text-base leading-7 outline-none placeholder:text-muted-foreground disabled:text-muted-foreground"
-          disabled={!loaded}
-          maxLength={20_000}
-          onBlur={() => void save()}
-          onChange={(event) => {
-            draft.current = event.target.value;
-            setContent(draft.current);
-            setCopyStatus("idle");
-            retainDraft();
-            if (!conflict.current) setStatus("unsaved");
-          }}
-          placeholder={
-            loaded ? "Capture ideas, questions, and next steps…" : ""
-          }
-          rows={5}
-          value={content}
-        />
+        {blocks.map((block, index) => (
+          <div key={block.id}>
+            <textarea
+              ref={(node) => {
+                if (node) editors.current.set(block.id, node);
+                else editors.current.delete(block.id);
+              }}
+              aria-label={index === 0 ? "My notes" : `Note ${index + 1}`}
+              aria-describedby={`${privacyId} ${hintId}`}
+              aria-busy={status === "loading"}
+              className={`block max-h-[min(24rem,60dvh)] w-full resize-none border-0 bg-transparent p-0 text-base leading-7 outline-none placeholder:text-muted-foreground disabled:text-muted-foreground ${blocks.length === 1 && !hasQuestions ? "min-h-36" : "min-h-7"}`}
+              disabled={!loaded}
+              maxLength={20_000 - content.length + block.text.length}
+              onBlur={() => void save()}
+              onCompositionStart={() => setComposing(block.id)}
+              onCompositionEnd={(event) => {
+                setComposing(null);
+                updateText(
+                  block.id,
+                  event.currentTarget.value,
+                  event.currentTarget.selectionStart,
+                );
+              }}
+              onChange={(event) =>
+                updateText(
+                  block.id,
+                  event.target.value,
+                  event.target.selectionStart,
+                  composing === block.id,
+                )
+              }
+              onKeyDown={(event) => {
+                if (event.nativeEvent.isComposing || composing === block.id)
+                  return;
+                const editor = event.currentTarget;
+                if (
+                  event.key === "Backspace" &&
+                  editor.selectionStart === 0 &&
+                  editor.selectionEnd === 0 &&
+                  index > 0
+                ) {
+                  event.preventDefault();
+                  const previous = blocks[index - 1];
+                  if (!previous.answer && !noteQuestion(previous.text)) {
+                    pendingFocus.current = {
+                      id: previous.id,
+                      position: previous.text.length,
+                    };
+                    change(
+                      blocks.flatMap((item) =>
+                        item.id === previous.id
+                          ? [
+                              {
+                                ...previous,
+                                text: previous.text + block.text,
+                                ...(block.answer
+                                  ? { answer: block.answer }
+                                  : {}),
+                              },
+                            ]
+                          : item.id === block.id
+                            ? []
+                            : [item],
+                      ),
+                    );
+                  } else {
+                    const target = editors.current.get(previous.id);
+                    target?.focus();
+                    target?.setSelectionRange(
+                      previous.text.length,
+                      previous.text.length,
+                    );
+                    if (!block.text && !block.answer)
+                      change(blocks.filter((item) => item.id !== block.id));
+                  }
+                }
+              }}
+              placeholder={
+                loaded
+                  ? index === 0
+                    ? "Capture ideas, questions, and next steps…"
+                    : "Keep taking notes…"
+                  : ""
+              }
+              rows={1}
+              value={block.text}
+            />
+            {loaded ? (
+              <MeetingNoteAnswer
+                block={block}
+                url={answerUrl}
+                transcript={transcript}
+                transcriptError={transcriptError}
+                refreshTranscript={refreshTranscript}
+                enabled={canEnhance}
+                composing={composing === block.id}
+                onAnswer={onAnswer}
+                onRemoveAnswer={removeAnswer}
+                editDraftKey={`meeting-notes-answer:${userId}:${meetingId}:${block.id}`}
+                onEditingChange={onEditingChange}
+              />
+            ) : null}
+          </div>
+        ))}
+        {loaded &&
+        (blocks.at(-1)?.answer || noteQuestion(blocks.at(-1)?.text ?? "")) ? (
+          <button
+            className="mt-1 min-h-11 w-full text-left text-base leading-7 text-muted-foreground outline-none focus-visible:rounded focus-visible:ring-2 focus-visible:ring-ring/30"
+            onClick={() => {
+              if (blocks.length >= 100 || content.length >= 20_000) return;
+              const next = { id: crypto.randomUUID(), text: "" };
+              pendingFocus.current = { id: next.id, position: 0 };
+              change([...blocks, next]);
+            }}
+          >
+            Keep taking notes…
+          </button>
+        ) : null}
       </div>
+      <p
+        id={hintId}
+        className={
+          hasAnswer ? "sr-only" : "mt-3 text-xs leading-5 text-muted-foreground"
+        }
+      >
+        End a question with ? to find an answer in this transcript.
+      </p>
       {content.length >= 19_000 ? (
         <p
           className="mt-3 text-right text-xs tabular-nums text-muted-foreground"
@@ -315,17 +464,7 @@ export function MeetingNotes({
               ? "Could not save. Your edits are still here."
               : "Could not load your notes."}
           </p>
-          <Button
-            className="min-h-11"
-            onClick={() => {
-              if (loaded) void save();
-              else {
-                setStatus("loading");
-                void load();
-              }
-            }}
-            variant="outline"
-          >
+          <Button className="min-h-11" onClick={retry} variant="outline">
             Retry
           </Button>
         </div>
@@ -357,10 +496,21 @@ export function MeetingNotes({
             </Button>
           </div>
           {copyStatus === "error" ? (
-            <p className="text-sm text-destructive" role="alert">
-              Could not copy automatically. Your edits are selected so you can
-              copy them.
-            </p>
+            <>
+              <p className="text-sm text-destructive" role="alert">
+                Could not copy automatically. Your edits are selected so you can
+                copy them.
+              </p>
+              {blocks.length > 1 || hasAnswer ? (
+                <textarea
+                  ref={copyFallback}
+                  aria-label="Copy your notes"
+                  readOnly
+                  value={copyText}
+                  className="min-h-28 w-full rounded border p-2 text-sm"
+                />
+              ) : null}
+            </>
           ) : null}
           <span className="sr-only" role="status">
             {copyStatus === "copied"
@@ -385,7 +535,20 @@ export function MeetingNotes({
             <Button
               className="min-h-11"
               variant="destructive"
-              onClick={loadSavedNotes}
+              onClick={() => {
+                setReplaceOpen(false);
+                setCopyStatus("idle");
+                blocks.forEach((block) => {
+                  try {
+                    sessionStorage.removeItem(
+                      `meeting-notes-answer:${userId}:${meetingId}:${block.id}`,
+                    );
+                  } catch {
+                    /* Storage is optional. */
+                  }
+                });
+                reload();
+              }}
             >
               Load saved notes
             </Button>

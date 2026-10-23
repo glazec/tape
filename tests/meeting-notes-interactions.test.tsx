@@ -57,7 +57,11 @@ describe("meeting notes editor", () => {
       expect.stringContaining("/notes"),
       expect.objectContaining({
         method: "PUT",
-        body: JSON.stringify({ content: "Question for the team", version: 0 }),
+        body: JSON.stringify({
+          content: "Question for the team",
+          blocks: [{ id: "legacy", text: "Question for the team" }],
+          version: 0,
+        }),
       }),
     );
     expect(sessionStorage.getItem(key)).toBeNull();
@@ -84,7 +88,11 @@ describe("meeting notes editor", () => {
     expect(fetch).toHaveBeenLastCalledWith(
       expect.any(String),
       expect.objectContaining({
-        body: JSON.stringify({ content: "Second draft", version: 1 }),
+        body: JSON.stringify({
+          content: "Second draft",
+          blocks: [{ id: "legacy", text: "Second draft" }],
+          version: 1,
+        }),
       }),
     );
     expect(editor().value).toBe("Second draft");
@@ -285,7 +293,11 @@ describe("meeting notes editor", () => {
     expect(fetch).toHaveBeenLastCalledWith(
       expect.any(String),
       expect.objectContaining({
-        body: JSON.stringify({ content: "", version: 3 }),
+        body: JSON.stringify({
+          content: "",
+          blocks: [{ id: "legacy", text: "" }],
+          version: 3,
+        }),
       }),
     );
   });

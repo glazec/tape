@@ -14,6 +14,8 @@ import {
   uuid,
 } from "drizzle-orm/pg-core";
 
+import type { NoteBlock } from "@/lib/meeting-note-document";
+
 import { DEFAULT_MEETING_BOT_NAME } from "@/lib/meeting-bot-constants";
 
 const timestamps = {
@@ -382,6 +384,7 @@ export const meetingNotes = pgTable(
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
     content: text("content").notNull().default(""),
+    blocks: jsonb("blocks").$type<NoteBlock[]>(),
     version: integer("version").notNull().default(1),
     ...timestamps,
   },

@@ -1,8 +1,12 @@
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, isNull, or, sql } from "drizzle-orm";
 
 import { db } from "@/db/client";
 import { meetingNotes, meetings } from "@/db/schema";
 import { getReadableMeetingsCondition } from "@/lib/meeting-access-policy";
+import {
+  normalizeNoteBlocks,
+  type NoteBlock,
+} from "@/lib/meeting-note-document";
 import type { WorkspaceContext } from "@/lib/workspace";
 
 export async function canReadMeetingNotes(
@@ -24,7 +28,11 @@ export async function getMeetingNote(
   meetingId: string,
 ) {
   const rows = await db
-    .select({ content: meetingNotes.content, version: meetingNotes.version })
+    .select({
+      content: meetingNotes.content,
+      version: meetingNotes.version,
+      blocks: meetingNotes.blocks,
+    })
     .from(meetingNotes)
     .where(
       and(
@@ -33,17 +41,25 @@ export async function getMeetingNote(
       ),
     )
     .limit(1);
-  return rows[0] ?? { content: "", version: 0 };
+  const note = rows[0] ?? { content: "", version: 0 };
+  return {
+    ...note,
+    blocks: normalizeNoteBlocks(
+      note.content,
+      "blocks" in note ? note.blocks : undefined,
+    ),
+  };
 }
 
 export async function saveMeetingNote(
   workspace: WorkspaceContext,
   meetingId: string,
-  note: { content: string; version: number },
+  note: { content: string; version: number; blocks?: NoteBlock[] },
 ) {
   const returning = {
     content: meetingNotes.content,
     version: meetingNotes.version,
+    blocks: meetingNotes.blocks,
   };
   // A version check prevents a stale tab from silently replacing newer notes.
   const rows =
@@ -54,6 +70,7 @@ export async function saveMeetingNote(
             meetingId,
             userId: workspace.userId,
             content: note.content,
+            ...(note.blocks ? { blocks: note.blocks } : {}),
           })
           .onConflictDoNothing({
             target: [meetingNotes.meetingId, meetingNotes.userId],
@@ -63,6 +80,7 @@ export async function saveMeetingNote(
           .update(meetingNotes)
           .set({
             content: note.content,
+            ...(note.blocks ? { blocks: note.blocks } : {}),
             version: sql`${meetingNotes.version} + 1`,
             updatedAt: new Date(),
           })
@@ -71,8 +89,17 @@ export async function saveMeetingNote(
               eq(meetingNotes.meetingId, meetingId),
               eq(meetingNotes.userId, workspace.userId),
               eq(meetingNotes.version, note.version),
+              note.blocks
+                ? undefined
+                : or(
+                    isNull(meetingNotes.blocks),
+                    eq(meetingNotes.content, note.content),
+                  ),
             ),
           )
           .returning(returning);
-  return rows[0] ?? null;
+  const saved = rows[0];
+  return saved
+    ? { ...saved, blocks: normalizeNoteBlocks(saved.content, saved.blocks) }
+    : null;
 }

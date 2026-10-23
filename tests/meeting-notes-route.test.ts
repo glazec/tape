@@ -94,6 +94,16 @@ describe("personal meeting notes API", () => {
     expect(mocks.save).not.toHaveBeenCalled();
   });
 
+  it("saves validated structured blocks and rejects mismatched content", async () => {
+    const blocks = [{ id: "one", text: "Focus?", answer: { question: "Focus?", text: "Fintech", sources: [], transcriptRevision: "a".repeat(64), edited: true } }];
+    const note = { content: "Focus?", version: 1, blocks };
+    expect((await PUT(request(note), context)).status).toBe(200);
+    expect(mocks.save).toHaveBeenCalledWith(workspace, meetingId, note);
+    mocks.save.mockClear();
+    expect((await PUT(request({ ...note, content: "Other" }), context)).status).toBe(400);
+    expect(mocks.save).not.toHaveBeenCalled();
+  });
+
   it("reports a stale edit without overwriting it", async () => {
     mocks.save.mockResolvedValue(null);
     expect(

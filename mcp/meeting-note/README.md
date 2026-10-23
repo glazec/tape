@@ -10,6 +10,8 @@ It exposes caller identity, a canonical authorized meeting inventory, schema dis
 
 Personal notes entered in My notes on the web meeting page are not exposed through MCP. Sharing a meeting does not share personal notes.
 
+Inline answers to personal note questions stay private with the author. MCP tools do not expose these questions, generated answers, or manually edited answers.
+
 Local recordings use two MCP calls. `prepare_meeting_upload` returns a short lived R2 `PUT` URL and opaque completion token. After the client uploads the exact file bytes, `complete_meeting_upload` asks the Tape web backend to validate the object, create the meeting at the chosen time, and queue transcription.
 
 When the web backend has completion email configured, recordings uploaded through MCP follow the same owner email delivery flow as other recordings. Email credentials remain on the web service; MCP clients do not select recipients. See [email setup](../../docs/setup.md#meeting-email).
