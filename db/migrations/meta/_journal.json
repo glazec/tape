@@ -386,6 +386,13 @@
       "when": 1792733848412,
       "tag": "0054_iosg_iosf_company",
       "breakpoints": true
+    },
+    {
+      "idx": 55,
+      "version": "7",
+      "when": 1792735101595,
+      "tag": "0055_consolidate_legacy_iosf_calendar",
+      "breakpoints": true
     }
   ]
 }
