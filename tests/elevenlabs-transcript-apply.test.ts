@@ -16,7 +16,12 @@ const {
   recordElevenLabsTranscriptUsage: vi.fn(),
   select: vi.fn(),
   transaction: vi.fn(),
-  txn: vi.fn((strings: TemplateStringsArray) => strings),
+  txn: Object.assign(vi.fn((strings: TemplateStringsArray, ...params: unknown[]) => {
+    if (params.some((value) => value && typeof value === "object" && "getSQL" in value)) {
+      throw new Error("Neon cannot bind a Drizzle SQL fragment as a parameter");
+    }
+    return strings;
+  }), { query: vi.fn() }),
   update: vi.fn(),
 }));
 
@@ -54,6 +59,7 @@ describe("applyElevenLabsTranscriptEvent", () => {
     recordElevenLabsTranscriptUsage.mockReset();
     transaction.mockReset();
     txn.mockClear();
+    txn.query.mockClear();
     update.mockReset();
     vi.resetModules();
   });
@@ -252,17 +258,22 @@ describe("applyElevenLabsTranscriptEvent", () => {
     });
 
     expect(transaction).toHaveBeenCalledOnce();
-    expect(txn).toHaveBeenCalledTimes(6);
+    expect(txn).toHaveBeenCalledTimes(5);
+    expect(txn.query).toHaveBeenCalledOnce();
+    const [entitySql, entityParams] = txn.query.mock.calls[0];
+    expect(entitySql).toContain("with latest_replace as");
+    expect(entitySql).toContain("insert into meeting_entities");
+    expect(entityParams.every((value: unknown) => typeof value === "string")).toBe(true);
     expect(txn.mock.calls[1]?.[0].join(" ")).toContain(
       "delete from transcript_segments",
     );
     expect(txn.mock.calls[2]?.[0].join(" ")).toContain(
       "insert into transcript_segments",
     );
-    expect(txn.mock.calls[5]?.[0].join(" ")).toContain(
+    expect(txn.mock.calls[4]?.[0].join(" ")).toContain(
       "update transcript_jobs",
     );
-    expect(txn.mock.calls[5]?.[0].join(" ")).toContain(
+    expect(txn.mock.calls[4]?.[0].join(" ")).toContain(
       "error_message = null",
     );
   });

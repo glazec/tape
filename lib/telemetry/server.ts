@@ -10,7 +10,7 @@ import {
   BatchSpanProcessor,
   type SpanProcessor,
 } from "@opentelemetry/sdk-trace-base";
-import * as Sentry from "@sentry/nextjs";
+import Sentry from "@sentry/nextjs";
 import {
   OTLPHttpJsonTraceExporter,
   registerOTel,

@@ -231,6 +231,8 @@ Recall.ai, ElevenLabs, Google Calendar OAuth, and Inngest require a stable publi
 | Recall.ai realtime events | `RECALL_REALTIME_WEBHOOK_URL` |
 | Recall.ai Calendar V2 | `/api/recall/calendar/webhook` |
 | ElevenLabs transcription | `/api/elevenlabs/webhook` |
+
+Keep only the current Tape transcription webhook enabled in the ElevenLabs workspace. Legacy deployments sharing the database can claim the same callback before the current deployment and bypass newer completion behavior.
 | Google Calendar OAuth | `/api/calendar/oauth/callback` |
 | Landing pricing calculator calendar | `/api/pricing-calendar/callback` |
 | Inngest | `/api/inngest` |

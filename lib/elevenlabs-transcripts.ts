@@ -1,5 +1,6 @@
 import { and, eq, inArray, ne, sql } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
+import { PgDialect } from "drizzle-orm/pg-core";
 
 import { databaseSql, db } from "@/db/client";
 import {
@@ -373,6 +374,36 @@ export async function applyElevenLabsTranscriptEvent(
     0,
   );
 
+  const entityInsert = new PgDialect().sqlToQuery(sql`
+      insert into meeting_entities (
+        meeting_id,
+        segment_id,
+        type,
+        value,
+        normalized_value,
+        aliases,
+        source
+      )
+      select
+        ${persistence.meetingId}::uuid,
+        entity.segment_id,
+        entity.type,
+        entity.value,
+        entity.normalized_value,
+        entity.aliases,
+        entity.source
+      from jsonb_to_recordset(${JSON.stringify(entityRows)}::jsonb) as entity(
+        segment_id uuid,
+        type text,
+        value text,
+        normalized_value text,
+        aliases jsonb,
+        source text
+      )
+      where ${persistence.transcriptJobId}::uuid in ${activeTranscriptJobIdsSubquery(persistence.meetingId)}
+      on conflict (meeting_id, type, normalized_value) do nothing
+    `);
+
   await databaseSql.transaction((txn) => [
     txn`
       delete from meeting_entities
@@ -421,35 +452,7 @@ export async function applyElevenLabsTranscriptEvent(
         emotion_reason text
       )
     `,
-    txn`
-      insert into meeting_entities (
-        meeting_id,
-        segment_id,
-        type,
-        value,
-        normalized_value,
-        aliases,
-        source
-      )
-      select
-        ${persistence.meetingId}::uuid,
-        entity.segment_id,
-        entity.type,
-        entity.value,
-        entity.normalized_value,
-        entity.aliases,
-        entity.source
-      from jsonb_to_recordset(${JSON.stringify(entityRows)}::jsonb) as entity(
-        segment_id uuid,
-        type text,
-        value text,
-        normalized_value text,
-        aliases jsonb,
-        source text
-      )
-      where ${persistence.transcriptJobId}::uuid in ${activeTranscriptJobIdsSubquery(persistence.meetingId)}
-      on conflict (meeting_id, type, normalized_value) do nothing
-    `,
+    txn.query(entityInsert.sql, entityInsert.params),
     txn`
       update recordings
       set duration_ms = ${transcriptDurationMs}, updated_at = ${now}
