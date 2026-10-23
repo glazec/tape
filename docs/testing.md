@@ -12,6 +12,8 @@ Calendar history repair coverage includes discovering events never imported, Goo
 
 Calendar import tests also cover invitations with multiple participants but no link or location, historical recovery and retries, personal calendar holds, duplicate participant emails, deleted invitations, declined guests, and excluded bookings.
 
+AI followup coverage includes named subjects without pronouns, exact transcript evidence, provider validation retries, full input limits, source invalidation, management authorization, provider credit, changes during generation, shared reader visibility, retry behavior, and timestamp links. Run `npx vitest run tests/meeting-followup.test.ts tests/meeting-followup-route.test.ts tests/meeting-followup-interactions.test.tsx tests/openrouter-followup.test.ts tests/openrouter-translation.test.ts tests/meeting-page.test.tsx tests/migrations.test.ts`. For live verification, generate from a completed meeting, reload to confirm persistence, open as an existing shared reader, and edit a transcript segment to confirm invalidation. For visual review, check collapsed, empty, generating, populated, failed regeneration, and shared reader states on desktop and mobile using the application font and real transcript content. Confirm the Regenerate icon has an accessible name, timestamp bubbles open on hover and keyboard or touch activation, exact source quotes remain readable, Escape dismisses the bubble, and View in transcript targets the cited segment. Confirm long names and quotes wrap without horizontal overflow. Mocked tests and a local UI preview do not prove deployed database persistence.
+
 ## Test Layers
 
 | Layer | Protects | Command |

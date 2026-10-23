@@ -7,6 +7,7 @@ import { MeetingActions } from "@/components/meeting-actions";
 import { MeetingEntityLinks } from "@/components/meeting-entity-links";
 import { MeetingHeaderMetadata } from "@/components/meeting-header-metadata";
 import { MeetingNotes } from "@/components/meeting-notes";
+import { MeetingFollowup } from "@/components/meeting-followup";
 import { MeetingRecoveryUploadPanel } from "@/components/meeting-recovery-upload-panel";
 import { MeetingRecordingResume } from "@/components/meeting-recording-resume";
 import { MeetingTitleEditor } from "@/components/meeting-title-editor";
@@ -14,6 +15,11 @@ import { RelatedMeetingsCard } from "@/components/related-meetings-card";
 import { ShareDialog } from "@/components/share-dialog";
 import { TranscriptViewer } from "@/components/transcript-viewer";
 import { requireCurrentUser } from "@/lib/auth-guards";
+import {
+  getCurrentMeetingFollowup,
+  getFollowupSourceHash,
+  isFollowupReady,
+} from "@/lib/meeting-followup-source";
 import { getMeetingDisplayStatus } from "@/lib/meeting-display-status";
 import {
   isMeetingBotRecoveryEligible,
@@ -52,6 +58,8 @@ export default async function MeetingPage({
   }
 
   const canManage = meeting.canManage;
+  const followupResult = getCurrentMeetingFollowup(meeting);
+  const followupSourceHash = getFollowupSourceHash(meeting);
   const canShare = meeting.segments.length > 0;
   const [shareRecipients, activeShares, teamConfiguration] = canShare
     ? await Promise.all([
@@ -305,6 +313,16 @@ export default async function MeetingPage({
                   translationSummary={meeting.translationSummary}
                   visualAssets={continuousVisualAssets}
                 />
+                {isFollowupReady(meeting) ? (
+                  <MeetingFollowup
+                    canGenerate={canManage}
+                    initialResult={followupResult}
+                    key={`${workspace.userId}:${meetingId}:${followupSourceHash}:${canManage}:${JSON.stringify(followupResult)}`}
+                    meetingId={meetingId}
+                    segments={meeting.segments.map(({ id, startMs }) => ({ id, startMs }))}
+                    sourceHash={followupSourceHash}
+                  />
+                ) : null}
                 <div className="hidden lg:block">
                   <MeetingEntityLinks entities={meeting.entities} />
                 </div>

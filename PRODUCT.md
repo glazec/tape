@@ -39,7 +39,9 @@ Calendar resync keeps recent event capture in the foreground and checks Google C
 11. Start a personal workspace with any Google account and use up to $5 of included provider credit.
 
 12. With email delivery configured, receive AI generated notes and the complete original transcript as separate TXT attachments at the meeting owner's login email after recording transcription finishes. Batched recordings produce one email after every part completes. Translation requests do not send email.
-12. Write private personal notes on any accessible meeting before, during, or after recording. Each reader has their own note; sharing a meeting does not share these notes.
+13. Write private personal notes on any accessible meeting before, during, or after recording. Each reader has their own note; sharing a meeting does not share these notes.
+
+14. Generate a compact AI followup for a completed meeting: explicit next actions in To do list, and offers or needs in Dynamic. Use names instead of pronouns, preserve team ownership, and link every item to transcript evidence. Meeting managers generate or regenerate; existing readers can view saved results. Source changes invalidate old results.
 
 ## Brand Personality
 

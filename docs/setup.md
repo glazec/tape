@@ -51,6 +51,10 @@ Fill these values in `.env.local` for the complete application:
 | Inngest | `INNGEST_EVENT_KEY`, `INNGEST_SIGNING_KEY` |
 | Application | `NEXT_PUBLIC_APP_URL`, `MCP_BACKEND_SHARED_SECRET` |
 
+Transcript translation and original language polishing use `google/gemini-3.8-flash` through OpenRouter. `OPENROUTER_MODEL` selects the assistant and meeting notes model independently.
+
+AI followup also uses `google/gemini-3.8-flash`, with low reasoning because this endpoint does not accept disabled reasoning. Apply migration `0057_meeting_followup` before deploying the updated web application. Followups are generated on demand through `POST /api/meetings/:meetingId/followup`, stored in the meeting row under existing access policies, and shown only while the current transcript fingerprint matches. The route requires meeting management access and provider credit, rechecks source and access before saving, and validates explicit speaker names and exact evidence. Input above 400,000 serialized characters is rejected rather than truncated. No automatic backfill, messages, or email delivery is added by this feature.
+
 Generate the Neon Auth cookie secret locally:
 
 ```bash

@@ -285,6 +285,10 @@ Write like a helpful colleague. Be direct, calm, and specific.
 6. Make action labels match the result exactly. If the system may schedule or immediately join, explain that choice before action rather than combining outcomes into an ambiguous label
 7. Verify every product claim and call to action against the destination and the capability that exists today
 
+## AI followup
+
+Place AI followup in one quiet bordered panel behind a disclosure after the transcript, before desktop entity links. Use the same order on mobile. Give the full width disclosure a clear chevron and an application card heading. Keep To do list and Dynamic as stacked plain lists with at most two short entries each, separated by whitespace and headings. Use only the outer panel border; do not add dividers below the disclosure or between result sections. Start the results directly below the disclosure heading. Place a small muted Regenerate icon after the results, aligned right, with an accessible name and a 44 pixel hit area; the AI followup heading already labels generated content, so do not repeat an AI generated label. Use readable inline names, subdued timing, and compact underlined timestamp controls without pill backgrounds, with at least 44 pixel touch targets. Hover, tap, or keyboard activation opens a source bubble containing the exact transcript quote and a View in transcript link. Keep the bubble within the viewport, allow Escape to dismiss, and keep it open while moving the pointer into the quote. Begin entries with explicit @Name labels, preserve named team ownership, and use timestamp links to the source. Do not imply task completion tracking with checkboxes. Managers see Generate followup, then a quiet Regenerate action; readers see saved results without generation controls. Hide unavailable or stale results. Announce generation and errors, offer Retry, and label generated content without exposing model details.
+
 ## Design decision process
 
 Before finalizing any UI change:

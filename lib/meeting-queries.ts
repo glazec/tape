@@ -85,6 +85,7 @@ import {
   type SpeakerAlias,
 } from "@/lib/speaker-alias-normalization";
 import { listTeamSpeakerAliases } from "@/lib/speaker-aliases";
+import type { FollowupSource } from "@/lib/meeting-followup";
 import {
   getOrCreateWorkspaceForSessionUser,
   type WorkspaceContext,
@@ -122,6 +123,8 @@ const genericMeetingGroupTitles = new Set([
 ]);
 
 export type MeetingTranscript = {
+  aiFollowup?: unknown;
+  followupSource?: FollowupSource;
   id: string;
   title: string;
   platform: MeetingListItem["platform"];
@@ -1324,6 +1327,7 @@ export async function getMeetingTranscriptForWorkspace(
         where ${transcriptSegments.meetingId} = ${meetings.id}
           and ${transcriptSegments.jobId} in ${currentTranscriptJobIdsSubquery(meetings.id)}
       )`,
+      aiFollowup: meetings.aiFollowup,
       recordedDurationMs: latestRecordingDurationMsSubquery(meetings.id),
       recordedStartedAt: latestRecordingStartedAtSubquery(meetings.id),
       recordedEndedAt: latestRecordingEndedAtSubquery(meetings.id),
@@ -1504,6 +1508,14 @@ export async function getMeetingTranscriptForWorkspace(
   );
 
   return {
+    aiFollowup: meeting.aiFollowup,
+    followupSource: {
+      title: meeting.title,
+      startedAt: (meeting.startedAt ?? meeting.createdAt)?.toISOString() ?? null,
+      segments: segments.map(({ id, speaker, startMs, text }) => ({
+        id, speaker, startMs, text,
+      })),
+    },
     id: meeting.id,
     title: getMeetingDisplayTitle({
       title: meeting.title,

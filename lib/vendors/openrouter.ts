@@ -1,6 +1,14 @@
 import { z } from "zod";
 
 import {
+  FOLLOWUP_PROMPT,
+  FOLLOWUP_SOURCE_LIMIT,
+  type FollowupSource,
+  meetingFollowupSchema,
+  parseMeetingFollowup,
+} from "@/lib/meeting-followup";
+
+import {
   buildTranslationJsonSchema,
   buildTranslationMessages,
   buildOriginalTranscriptPolishMessages,
@@ -62,6 +70,7 @@ export const TRANSLATION_BATCH_SIZE = 10;
 const TRANSLATION_BATCH_CHARACTER_LIMIT = 1800;
 const OPENROUTER_COMPLETION_ATTEMPTS = 3;
 const MEETING_CHAT_MAX_TOKENS = 900;
+const TRANSCRIPT_MODEL = "google/gemini-3.8-flash";
 
 class OpenRouterHttpError extends Error {
   constructor(
@@ -115,6 +124,52 @@ type MeetingChatMessage =
     };
 
 type TranscriptSegment = { id: string; text: string };
+
+export async function generateMeetingFollowup(
+  source: FollowupSource,
+  meetingId?: string,
+) {
+  const transcript = JSON.stringify(source);
+  if (transcript.length > FOLLOWUP_SOURCE_LIMIT) {
+    throw new Error("Transcript is too long for followup generation");
+  }
+  let validationError = "";
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const content = await createOpenRouterChatCompletion({
+      attempts: 1,
+      model: TRANSCRIPT_MODEL,
+      messages: [
+        {
+          role: "system",
+          content:
+            FOLLOWUP_PROMPT +
+            (validationError
+              ? `\nCorrect the previous validation failure: ${validationError}`
+              : ""),
+        },
+        { role: "user", content: transcript },
+      ],
+      maxTokens: 5000,
+      temperature: 0.2,
+      provider: { require_parameters: true },
+      responseFormat: {
+        type: "json_schema",
+        json_schema: {
+          name: "meeting_followup",
+          strict: true,
+          schema: z.toJSONSchema(meetingFollowupSchema),
+        },
+      },
+      usageContext: { category: "assistant", meetingId },
+    });
+    try {
+      return parseMeetingFollowup(content, source);
+    } catch (error) {
+      validationError = error instanceof Error ? error.message : "Invalid followup";
+    }
+  }
+  throw new Error("Could not generate a grounded followup with explicit names");
+}
 
 export async function generateMeetingNotes(input: { meetingId: string; title: string; transcript: string }) {
   return createOpenRouterChatCompletion({
@@ -340,6 +395,7 @@ async function translateBatchWithRecovery(
       const content = await createOpenRouterChatCompletion({
         attempts: 1,
         messages: buildTranslationMessages(batch, targetLanguage),
+        model: TRANSCRIPT_MODEL,
         maxTokens: 3000,
         plugins: [{ id: "response-healing" }],
         provider: { require_parameters: true },
@@ -492,6 +548,7 @@ export async function polishTranscriptSegmentsInOriginalLanguage(
   })) {
     const content = await createOpenRouterChatCompletion({
       messages: buildOriginalTranscriptPolishMessages(batch),
+      model: TRANSCRIPT_MODEL,
       maxTokens: 3000,
       temperature: 0.1,
       usageContext: {
@@ -552,6 +609,7 @@ function buildTranslationBatches(
 
 async function createOpenRouterChatCompletion(input: {
   attempts?: number;
+  model?: string;
   messages: Array<{ role: "system" | "user"; content: string }>;
   maxTokens: number;
   plugins?: Array<{ id: string }>;
@@ -562,6 +620,7 @@ async function createOpenRouterChatCompletion(input: {
 }) {
   const env = openRouterEnvSchema.parse(process.env);
   const attempts = input.attempts ?? OPENROUTER_COMPLETION_ATTEMPTS;
+  const model = input.model ?? env.OPENROUTER_MODEL;
   let lastError: unknown;
 
   for (let attempt = 1; attempt <= attempts; attempt += 1) {
@@ -581,11 +640,11 @@ async function createOpenRouterChatCompletion(input: {
             "X-Title": "Meeting Note",
           },
           body: JSON.stringify({
-            model: env.OPENROUTER_MODEL,
+            model,
             messages: input.messages,
             temperature: input.temperature,
             max_tokens: input.maxTokens,
-            reasoning: { effort: "none" },
+            reasoning: { effort: model === TRANSCRIPT_MODEL ? "low" : "none" },
             response_format: input.responseFormat ?? { type: "json_object" },
             ...(input.plugins ? { plugins: input.plugins } : {}),
             ...(input.provider ? { provider: input.provider } : {}),
@@ -627,7 +686,7 @@ async function createOpenRouterChatCompletion(input: {
       ? `: ${lastError.message}`
       : "";
   throw new Error(
-    `OpenRouter model ${env.OPENROUTER_MODEL} failed after ${attempts} attempts${detail}`,
+    `OpenRouter model ${model} failed after ${attempts} attempts${detail}`,
     { cause: lastError },
   );
 }

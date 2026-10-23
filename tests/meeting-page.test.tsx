@@ -1,3 +1,4 @@
+import { isValidElement, type ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -127,6 +128,8 @@ vi.mock("@/components/transcript-viewer", () => ({
 }));
 
 import MeetingPage from "@/app/meetings/[meetingId]/page";
+import { MeetingFollowup } from "@/components/meeting-followup";
+import { getFollowupSourceHash } from "@/lib/meeting-followup-source";
 import { getTranscriptViewerRenderKey } from "@/lib/meeting-transcript-render-key";
 
 describe("meeting page", () => {
@@ -539,6 +542,24 @@ describe("meeting page", () => {
     expect(mocks.notFound).toHaveBeenCalled();
   });
 
+  it("renders followup after the transcript and replaces cached UI when a saved result changes", async () => {
+    const source = { title: "Weekly meeting", startedAt: null, segments: [{ id: "seg", speaker: "Alice", startMs: 0, text: "I will send the deck." }] };
+    const current = meeting({ ...source, status: "ready", transcriptJobStatus: "completed" });
+    mocks.getMeeting.mockResolvedValue(current);
+    const before = await MeetingPage({ params: Promise.resolve({ meetingId: "meeting_1" }) });
+    const beforeHtml = renderToStaticMarkup(before);
+    expect(beforeHtml.indexOf("AI followup")).toBeGreaterThan(beforeHtml.indexOf("transcript lines"));
+    const result = { todos: [{ person: "Alice", text: "Alice will send the deck.", timing: null, evidence: [{ segmentId: "seg", quote: "I will send the deck." }] }], dynamics: [] };
+    mocks.getMeeting.mockResolvedValue({ ...current, aiFollowup: { sourceHash: getFollowupSourceHash(source), result } });
+    const after = await MeetingPage({ params: Promise.resolve({ meetingId: "meeting_1" }) });
+    expect(followupKey(after)).not.toBe(followupKey(before));
+    expect(renderToStaticMarkup(after)).toContain("send the deck");
+    mocks.getMeeting.mockResolvedValue({ ...current, canManage: false, aiFollowup: { sourceHash: getFollowupSourceHash(source), result } });
+    const shared = renderToStaticMarkup(await MeetingPage({ params: Promise.resolve({ meetingId: "meeting_1" }) }));
+    expect(shared).toContain("send the deck");
+    expect(shared).not.toContain("Regenerate");
+  });
+
   it("builds a render key from all transcript changing fields", () => {
     expect(
       getTranscriptViewerRenderKey({
@@ -552,6 +573,18 @@ describe("meeting page", () => {
     ).toBe("meeting:completed:3:2:unknown:1");
   });
 });
+
+function followupKey(node: ReactNode): string | null {
+  if (Array.isArray(node)) {
+    for (const child of node) {
+      const key = followupKey(child);
+      if (key !== null) return key;
+    }
+    return null;
+  }
+  if (!isValidElement<{ children?: ReactNode }>(node)) return null;
+  return node.type === MeetingFollowup ? node.key : followupKey(node.props.children);
+}
 
 function meeting(overrides: Record<string, unknown> = {}) {
   return {
