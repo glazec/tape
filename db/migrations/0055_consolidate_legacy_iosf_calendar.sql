@@ -64,6 +64,9 @@ BEGIN
           'team:' || company_team_id::text || ':'
         )
       WHERE legacy.team_id = legacy_team_id
+        AND NOT (legacy.status = 'missed' AND legacy.platform = 'in_person'
+          AND legacy.recall_bot_id IS NULL
+          AND company.platform = 'in_person' AND company.recall_bot_id IS NULL)
     ) THEN
       RAISE EXCEPTION 'Legacy IOSF workspace has active bots or duplicate meetings; refusing consolidation';
     END IF;
@@ -78,6 +81,22 @@ BEGIN
       WHEN team_memberships.role = 'member' OR excluded.role = 'member' THEN 'member'
       ELSE team_memberships.role
     END, updated_at = now();
+
+    -- Preserve both historical missed in person records, including their IDs
+    -- and calendar references. Only one keeps the derived grouping key.
+    UPDATE meetings legacy SET team_meeting_key = NULL, updated_at = now()
+    WHERE legacy.team_id = legacy_team_id
+      AND legacy.status = 'missed' AND legacy.platform = 'in_person'
+      AND legacy.recall_bot_id IS NULL
+      AND EXISTS (
+        SELECT 1 FROM meetings company
+        WHERE company.team_id = company_team_id
+          AND company.platform = 'in_person' AND company.recall_bot_id IS NULL
+          AND company.team_meeting_key = regexp_replace(
+            legacy.team_meeting_key, '^team:' || legacy_team_id::text || ':',
+            'team:' || company_team_id::text || ':'
+          )
+      );
 
     UPDATE calendar_connections SET team_id = company_team_id, updated_at = now()
     WHERE team_id = legacy_team_id;

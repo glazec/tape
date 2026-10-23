@@ -349,6 +349,7 @@ export default async function TeamSettingsPage({ searchParams }: {
           <CardContent>
             {canEditTeamSettings ? (
               <form
+                key={`${workspace.teamId}:${botDomain ?? ""}`}
                 action={`/api/team/bot-profile?teamId=${workspace.teamId}${botDomain ? `&organizationDomain=${encodeURIComponent(botDomain)}` : ""}`}
                 className="flex flex-col gap-4"
                 encType="multipart/form-data"

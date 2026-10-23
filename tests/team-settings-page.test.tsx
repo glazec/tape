@@ -1,4 +1,7 @@
+// @vitest-environment happy-dom
+
 import type { ReactNode } from "react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 
@@ -75,6 +78,7 @@ vi.mock("@/components/calendar-sync-button", () => ({ CalendarSyncButton: () => 
 
 describe("TeamSettingsPage", () => {
   afterEach(() => {
+    cleanup();
     getWorkspace.mockReset();
     canManageTeamSettings.mockReset();
     getProviderBillingOverview.mockReset();
@@ -295,4 +299,31 @@ describe("TeamSettingsPage", () => {
     expect(html).toContain('name="translationLanguage"');
     expect(html).toContain("No limit");
   });
+  it("resets each organization's form when switching domains", async () => {
+    requireCurrentUser.mockResolvedValue({ id: "auth", email: "admin@iosg.vc", name: "Admin" });
+    getWorkspace.mockResolvedValue({ userId: "user", teamId: "team", domain: "iosg.vc", canCreateMeetings: true });
+    getWorkspaceAccessSummary.mockResolvedValue({ canCreateMeetings: true });
+    canManageTeamSettings.mockResolvedValue(true);
+    listTeamVocabularyTerms.mockResolvedValue([]);
+    listWorkspaceMembers.mockResolvedValue([]);
+    getTeamConfiguration.mockResolvedValue({ name: "Company", shareAudience: null, translationLanguage: "en" });
+    getProviderBillingOverview.mockResolvedValue({ creditLimitUsdMicros: null, organizationMonthUsdMicros: 0, personalMonthUsdMicros: 0 });
+    getMeetingBotProfile.mockImplementation(async (_team, domain) => ({ botName: domain === "iosf.vc" ? "IOSF bot" : "IOSG bot", avatarJpegBase64: null }));
+    const { getOrganizationBotSettings } = await import("@/lib/organization-workspaces");
+    for (let i = 0; i < 3; i += 1) {
+      vi.mocked(getOrganizationBotSettings).mockResolvedValueOnce({ domains: ["iosg.vc", "iosf.vc"], preferredBotDomain: "iosf.vc" });
+    }
+    const { default: Page } = await import("@/app/settings/team/page");
+    const page = (organizationDomain: string) => Page({ searchParams: Promise.resolve({ organizationDomain }) });
+    const { rerender } = render(await page("iosf.vc"));
+    expect((screen.getByRole("checkbox", { name: "Use this bot when both organizations are invited" }) as HTMLInputElement).checked).toBe(true);
+    fireEvent.change(screen.getByLabelText("Team bot name"), { target: { value: "Unsaved IOSF edits" } });
+    rerender(await page("iosg.vc"));
+    expect((screen.getByLabelText("Team bot name") as HTMLInputElement).value).toBe("IOSG bot");
+    expect((screen.getByRole("checkbox", { name: "Use this bot when both organizations are invited" }) as HTMLInputElement).checked).toBe(false);
+    rerender(await page("iosf.vc"));
+    expect((screen.getByLabelText("Team bot name") as HTMLInputElement).value).toBe("IOSF bot");
+    expect((screen.getByRole("checkbox", { name: "Use this bot when both organizations are invited" }) as HTMLInputElement).checked).toBe(true);
+  });
+
 });
