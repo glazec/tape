@@ -7,7 +7,7 @@ import { markMeetingBotScheduled } from "@/lib/meeting-bot-records";
 import { retireScheduledRecallBot } from "@/lib/meeting-bot-retirement";
 import {
   getMeetingBotMetadata,
-  getMeetingBotProfile,
+  getCalendarMeetingBotProfile,
   getMeetingBotRecallCreateInput,
 } from "@/lib/meeting-bot-profile";
 import { buildAppUrl } from "@/lib/meeting-links";
@@ -43,6 +43,7 @@ export async function joinScheduledMeetingBotNow(input: {
   const [meeting] = await db
     .select({
       calendarEventId: meetings.calendarEventId,
+      attendeeEmails: calendarEvents.attendeeEmails,
       externalCalendarEventId: calendarEvents.externalEventId,
       id: meetings.id,
       meetingUrl: meetings.meetingUrl,
@@ -71,7 +72,7 @@ export async function joinScheduledMeetingBotNow(input: {
     throw new MeetingBotJoinUnavailableError();
   }
 
-  const botProfile = await getMeetingBotProfile(meeting.teamId);
+  const botProfile = await getCalendarMeetingBotProfile({ teamId: meeting.teamId, attendeeEmails: meeting.attendeeEmails ?? [] });
   const metadata = {
     ...getMeetingBotMetadata(botProfile),
     ...(meeting.calendarEventId

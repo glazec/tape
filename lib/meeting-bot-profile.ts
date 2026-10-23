@@ -1,9 +1,10 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 
 import { db } from "@/db/client";
-import { teamMeetingBotProfiles } from "@/db/schema";
+import { teamMeetingBotProfiles, teams } from "@/db/schema";
+import { normalizeEmailDomain } from "@/lib/access";
 import { DEFAULT_MEETING_BOT_NAME } from "@/lib/meeting-bot-constants";
 
 export type MeetingBotProfile = {
@@ -13,6 +14,8 @@ export type MeetingBotProfile = {
 
 type UpsertMeetingBotProfileInput = {
   teamId: string;
+  domain?: string;
+  preferForSharedMeetings?: boolean;
   botName: string | null | undefined;
   avatarFile?: File | null;
   resetAvatar?: boolean;
@@ -20,6 +23,7 @@ type UpsertMeetingBotProfileInput = {
 
 type ProfileValues = {
   teamId: string;
+  domain?: string;
   botName: string;
   avatarJpegBase64?: string | null;
 };
@@ -42,6 +46,7 @@ export class MeetingBotProfileInputError extends Error {
 
 export async function getMeetingBotProfile(
   teamId: string,
+  domain?: string,
 ): Promise<MeetingBotProfile> {
   const [profile] = await db
     .select({
@@ -49,13 +54,35 @@ export async function getMeetingBotProfile(
       avatarJpegBase64: teamMeetingBotProfiles.avatarJpegBase64,
     })
     .from(teamMeetingBotProfiles)
-    .where(eq(teamMeetingBotProfiles.teamId, teamId))
+    .where(and(eq(teamMeetingBotProfiles.teamId, teamId), eq(teamMeetingBotProfiles.domain, domain ?? "")))
     .limit(1);
+
+  if (!profile && domain) return getMeetingBotProfile(teamId);
 
   return {
     botName: normalizeBotName(profile?.botName) ?? DEFAULT_MEETING_BOT_NAME,
     avatarJpegBase64: profile?.avatarJpegBase64 ?? null,
   };
+}
+
+export async function getCalendarMeetingBotProfile(input: {
+  teamId: string;
+  accountDomain?: string | null;
+  attendeeEmails: string[];
+}) {
+  const [team] = await db.select({ preferredBotDomain: teams.preferredBotDomain })
+    .from(teams).where(eq(teams.id, input.teamId)).limit(1);
+  const attendeeDomains = new Set(input.attendeeEmails.map(normalizeEmailDomain));
+  const preferred = team?.preferredBotDomain;
+  // All calendar copies use the preferred organization's profile when it is invited.
+  if (preferred && attendeeDomains.has(preferred)) return getMeetingBotProfile(input.teamId, preferred);
+  const profiles = await db.select({ domain: teamMeetingBotProfiles.domain })
+    .from(teamMeetingBotProfiles).where(and(
+      eq(teamMeetingBotProfiles.teamId, input.teamId),
+      inArray(teamMeetingBotProfiles.domain, [...attendeeDomains, ""]),
+    )).limit(100);
+  const domain = profiles.map((profile) => profile.domain).filter(Boolean).sort()[0] ?? input.accountDomain;
+  return getMeetingBotProfile(input.teamId, domain ?? undefined);
 }
 
 export function getDefaultMeetingBotAvatarJpegBase64() {
@@ -80,6 +107,7 @@ export async function upsertMeetingBotProfile(
   const avatarJpegBase64 = await readAvatarJpegBase64(input.avatarFile);
   const values: ProfileValues = {
     teamId: input.teamId,
+    ...(input.domain ? { domain: input.domain } : {}),
     botName,
   };
   const set: ProfileUpdate = {
@@ -99,9 +127,17 @@ export async function upsertMeetingBotProfile(
     .insert(teamMeetingBotProfiles)
     .values(values)
     .onConflictDoUpdate({
-      target: [teamMeetingBotProfiles.teamId],
+      target: [teamMeetingBotProfiles.teamId, teamMeetingBotProfiles.domain],
       set,
     });
+
+  if (input.preferForSharedMeetings && input.domain) {
+    await db.update(teams).set({ preferredBotDomain: input.domain, updatedAt: new Date() })
+      .where(eq(teams.id, input.teamId));
+  } else if (input.preferForSharedMeetings === false && input.domain) {
+    await db.update(teams).set({ preferredBotDomain: null, updatedAt: new Date() })
+      .where(and(eq(teams.id, input.teamId), eq(teams.preferredBotDomain, input.domain)));
+  }
 }
 
 export function getMeetingBotRecallCreateInput(profile: MeetingBotProfile) {

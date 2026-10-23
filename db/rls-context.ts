@@ -60,6 +60,16 @@ export function setDatabaseWorkspace(input: {
   };
 }
 
+export function withVerifiedCalendarEmail<T>(email: string, operation: () => Promise<T>): Promise<T> {
+  const claims = databaseClaimsStorage.getStore()?.claims;
+  if (!claims?.app_user_id) {
+    throw new Error("Calendar account linking requires an authenticated workspace");
+  }
+  // The caller has verified this address with Google. Preserve the signed in
+  // user's identity and limit the alternate email claim to account linking.
+  return databaseClaimsStorage.run({ claims: { ...claims, email } }, operation);
+}
+
 export function markDatabaseSessionAdmin() {
   const context = databaseClaimsStorage.getStore();
   const claims = context?.claims;

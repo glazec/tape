@@ -57,6 +57,7 @@ export async function syncRecallCalendarEventsForAllConnectedUsers(
   for (const connection of connections) {
     try {
       const result = await syncRecallCalendarEventsForWorkspace({
+        connectionId: connection.connectionId,
         workspace: {
           teamId: connection.teamId,
           userId: connection.userId,
@@ -116,7 +117,7 @@ async function listConnectedRecallCalendarConnections(): Promise<
       )`,
       teamId: calendarConnections.teamId,
       userId: calendarConnections.userId,
-      userEmail: users.email,
+      userEmail: sql<string>`coalesce(${calendarConnections.accountEmail}, ${users.email})`,
       teamName: sql<string>`(
         select ${teams.name}
         from ${teams}

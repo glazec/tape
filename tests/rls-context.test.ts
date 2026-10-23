@@ -7,9 +7,29 @@ import {
   markDatabaseSessionAdmin,
   setDatabaseSessionUser,
   setDatabaseWorkspace,
+  withVerifiedCalendarEmail,
 } from "@/db/rls-context";
 
 describe("database RLS context", () => {
+  it("scopes a verified calendar email without changing user identity or leaking it after failure", async () => {
+    initializeDatabaseClaimsContext();
+    setDatabaseSessionUser({ id: "auth-user", email: "primary@example.com" });
+    setDatabaseWorkspace({ teamId: "team", userId: "user" });
+    await expect(withVerifiedCalendarEmail("secondary@example.com", async () => {
+      await Promise.resolve();
+      expect(JSON.parse(getDatabaseClaimsJson() ?? "{}")).toMatchObject({
+        sub: "auth-user", app_user_id: "user", email: "secondary@example.com",
+      });
+      throw new Error("link failed");
+    })).rejects.toThrow("link failed");
+    expect(JSON.parse(getDatabaseClaimsJson() ?? "{}").email).toBe("primary@example.com");
+  });
+
+  it("requires an authenticated workspace before linking an email", () => {
+    initializeDatabaseClaimsContext();
+    expect(() => withVerifiedCalendarEmail("other@example.com", async () => null))
+      .toThrow("requires an authenticated workspace");
+  });
   afterEach(() => {
     clearDatabaseClaims();
   });

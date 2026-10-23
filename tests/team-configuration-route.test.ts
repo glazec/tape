@@ -35,6 +35,8 @@ function configurationRequest() {
   });
 }
 
+vi.mock("@/lib/organization-workspaces", () => ({ selectOrganizationWorkspace: vi.fn() }));
+
 describe("POST /api/team/configuration", () => {
   afterEach(() => {
     vi.resetAllMocks();
@@ -74,7 +76,7 @@ describe("POST /api/team/configuration", () => {
 
     expect(response.status).toBe(303);
     expect(response.headers.get("location")).toBe(
-      "https://tape.example.com/settings/team",
+      "https://tape.example.com/settings/team?teamId=team_123",
     );
     expect(updateTeamConfiguration).toHaveBeenCalledWith({
       name: "Example Capital",

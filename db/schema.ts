@@ -76,6 +76,7 @@ export const teams = pgTable(
   {
     id: uuid("id").primaryKey().defaultRandom(),
     name: text("name").notNull(),
+    preferredBotDomain: text("preferred_bot_domain"),
     creditLimitUsdMicros: bigint("credit_limit_usd_micros", {
       mode: "number",
     }),
@@ -173,11 +174,12 @@ export const teamMeetingBotProfiles = pgTable(
       .notNull()
       .references(() => teams.id, { onDelete: "cascade" }),
     botName: text("bot_name").notNull().default(DEFAULT_MEETING_BOT_NAME),
+    domain: text("domain").notNull().default(""),
     avatarJpegBase64: text("avatar_jpeg_base64"),
     ...timestamps,
   },
   (table) => [
-    uniqueIndex("team_meeting_bot_profiles_team_unique").on(table.teamId),
+    uniqueIndex("team_meeting_bot_profiles_team_domain_unique").on(table.teamId, table.domain),
   ],
 );
 
@@ -248,6 +250,7 @@ export const calendarConnections = pgTable(
       .references(() => users.id, { onDelete: "cascade" }),
     provider: text("provider").notNull().default("google"),
     externalCalendarId: text("external_calendar_id").notNull(),
+    accountEmail: text("account_email"),
     autoJoinEnabled: boolean("auto_join_enabled").notNull().default(false),
     oauthAccessToken: text("oauth_access_token"),
     oauthRefreshToken: text("oauth_refresh_token"),
@@ -262,6 +265,9 @@ export const calendarConnections = pgTable(
     ...timestamps,
   },
   (table) => [
+    uniqueIndex("calendar_connections_user_account_unique")
+      .on(table.userId, table.provider, table.accountEmail)
+      .where(sql`${table.accountEmail} is not null`),
     uniqueIndex("calendar_connections_recall_calendar_id_unique")
       .on(table.recallCalendarId)
       .where(sql`${table.recallCalendarId} is not null`),

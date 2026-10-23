@@ -22,6 +22,9 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { requireCurrentUser } from "@/lib/auth-guards";
+import { CalendarSyncButton } from "@/components/calendar-sync-button";
+import { listConnectedCalendarAccounts } from "@/lib/connected-calendar-accounts";
+import { getOrganizationBotSettings, listOrganizationWorkspaces, selectOrganizationWorkspace } from "@/lib/organization-workspaces";
 import {
   translationLanguageLabels,
   translationLanguageOptions,
@@ -46,14 +49,27 @@ import {
 
 export const dynamic = "force-dynamic";
 
-export default async function TeamSettingsPage() {
+export default async function TeamSettingsPage({ searchParams }: {
+  searchParams?: Promise<{ teamId?: string; organizationDomain?: string }>;
+} = {}) {
   const user = await requireCurrentUser();
-  const workspace = await getOrCreateWorkspaceForSessionUser(user);
+  let workspace = await getOrCreateWorkspaceForSessionUser(user);
+  const params = await searchParams;
+  const requestedTeamId = params?.teamId;
+  if (requestedTeamId) {
+    const selected = await selectOrganizationWorkspace(workspace, requestedTeamId);
+    if (!selected) redirect("/settings/team");
+    workspace = selected;
+  }
   const accessSummary = await getWorkspaceAccessSummary(workspace);
 
   if (!accessSummary.canCreateMeetings) {
     redirect("/dashboard");
   }
+
+  const botSettings = await getOrganizationBotSettings(workspace.teamId);
+  const botDomain = params?.organizationDomain && botSettings.domains.includes(params.organizationDomain)
+    ? params.organizationDomain : botSettings.domains.includes(workspace.domain) ? workspace.domain : undefined;
 
   const [
     canEditTeamSettings,
@@ -62,13 +78,17 @@ export default async function TeamSettingsPage() {
     teamConfiguration,
     teamMembers,
     billingOverview,
+    organizations,
+    calendarAccounts,
   ] = await Promise.all([
     canManageTeamSettings(workspace),
     listTeamVocabularyTerms(workspace.teamId),
-    getMeetingBotProfile(workspace.teamId),
+    getMeetingBotProfile(workspace.teamId, botDomain),
     getTeamConfiguration(workspace.teamId),
     listWorkspaceMembers(workspace),
     getProviderBillingOverview(workspace),
+    listOrganizationWorkspaces(workspace),
+    listConnectedCalendarAccounts(workspace),
   ]);
   const botAvatarJpegBase64 =
     botProfile.avatarJpegBase64 ?? getDefaultMeetingBotAvatarJpegBase64();
@@ -88,12 +108,50 @@ export default async function TeamSettingsPage() {
           <h1 className="mt-2 text-3xl font-semibold tracking-tight">
             {teamConfiguration.name}
           </h1>
+          {organizations.length > 1 ? (
+            <nav aria-label="Organizations" className="mt-4 flex flex-wrap gap-2">
+              {organizations.map((organization) => (
+                <Link
+                  key={organization.teamId}
+                  href={`/settings/team?teamId=${organization.teamId}`}
+                  aria-current={organization.teamId === workspace.teamId ? "page" : undefined}
+                  className={buttonVariants({ variant: organization.teamId === workspace.teamId ? "secondary" : "ghost", size: "sm" })}
+                >
+                  {organization.teamName}
+                </Link>
+              ))}
+            </nav>
+          ) : null}
           {!canEditTeamSettings ? (
             <p className="mt-3 text-sm text-muted-foreground">
               Only team administrators can edit these settings.
             </p>
           ) : null}
         </div>
+        <Card id="connected-accounts">
+          <CardHeader>
+            <CardTitle>Connected accounts</CardTitle>
+            <CardDescription>Connect work emails to sync each account’s calendar.</CardDescription>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-4">
+            {calendarAccounts.length ? (
+              <ul className="divide-y">
+                {calendarAccounts.map((account) => (
+                  <li key={account.id} className="flex min-w-0 flex-col gap-3 py-3 sm:flex-row sm:items-center sm:justify-between">
+                    <div className="min-w-0">
+                      <p className="break-all text-sm font-medium">{account.email ?? "Google account · reconnect to identify"}</p>
+                      <p className="text-xs text-muted-foreground">{account.teamName} · {account.connected ? account.status === "disconnected" ? "Needs attention" : "Connected" : "Disconnected"}</p>
+                    </div>
+                    <CalendarSyncButton connectionId={account.id} teamId={account.teamId} connected={Boolean(account.connected)} />
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+            <Link href="/api/calendar/oauth/start" className={cn(buttonVariants({ variant: "outline" }), "self-start")}>
+              Connect another account
+            </Link>
+          </CardContent>
+        </Card>
         <Card className="overflow-hidden">
           <CardHeader>
             <CardTitle>Billing &amp; credits</CardTitle>
@@ -156,7 +214,7 @@ export default async function TeamSettingsPage() {
           <CardContent>
             {canEditTeamSettings ? (
               <form
-                action="/api/team/configuration"
+                action={`/api/team/configuration?teamId=${workspace.teamId}`}
                 className="flex flex-col gap-4"
                 method="post"
               >
@@ -275,15 +333,33 @@ export default async function TeamSettingsPage() {
               Set the team bot name and JPG avatar people see when it joins
               calls.
             </CardDescription>
+            {botSettings.domains.length > 1 ? (
+              <nav aria-label="Organization bot profiles" className="flex flex-wrap gap-2">
+                {botSettings.domains.map((domain) => (
+                  <Link key={domain}
+                    href={`/settings/team?teamId=${workspace.teamId}&organizationDomain=${encodeURIComponent(domain)}`}
+                    aria-current={domain === botDomain ? "page" : undefined}
+                    className={buttonVariants({ variant: domain === botDomain ? "secondary" : "ghost", size: "sm" })}>
+                    {domain}
+                  </Link>
+                ))}
+              </nav>
+            ) : null}
           </CardHeader>
           <CardContent>
             {canEditTeamSettings ? (
               <form
-                action="/api/team/bot-profile"
+                action={`/api/team/bot-profile?teamId=${workspace.teamId}${botDomain ? `&organizationDomain=${encodeURIComponent(botDomain)}` : ""}`}
                 className="flex flex-col gap-4"
                 encType="multipart/form-data"
                 method="post"
               >
+                {botSettings.domains.length > 1 && botDomain ? (
+                  <label className="flex items-center gap-2 text-sm">
+                    <input type="checkbox" name="preferForSharedMeetings" className="size-4" defaultChecked={botSettings.preferredBotDomain === botDomain} />
+                    Use this bot when both organizations are invited
+                  </label>
+                ) : null}
                 <div className="grid gap-2">
                   <label
                     className="text-sm leading-none font-medium"
@@ -387,7 +463,7 @@ export default async function TeamSettingsPage() {
           <CardContent className="flex flex-col gap-4">
             {canEditTeamSettings ? (
               <form
-                action="/api/team/vocabulary"
+                action={`/api/team/vocabulary?teamId=${workspace.teamId}`}
                 className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]"
                 method="post"
               >

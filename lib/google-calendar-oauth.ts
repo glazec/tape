@@ -4,7 +4,7 @@ import {
   createHash,
   randomBytes,
 } from "node:crypto";
-import { and, eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 
 import { db } from "@/db/client";
 import { calendarConnections } from "@/db/schema";
@@ -65,7 +65,7 @@ export function buildGoogleCalendarOAuthUrl(state: string) {
     ["openid", "email", GOOGLE_CALENDAR_EVENT_READ_SCOPE].join(" "),
   );
   url.searchParams.set("access_type", "offline");
-  url.searchParams.set("prompt", "consent");
+  url.searchParams.set("prompt", "consent select_account");
   url.searchParams.set("include_granted_scopes", "false");
   url.searchParams.set("state", state);
 
@@ -78,6 +78,19 @@ export async function exchangeGoogleCalendarCode(code: string) {
     grant_type: "authorization_code",
     redirect_uri: getGoogleCalendarOAuthRedirectUri(),
   });
+}
+
+export async function getVerifiedGoogleCalendarEmail(accessToken: string) {
+  const response = await fetch("https://openidconnect.googleapis.com/v1/userinfo", {
+    headers: { authorization: `Bearer ${accessToken}` },
+    cache: "no-store",
+  });
+  const identity = await response.json().catch(() => null);
+  if (!response.ok || identity?.email_verified !== true ||
+      typeof identity.email !== "string" || !identity.email.includes("@")) {
+    throw new GoogleCalendarOAuthError("Google account email could not be verified");
+  }
+  return identity.email.trim().toLowerCase();
 }
 
 export async function refreshStoredGoogleCalendarAccessToken(encryptedRefreshToken: string) {
@@ -93,8 +106,9 @@ export async function storeGoogleCalendarTokens(input: {
   accessToken: string;
   accessTokenExpiresAt: Date;
   refreshToken: string | null;
+  accountEmail: string;
 }) {
-  const existing = await findGoogleCalendarConnection(input.workspace);
+  const existing = await findGoogleCalendarConnection(input.workspace, input.accountEmail);
   const encryptedAccessToken = encryptToken(input.accessToken);
   const encryptedRefreshToken = input.refreshToken
     ? encryptToken(input.refreshToken)
@@ -144,6 +158,7 @@ export async function storeGoogleCalendarTokens(input: {
         userId: input.workspace.userId,
         provider: "google",
         externalCalendarId: "primary",
+        accountEmail: input.accountEmail,
         autoJoinEnabled: true,
         oauthAccessToken: encryptedAccessToken,
         oauthRefreshToken: encryptedRefreshToken,
@@ -167,8 +182,11 @@ export async function storeGoogleCalendarTokens(input: {
 
 export async function disconnectGoogleCalendarForWorkspace(
   workspace: WorkspaceContext,
+  connectionId?: string,
 ) {
-  const existing = await findGoogleCalendarConnection(workspace);
+  const existing = connectionId
+    ? await findGoogleCalendarConnectionById(workspace, connectionId)
+    : await findGoogleCalendarConnection(workspace);
 
   if (!existing) {
     return false;
@@ -386,7 +404,7 @@ async function requestGoogleToken(params: Record<string, string>) {
   };
 }
 
-async function findGoogleCalendarConnection(workspace: WorkspaceContext) {
+async function findGoogleCalendarConnection(workspace: WorkspaceContext, accountEmail?: string) {
   const [connection] = await db
     .select({
       id: calendarConnections.id,
@@ -401,6 +419,7 @@ async function findGoogleCalendarConnection(workspace: WorkspaceContext) {
         eq(calendarConnections.userId, workspace.userId),
         eq(calendarConnections.provider, "google"),
         eq(calendarConnections.externalCalendarId, "primary"),
+        accountEmail ? eq(calendarConnections.accountEmail, accountEmail) : isNull(calendarConnections.accountEmail),
       ),
     )
     .limit(1);

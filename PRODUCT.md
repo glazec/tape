@@ -77,3 +77,5 @@ Meeting managers can replace an incorrect recording on a completed meeting throu
 ## Accessibility and Inclusion
 
 Maintain keyboard access, visible focus states, semantic labels, sufficient contrast, and reduced motion compatibility. Do not rely on color alone to communicate state.
+
+A person can connect multiple Google Calendar accounts without replacing other accounts. Verified work emails join configured organization workspaces as members. Company domains may share one workspace and one scheduled bot per meeting, while keeping domain specific bot names and avatars. Administrators edit only organizations they administer and may select the preferred bot for meetings involving multiple company domains.

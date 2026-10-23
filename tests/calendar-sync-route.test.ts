@@ -47,6 +47,8 @@ async function postCalendarSync(body: unknown = { autoJoinEnabled: true }) {
   );
 }
 
+vi.mock("@/lib/organization-workspaces", () => ({ selectOrganizationWorkspace: vi.fn() }));
+
 describe("POST /api/calendar/sync", () => {
   afterEach(() => {
     send.mockReset();

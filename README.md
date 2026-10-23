@@ -192,3 +192,5 @@ See [testing architecture](docs/testing.md) for individual commands, current cov
 This project is source available under the [PolyForm Noncommercial License 1.0.0](LICENSE). Noncommercial use, modification, and distribution are permitted. Commercial use requires a separate license from the project owner.
 
 Because commercial use is restricted, this is not an OSI approved open source license.
+
+Google Calendar connections are stored separately by verified Google email. Connect additional work accounts and manage each calendar in Team settings. Accounts from configured organization domains join those organizations as members; existing admin roles are preserved. Organization administrators can switch organizations and edit each email domain’s bot avatar independently. Domains of one company must share a workspace to deduplicate invited calendar bots. The preferred organization bot is used when its domain appears among the attendees.

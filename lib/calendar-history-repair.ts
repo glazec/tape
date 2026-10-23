@@ -43,7 +43,7 @@ export async function listMissingCalendarHistory(input: CalendarHistoryRepairInp
 async function findCalendarHistoryConnection(input: CalendarHistoryRepairInput) {
   // Load credentials inside the step so tokens never enter durable job payloads.
   const [connection] = await databaseSql`
-    select c.id, c.team_id, c.user_id, c.oauth_refresh_token, u.email, t.name
+    select c.id, c.team_id, c.user_id, c.oauth_refresh_token, coalesce(c.account_email, u.email) as email, t.name
     from calendar_connections c
     join users u on u.id = c.user_id
     join teams t on t.id = c.team_id

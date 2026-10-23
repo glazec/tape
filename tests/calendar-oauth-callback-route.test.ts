@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 const {
   assertCanCreateMeetings,
   cookies,
+  getVerifiedGoogleCalendarEmail,
   exchangeGoogleCalendarCode,
   getCurrentUser,
   getWorkspace,
@@ -11,6 +12,7 @@ const {
 } = vi.hoisted(() => ({
   assertCanCreateMeetings: vi.fn(),
   cookies: vi.fn(),
+  getVerifiedGoogleCalendarEmail: vi.fn().mockResolvedValue("alice@example.com"),
   exchangeGoogleCalendarCode: vi.fn(),
   getCurrentUser: vi.fn(),
   getWorkspace: vi.fn(),
@@ -32,6 +34,7 @@ vi.mock("@/lib/workspace", () => ({
 }));
 
 vi.mock("@/lib/google-calendar-oauth", () => ({
+  getVerifiedGoogleCalendarEmail,
   exchangeGoogleCalendarCode,
   GOOGLE_CALENDAR_OAUTH_SETUP_COOKIE: "google-calendar-oauth-return-to-setup",
   GOOGLE_CALENDAR_OAUTH_STATE_COOKIE: "google-calendar-oauth-state",
@@ -42,7 +45,20 @@ vi.mock("@/lib/recall-calendar", () => ({
   syncRecallCalendarEventsForWorkspace,
 }));
 
+vi.mock("@/lib/organization-workspaces", () => ({
+  workspaceForVerifiedCalendarEmail: vi.fn(async (workspace) => workspace),
+}));
+
 describe("GET /api/calendar/oauth/callback", () => {
+  it("rejects linking after the signed in user changes during Google consent", async () => {
+    cookies.mockResolvedValue({ get: () => ({ value: "original-user:state_123" }) });
+    getCurrentUser.mockResolvedValue({ id: "different-user", email: "other@example.com", name: null });
+    const { GET } = await import("@/app/api/calendar/oauth/callback/route");
+    const response = await GET(new Request("https://app.example.com/api/calendar/oauth/callback?code=code&state=state_123"));
+    expect(response.headers.get("location")).toContain("calendarError=state_mismatch");
+    expect(exchangeGoogleCalendarCode).not.toHaveBeenCalled();
+    expect(storeGoogleCalendarTokens).not.toHaveBeenCalled();
+  });
   afterEach(() => {
     assertCanCreateMeetings.mockReset();
     cookies.mockReset();
@@ -65,7 +81,7 @@ describe("GET /api/calendar/oauth/callback", () => {
     };
 
     cookies.mockResolvedValue({
-      get: vi.fn().mockReturnValue({ value: "state_123" }),
+      get: vi.fn().mockReturnValue({ value: "auth_user_123:state_123" }),
     });
     getCurrentUser.mockResolvedValue({
       id: "auth_user_123",
@@ -99,12 +115,14 @@ describe("GET /api/calendar/oauth/callback", () => {
       "https://app.example.com/dashboard?syncCalendar=1",
     );
     expect(storeGoogleCalendarTokens).toHaveBeenCalledWith({
+      accountEmail: "alice@example.com",
       workspace,
       accessToken: "google-access-token",
       accessTokenExpiresAt: new Date("2026-06-30T12:00:00.000Z"),
       refreshToken: "google-refresh-token",
     });
     expect(syncRecallCalendarEventsForWorkspace).toHaveBeenCalledWith({
+      connectionId: "33333333-3333-4333-8333-333333333333",
       workspace,
       autoJoinEnabled: true,
     });
@@ -120,7 +138,7 @@ describe("GET /api/calendar/oauth/callback", () => {
     };
 
     cookies.mockResolvedValue({
-      get: vi.fn().mockReturnValue({ value: "state_123" }),
+      get: vi.fn().mockReturnValue({ value: "auth_user_123:state_123" }),
     });
     getCurrentUser.mockResolvedValue({
       id: "auth_user_123",
@@ -162,7 +180,7 @@ describe("GET /api/calendar/oauth/callback", () => {
       get: vi.fn((name: string) =>
         name === "google-calendar-oauth-return-to-setup"
           ? { value: "1" }
-          : { value: "state_123" },
+          : { value: "auth_user_123:state_123" },
       ),
     });
 
@@ -192,7 +210,7 @@ describe("GET /api/calendar/oauth/callback", () => {
       get: vi.fn((name: string) =>
         name === "google-calendar-oauth-return-to-setup"
           ? { value: "1" }
-          : { value: "state_123" },
+          : { value: "auth_user_123:state_123" },
       ),
     });
     getCurrentUser.mockResolvedValue({

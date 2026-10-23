@@ -83,8 +83,11 @@ export function normalizeRecallCalendarWebhook(payload: unknown) {
 
 export async function ensureRecallManagedCalendarConnectionForWorkspace(
   workspace: WorkspaceContext,
+  connectionId?: string,
 ) {
-  const existing = await findConnectionByWorkspace(workspace);
+  const existing = await findConnectionByWorkspace(workspace, connectionId);
+
+  if (connectionId && !existing) return null;
 
   if (existing?.recallCalendarId) {
     const calendar = normalizeRecallCalendar(
@@ -268,12 +271,13 @@ export async function processRecallCalendarWebhook(
 
 export async function syncRecallCalendarEventsForWorkspace(input: {
   workspace: WorkspaceContext;
+  connectionId?: string;
   autoJoinEnabled: boolean;
   forceBotConfigRefresh?: boolean;
   now?: Date;
 }) {
   const connection =
-    await ensureRecallManagedCalendarConnectionForWorkspace(input.workspace);
+    await ensureRecallManagedCalendarConnectionForWorkspace(input.workspace, input.connectionId);
 
   if (!connection?.recallCalendarId) {
     throw new RecallCalendarConnectionError();
@@ -295,7 +299,7 @@ export async function syncRecallCalendarEventsForWorkspace(input: {
     userId: connection.userId,
     autoJoinEnabled: input.autoJoinEnabled,
     creditLimitUsdMicros: input.workspace.creditLimitUsdMicros,
-    workspaceDomain: input.workspace.domain,
+    workspaceDomain: connection.workspaceDomain ?? input.workspace.domain,
     workspaceName: input.workspace.teamName,
   };
   const now = input.now ?? new Date();
@@ -609,7 +613,7 @@ async function findConnectionByRecallCalendarId(calendarId: string) {
       id: calendarConnections.id,
       teamId: calendarConnections.teamId,
       userId: calendarConnections.userId,
-      userEmail: users.email,
+      userEmail: sql<string>`coalesce(${calendarConnections.accountEmail}, ${users.email})`,
       creditLimitUsdMicros: sql<number | null>`(
         select ${teams.creditLimitUsdMicros}
         from ${teams}
@@ -647,7 +651,7 @@ async function findConnectionByRecallCalendarId(calendarId: string) {
     : null;
 }
 
-async function findConnectionByWorkspace(workspace: WorkspaceContext) {
+async function findConnectionByWorkspace(workspace: WorkspaceContext, connectionId?: string) {
   const connections = await db
     .select({
       id: calendarConnections.id,
@@ -658,6 +662,7 @@ async function findConnectionByWorkspace(workspace: WorkspaceContext) {
       recallCalendarLastSyncedAt:
         calendarConnections.recallCalendarLastSyncedAt,
       recallCalendarStatus: calendarConnections.recallCalendarStatus,
+      accountEmail: calendarConnections.accountEmail,
     })
     .from(calendarConnections)
     .where(
@@ -665,6 +670,7 @@ async function findConnectionByWorkspace(workspace: WorkspaceContext) {
         eq(calendarConnections.teamId, workspace.teamId),
         eq(calendarConnections.userId, workspace.userId),
         eq(calendarConnections.provider, "google"),
+        connectionId ? eq(calendarConnections.id, connectionId) : undefined,
       ),
     )
     .limit(10);
@@ -677,7 +683,7 @@ async function findConnectionByWorkspace(workspace: WorkspaceContext) {
     ? {
         ...connection,
         creditLimitUsdMicros: workspace.creditLimitUsdMicros,
-        workspaceDomain: workspace.domain,
+        workspaceDomain: connection.accountEmail ? normalizeEmailDomain(connection.accountEmail) : workspace.domain,
         workspaceName: workspace.teamName,
       }
     : null;

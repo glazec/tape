@@ -58,6 +58,7 @@ vi.mock("@/lib/meeting-bot-recovery", () => ({
 
 vi.mock("@/lib/meeting-bot-profile", () => ({
   getMeetingBotProfile,
+  getCalendarMeetingBotProfile: getMeetingBotProfile,
   getMeetingBotMetadata: (profile: { botName: string }) =>
     profile.botName === "IOSG Old Friend" ? {} : { botName: profile.botName },
   getMeetingBotRecallCreateInput: (profile: {

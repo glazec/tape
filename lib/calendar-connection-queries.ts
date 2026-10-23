@@ -10,6 +10,8 @@ import {
 } from "@/lib/workspace";
 
 export type CalendarConnectionSummary = {
+  connectionId?: string;
+  accountEmail?: string | null;
   connected: boolean;
   autoJoinEnabled: boolean;
   recallCalendarStatus: string | null;
@@ -29,6 +31,8 @@ export async function getCalendarConnectionSummaryForWorkspace(
 ): Promise<CalendarConnectionSummary> {
   const connections = await db
     .select({
+      connectionId: calendarConnections.id,
+      accountEmail: calendarConnections.accountEmail,
       autoJoinEnabled: calendarConnections.autoJoinEnabled,
       recallCalendarId: calendarConnections.recallCalendarId,
       recallCalendarStatus: calendarConnections.recallCalendarStatus,
@@ -70,6 +74,7 @@ export async function getCalendarConnectionSummaryForWorkspace(
   }
 
   return {
+    ...(connection.connectionId ? { connectionId: connection.connectionId, accountEmail: connection.accountEmail } : {}),
     connected: Boolean(connection.recallCalendarId),
     autoJoinEnabled: connection.autoJoinEnabled,
     recallCalendarStatus: connection.recallCalendarStatus,

@@ -29,6 +29,27 @@ describe("CalendarSyncButton interactions", () => {
     expect(refresh).toHaveBeenCalled();
   });
 
+  it("syncs only the selected connected email", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(response({ syncedEventCount: 2 }));
+    render(<CalendarSyncButton connectionId="account-two" teamId="company" />);
+    fireEvent.click(screen.getByRole("button", { name: "Sync calendar" }));
+    expect(await screen.findByText("Captured 2 upcoming calendar events.")).toBeTruthy();
+    expect(fetch).toHaveBeenCalledWith("/api/calendar/sync", expect.objectContaining({
+      body: JSON.stringify({ autoJoinEnabled: true, connectionId: "account-two", teamId: "company" }),
+    }));
+  });
+
+  it("disconnects only the selected connected email", async () => {
+    vi.stubGlobal("confirm", vi.fn().mockReturnValue(true));
+    vi.mocked(fetch).mockResolvedValueOnce(response({ disconnected: true }));
+    render(<CalendarSyncButton connectionId="account-two" teamId="company" />);
+    openDisconnect();
+    expect(await screen.findByText(/Existing meeting transcripts were kept/)).toBeTruthy();
+    expect(fetch).toHaveBeenCalledWith("/api/calendar/disconnect", expect.objectContaining({
+      body: JSON.stringify({ connectionId: "account-two", teamId: "company" }),
+    }));
+  });
+
   it("auto syncs once and removes the OAuth query through replace", async () => {
     vi.mocked(fetch).mockResolvedValueOnce(response({ failedEventCount: 1, syncedEventCount: 1 }));
     const { rerender } = render(<CalendarSyncButton autoSync />);

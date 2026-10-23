@@ -9,7 +9,7 @@ import { getAdminTeamSettingsWorkspace } from "@/lib/team-settings-access";
 export const runtime = "nodejs";
 
 export async function POST(request: Request) {
-  const workspace = await getAdminTeamSettingsWorkspace();
+  const workspace = await getAdminTeamSettingsWorkspace(request);
 
   if (workspace instanceof Response) {
     return workspace;
@@ -39,5 +39,5 @@ export async function POST(request: Request) {
     );
   }
 
-  return Response.redirect(siteUrl("/settings/team"), 303);
+  return Response.redirect(siteUrl(`/settings/team?teamId=${workspace.teamId}`), 303);
 }

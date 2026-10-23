@@ -52,6 +52,9 @@ vi.mock("@/lib/workspace", () => ({
   getWorkspaceAccessSummary: vi.fn(),
 }));
 
+vi.mock("@/lib/organization-workspaces", () => ({}));
+vi.mock("@/lib/connected-calendar-accounts", () => ({}));
+
 describe("page rendering configuration", () => {
   it("renders dashboard dynamically because it reads auth cookies", async () => {
     const page = await import("@/app/dashboard/page");

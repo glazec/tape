@@ -1,0 +1,2 @@
+ALTER TABLE "calendar_connections" ADD COLUMN "account_email" text;--> statement-breakpoint
+CREATE UNIQUE INDEX "calendar_connections_user_account_unique" ON "calendar_connections" USING btree ("user_id","provider","account_email") WHERE "calendar_connections"."account_email" is not null;

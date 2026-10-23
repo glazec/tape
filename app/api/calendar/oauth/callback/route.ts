@@ -5,10 +5,12 @@ import { SharedOnlyAccessError } from "@/lib/access-errors";
 import { getCurrentUser } from "@/lib/auth";
 import {
   exchangeGoogleCalendarCode,
+  getVerifiedGoogleCalendarEmail,
   GOOGLE_CALENDAR_OAUTH_SETUP_COOKIE,
   GOOGLE_CALENDAR_OAUTH_STATE_COOKIE,
   storeGoogleCalendarTokens,
 } from "@/lib/google-calendar-oauth";
+import { workspaceForVerifiedCalendarEmail } from "@/lib/organization-workspaces";
 import { syncRecallCalendarEventsForWorkspace } from "@/lib/recall-calendar";
 import {
   assertCanCreateMeetings,
@@ -31,7 +33,7 @@ export async function GET(request: Request) {
     return redirectToDashboard("calendarError=google_denied", returnToSetup);
   }
 
-  if (!state || !storedState || state !== storedState) {
+  if (!state || !storedState || !storedState.endsWith(`:${state}`)) {
     return redirectToDashboard("calendarError=state_mismatch", returnToSetup);
   }
 
@@ -41,14 +43,21 @@ export async function GET(request: Request) {
     return redirectToSignIn();
   }
 
+  if (storedState !== `${user.id}:${state}`) {
+    return redirectToDashboard("calendarError=state_mismatch", returnToSetup);
+  }
+
   try {
-    const workspace = await getOrCreateWorkspaceForSessionUser(user);
+    let workspace = await getOrCreateWorkspaceForSessionUser(user);
     await assertCanCreateMeetings(workspace);
 
     const tokens = await exchangeGoogleCalendarCode(code);
+    const accountEmail = await getVerifiedGoogleCalendarEmail(tokens.accessToken);
+    workspace = await workspaceForVerifiedCalendarEmail(workspace, accountEmail);
 
-    await storeGoogleCalendarTokens({
+    const connectionId = await storeGoogleCalendarTokens({
       workspace,
+      accountEmail,
       accessToken: tokens.accessToken,
       accessTokenExpiresAt: tokens.accessTokenExpiresAt,
       refreshToken: tokens.refreshToken,
@@ -57,6 +66,7 @@ export async function GET(request: Request) {
     try {
       await syncRecallCalendarEventsForWorkspace({
         workspace,
+        connectionId,
         autoJoinEnabled: true,
       });
     } catch (syncError) {

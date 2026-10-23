@@ -31,6 +31,8 @@ async function disconnectCalendar() {
   return POST();
 }
 
+vi.mock("@/lib/organization-workspaces", () => ({ selectOrganizationWorkspace: vi.fn() }));
+
 describe("POST /api/calendar/disconnect", () => {
   afterEach(() => {
     assertCanCreateMeetings.mockReset();

@@ -96,7 +96,7 @@ vi.mock("@/lib/vendors/recall", () => ({
 }));
 
 vi.mock("@/lib/meeting-bot-profile", () => ({
-  getMeetingBotProfile,
+  getCalendarMeetingBotProfile: getMeetingBotProfile,
   getMeetingBotMetadata: (profile: {
     botName: string;
     avatarJpegBase64: string | null;

@@ -25,6 +25,8 @@ vi.mock("@/lib/workspace", () => ({
   getOrCreateWorkspaceForSessionUser: getWorkspace,
 }));
 
+vi.mock("@/lib/organization-workspaces", () => ({ selectOrganizationWorkspace: vi.fn() }));
+
 describe("POST /api/team/bot-profile", () => {
   afterEach(() => {
     getCurrentUser.mockReset();
@@ -101,7 +103,7 @@ describe("POST /api/team/bot-profile", () => {
     );
 
     expect(response.status).toBe(303);
-    expect(response.headers.get("location")).toBe("/settings/team");
+    expect(response.headers.get("location")).toBe("/settings/team?teamId=team_123");
     expect(values).toHaveBeenCalledWith({
       teamId: "team_123",
       botName: "Deal Scribe",

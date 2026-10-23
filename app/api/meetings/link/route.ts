@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import { getCurrentUser } from "@/lib/auth";
+import { normalizeEmailDomain } from "@/lib/access";
 import {
   createScheduledMeetingBot,
   findScheduledMeetingBotCalendarCandidates,
@@ -223,7 +224,7 @@ export async function POST(request: Request) {
   }
 
   try {
-    const botProfile = await getMeetingBotProfile(scheduledMeeting.teamId);
+    const botProfile = await getMeetingBotProfile(scheduledMeeting.teamId, normalizeEmailDomain(user.email));
     const bot = (await scheduleRecallBot({
       meetingUrl,
       ...getMeetingBotRecallCreateInput(botProfile),

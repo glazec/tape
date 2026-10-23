@@ -2,6 +2,7 @@ import { z } from "zod";
 import { inngest } from "@/inngest/client";
 
 import { getCurrentUser } from "@/lib/auth";
+import { selectOrganizationWorkspace } from "@/lib/organization-workspaces";
 import {
   RecallCalendarConnectionError,
   syncRecallCalendarEventsForWorkspace,
@@ -17,6 +18,8 @@ export const runtime = "nodejs";
 
 const requestSchema = z.strictObject({
   autoJoinEnabled: z.boolean().optional().default(true),
+  connectionId: z.uuid().optional(),
+  teamId: z.uuid().optional(),
 });
 
 export async function POST(request: Request) {
@@ -37,12 +40,18 @@ export async function POST(request: Request) {
   }
 
   try {
-    const workspace = await getOrCreateWorkspaceForSessionUser(user);
+    let workspace = await getOrCreateWorkspaceForSessionUser(user);
+    if (result.data.teamId) {
+      const selected = await selectOrganizationWorkspace(workspace, result.data.teamId);
+      if (!selected) return Response.json({ error: "Forbidden" }, { status: 403 });
+      workspace = selected;
+    }
     await assertCanCreateMeetings(workspace);
 
     const syncResult = await syncRecallCalendarEventsForWorkspace({
       workspace,
       autoJoinEnabled: result.data.autoJoinEnabled,
+      ...(result.data.connectionId ? { connectionId: result.data.connectionId } : {}),
     });
 
     await inngest.send({

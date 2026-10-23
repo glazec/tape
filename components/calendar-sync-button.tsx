@@ -29,6 +29,8 @@ type SyncState =
   | "error";
 
 type CalendarSyncButtonProps = {
+  connectionId?: string;
+  teamId?: string;
   autoSync?: boolean;
   connected?: boolean;
   setupMode?: boolean;
@@ -92,6 +94,8 @@ export function formatCalendarSyncMessage(result: CalendarSyncResponse) {
 }
 
 export function CalendarSyncButton({
+  connectionId,
+  teamId,
   autoSync = false,
   connected = true,
   setupMode = false,
@@ -109,7 +113,7 @@ export function CalendarSyncButton({
       const response = await fetch("/api/calendar/sync", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ autoJoinEnabled: true }),
+        body: JSON.stringify({ autoJoinEnabled: true, connectionId, teamId }),
       });
       const result = (await response.json().catch(() => ({}))) as
         CalendarSyncResponse;
@@ -141,7 +145,7 @@ export function CalendarSyncButton({
       setState("error");
       setMessage("Calendar events could not be captured. Try syncing again.");
     }
-  }, [autoSync, router, setupMode]);
+  }, [autoSync, router, setupMode, connectionId, teamId]);
 
   useEffect(() => {
     if (!autoSync || autoSyncAttempted.current) {
@@ -173,6 +177,10 @@ export function CalendarSyncButton({
     try {
       const response = await fetch("/api/calendar/disconnect", {
         method: "POST",
+        ...(connectionId ? {
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ connectionId, teamId }),
+        } : {}),
       });
 
       if (!response.ok) {

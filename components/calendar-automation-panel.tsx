@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import Link from "next/link";
 import { Bot, Clock3 } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
@@ -36,7 +37,7 @@ export function CalendarAutomationPanel({
         <CardTitle>Calendar</CardTitle>
         <CardDescription>
           {connected
-            ? (accountLabel ?? "Connected account")
+            ? (status.accountEmail ?? accountLabel ?? "Connected account")
             : "Connect Google Calendar to record and transcribe meetings automatically."}
         </CardDescription>
         <CardAction>
@@ -70,7 +71,10 @@ export function CalendarAutomationPanel({
             />
           </div>
         ) : null}
-        <CalendarSyncButton autoSync={autoSync} connected={connected} />
+        <CalendarSyncButton autoSync={autoSync} connected={connected} connectionId={status.connectionId} />
+        <Link className="self-end text-sm underline underline-offset-4" href="/settings/team#connected-accounts">
+          Manage connected accounts
+        </Link>
       </CardContent>
     </Card>
   );

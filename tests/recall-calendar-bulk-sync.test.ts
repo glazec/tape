@@ -72,6 +72,7 @@ describe("syncRecallCalendarEventsForAllConnectedUsers", () => {
       syncedEventCount: 8,
     });
     expect(syncRecallCalendarEventsForWorkspace).toHaveBeenNthCalledWith(1, {
+      connectionId: "connection_1",
       workspace: {
         creditLimitUsdMicros: null,
         domain: "iosg.vc",
@@ -82,6 +83,7 @@ describe("syncRecallCalendarEventsForAllConnectedUsers", () => {
       now,
     });
     expect(syncRecallCalendarEventsForWorkspace).toHaveBeenNthCalledWith(2, {
+      connectionId: "connection_2",
       workspace: {
         creditLimitUsdMicros: 5_000_000,
         domain: "example.com",

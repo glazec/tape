@@ -39,7 +39,7 @@ import {
 } from "@/lib/location-reminders";
 import {
   getMeetingBotMetadata,
-  getMeetingBotProfile,
+  getCalendarMeetingBotProfile,
   getMeetingBotRecallCreateInput,
   getMeetingBotRecallUpdateInput,
 } from "@/lib/meeting-bot-profile";
@@ -2070,7 +2070,7 @@ async function scheduleBotForCalendarEvent(input: {
   existingBotId?: string;
 }) {
   await assertWorkspaceHasProviderCredit(input);
-  const botProfile = await getMeetingBotProfile(input.teamId);
+  const botProfile = await getCalendarMeetingBotProfile({ teamId: input.teamId, attendeeEmails: getCalendarAttendeeEmails(input.event) });
   const metadata = {
     ...getMeetingBotMetadata(botProfile),
     calendarEventId: input.calendarEventId,

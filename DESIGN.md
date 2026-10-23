@@ -308,3 +308,5 @@ The design review should identify concrete issues with route, state, evidence, u
 7. Keyboard navigation, focus, labels, contrast, and live status are verified
 8. A design subagent reviewed the final state against this guide
 9. Product claims, UI labels, and affected documentation match the shipped behavior
+
+Team settings lists each connected Google email with its own sync and disconnect actions. Keep organization selection separate from the bot profile domain selector. Each organization domain has its own bot name and avatar; label the preferred bot setting “Use this bot when both organizations are invited.”

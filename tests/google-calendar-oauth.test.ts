@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { PgDialect } from "drizzle-orm/pg-core";
 
 const {
   createRecallCalendar,
@@ -35,6 +36,44 @@ vi.mock("@/lib/vendors/recall", () => ({
 }));
 
 describe("Google Calendar OAuth storage", () => {
+  it("adds a second email without replacing the first and reconnects by email", async () => {
+    vi.stubEnv("GOOGLE_CALENDAR_CLIENT_ID", "google-client-id");
+    vi.stubEnv("GOOGLE_CALENDAR_CLIENT_SECRET", "google-client-secret");
+    const dialect = new PgDialect();
+    const first = { id: "first", recallCalendarId: "recall-first", recallCalendarStatus: "connected" };
+    const predicates: unknown[][] = [];
+    select.mockReturnValue({ from: () => ({ where: (condition: Parameters<typeof dialect.sqlToQuery>[0]) => {
+      const query = dialect.sqlToQuery(condition);
+      expect(query.sql).toContain('"account_email"');
+      predicates.push(query.params);
+      return { limit: async () => query.params.includes("first@example.com") ? [first] : [] };
+    } }) });
+    createRecallCalendar.mockResolvedValue({ id: "recall-second", status: "connected" });
+    updateRecallCalendar.mockResolvedValue({ id: "recall-first", status: "connected" });
+    const values = vi.fn(() => ({ returning: async () => [{ id: "second" }] }));
+    insert.mockReturnValue({ values });
+    update.mockReturnValue({ set: () => ({ where: async () => ({ rowCount: 1 }) }) });
+    const { storeGoogleCalendarTokens } = await import("@/lib/google-calendar-oauth");
+    const tokens = { workspace: { teamId: "company", userId: "person", domain: "example.com" },
+      accessToken: "access", accessTokenExpiresAt: new Date(), refreshToken: "refresh" };
+    expect(await storeGoogleCalendarTokens({ ...tokens, accountEmail: "second@example.com" })).toBe("second");
+    expect(await storeGoogleCalendarTokens({ ...tokens, accountEmail: "first@example.com" })).toBe("first");
+    expect(values).toHaveBeenCalledTimes(1);
+    expect(values).toHaveBeenCalledWith(expect.objectContaining({ accountEmail: "second@example.com" }));
+    expect(updateRecallCalendar).toHaveBeenCalledWith(expect.objectContaining({ calendarId: "recall-first" }));
+    expect(predicates[0]).toContain("second@example.com");
+    expect(predicates[1]).toContain("first@example.com");
+  });
+  it("accepts only verified Google account emails", async () => {
+    const { getVerifiedGoogleCalendarEmail } = await import("@/lib/google-calendar-oauth");
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValueOnce(new Response(JSON.stringify({
+      email: " Alice@Example.com ", email_verified: true,
+    }), { status: 200 })).mockResolvedValueOnce(new Response(JSON.stringify({
+      email: "alice@example.com", email_verified: false,
+    }), { status: 200 })));
+    expect(await getVerifiedGoogleCalendarEmail("token")).toBe("alice@example.com");
+    await expect(getVerifiedGoogleCalendarEmail("token")).rejects.toThrow("could not be verified");
+  });
   afterEach(() => {
     createRecallCalendar.mockReset();
     deleteRecallCalendar.mockReset();
@@ -96,6 +135,7 @@ describe("Google Calendar OAuth storage", () => {
           teamId: "22222222-2222-4222-8222-222222222222",
           domain: "example.com",
         },
+        accountEmail: "alice@example.com",
         accessToken: "google-access-token",
         accessTokenExpiresAt: new Date("2026-06-30T12:00:00.000Z"),
         refreshToken: "google-refresh-token",
@@ -152,6 +192,7 @@ describe("Google Calendar OAuth storage", () => {
           teamId: "22222222-2222-4222-8222-222222222222",
           domain: "example.com",
         },
+        accountEmail: "alice@example.com",
         accessToken: "google-access-token",
         accessTokenExpiresAt: new Date("2026-06-30T12:00:00.000Z"),
         refreshToken: "google-refresh-token",
@@ -200,6 +241,7 @@ describe("Google Calendar OAuth storage", () => {
           teamId: "team_1",
           domain: "example.com",
         },
+        accountEmail: "alice@example.com",
         accessToken: "new-access-token",
         accessTokenExpiresAt: new Date("2026-07-20T13:00:00.000Z"),
         refreshToken: null,
@@ -508,7 +550,8 @@ describe("Google Calendar OAuth storage", () => {
         teamId: "team_1",
         domain: "example.com",
       },
-      accessToken: "new-access-token",
+      accountEmail: "alice@example.com",
+        accessToken: "new-access-token",
       accessTokenExpiresAt: new Date("2026-07-20T13:00:00.000Z"),
       refreshToken: null,
     })).resolves.toBe("connection_1");
@@ -533,7 +576,8 @@ describe("Google Calendar OAuth storage", () => {
 
     await expect(storeGoogleCalendarTokens({
       workspace: { userId: "user_1", teamId: "team_1", domain: "example.com" },
-      accessToken: "access-token",
+      accountEmail: "alice@example.com",
+        accessToken: "access-token",
       accessTokenExpiresAt: new Date("2026-07-20T13:00:00.000Z"),
       refreshToken: null,
     })).rejects.toThrow("Google did not return a refresh token");

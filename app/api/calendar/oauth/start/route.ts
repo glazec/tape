@@ -59,7 +59,7 @@ export async function GET(request: Request) {
 
   const response = NextResponse.redirect(googleOAuthUrl);
 
-  response.cookies.set(GOOGLE_CALENDAR_OAUTH_STATE_COOKIE, state, {
+  response.cookies.set(GOOGLE_CALENDAR_OAUTH_STATE_COOKIE, `${user.id}:${state}`, {
     httpOnly: true,
     maxAge: 10 * 60,
     path: "/api/calendar/oauth",

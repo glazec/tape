@@ -5,11 +5,12 @@ import {
   upsertMeetingBotProfile,
 } from "@/lib/meeting-bot-profile";
 import { getAdminTeamSettingsWorkspace } from "@/lib/team-settings-access";
+import { getOrganizationBotSettings } from "@/lib/organization-workspaces";
 
 export const runtime = "nodejs";
 
 export async function POST(request: Request) {
-  const workspace = await getAdminTeamSettingsWorkspace();
+  const workspace = await getAdminTeamSettingsWorkspace(request);
 
   if (workspace instanceof Response) {
     return workspace;
@@ -18,10 +19,18 @@ export async function POST(request: Request) {
   const formData = await request.formData().catch(() => null);
   const botName = getStringFormValue(formData, "botName");
   const avatar = formData?.get("avatar");
+  const domain = new URL(request.url).searchParams.get("organizationDomain");
+  if (domain) {
+    const settings = await getOrganizationBotSettings(workspace.teamId);
+    if (!settings.domains.includes(domain)) {
+      return Response.json({ error: "Unknown organization domain" }, { status: 400 });
+    }
+  }
 
   try {
     await upsertMeetingBotProfile({
       teamId: workspace.teamId,
+      ...(domain ? { domain, preferForSharedMeetings: formData?.get("preferForSharedMeetings") === "on" } : {}),
       botName,
       avatarFile: avatar instanceof File ? avatar : null,
       resetAvatar: formData?.get("resetAvatar") === "on",
@@ -37,5 +46,5 @@ export async function POST(request: Request) {
     );
   }
 
-  return redirectSeeOther("/settings/team");
+  return redirectSeeOther(`/settings/team?teamId=${workspace.teamId}${domain ? `&organizationDomain=${encodeURIComponent(domain)}` : ""}`);
 }

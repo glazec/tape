@@ -65,6 +65,14 @@ vi.mock("@/lib/provider-usage-queries", () => ({
   getProviderBillingOverview,
 }));
 
+vi.mock("@/lib/organization-workspaces", () => ({
+  listOrganizationWorkspaces: vi.fn().mockResolvedValue([]),
+  getOrganizationBotSettings: vi.fn().mockResolvedValue({ domains: [], preferredBotDomain: null }),
+  selectOrganizationWorkspace: vi.fn(),
+}));
+vi.mock("@/lib/connected-calendar-accounts", () => ({ listConnectedCalendarAccounts: vi.fn().mockResolvedValue([]) }));
+vi.mock("@/components/calendar-sync-button", () => ({ CalendarSyncButton: () => <button>Sync calendar</button> }));
+
 describe("TeamSettingsPage", () => {
   afterEach(() => {
     getWorkspace.mockReset();
