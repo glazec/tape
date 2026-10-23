@@ -149,6 +149,23 @@ describe("meeting page", () => {
     mocks.getMeeting.mockResolvedValue(meeting());
   });
 
+  it.each(["scheduled", "recording", "processing", "ready", "failed"])(
+    "shows personal notes to shared readers in the %s state",
+    async (status) => {
+      mocks.getMeeting.mockResolvedValue(meeting({ status, canManage: false }));
+      const html = renderToStaticMarkup(
+        await MeetingPage({
+          params: Promise.resolve({ meetingId: "meeting_1" }),
+        }),
+      );
+      expect(html).toContain("My notes");
+      expect(html).toContain("Only visible to you");
+      expect(html.indexOf("My notes")).toBeLessThan(
+        html.indexOf("transcript lines"),
+      );
+    },
+  );
+
   it("renders management, sharing, and failed meeting recovery", async () => {
     const html = renderToStaticMarkup(
       await MeetingPage({

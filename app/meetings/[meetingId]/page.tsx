@@ -6,6 +6,7 @@ import { MeetingBotRecoveryPanel } from "@/components/meeting-bot-recovery-panel
 import { MeetingActions } from "@/components/meeting-actions";
 import { MeetingEntityLinks } from "@/components/meeting-entity-links";
 import { MeetingHeaderMetadata } from "@/components/meeting-header-metadata";
+import { MeetingNotes } from "@/components/meeting-notes";
 import { MeetingRecoveryUploadPanel } from "@/components/meeting-recovery-upload-panel";
 import { MeetingRecordingResume } from "@/components/meeting-recording-resume";
 import { MeetingTitleEditor } from "@/components/meeting-title-editor";
@@ -215,6 +216,11 @@ export default async function MeetingPage({
           }`}
         >
           <div>
+            <MeetingNotes
+              key={`${workspace.userId}:${meetingId}`}
+              meetingId={meetingId}
+              userId={workspace.userId}
+            />
             {shouldCenterMeetingSource ? (
               <div className="mx-auto w-full max-w-2xl py-2 sm:py-6">
                 {shouldOfferLocalRecorderGuidance ? (

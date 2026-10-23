@@ -204,6 +204,8 @@ On populated meeting pages, show available translation state, captured images, a
 
 ### Meeting detail
 
+Place My notes above the transcript or recovery panel in every meeting state. Align the title and writing text on one edge, put Only visible to you beneath the title, and reserve a stable space for quiet autosave feedback. Use 16 px writing text, a subtle outer focus ring, and automatic height with a viewport aware cap so long notes do not hide the transcript. Keep a static loading placeholder until notes are available. Preserve drafts through meeting refreshes and keep failed saves visible with Retry. For conflicting edits, offer Copy my edits and require confirmation in the shared dialog before loading the saved version. Show the character limit only when notes approach it.
+
 Lead with the editable title and compact, human readable metadata. Put transcript content in the main column. Put sharing, related meetings, and other supporting actions after the primary content in mobile reading order.
 
 Show available participant names below the meeting metadata, including scheduled meetings without a recording or transcript. Omit the participant row when no names or emails are available to the viewer.

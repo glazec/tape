@@ -377,8 +377,14 @@ describe("database migrations", () => {
     });
 
     for (const table of tenantTables) {
+      const policySql =
+        table === "meeting_notes"
+          ? readFileSync("db/migrations/0051_meeting_notes.sql", "utf8")
+          : sql;
       expect(
-        sql.includes(`public.${table}`) || sql.includes(`'${table}'`),
+        policySql.includes(`public.${table}`) ||
+          policySql.includes(`'${table}'`) ||
+          policySql.includes(`CREATE POLICY personal_notes ON "${table}"`),
         `${table} must have an RLS policy`,
       ).toBe(true);
     }

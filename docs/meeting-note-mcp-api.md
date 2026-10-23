@@ -8,6 +8,8 @@ This MCP exposes authenticated Tape reads and local audio meeting uploads. It re
 
 ## Design Choice
 
+Personal notes entered in the web meeting page are private to their author and are not exposed through MCP SQL or tools.
+
 SQL is the primary analytical retrieval surface. `list_accessible_meetings` is the canonical inventory tool so an agent cannot mistake one keyword result for the caller's complete meeting library. More specialized one off tools like `search_meetings`, `get_meeting_transcript`, `get_meeting_entities`, `find_related_meetings`, and `get_person_speaking_timeline` are not exposed because `execute_meeting_sql` can express those queries more flexibly.
 
 Media retrieval remains in dedicated tools because audio and image access must stay behind authenticated application routes instead of exposing storage or Recall URLs from MCP.

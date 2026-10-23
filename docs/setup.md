@@ -12,6 +12,8 @@ Calendar import accepts timed invitations with at least two distinct participant
 
 Replace audio uses the existing audio upload, storage, and transcription configuration; no additional provider configuration is required.
 
+Personal meeting notes require migration `0051_meeting_notes` before deploying the web service. Apply pending migrations using `npm run db:migrate`. No new provider or environment variable is needed. The notes table enforces both the current user identity and meeting read access through row level security. Notes are excluded from transcript exports, completion emails, and MCP access.
+
 ## Requirements
 
 1. Node.js 24

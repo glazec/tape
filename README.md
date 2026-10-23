@@ -22,6 +22,8 @@ The dashboard combines weekly activity, calendar capture status, and a searchabl
 
 ### Review the complete record
 
+Every meeting includes My notes, a private writing area for each signed in reader. Notes save automatically during a meeting and remain editable afterward. They are separate from generated summaries and shared transcripts.
+
 Each meeting brings together its status, synchronized audio, transcript, speaker corrections, workspace configured translation, detected entities, captured screen share images, related meetings, and access controls. Missing or failed content leads to the relevant recovery source instead of an empty transcript.
 
 <p align="center">

@@ -48,6 +48,8 @@ jobs:
           done
       - name: Check meeting creation and access isolation
         run: psql "$DATABASE_URL" --set ON_ERROR_STOP=1 --file tests/meeting-insert-rls.sql
+      - name: Check personal notes isolation
+        run: psql "$DATABASE_URL" --set ON_ERROR_STOP=1 --file tests/meeting-notes-rls.sql
       - name: Check Usage page schema queries
         shell: bash
         run: |

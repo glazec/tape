@@ -364,6 +364,28 @@ export const meetings = pgTable(
   ],
 );
 
+export const meetingNotes = pgTable(
+  "meeting_notes",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    meetingId: uuid("meeting_id")
+      .notNull()
+      .references(() => meetings.id, { onDelete: "cascade" }),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    content: text("content").notNull().default(""),
+    version: integer("version").notNull().default(1),
+    ...timestamps,
+  },
+  (table) => [
+    uniqueIndex("meeting_notes_meeting_user_unique").on(
+      table.meetingId,
+      table.userId,
+    ),
+  ],
+);
+
 export const meetingAttendees = pgTable(
   "meeting_attendees",
   {
