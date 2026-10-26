@@ -99,7 +99,7 @@ describe("automatic transcript answers", () => {
     await pause(800);
     expect(posts()).toHaveLength(0);
     await pause(1400);
-    expect(screen.getByText("• Check size: $2M to $5M.")).toBeTruthy();
+    expect(screen.getByDisplayValue("• Check size: $2M to $5M.")).toBeTruthy();
     expect(editor().value).toBe("Check size?");
     expect(posts()).toHaveLength(1);
     await pause(800);
@@ -170,9 +170,9 @@ describe("automatic transcript answers", () => {
     await open();
     generate.mockResolvedValueOnce(Response.json({}, { status: 502 }));
     await act(async () =>
-      fireEvent.click(screen.getByRole("button", { name: "Regenerate" })),
+      fireEvent.click(screen.getByRole("button", { name: "Regenerate answer" })),
     );
-    expect(screen.getByText("• Check size: $2M to $5M.")).toBeTruthy();
+    expect(screen.getByDisplayValue("• Check size: $2M to $5M.")).toBeTruthy();
     expect(
       screen.getByText("Could not answer. Your notes are safe."),
     ).toBeTruthy();
@@ -184,27 +184,35 @@ describe("automatic transcript answers", () => {
     expect(posts()).toHaveLength(2);
   });
 
+  it("protects edits made after a regeneration failure when retrying", async () => {
+    seed([{ id: "first", text: "Check size?", answer: answer() }]);
+    await open();
+    generate.mockResolvedValueOnce(Response.json({}, { status: 502 }));
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: "Regenerate answer" })));
+    fireEvent.change(screen.getByRole("textbox", { name: "Answer" }), { target: { value: "Correction after failure" } });
+    fireEvent.click(screen.getByRole("button", { name: "Retry answer" }));
+    expect(screen.getByRole("dialog")).toBeTruthy();
+    expect(posts()).toHaveLength(1);
+    fireEvent.click(screen.getByRole("button", { name: "Keep my answer" }));
+    expect(screen.getByDisplayValue("Correction after failure")).toBeTruthy();
+  });
+
   it("preserves edited answers on question change and confirms regeneration", async () => {
     seed([{ id: "first", text: "Check size?", answer: answer() }]);
     await open();
-    fireEvent.click(screen.getByRole("button", { name: "Edit answer" }));
-    fireEvent.change(screen.getByRole("textbox", { name: "Edit answer" }), {
+    fireEvent.change(screen.getByRole("textbox", { name: "Answer" }), {
       target: { value: "My correction" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Done" }));
-    expect(document.activeElement).toBe(
-      screen.getByRole("button", { name: "Edit answer" }),
-    );
     fireEvent.change(editor(), { target: { value: "" } });
-    expect(screen.getByText("My correction")).toBeTruthy();
+    expect(screen.getByDisplayValue("My correction")).toBeTruthy();
     fireEvent.change(editor(), { target: { value: "Focus?" } });
     await pause();
     expect(posts()).toHaveLength(0);
-    fireEvent.click(screen.getByRole("button", { name: "Regenerate" }));
+    fireEvent.click(screen.getByRole("button", { name: "Regenerate answer" }));
     expect(screen.getByRole("dialog")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Keep my answer" }));
-    expect(screen.getByText("My correction")).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "Regenerate" }));
+    expect(screen.getByDisplayValue("My correction")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Regenerate answer" }));
     await act(async () =>
       fireEvent.click(
         within(screen.getByRole("dialog")).getByRole("button", {
@@ -212,41 +220,68 @@ describe("automatic transcript answers", () => {
         }),
       ),
     );
-    expect(screen.queryByText("My correction")).toBeNull();
+    expect(screen.queryByDisplayValue("My correction")).toBeNull();
+    await pause(300);
+    expect(document.activeElement).toBe(screen.getByRole("textbox", { name: "Answer" }));
   });
 
-  it("recovers unfinished answer edits and warns before leaving", async () => {
+  it("directly edits and autosaves answers without edit or save buttons", async () => {
     seed([{ id: "first", text: "Check size?", answer: answer() }]);
     const view = await open();
-    fireEvent.click(screen.getByRole("button", { name: "Edit answer" }));
-    fireEvent.change(screen.getByRole("textbox", { name: "Edit answer" }), {
-      target: { value: "Unfinished correction" },
-    });
-    expect(screen.getByText("Editing answer…")).toBeTruthy();
+    const input = screen.getByRole("textbox", { name: "Answer" });
+    expect(screen.queryByRole("button", { name: "Edit answer" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Done" })).toBeNull();
+    const regenerate = screen.getByRole("button", { name: "Regenerate answer" });
+    expect(regenerate.textContent).toBe("");
+    expect(regenerate.parentElement).toBe(screen.getByText("From transcript").parentElement);
+    fireEvent.change(input, { target: { value: "My correction" } });
     const event = new Event("beforeunload", { cancelable: true });
     window.dispatchEvent(event);
     expect(event.defaultPrevented).toBe(true);
+    await pause(800);
+    expect(persisted.blocks[0].answer).toMatchObject({ text: "My correction", edited: true });
     view.unmount();
     await open();
-    expect(
-      (
-        screen.getByRole("textbox", {
-          name: "Edit answer",
-        }) as HTMLTextAreaElement
-      ).value,
-    ).toBe("Unfinished correction");
-    expect(
-      screen.getByText(/unfinished answer edit was recovered/),
-    ).toBeTruthy();
-    fireEvent.keyDown(screen.getByRole("textbox", { name: "Edit answer" }), {
-      key: "Escape",
-    });
-    expect(document.activeElement).toBe(
-      screen.getByRole("button", { name: "Edit answer" }),
-    );
-    expect(
-      sessionStorage.getItem("meeting-notes-answer:user-one:meeting-one:first"),
-    ).toBeNull();
+    expect(screen.getByDisplayValue("My correction")).toBeTruthy();
+  });
+
+  it("persists an intentionally cleared answer without restoring or regenerating it", async () => {
+    seed([{ id: "first", text: "Check size?", answer: answer() }]);
+    const view = await open();
+    fireEvent.change(screen.getByRole("textbox", { name: "Answer" }), { target: { value: "" } });
+    await pause();
+    expect(persisted.blocks[0].answer).toMatchObject({ text: "", edited: true });
+    view.unmount();
+    await open();
+    await pause();
+    expect((screen.getByRole("textbox", { name: "Answer" }) as HTMLTextAreaElement).value).toBe("");
+    expect(posts()).toHaveLength(0);
+  });
+
+  it("recovers legacy unfinished edits and saves them by continuing to type", async () => {
+    seed([{ id: "first", text: "Check size?", answer: answer() }]);
+    sessionStorage.setItem("meeting-notes-answer:user-one:meeting-one:first", JSON.stringify({text:"Recovered correction",baseText:answer().text}));
+    await open();
+    expect(screen.getByDisplayValue("Recovered correction")).toBeTruthy();
+    fireEvent.change(screen.getByRole("textbox", { name: "Answer" }), { target: { value: "Recovered correction updated" } });
+    await pause();
+    expect(persisted.blocks[0].answer?.text).toBe("Recovered correction updated");
+    expect(sessionStorage.getItem("meeting-notes-answer:user-one:meeting-one:first")).toBeNull();
+  });
+
+  it("prevents typing from racing an in flight regeneration", async () => {
+    seed([{ id: "first", text: "Check size?", answer: answer() }]);
+    let finish!: (response: Response) => void;
+    generate.mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+    await open();
+    fireEvent.click(screen.getByRole("button", { name: "Regenerate answer" }));
+    const input = screen.getByRole("textbox", { name: "Answer" }) as HTMLTextAreaElement;
+    expect(input.readOnly).toBe(true);
+    fireEvent.change(input, { target: { value: "Racing edit" } });
+    await act(async () => finish(Response.json(answer("Check size?", "Updated answer"))));
+    expect(input.readOnly).toBe(false);
+    expect(persisted.blocks[0].answer?.text).not.toBe("Racing edit");
+    expect(input.value).toBe("Updated answer");
   });
 
   it("waits for transcript content then automatically answers", async () => {
@@ -316,7 +351,7 @@ describe("automatic transcript answers", () => {
     expect(posts()).toHaveLength(0);
     expect(screen.getByText(/A newer version/)).toBeTruthy();
   });
-  it("keeps an unfinished answer draft on its stable block when splitting", async () => {
+  it("keeps an inline answer edit on its stable block when splitting", async () => {
     seed([
       {
         id: "first",
@@ -325,8 +360,7 @@ describe("automatic transcript answers", () => {
       },
     ]);
     await open();
-    fireEvent.click(screen.getByRole("button", { name: "Edit answer" }));
-    fireEvent.change(screen.getByRole("textbox", { name: "Edit answer" }), {
+    fireEvent.change(screen.getByRole("textbox", { name: "Answer" }), {
       target: { value: "Unfinished focus correction" },
     });
     fireEvent.change(editor(), {
@@ -335,15 +369,13 @@ describe("automatic transcript answers", () => {
     expect(
       (
         screen.getByRole("textbox", {
-          name: "Edit answer",
+          name: "Answer",
         }) as HTMLTextAreaElement
       ).value,
     ).toBe("Unfinished focus correction");
     await pause(800);
     expect(persisted.blocks[1].id).toBe("first");
-    expect(
-      sessionStorage.getItem("meeting-notes-answer:user-one:meeting-one:first"),
-    ).toContain("Unfinished focus correction");
+    expect(persisted.blocks[1].answer?.text).toBe("Unfinished focus correction");
   });
 
   it("rejects an answer that exceeds the total document budget without breaking saves", async () => {
@@ -375,7 +407,7 @@ describe("automatic transcript answers", () => {
     seed([{ id: "first", text: "Check size?", answer: answer() }]);
     await open();
     fireEvent.change(editor(), { target: { value: "" } });
-    expect(screen.getByText("• Check size: $2M to $5M.")).toBeTruthy();
+    expect(screen.getByDisplayValue("• Check size: $2M to $5M.")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Remove answer" }));
     await pause();
     expect(persisted.blocks[0].answer).toBeUndefined();

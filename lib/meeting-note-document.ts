@@ -2,7 +2,7 @@ import { z } from "zod";
 
 export const noteAnswerSchema = z.strictObject({
   question: z.string().trim().min(1).max(2_000),
-  text: z.string().min(1).max(12_000),
+  text: z.string().max(12_000),
   sources: z
     .array(
       z.strictObject({

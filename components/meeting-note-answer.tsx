@@ -62,17 +62,16 @@ export function MeetingNoteAnswer({
   const answer = block.answer;
   const key = `${question}:${transcript?.transcriptRevision}`;
   const [state, setState] = useState<AnswerState>({ key: "", kind: "idle" });
-  const [editing, setEditing] = useState(false);
-  const [editText, setEditText] = useState("");
+  const [draft, setDraft] = useState<string | null>(null);
   const [recoveredEdit, setRecoveredEdit] = useState(false);
   const [editError, setEditError] = useState("");
-  const restoreFocus = useRef(false);
   const restoredDraft = useRef(false);
   const editBase = useRef("");
   const [confirmOpen, setConfirmOpen] = useState(false);
   const request = useRef<AbortController | null>(null);
   const attempted = useRef<string | null>(null);
-  const editButton = useRef<HTMLButtonElement>(null);
+  const editor = useRef<HTMLTextAreaElement>(null);
+  const returnToAnswer = useRef(false);
   const active = state.key === key ? state : null;
   const busy = active?.kind === "loading";
   const questionChanged = Boolean(answer && answer.question !== question);
@@ -177,7 +176,7 @@ export function MeetingNoteAnswer({
     if (
       !enabled ||
       composing ||
-      editing ||
+      draft !== null ||
       !question ||
       !transcript?.hasTranscript ||
       answer?.edited ||
@@ -191,7 +190,7 @@ export function MeetingNoteAnswer({
     answer?.edited,
     answer?.question,
     composing,
-    editing,
+    draft,
     enabled,
     generate,
     key,
@@ -199,7 +198,8 @@ export function MeetingNoteAnswer({
     transcript?.hasTranscript,
   ]);
 
-  const dirty = editing && editText !== answer?.text;
+  const dirty = draft !== null && draft !== answer?.text;
+  const displayedText = draft ?? answer?.text ?? "";
   useEffect(() => {
     onEditingChange(block.id, dirty);
     return () => onEditingChange(block.id, false);
@@ -213,14 +213,13 @@ export function MeetingNoteAnswer({
       if (
         stored &&
         typeof stored.text === "string" &&
-        typeof stored.baseText === "string"
+        stored.text !== answer.text
       ) {
-        editBase.current = stored.baseText;
-        // Browser drafts can only be restored after hydration.
+        editBase.current = stored.baseText ?? answer.text;
+        // Legacy unfinished edits can only be recovered after hydration.
         // eslint-disable-next-line react-hooks/set-state-in-effect
-        setEditText(stored.text);
+        setDraft(stored.text);
         setRecoveredEdit(true);
-        setEditing(true);
       }
     } catch {
       /* Draft recovery is optional. */
@@ -228,93 +227,108 @@ export function MeetingNoteAnswer({
   }, [answer, editDraftKey]);
 
   useEffect(() => {
-    if (!editing) return;
+    if (!dirty) return;
     try {
       sessionStorage.setItem(
         editDraftKey,
-        JSON.stringify({ text: editText, baseText: editBase.current }),
+        JSON.stringify({ text: draft, baseText: editBase.current }),
       );
     } catch {
       /* The navigation guard still protects unsaved edits. */
     }
     const beforeUnload = (event: BeforeUnloadEvent) => {
-      if (dirty) {
-        event.preventDefault();
-        event.returnValue = "";
-      }
+      event.preventDefault();
+      event.returnValue = "";
     };
     window.addEventListener("beforeunload", beforeUnload);
     return () => window.removeEventListener("beforeunload", beforeUnload);
-  }, [dirty, editDraftKey, editing, editText]);
+  }, [dirty, draft, editDraftKey]);
 
   useLayoutEffect(() => {
-    if (!editing && restoreFocus.current) {
-      restoreFocus.current = false;
-      editButton.current?.focus({ preventScroll: true });
-    }
-  }, [editing]);
+    const element = editor.current;
+    if (!element) return;
+    const resize = () => {
+      const scrollTop = element.scrollTop;
+      element.style.height = "auto";
+      element.style.height = `${element.scrollHeight}px`;
+      element.scrollTop = scrollTop;
+    };
+    resize();
+    let width = element.parentElement!.clientWidth;
+    const observer = new ResizeObserver(([entry]) => {
+      if (entry.contentRect.width === width) return;
+      width = entry.contentRect.width;
+      resize();
+    });
+    observer.observe(element.parentElement!);
+    return () => observer.disconnect();
+  }, [displayedText]);
 
-  // Generation never moves focus. Only explicit editing controls return focus.
-  function finishEditing() {
-    try {
-      sessionStorage.removeItem(editDraftKey);
-    } catch {
-      /* Storage is optional. */
+  function updateAnswer(text: string) {
+    if (!answer || !enabled || busy) return;
+    if (
+      onAnswer(block.id, question ?? block.text, { ...answer, text, edited: true })
+    ) {
+      setDraft(null);
+      setRecoveredEdit(false);
+      setEditError("");
+      try {
+        sessionStorage.removeItem(editDraftKey);
+      } catch {
+        /* The note editor also retains its autosave draft. */
+      }
+    } else {
+      editBase.current = answer.text;
+      setDraft(text);
+      setEditError(
+        "These notes are full. Shorten this answer to save your edits.",
+      );
     }
-    restoreFocus.current = true;
-    setEditing(false);
-    setRecoveredEdit(false);
-    setEditError("");
+  }
+
+  function requestRegeneration() {
+    returnToAnswer.current = false;
+    if (answer?.edited) setConfirmOpen(true);
+    else void generate();
   }
 
   if (!question && !answer) return null;
   return (
     <div className="mb-5 ml-0.5 mt-2 border-l-2 border-border pl-3 sm:pl-4">
-      <div className="flex min-h-9 flex-wrap items-center justify-between gap-x-3 text-xs text-muted-foreground">
+      <div className="flex min-h-11 items-center gap-1 text-xs text-muted-foreground">
         <span>{answer?.edited ? "Edited by you" : "From transcript"}</span>
-        {answer && !editing ? (
-          <div className="flex items-center gap-1">
-            <Button
-              ref={editButton}
-              variant="ghost"
-              size="sm"
-              className="min-h-11 px-2 text-xs text-muted-foreground"
-              disabled={busy || !enabled}
-              onClick={() => {
-                editBase.current = answer.text;
-                setEditText(answer.text);
-                setRecoveredEdit(false);
-                setEditing(true);
-              }}
-            >
-              Edit answer
-            </Button>
+        {answer ? (
+          <>
             <Button
               variant="ghost"
-              size="sm"
-              className="min-h-11 gap-1.5 px-2 text-xs text-muted-foreground"
+              size="icon"
+              className="size-11 shrink-0 text-muted-foreground"
+              aria-label="Regenerate answer"
+              title="Regenerate answer"
               disabled={
-                !question || busy || !enabled || !transcript?.hasTranscript
+                !question || busy || dirty || !enabled || !transcript?.hasTranscript
               }
-              onClick={() => {
-                if (answer.edited) setConfirmOpen(true);
-                else void generate();
-              }}
+              onClick={requestRegeneration}
             >
-              <RotateCw className="size-3" aria-hidden="true" />
-              {busy ? "Updating…" : "Regenerate"}
+              <RotateCw
+                className={`size-3.5 ${busy ? "motion-safe:animate-spin" : ""}`}
+                aria-hidden="true"
+              />
             </Button>
             {!question ? (
               <Button
                 variant="ghost"
                 size="sm"
-                className="min-h-11 px-2 text-xs"
+                className="ml-auto min-h-11 px-2 text-xs"
                 onClick={() => onRemoveAnswer(block.id)}
               >
                 Remove answer
               </Button>
             ) : null}
-          </div>
+          </>
+        ) : null}
+        {answer && busy ? (
+          <span role="status" className="sr-only">Updating answer…</span>
         ) : null}
       </div>
       {questionChanged || transcriptChanged ? (
@@ -328,71 +342,37 @@ export function MeetingNoteAnswer({
             : " This answer is from the previous version."}
         </p>
       ) : null}
-      {editing && answer ? (
-        <div className="space-y-2 pb-1">
+      {answer ? (
+        <div>
           {recoveredEdit ? (
             <p
               role="status"
-              className="text-xs leading-5 text-muted-foreground"
+              className="mb-2 text-xs leading-5 text-muted-foreground"
             >
-              Your unfinished answer edit was recovered. Review it before
-              choosing Done.
+              Your unfinished answer edit was recovered. Continue editing to
+              save it.
             </p>
           ) : null}
           {editError ? (
-            <p role="alert" className="text-sm text-destructive">
+            <p role="alert" className="mb-2 text-sm text-destructive">
               {editError}
             </p>
           ) : null}
           <textarea
-            aria-label="Edit answer"
-            autoFocus
-            value={editText}
-            maxLength={6000}
-            rows={Math.max(3, Math.min(10, editText.split("\n").length + 1))}
-            className="w-full resize-y rounded-md border bg-transparent p-2 text-base leading-7 outline-none focus-visible:ring-2 focus-visible:ring-ring/30"
-            onChange={(event) => setEditText(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === "Escape") {
-                event.preventDefault();
-                finishEditing();
-              }
+            ref={editor}
+            aria-label="Answer"
+            aria-busy={busy || undefined}
+            readOnly={!enabled || busy}
+            value={displayedText}
+            maxLength={12000}
+            rows={1}
+            placeholder="Write your answer…"
+            className="block max-h-[min(24rem,60dvh)] min-h-6 w-full resize-none rounded-sm border-0 bg-transparent p-0 text-sm leading-6 outline-none placeholder:text-muted-foreground focus-visible:bg-muted/30 focus-visible:ring-2 focus-visible:ring-ring/30 focus-visible:ring-offset-2"
+            onChange={(event) => updateAnswer(event.target.value)}
+            onBlur={() => {
+              if (draft !== null) updateAnswer(draft);
             }}
           />
-          <div className="flex justify-end gap-2">
-            <Button
-              variant="ghost"
-              className="min-h-11"
-              onClick={finishEditing}
-            >
-              Cancel
-            </Button>
-            <Button
-              variant="outline"
-              className="min-h-11"
-              disabled={!editText.trim()}
-              onClick={() => {
-                if (
-                  onAnswer(block.id, question ?? block.text, {
-                    ...answer,
-                    text: editText.trim(),
-                    edited: true,
-                  })
-                )
-                  finishEditing();
-                else
-                  setEditError(
-                    "These notes are full. Shorten this answer to save your edits.",
-                  );
-              }}
-            >
-              Done
-            </Button>
-          </div>
-        </div>
-      ) : answer ? (
-        <div className="max-w-prose whitespace-pre-wrap break-words text-sm leading-6">
-          {answer.text}
         </div>
       ) : null}
       {!answer && busy ? (
@@ -433,15 +413,15 @@ export function MeetingNoteAnswer({
               variant="ghost"
               size="sm"
               className="min-h-11 px-2 text-xs"
-              disabled={!enabled || !question}
-              onClick={() => void generate()}
+              disabled={!enabled || !question || dirty}
+              onClick={requestRegeneration}
             >
               Retry answer
             </Button>
           ) : null}
         </div>
       ) : null}
-      {answer && answer.sources.length > 0 && !editing ? (
+      {answer && answer.sources.length > 0 ? (
         <details className="mt-2 text-xs text-muted-foreground">
           <summary className="min-h-11 w-fit cursor-pointer py-3 outline-none focus-visible:rounded focus-visible:ring-2 focus-visible:ring-ring/40">
             {answer.edited ? "Original sources" : "Sources"} ·{" "}
@@ -475,7 +455,9 @@ export function MeetingNoteAnswer({
         </details>
       ) : null}
       <Dialog open={confirmOpen} onOpenChange={setConfirmOpen}>
-        <DialogContent>
+        <DialogContent
+          finalFocus={() => returnToAnswer.current ? editor.current : true}
+        >
           <DialogTitle>Replace your edited answer?</DialogTitle>
           <DialogDescription className="mt-2">
             Regenerating replaces your edits with a new answer from the
@@ -490,6 +472,7 @@ export function MeetingNoteAnswer({
             <Button
               className="min-h-11"
               onClick={() => {
+                returnToAnswer.current = true;
                 setConfirmOpen(false);
                 void generate();
               }}

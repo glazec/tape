@@ -21,6 +21,10 @@ describe("structured personal notes", () => {
     expect(normalizeNoteBlocks(noteContent(blocks), blocks)).toBe(blocks);
     expect(meetingNoteSchema.parse({ content: noteContent(blocks), version: 3, blocks }).blocks).toEqual(blocks);
   });
+  it("preserves a deliberately cleared answer", () => {
+    const blocks = [{ id: "a", text: "Check size?", answer: { ...answer, text: "", edited: true } }];
+    expect(meetingNoteSchema.parse({ content: "Check size?", version: 1, blocks }).blocks?.[0].answer?.text).toBe("");
+  });
   it.each([
     { content: "other", blocks: [{ id: "a", text: "Question?" }] },
     { content: "x\nx", blocks: [{ id: "a", text: "x" }, { id: "a", text: "x" }] },

@@ -43,7 +43,7 @@ Calendar resync keeps recent event capture in the foreground and checks Google C
 
 14. Generate a compact AI followup for a completed meeting: explicit next actions in To do list, and offers or needs in Dynamic. Use names instead of pronouns, preserve team ownership, and link every item to transcript evidence. Meeting managers generate or regenerate; existing readers can view saved results. Source changes invalidate old results.
 
-Questions in personal notes are answered inline from the current meeting transcript after a typing pause. Keep multiple question and answer pairs together, preserve user corrections, and distinguish missing information from stated facts. Generated answers remain private alongside the note.
+Questions in personal notes are answered inline from the current meeting transcript after a typing pause. Keep multiple question and answer pairs together, allow direct answer editing with autosave, preserve user corrections, and distinguish missing information from stated facts. Generated answers remain private alongside the note.
 
 ## Brand Personality
 
