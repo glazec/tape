@@ -112,11 +112,14 @@ jobs:
         with:
           python-version: "3.14"
           enable-cache: true
-      - name: Install media test dependencies
-        run: |
-          sudo sed -i 's/azure.archive.ubuntu.com/archive.ubuntu.com/g' /etc/apt/sources.list.d/ubuntu.sources
-          sudo apt-get update && sudo apt-get install -y ffmpeg
       - run: npm ci
+      - name: Install media test binaries
+        run: |
+          npm install --prefix "$RUNNER_TEMP/tape-media-tools" --no-save --package-lock=false @ffprobe-installer/ffprobe@2.1.2
+          mkdir -p "$RUNNER_TEMP/tape-media-tools/bin"
+          ln -s "$(node -p "require('ffmpeg-static')")" "$RUNNER_TEMP/tape-media-tools/bin/ffmpeg"
+          ln -s "$(node -p 'require(process.argv[1]).path' "$RUNNER_TEMP/tape-media-tools/node_modules/@ffprobe-installer/ffprobe")" "$RUNNER_TEMP/tape-media-tools/bin/ffprobe"
+          echo "$RUNNER_TEMP/tape-media-tools/bin" >> "$GITHUB_PATH"
       - run: google-chrome --version
       - name: Prepare authenticated browser fixtures
         if: env.PLAYWRIGHT_AUTHENTICATED == 'true'
