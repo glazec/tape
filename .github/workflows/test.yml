@@ -111,7 +111,10 @@ jobs:
         with:
           python-version: "3.14"
           enable-cache: true
-      - run: sudo apt-get update && sudo apt-get install -y ffmpeg
+      - name: Install media test dependencies
+        run: |
+          sudo sed -i 's/azure.archive.ubuntu.com/archive.ubuntu.com/g' /etc/apt/sources.list.d/ubuntu.sources
+          sudo apt-get update && sudo apt-get install -y ffmpeg
       - run: npm ci
       - run: npx playwright install --with-deps chromium
       - name: Prepare authenticated browser fixtures
