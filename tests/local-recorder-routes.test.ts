@@ -64,6 +64,7 @@ function mockSignedInDevice() {
 
 describe("local recorder API routes", () => {
   afterEach(() => {
+    vi.unstubAllEnvs();
     createLocalRecorderDeviceSession.mockReset();
     getLocalRecorderDeviceRequestContext.mockReset();
     listMissedLocalRecorderMeetings.mockReset();
@@ -743,6 +744,21 @@ describe("local recorder API routes", () => {
     expect(response.headers.get("location")).toBe(
       "meetingnote-local-recorder://login?token=token_123&server=https%3A%2F%2Fapp.example.com",
     );
+  });
+
+  it("uses the public server address behind the production reverse proxy", async () => {
+    vi.stubEnv("NEXT_PUBLIC_APP_URL", "https://tape.inevitable.tech");
+    createLocalRecorderDeviceSession.mockResolvedValue({ error: "Unauthorized" });
+    const { GET } = await import("@/app/api/local-recorder/device-login/route");
+    const response = await GET(new Request(
+      "https://0.0.0.0:8080/api/local-recorder/device-login?deviceId=mac_123&callbackUrl=meetingnote-local-recorder%3A%2F%2Flogin",
+    ));
+    expect(createLocalRecorderDeviceSession).toHaveBeenCalledWith({
+      deviceId: "mac_123",
+      callbackUrl: "meetingnote-local-recorder://login",
+      requestUrl: "https://tape.inevitable.tech/api/local-recorder/device-login?deviceId=mac_123&callbackUrl=meetingnote-local-recorder%3A%2F%2Flogin",
+    });
+    expect(new URL(response.headers.get("location")!).origin).toBe("https://tape.inevitable.tech");
   });
 
   it("finishes the browser page while opening the signed in Mac app", async () => {

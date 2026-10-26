@@ -1198,3 +1198,10 @@ private func makeMissedMeeting(
         ) == live
     )
 }
+
+@Test func expiredSessionRequiresSignInButConnectionFailureDoesNot() {
+    #expect(localRecorderRequiresSignIn(LocalRecorderAPIError.httpStatus(401)))
+    #expect(!localRecorderRequiresSignIn(LocalRecorderAPIError.httpStatus(403)))
+    #expect(!localRecorderRequiresSignIn(LocalRecorderAPIError.httpStatus(503)))
+    #expect(!localRecorderRequiresSignIn(URLError(.notConnectedToInternet)))
+}

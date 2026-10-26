@@ -48,6 +48,10 @@ jobs:
           done
       - name: Check meeting creation and access isolation
         run: psql "$DATABASE_URL" --set ON_ERROR_STOP=1 --file tests/meeting-insert-rls.sql
+      - name: Check email sharing and organization suggestions
+        env:
+          TAPE_SHARING_TEST_DATABASE: postgresql://ci:ci@127.0.0.1:5432/meeting_note
+        run: npx vitest run tests/meeting-share-service.test.ts tests/share-recipient-suggestions.test.ts
       - name: Check company calendar consolidation
         run: psql "$DATABASE_URL" --set ON_ERROR_STOP=1 --file tests/iosf-company-migration.sql
       - name: Check personal notes isolation

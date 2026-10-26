@@ -30,7 +30,7 @@ vi.mock("next/image", async () => {
 describe("landing page smoke test", () => {
   it("renders the landing page with hero, social proof, and sign-in path", async () => {
     getAuthenticatedUser.mockResolvedValue(null);
-    const html = renderToStaticMarkup(await Home());
+    const html = renderToStaticMarkup(await Home({}));
 
     expect(html).toContain("tape-lockup.svg");
     expect(html).toContain("Every conversation,");
@@ -61,7 +61,7 @@ describe("landing page smoke test", () => {
       email: "user@example.com",
     });
 
-    await expect(Home()).rejects.toThrow("redirect:/dashboard");
+    await expect(Home({})).rejects.toThrow("redirect:/dashboard");
     expect(redirect).toHaveBeenCalledWith("/dashboard");
   });
 });

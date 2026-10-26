@@ -253,3 +253,48 @@ describe("meeting share service", () => {
     expect(execute).toHaveBeenCalledTimes(1);
   });
 });
+
+// Exercises the actual service statements under PostgreSQL RLS, not an admin connection.
+describe.skipIf(!process.env.TAPE_SHARING_TEST_DATABASE)("email sharing under real tenant RLS", () => {
+  it.each(["molly@organization.test", "guest@outside.test"])("invites unregistered %s without a whitelist", async (email) => {
+    const { execFileSync } = await import("node:child_process");
+    const database = process.env.TAPE_SHARING_TEST_DATABASE!;
+    const url = new URL(database);
+    if (url.hostname !== "127.0.0.1" || !["/tape_activation_test", "/meeting_note"].includes(url.pathname)) {
+      throw new Error("Use the isolated local tape_activation_test database");
+    }
+    const literal = (value: unknown): string => Array.isArray(value)
+      ? `ARRAY[${value.map(literal).join(",")}]`
+      : `'${String(value).replaceAll("'", "''")}'`;
+    const statements: string[] = [];
+    transaction.mockImplementation(async (build) => {
+      build((parts: TemplateStringsArray, ...values: unknown[]) => {
+        statements.push(parts.reduce((query, part, index) => query + part + (index < values.length ? literal(values[index]) : ""), ""));
+      });
+      return [];
+    });
+    const { createMeetingSharePolicy } = await import("@/lib/meeting-share-service");
+    await createMeetingSharePolicy({
+      createdByUserId: "20000000-0000-4000-8000-000000000001",
+      ownerUserId: "20000000-0000-4000-8000-000000000001",
+      teamId: "10000000-0000-4000-8000-000000000001",
+      seedMeetingId: "30000000-0000-4000-8000-000000000001",
+      meetingIds: ["30000000-0000-4000-8000-000000000001"],
+      matchKeys: [], recipientEmail: email, scope: "single",
+    });
+    const output = execFileSync("psql", [database, "-X", "-At", "-v", "ON_ERROR_STOP=1"], {
+      encoding: "utf8",
+      input: `begin;
+        insert into teams (id, name) values ('10000000-0000-4000-8000-000000000001', 'Share test');
+        insert into users (id, auth_user_id, email) values ('20000000-0000-4000-8000-000000000001', 'share-owner', 'owner@organization.test');
+        insert into team_memberships (team_id, user_id, role) values ('10000000-0000-4000-8000-000000000001', '20000000-0000-4000-8000-000000000001', 'member');
+        insert into meetings (id, team_id, owner_user_id, title, platform) values ('30000000-0000-4000-8000-000000000001', '10000000-0000-4000-8000-000000000001', '20000000-0000-4000-8000-000000000001', 'Test', 'zoom');
+        set local role tape_authenticated;
+        select set_config('request.jwt.claims', '{"sub":"share-owner","email":"owner@organization.test"}', true);
+        ${statements.join(";\n")};
+        select 'invite_count=' || count(*) from meeting_share_invites where email = ${literal(email)} and revoked_at is null;
+        rollback;`,
+    });
+    expect(output).toContain("invite_count=1");
+  });
+});

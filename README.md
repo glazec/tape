@@ -44,6 +44,8 @@ The transcript supports raw and polished text, synchronized playback, speaker pr
 
 ### Record locally on macOS
 
+The desktop recorder opens a visible setup window at launch and after browser sign in. Desktop sign in is checked before permission setup completes, so connected devices can report missing permissions. Expired device sessions offer sign in again. Dashboard loading errors preserve browser login and offer a page reload. Sharing suggests colleagues from all connected organizations, organization addresses seen in calendars, and previous recipients; new external addresses can also be selected.
+
 The companion recorder captures microphone and system audio when cloud capture misses a meeting. It monitors eligible meetings, verifies permissions, uploads durable recording assets, and attaches the result to the existing meeting.
 
 <p align="center">

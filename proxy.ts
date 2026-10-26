@@ -6,7 +6,7 @@ const neonAuthProxy = auth.middleware({ loginUrl: "/auth/sign-in" });
 const localRecorderDeviceLoginPath = "/api/local-recorder/device-login";
 const neonAuthSessionVerifierParam = "neon_auth_session_verifier";
 
-export function proxy(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   if (
     request.nextUrl.pathname === localRecorderDeviceLoginPath &&
     !request.nextUrl.searchParams.has(neonAuthSessionVerifierParam)
@@ -14,13 +14,25 @@ export function proxy(request: NextRequest) {
     return NextResponse.next();
   }
 
-  return neonAuthProxy(request);
+  const response = await neonAuthProxy(request);
+  const location = response.headers.get("location");
+  if (location) {
+    const destination = new URL(location, request.url);
+    if (destination.origin === request.nextUrl.origin && destination.pathname === "/auth/sign-in") {
+      const callback = request.nextUrl.clone();
+      callback.searchParams.delete(neonAuthSessionVerifierParam);
+      destination.searchParams.set("callbackUrl", `${callback.pathname}${callback.search}`);
+      response.headers.set("location", destination.toString());
+    }
+  }
+  return response;
 }
 
 export const config = {
   matcher: [
     "/dashboard/:path*",
     "/settings/:path*",
+    "/meetings/:path*",
     "/api/local-recorder/device-login",
   ],
 };

@@ -190,6 +190,7 @@ export type MeetingDetailRelatedMeeting = {
 };
 
 export type ShareRecipient = {
+  organization?: string | null;
   email: string;
   name: string | null;
 };

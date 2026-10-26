@@ -726,6 +726,13 @@ public enum LocalRecorderAPIError: Error, Equatable {
     case missingPreparedUpload
 }
 
+public func localRecorderRequiresSignIn(_ error: Error) -> Bool {
+    guard case let LocalRecorderAPIError.httpStatus(status, _, _) = error else {
+        return false
+    }
+    return status == 401
+}
+
 func localRecorderHTTPError(
     data: Data,
     response: HTTPURLResponse

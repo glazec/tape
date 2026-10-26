@@ -6,6 +6,8 @@ The app uses a stable private code signing certificate. It is not signed with an
 
 The release target is arm64 macOS 15 or newer. The workflow uses Node.js 24 for the bundled sidecar and Swift Testing for the recorder package.
 
+The recorder shows its setup window at launch, on Dock reopen, and after a browser callback. Native activation diagnostics use the `tech.inevitable.meeting-note.local-recorder` subsystem and `activation` category without tokens or email addresses. The recorder validates its saved session and reports version and permission readiness during setup, before calendar monitoring can start. A 401 clears unusable local credentials and offers sign in; connection failures retain credentials and retry. Browser handoff logs establish that a token was issued, while `local_recorder_devices.last_seen_at` establishes that the app contacted the service. A successful handoff alone is not activation proof.
+
 ## One time GitHub setup
 
 The repository requires three Actions secrets:

@@ -3,11 +3,17 @@ import ApplicationServices
 import AVFoundation
 import Foundation
 import LocalRecorderCore
+import OSLog
 @preconcurrency import ScreenCaptureKit
 import ServiceManagement
 import Sparkle
 import SwiftUI
 @preconcurrency import UserNotifications
+
+private let activationLogger = Logger(
+    subsystem: "tech.inevitable.meeting-note.local-recorder",
+    category: "activation"
+)
 
 private enum LocalRecorderAppVersion {
     static var current: String {
@@ -45,9 +51,40 @@ private final class LocalRecorderUpdater {
 }
 
 private final class LocalRecorderAppDelegate: NSObject, NSApplicationDelegate {
+    private var recorderWindow: NSWindow?
+
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        NSApp.setActivationPolicy(.regular)
+        NSApp.activate(ignoringOtherApps: true)
+        activationLogger.notice("Recorder launched")
+        showRecorderWindow()
+    }
+
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        showRecorderWindow()
+        return true
+    }
+
+    @MainActor
+    private func showRecorderWindow() {
+        if recorderWindow == nil {
+            let controller = NSHostingController(rootView: RecorderMenuView(model: recorderAppModel))
+            let window = NSWindow(contentViewController: controller)
+            window.title = "Tape Desktop"
+            window.styleMask = [.titled, .closable, .miniaturizable]
+            window.isReleasedWhenClosed = false
+            window.center()
+            recorderWindow = window
+        }
+        recorderWindow?.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+        activationLogger.notice("Recorder setup window shown")
+    }
+
     func application(_ application: NSApplication, open urls: [URL]) {
         Task { @MainActor in
             externalURLDispatcher.openURLs(urls)
+            self.showRecorderWindow()
         }
     }
 }
@@ -129,10 +166,13 @@ enum RecorderPermissionStep {
     }
 }
 
+@MainActor
+private let recorderAppModel = RecorderAppModel()
+
 @main
 struct MeetingNoteLocalRecorderApp: App {
     @NSApplicationDelegateAdaptor(LocalRecorderAppDelegate.self) private var appDelegate
-    @StateObject private var model = RecorderAppModel()
+    @StateObject private var model = recorderAppModel
     private let updater = LocalRecorderUpdater.shared
 
     var body: some Scene {
@@ -286,27 +326,34 @@ final class RecorderAppModel: NSObject, ObservableObject, UNUserNotificationCent
             return
         }
 
-        NSWorkspace.shared.open(url)
-        statusText = "Complete login in your browser"
+        if NSWorkspace.shared.open(url) {
+            activationLogger.notice("Browser sign in opened")
+            statusText = "Complete login in your browser"
+        } else {
+            activationLogger.error("Browser sign in could not open")
+            statusText = "Could not open your browser. Try again."
+        }
     }
 
     func handleLoginCallback(_ url: URL) {
         do {
             let callback = try LocalRecorderLoginCallback(url: url)
-            serverURLText = callback.serverURL.absoluteString
-            bearerToken = callback.token
             try credentialStore.save(
                 LocalRecorderCredentials(
                     serverURLText: callback.serverURL.absoluteString,
                     bearerToken: callback.token
                 )
             )
+            serverURLText = callback.serverURL.absoluteString
+            bearerToken = callback.token
+            activationLogger.notice("Sign in saved")
             statusText = "Finish access setup"
             Task {
                 await refreshPermissionsAndStartIfReady()
             }
         } catch {
-            statusText = "Could not finish login"
+            activationLogger.error("Sign in callback could not be saved")
+            statusText = "Could not finish login. Try signing in again."
         }
     }
 
@@ -546,8 +593,8 @@ final class RecorderAppModel: NSObject, ObservableObject, UNUserNotificationCent
             return
         }
 
-        guard canMonitor else {
-            statusText = "Login and permissions are needed first"
+        guard isSignedIn else {
+            statusText = "Sign in to connect Tape Desktop"
             return
         }
 
@@ -570,8 +617,14 @@ final class RecorderAppModel: NSObject, ObservableObject, UNUserNotificationCent
                     appVersion: appVersion,
                     permissionReadiness: permissionReadinessReport
                 )
-                await uploadQueuedRecordings(client: client)
                 let monitoringStatus = try await client.fetchMonitoringStatus()
+                activationLogger.info("Device connected; permissions ready: \(self.canMonitor)")
+                guard canMonitor else {
+                    statusText = "Finish access setup"
+                    scheduleNextMonitoringCheck(after: 5 * 60)
+                    return
+                }
+                await uploadQueuedRecordings(client: client)
                 let now = Date()
                 nextScheduleMeeting = monitoringStatus.nextMeeting
                 pendingMeetings = LocalRecorderPendingMeetingQueue.merge(
@@ -600,10 +653,23 @@ final class RecorderAppModel: NSObject, ObservableObject, UNUserNotificationCent
                     )
                 )
             } catch {
-                statusText = "Could not refresh schedule"
-                scheduleNextMonitoringCheck(after: 5 * 60)
+                if !requireSignInIfExpired(error) {
+                    statusText = "Could not connect. Retrying shortly."
+                    scheduleNextMonitoringCheck(after: 5 * 60)
+                }
             }
         }
+    }
+
+    @discardableResult
+    private func requireSignInIfExpired(_ error: Error) -> Bool {
+        guard localRecorderRequiresSignIn(error) else { return false }
+        bearerToken = ""
+        try? credentialStore.delete()
+        monitoringTimer?.invalidate()
+        statusText = "Session expired. Sign in to reconnect."
+        activationLogger.notice("Saved session expired; sign in required")
+        return true
     }
 
     private func startMonitoring() {
@@ -1372,7 +1438,7 @@ final class RecorderAppModel: NSObject, ObservableObject, UNUserNotificationCent
 
     private func refreshPermissionsAndStartIfReady() async {
         await refreshPermissions()
-        if canMonitor {
+        if isSignedIn {
             startMonitoring()
         }
     }
@@ -1641,6 +1707,7 @@ final class RecorderAppModel: NSObject, ObservableObject, UNUserNotificationCent
         payload: LocalRecordingUploadPayload,
         error: Error
     ) async {
+        if requireSignInIfExpired(error) { return }
         if case let .wait(retryAfterSeconds) = localRecorderUploadRetryDecision(
             error: error,
             attempt: 1

@@ -30,6 +30,20 @@ describe("ShareDialog interactions", () => {
 
   afterEach(() => vi.unstubAllGlobals());
 
+  it("offers an explicit selectable address for an unregistered external recipient", async () => {
+    vi.mocked(fetch)
+      .mockResolvedValueOnce(response({ email: "molly@iosg.vc", pending: true }))
+      .mockResolvedValueOnce(response({ shares: [] }));
+    render(<ShareDialog {...props} />);
+    changeRecipient("molly@iosg.vc");
+    fireEvent.click(screen.getByRole("button", { name: "Show suggestions" }));
+    const option = await screen.findByRole("option", { name: /Share with molly@iosg.vc/ });
+    fireEvent.click(option);
+    fireEvent.click(screen.getByRole("button", { name: "Share meeting" }));
+    await screen.findByRole("status");
+    expect(JSON.parse(vi.mocked(fetch).mock.calls[0][1]?.body as string).email).toBe("molly@iosg.vc");
+  });
+
   it("shares one meeting and refreshes the access list", async () => {
     vi.mocked(fetch)
       .mockResolvedValueOnce(response({ email: "sid@iosg.vc", pending: true }))

@@ -28,7 +28,7 @@ vi.mock("@/lib/workspace", () => ({
 async function disconnectCalendar() {
   const { POST } = await import("@/app/api/calendar/disconnect/route");
 
-  return POST();
+  return POST(new Request("https://app.example.com/api/calendar/disconnect", { method: "POST" }));
 }
 
 vi.mock("@/lib/organization-workspaces", () => ({ selectOrganizationWorkspace: vi.fn() }));

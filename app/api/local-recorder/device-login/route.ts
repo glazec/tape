@@ -5,6 +5,10 @@ export const dynamic = "force-dynamic";
 
 export async function GET(request: Request) {
   const url = new URL(request.url);
+  const publicRequestUrl = new URL(
+    `${url.pathname}${url.search}`,
+    process.env.NEXT_PUBLIC_APP_URL?.trim() || url.origin,
+  ).toString();
   const deviceId = url.searchParams.get("deviceId")?.trim();
   const callbackUrl = url.searchParams.get("callbackUrl")?.trim();
 
@@ -12,15 +16,17 @@ export async function GET(request: Request) {
     return Response.json({ error: "Invalid device login" }, { status: 400 });
   }
 
+  console.info("recorder.login.started");
   const result = await createLocalRecorderDeviceSession({
     callbackUrl,
     deviceId,
-    requestUrl: request.url,
+    requestUrl: publicRequestUrl,
   });
 
   if ("error" in result) {
     if (result.error === "Unauthorized") {
-      const signInUrl = buildSignInRedirectUrl(request.url);
+      console.info("recorder.login.sign_in_required");
+      const signInUrl = buildSignInRedirectUrl(publicRequestUrl);
 
       if (acceptsHtml(request)) {
         return buildSignInBridgeResponse(signInUrl);
@@ -29,12 +35,14 @@ export async function GET(request: Request) {
       return Response.redirect(signInUrl);
     }
 
+    console.warn("recorder.login.rejected", { reason: result.error });
     return Response.json(
       { error: result.error },
       { status: "status" in result ? result.status : 401 },
     );
   }
 
+  console.info("recorder.login.handoff_ready");
   if (acceptsHtml(request)) {
     return buildRecorderHandoffResponse(result.redirectUrl);
   }

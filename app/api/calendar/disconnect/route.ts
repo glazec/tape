@@ -10,7 +10,7 @@ import {
 
 export const runtime = "nodejs";
 
-export async function POST(request?: Request) {
+export async function POST(request: Request) {
   const user = await getCurrentUser();
 
   if (!user) {
@@ -18,7 +18,7 @@ export async function POST(request?: Request) {
   }
 
   try {
-    const body = await request?.json().catch(() => ({})) ?? {};
+    const body = await request.json().catch(() => ({}));
     const result = z.strictObject({ connectionId: z.uuid().optional(), teamId: z.uuid().optional() }).safeParse(body);
     if (!result.success) return Response.json({ error: "Invalid calendar disconnect request" }, { status: 400 });
     let workspace = await getOrCreateWorkspaceForSessionUser(user);

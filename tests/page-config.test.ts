@@ -1,3 +1,4 @@
+vi.mock("@/lib/share-recipient-suggestions", () => ({ listShareRecipientSuggestions: vi.fn() }));
 import { describe, expect, it, vi } from "vitest";
 
 import { getTranscriptViewerRenderKey } from "@/lib/meeting-transcript-render-key";

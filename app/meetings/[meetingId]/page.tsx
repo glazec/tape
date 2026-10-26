@@ -1,3 +1,4 @@
+import { listShareRecipientSuggestions } from "@/lib/share-recipient-suggestions";
 import { notFound } from "next/navigation";
 
 import { AppShell } from "@/components/app-shell";
@@ -30,7 +31,6 @@ import { getTranscriptViewerRenderKey } from "@/lib/meeting-transcript-render-ke
 import {
   getMeetingTranscriptForWorkspace,
   listMeetingDetailRelatedMeetingsForWorkspace,
-  listWorkspaceShareRecipients,
 } from "@/lib/meeting-queries";
 import { moveRecordingTimestampToAppendedTimeline } from "@/lib/meeting-recording-timeline";
 import { getTeamConfiguration } from "@/lib/team-configuration";
@@ -63,7 +63,7 @@ export default async function MeetingPage({
   const canShare = meeting.segments.length > 0;
   const [shareRecipients, activeShares, teamConfiguration] = canShare
     ? await Promise.all([
-        listWorkspaceShareRecipients(workspace),
+        listShareRecipientSuggestions(workspace),
         listActiveMeetingShares(meetingId),
         getTeamConfiguration(workspace.teamId),
       ])
