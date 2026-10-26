@@ -18,6 +18,8 @@ AI followup coverage includes named subjects without pronouns, exact transcript 
 
 Session and sharing regressions: run `npx vitest run tests/dashboard-error.test.tsx tests/middleware.test.ts tests/share-dialog-interactions.test.tsx tests/meeting-share-service.test.ts tests/share-recipient-suggestions.test.ts`. For real RLS checks, set `TAPE_SHARING_TEST_DATABASE` to a migrated disposable local PostgreSQL database named `tape_activation_test` or the CI database `meeting_note`. Fixtures roll back. Tests cover new internal and external recipients, multiple organizations, calendar addresses, deduplication, and unrelated tenant exclusion. Run `npm run test:swift` for desktop session classification and native compilation. Production browser sign in, native permission prompts, and release installation still require live verification.
 
+CI sets `PLAYWRIGHT_CHANNEL=chrome` to use the GitHub runner's installed Chrome. Local runs keep the bundled Chromium default unless this variable is set.
+
 ## Test Layers
 
 | Layer | Protects | Command |
