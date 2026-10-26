@@ -1,11 +1,13 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useSyncExternalStore } from "react";
 import { AlertCircle } from "lucide-react";
 
 import { authClient } from "@/lib/auth/client";
 import { buildGoogleSignInOptions } from "@/lib/google-auth";
 import { captureClientAction } from "@/lib/telemetry/client";
+
+const subscribeToHydration = () => () => {};
 
 function GoogleMark() {
   return (
@@ -21,6 +23,7 @@ function GoogleMark() {
 }
 
 export function SignInForm({ callbackUrl }: { callbackUrl?: string }) {
+  const isHydrated = useSyncExternalStore(subscribeToHydration, () => true, () => false);
   const [error, setError] = useState<string | null>(null);
   const [isPending, setIsPending] = useState(false);
 
@@ -51,7 +54,7 @@ export function SignInForm({ callbackUrl }: { callbackUrl?: string }) {
         data-telemetry-action="sign_in_google_started"
         type="button"
         onClick={signInWithGoogle}
-        disabled={isPending}
+        disabled={!isHydrated || isPending}
         className="inline-flex h-12 w-full items-center justify-center gap-2.5 rounded-full bg-ink text-[0.9375rem] font-medium text-paper transition-colors duration-150 hover:bg-graphite focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-4 disabled:pointer-events-none disabled:opacity-60"
       >
         <GoogleMark />
