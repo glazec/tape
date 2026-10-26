@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 
 const authenticated = process.env.PLAYWRIGHT_AUTHENTICATED === "true";
+const production = process.env.PLAYWRIGHT_PRODUCTION === "true";
 const port = requirePort(process.env.PLAYWRIGHT_PORT);
 const nextArguments = ["run", "dev", "--", "--port", port, "--webpack"];
 const projectDirectory = process.cwd();
@@ -48,6 +49,14 @@ symlinkSync(
   "dir",
 );
 
+if (production) {
+  cpSync(join(projectDirectory, ".next"), join(serverDirectory, ".next"), {
+    recursive: true,
+    filter: (source) => !["cache", "dev"].includes(basename(source)),
+  });
+  nextArguments.splice(0, nextArguments.length, "scripts/start-playwright-production-server.mjs", port);
+}
+
 if (authenticated) {
   const certificateDirectory = join(
     serverDirectory,
@@ -79,19 +88,19 @@ if (authenticated) {
     ],
     { stdio: "ignore" },
   );
-  nextArguments.push(
+  nextArguments.push(...(production ? [keyPath, certificatePath] : [
     "--experimental-https",
     "--experimental-https-key",
     keyPath,
     "--experimental-https-cert",
     certificatePath,
-  );
+  ]));
 }
 
 const npmCommand = process.platform === "win32" ? "npm.cmd" : "npm";
-const server = spawn(npmCommand, nextArguments, {
+const server = spawn(production ? process.execPath : npmCommand, nextArguments, {
   cwd: serverDirectory,
-  env: process.env,
+  env: production ? { ...process.env, NODE_ENV: "production" } : process.env,
   stdio: "inherit",
 });
 

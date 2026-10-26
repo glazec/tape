@@ -102,6 +102,7 @@ jobs:
       NEXT_PUBLIC_APP_URL: https://tape.inevitable.tech
       PLAYWRIGHT_AUTHENTICATED: ${{ secrets.E2E_DATABASE_URL != '' && secrets.E2E_DATABASE_AUTHENTICATED_URL != '' }}
       PLAYWRIGHT_CHANNEL: chrome
+      PLAYWRIGHT_PRODUCTION: "true"
     steps:
       - uses: actions/checkout@v7.0.0
       - uses: actions/setup-node@v7.0.0

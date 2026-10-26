@@ -32,7 +32,7 @@ CI sets `PLAYWRIGHT_CHANNEL=chrome` to use the GitHub runner's installed Chrome.
 | Python unittest | MCP authentication, caller scope, SQL safety, media tools, signed upload handoff, and read only database boundaries | `npm run test:mcp` |
 | Live calendar probe | Stored production connection, Google token refresh, Calendar read access, Recall connectivity, and recent sync state | `CALENDAR_LIVE_TEST_EMAIL=user@example.com npm run test:calendar-live` |
 
-Playwright starts an isolated Next.js development server on port 3100 unless `PLAYWRIGHT_BASE_URL` points to an existing deployment.
+Playwright starts an isolated Next.js development server on port 3100 unless `PLAYWRIGHT_BASE_URL` points to an existing deployment. CI sets `PLAYWRIGHT_PRODUCTION=true` to test the production bundle from `npm run verify`; authenticated tests serve that bundle over local HTTPS for secure cookies. To run this mode locally, build first, then run `PLAYWRIGHT_PRODUCTION=true npm run test:e2e` with the same environment.
 
 Dashboard scroll restoration is covered by `tests/dashboard-scroll-restoration.test.tsx`,
 including history entry isolation, streamed content taking longer than ten seconds,
