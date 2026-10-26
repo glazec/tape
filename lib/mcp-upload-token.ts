@@ -23,6 +23,7 @@ const uploadTokenSchema = z.strictObject({
   title: z.string().trim().min(1).max(200).optional(),
   uploadId: z.uuid(),
   userId: z.uuid(),
+  teamId: z.uuid().optional(),
   version: z.literal(1),
 });
 

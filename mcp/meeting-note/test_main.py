@@ -300,6 +300,14 @@ class MeetingBackendRequestTests(unittest.TestCase):
 
 
 class MeetingUploadToolTests(unittest.IsolatedAsyncioTestCase):
+    async def test_returns_organization_choices_before_upload(self):
+        choices = [{"teamId": "77777777-7777-4777-8777-777777777777", "teamName": "Second"}]
+        with patch.object(main, "_post_tape_backend", AsyncMock(return_value={"code": "organization_required", "organizations": choices})):
+            result = await main.prepare_meeting_upload(file_name="meeting.mp3", file_size_bytes=123, meeting_time="2026-08-17T15:00:00Z")
+        self.assertEqual(result["code"], "organization_required")
+        self.assertEqual(result["organizations"], choices)
+        self.assertNotIn("upload_url", result)
+
     async def test_prepares_direct_upload_without_exposing_local_path(self):
         backend_result = {
             "completionToken": "completion-token",
@@ -692,7 +700,8 @@ class MeetingAccessConditionTests(unittest.TestCase):
 
         self.assertIn("m.owner_user_id", condition)
         self.assertIn("access_ma.revoked_at is null", condition)
-        self.assertNotIn("m.team_id", condition)
+        self.assertIn("access_membership.team_id = m.team_id", condition)
+        self.assertIn("access_membership.role in ('admin', 'owner')", condition)
         self.assertNotIn("access_team_id", params)
 
     def test_manager_can_read_team_meetings(self):
@@ -708,7 +717,8 @@ class MeetingAccessConditionTests(unittest.TestCase):
         condition = main._access_condition(workspace, params)
 
         self.assertIn("m.team_id", condition)
-        self.assertEqual(params["access_team_id"], workspace.team_id)
+        self.assertIn("access_membership.user_id = %(access_user_id)s::uuid", condition)
+        self.assertNotIn("access_team_id", params)
 
 
 class AccessibleMeetingInventoryTests(unittest.IsolatedAsyncioTestCase):

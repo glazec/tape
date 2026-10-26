@@ -55,7 +55,7 @@ export async function GET(
     );
   }
 
-  const workspace = await getOrCreateWorkspaceForSessionUser(user);
+  const workspace = await getOrCreateWorkspaceForSessionUser(user, { meetingId });
   const meetingRows = await db
     .select({
       id: meetings.id,

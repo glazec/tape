@@ -320,3 +320,7 @@ The design review should identify concrete issues with route, state, evidence, u
 9. Product claims, UI labels, and affected documentation match the shipped behavior
 
 Team settings lists each connected Google email with its own sync and disconnect actions. Keep organization selection separate from the bot profile domain selector. Each organization domain has its own bot name and avatar; label the preferred bot setting “Use this bot when both organizations are invited.”
+
+## Organization choices
+
+Show the compact organization control only for users with multiple workspaces. For a new meeting link, ask “Which bot should join?” only when there are multiple bot identities, even if they share a company workspace. Show the bot name and organization domain together, with a Cancel action. Preserve that choice through nearby meeting confirmation and retries. Keep calendar account controls beside the account email. Hide selectors when there is only one choice.

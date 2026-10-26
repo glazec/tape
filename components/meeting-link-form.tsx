@@ -22,6 +22,8 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 
+import type { MeetingBotChoice } from "@/lib/meeting-bot-selection";
+
 type FormState = "idle" | "saving" | "scheduled" | "joining" | "error";
 type MeetingChoice = {
   action: "join" | "resume" | "schedule";
@@ -34,6 +36,9 @@ type MeetingChoice = {
 };
 
 export function MeetingLinkForm() {
+  const [botChoices, setBotChoices] = useState<MeetingBotChoice[]>([]);
+  const [selectedBot, setSelectedBot] = useState<MeetingBotChoice | null>(null);
+  const [pendingDestination, setPendingDestination] = useState<{ calendarEventId?: string; createSeparateMeeting?: boolean; recoveryMeetingId?: string }>({});
   const [state, setState] = useState<FormState>("idle");
   const [message, setMessage] = useState<string | null>(null);
   const [signInRequired, setSignInRequired] = useState(false);
@@ -66,6 +71,7 @@ export function MeetingLinkForm() {
       createSeparateMeeting?: boolean;
       recoveryMeetingId?: string;
     } = {},
+    bot: MeetingBotChoice | null = selectedBot,
   ) {
     const isConfirmingChoice = Object.keys(choice).length > 0;
     setState("saving");
@@ -77,7 +83,7 @@ export function MeetingLinkForm() {
       const response = await fetch("/api/meetings/link", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ meetingUrl, ...choice }),
+        body: JSON.stringify({ meetingUrl, ...choice, ...(bot ? { teamId: bot.teamId, organizationDomain: bot.organizationDomain } : {}) }),
       });
 
       if (response.status === 401) {
@@ -96,8 +102,18 @@ export function MeetingLinkForm() {
         code?: unknown;
         error?: unknown;
         potentialMeetings?: unknown;
+        botChoices?: MeetingBotChoice[];
         status?: unknown;
       } | null;
+
+      if (response.status === 409 && responseBody?.code === "bot_organization_required" && responseBody.botChoices?.length) {
+        choiceReturnFocusRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+        setPendingMeetingUrl(meetingUrl);
+        setPendingDestination(choice);
+        setBotChoices(responseBody.botChoices);
+        setState("idle");
+        return;
+      }
 
       const detectedMeetings = parsePotentialMeetings(
         responseBody?.potentialMeetings,
@@ -157,6 +173,7 @@ export function MeetingLinkForm() {
         setMessage("Meeting bot scheduled");
       }
       setPotentialMeetings([]);
+      setSelectedBot(null);
       setPendingChoiceId(null);
     } catch {
       if (isConfirmingChoice) {
@@ -216,6 +233,12 @@ export function MeetingLinkForm() {
               aria-invalid={state === "error"}
             />
           </div>
+          {selectedBot ? <div className="flex items-center gap-2 text-sm">
+            <span>{selectedBot.botName}</span>
+            <Button type="button" variant="ghost" size="sm" disabled={state === "saving"} onClick={() => {
+              setSelectedBot(null); setMessage(null); setState("idle");
+            }}>Change bot</Button>
+          </div> : null}
           <Button
             type="submit"
             disabled={state === "saving"}
@@ -252,10 +275,34 @@ export function MeetingLinkForm() {
           ) : null}
         </form>
       </CardContent>
+      <Dialog open={botChoices.length > 0} onOpenChange={(open) => {
+        if (!open) { setBotChoices([]); setSelectedBot(null); }
+      }}>
+        {botChoices.length ? <DialogContent finalFocus={choiceReturnFocusRef}>
+          <DialogTitle>Which bot should join?</DialogTitle>
+          <DialogDescription>Choose the organization for this meeting.</DialogDescription>
+          <div className="space-y-2">
+            {botChoices.map((bot) => <button
+              className="flex min-h-16 w-full flex-col rounded-lg border bg-background px-3 py-2 text-left hover:border-primary focus-visible:ring-3 focus-visible:ring-ring/50"
+              key={`${bot.teamId}:${bot.organizationDomain}`}
+              type="button"
+              onClick={() => {
+                setSelectedBot(bot); setBotChoices([]);
+                void scheduleMeeting(pendingMeetingUrl, pendingDestination, bot);
+              }}
+            >
+              <span className="font-medium">{bot.botName}</span>
+              <span className="text-sm text-muted-foreground">{bot.teamName}{bot.organizationDomain ? ` · ${bot.organizationDomain}` : ""}</span>
+            </button>)}
+          </div>
+          <DialogClose className={buttonVariants({ variant: "ghost" })}>Cancel</DialogClose>
+        </DialogContent> : null}
+      </Dialog>
       <Dialog
         onOpenChange={(open) => {
           if (!open && state !== "saving") {
             setPotentialMeetings([]);
+            setSelectedBot(null);
             setPendingChoiceId(null);
             setChoiceError(null);
           }

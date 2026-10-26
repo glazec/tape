@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 import { AmplitudeIdentity } from "@/components/amplitude-identity";
 import { OneSignalLogin } from "@/components/onesignal-login";
 import { ProductLogo } from "@/components/product-logo";
+import { OrganizationSwitcher } from "@/components/organization-switcher";
 import { SignOutButton } from "@/components/sign-out-button";
 import { buttonVariants } from "@/components/ui/button";
 import { getOneSignalAllowedOrigins } from "@/lib/onesignal-web-sdk";
@@ -93,6 +94,7 @@ export function AppShell({
                 Setup guide
               </Link>
             ) : null}
+            {oneSignalExternalId ? <OrganizationSwitcher /> : null}
             <SignOutButton />
           </div>
         </div>

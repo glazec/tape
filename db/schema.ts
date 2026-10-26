@@ -337,6 +337,7 @@ export const meetings = pgTable(
     startedAt: timestamp("started_at", { withTimezone: true }),
     endedAt: timestamp("ended_at", { withTimezone: true }),
     recallBotId: text("recall_bot_id"),
+    botOrganizationDomain: text("bot_organization_domain"),
     recallRecordingId: text("recall_recording_id"),
     translationStatus: jobStatus("translation_status"),
     translationErrorMessage: text("translation_error_message"),

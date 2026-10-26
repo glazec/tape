@@ -202,3 +202,7 @@ This project is source available under the [PolyForm Noncommercial License 1.0.0
 Because commercial use is restricted, this is not an OSI approved open source license.
 
 Google Calendar connections are stored separately by verified Google email. Connect additional work accounts and manage each calendar in Team settings. Accounts from configured organization domains join those organizations as members; existing admin roles are preserved. Organization administrators can switch organizations and edit each email domain’s bot avatar independently. Domains of one company must share a workspace to deduplicate invited calendar bots. The preferred organization bot is used when its domain appears among the attendees.
+
+## Multiple organizations
+
+Use the organization control in navigation for new uploads, phone recordings, calendar controls, settings, and usage. Existing meeting actions use the meeting’s own workspace. Adding a meeting bot asks which organization’s bot should join whenever more than one identity is available, including multiple domains in one company. Retry and resume retain the selected bot. Calendar accounts have separate sync and disconnect controls.

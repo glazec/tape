@@ -763,6 +763,24 @@ describe("local recorder API routes", () => {
     expect(new URL(response.headers.get("location")!).origin).toBe("https://tape.inevitable.tech");
   });
 
+  it("keeps organization selection on the public desktop login URL", async () => {
+    vi.stubEnv("NEXT_PUBLIC_APP_URL", "https://tape.inevitable.tech");
+    createLocalRecorderDeviceSession.mockResolvedValue({ organizations: [
+      { teamId: "team_123", teamName: "First organization" },
+      { teamId: "team_456", teamName: "Second organization" },
+    ] });
+    const { GET } = await import("@/app/api/local-recorder/device-login/route");
+    const response = await GET(new Request(
+      "https://0.0.0.0:8080/api/local-recorder/device-login?deviceId=mac_123&callbackUrl=meetingnote-local-recorder%3A%2F%2Flogin",
+      { headers: { accept: "text/html" } },
+    ));
+    const body = await response.text();
+    expect(body).toContain('href="https://tape.inevitable.tech/api/local-recorder/device-login?');
+    expect(body).toContain("teamId=team_123");
+    expect(body).toContain("teamId=team_456");
+    expect(body).not.toContain("0.0.0.0");
+  });
+
   it("finishes the browser page while opening the signed in Mac app", async () => {
     createLocalRecorderDeviceSession.mockResolvedValue({
       redirectUrl:

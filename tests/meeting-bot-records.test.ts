@@ -239,10 +239,12 @@ describe("meeting bot records", () => {
         name: null,
       },
       skipCalendarMatch: true,
+      organizationDomain: "iosf.vc",
     });
 
     expect(select).not.toHaveBeenCalled();
     expect(values).toHaveBeenCalledWith({
+      botOrganizationDomain: "iosf.vc",
       meetingUrl: "https://zoom.us/j/8436420171",
       ownerUserId: "55555555-5555-4555-8555-555555555555",
       platform: "zoom",
@@ -332,7 +334,7 @@ describe("meeting bot records", () => {
     });
   });
 
-  it("reuses an existing scheduled meeting for a matching calendar event", async () => {
+  it.each([true, false])("requires management permission (%s) to reuse a matching calendar meeting", async (canManage) => {
     const workspace = {
       teamId: "22222222-2222-4222-8222-222222222222",
       userId: "55555555-5555-4555-8555-555555555555",
@@ -354,6 +356,7 @@ describe("meeting bot records", () => {
     const meetingLimit = vi.fn().mockResolvedValue([
       {
         id: "44444444-4444-4444-8444-444444444444",
+        canManage,
         recallBotId: "existing_bot",
         status: "scheduled",
       },
@@ -381,6 +384,16 @@ describe("meeting bot records", () => {
     update.mockReturnValue({ set: updateSet });
 
     const { createScheduledMeetingBot } = await import("@/lib/meeting-bot-records");
+
+    if (!canManage) {
+      await expect(createScheduledMeetingBot({
+        sessionUser: { id: "user_123", email: "test@iosg.vc", name: null },
+        meetingUrl: "https://zoom.us/j/8851797582", platform: "zoom",
+      })).rejects.toThrow();
+      expect(update).not.toHaveBeenCalled();
+      expect(insert).not.toHaveBeenCalled();
+      return;
+    }
 
     await expect(
       createScheduledMeetingBot({

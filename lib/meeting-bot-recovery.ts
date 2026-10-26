@@ -28,6 +28,7 @@ export type MeetingBotRecoveryCandidate = {
 
 export async function findMeetingBotRecoveryCandidate(input: {
   sessionUser: SessionUser;
+  workspace?: WorkspaceContext;
   now?: Date;
 }): Promise<MeetingBotRecoveryCandidate | null> {
   const meetings = await findMeetingBotRecoveryCandidates(input);
@@ -37,9 +38,10 @@ export async function findMeetingBotRecoveryCandidate(input: {
 
 export async function findMeetingBotRecoveryCandidates(input: {
   sessionUser: SessionUser;
+  workspace?: WorkspaceContext;
   now?: Date;
 }): Promise<MeetingBotRecoveryCandidate[]> {
-  const workspace = await getOrCreateWorkspaceForSessionUser(input.sessionUser);
+  const workspace = input.workspace ?? await getOrCreateWorkspaceForSessionUser(input.sessionUser);
   await assertCanCreateMeetings(workspace);
   await assertWorkspaceHasProviderCredit(workspace);
   const now = input.now ?? new Date();
@@ -66,9 +68,10 @@ export async function prepareMeetingBotRecovery(input: {
   meetingUrl: string;
   platform: SupportedMeetingPlatform;
   sessionUser: SessionUser;
+  workspace?: WorkspaceContext;
   now?: Date;
 }) {
-  const workspace = await getOrCreateWorkspaceForSessionUser(input.sessionUser);
+  const workspace = input.workspace ?? await getOrCreateWorkspaceForSessionUser(input.sessionUser);
   await assertCanCreateMeetings(workspace);
   await assertWorkspaceHasProviderCredit(workspace);
   const now = input.now ?? new Date();
@@ -137,6 +140,7 @@ async function findResumableMeetings(input: {
 
   const rows = await db
     .select({
+      botOrganizationDomain: meetings.botOrganizationDomain,
       calendarEventId: meetings.calendarEventId,
       endedAt: meetings.endedAt,
       id: meetings.id,
@@ -204,6 +208,7 @@ async function findRecoverableMeetings(input: {
 
   const rows = await db
     .select({
+      botOrganizationDomain: meetings.botOrganizationDomain,
       calendarEventId: meetings.calendarEventId,
       endedAt: meetings.endedAt,
       id: meetings.id,

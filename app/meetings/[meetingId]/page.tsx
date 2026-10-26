@@ -47,7 +47,7 @@ export default async function MeetingPage({
     requireCurrentUser(),
     params,
   ]);
-  const workspace = await getOrCreateWorkspaceForSessionUser(user);
+  const workspace = await getOrCreateWorkspaceForSessionUser(user, { meetingId });
   const [meeting, relatedMeetings] = await Promise.all([
     getMeetingTranscriptForWorkspace(workspace, meetingId),
     listMeetingDetailRelatedMeetingsForWorkspace(workspace, meetingId),

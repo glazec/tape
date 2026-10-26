@@ -1,3 +1,4 @@
+import { CalendarAccountSelectionError } from "@/lib/calendar-account-selection";
 import { SharedOnlyAccessError } from "@/lib/access-errors";
 import { getCurrentUser } from "@/lib/auth";
 import { z } from "zod";
@@ -35,6 +36,9 @@ export async function POST(request: Request) {
 
     return Response.json({ disconnected });
   } catch (error) {
+    if (error instanceof CalendarAccountSelectionError) {
+      return Response.json({ error: error.message, code: "calendar_account_required" }, { status: 409 });
+    }
     if (error instanceof SharedOnlyAccessError) {
       return Response.json(
         { error: "Shared users cannot manage calendars" },

@@ -1291,7 +1291,7 @@ export async function getWorkspaceMeetingTranscript(
   sessionUser: SessionUser,
   meetingId: string,
 ): Promise<MeetingTranscript | null> {
-  const workspace = await getOrCreateWorkspaceForSessionUser(sessionUser);
+  const workspace = await getOrCreateWorkspaceForSessionUser(sessionUser, { meetingId });
 
   return getMeetingTranscriptForWorkspace(workspace, meetingId);
 }

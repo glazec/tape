@@ -31,7 +31,7 @@ export async function GET(
     return Response.json({ error: "Image not found" }, { status: 404 });
   }
 
-  const workspace = await getOrCreateWorkspaceForSessionUser(user);
+  const workspace = await getOrCreateWorkspaceForSessionUser(user, { meetingId });
   const rows = await db
     .select({
       objectKey: mediaAssets.objectKey,

@@ -10,6 +10,8 @@ import {
 } from "@/lib/workspace";
 
 export type CalendarConnectionSummary = {
+  teamId?: string;
+  accounts?: CalendarConnectionSummary[];
   connectionId?: string;
   accountEmail?: string | null;
   connected: boolean;
@@ -47,7 +49,19 @@ export async function getCalendarConnectionSummaryForWorkspace(
         eq(calendarConnections.provider, "google"),
       ),
     )
-    .limit(10);
+    .limit(100);
+  if (connections.length > 1) {
+    const accounts = connections.map((connection) => ({
+      teamId: workspace.teamId,
+      connectionId: connection.connectionId,
+      accountEmail: connection.accountEmail,
+      connected: Boolean(connection.recallCalendarId),
+      autoJoinEnabled: connection.autoJoinEnabled,
+      recallCalendarStatus: connection.recallCalendarStatus,
+      recallCalendarLastSyncedAt: connection.recallCalendarLastSyncedAt?.toISOString() ?? null,
+    }));
+    return { ...disconnectedCalendarSummary(), connected: accounts.some((account) => account.connected), accounts };
+  }
   const connection =
     connections.find((candidate) => candidate.recallCalendarId) ??
     connections[0];
@@ -63,6 +77,9 @@ export async function getCalendarConnectionSummaryForWorkspace(
     }
 
     return {
+      teamId: workspace.teamId,
+      connectionId: linkedConnection.id,
+      accountEmail: "accountEmail" in linkedConnection ? linkedConnection.accountEmail : null,
       connected: Boolean(linkedConnection.recallCalendarId),
       autoJoinEnabled: linkedConnection.autoJoinEnabled,
       recallCalendarStatus:
@@ -74,7 +91,7 @@ export async function getCalendarConnectionSummaryForWorkspace(
   }
 
   return {
-    ...(connection.connectionId ? { connectionId: connection.connectionId, accountEmail: connection.accountEmail } : {}),
+    ...(connection.connectionId ? { teamId: workspace.teamId, connectionId: connection.connectionId, accountEmail: connection.accountEmail } : {}),
     connected: Boolean(connection.recallCalendarId),
     autoJoinEnabled: connection.autoJoinEnabled,
     recallCalendarStatus: connection.recallCalendarStatus,

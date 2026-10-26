@@ -19,9 +19,22 @@ export async function GET(request: Request) {
   console.info("recorder.login.started");
   const result = await createLocalRecorderDeviceSession({
     callbackUrl,
+    ...(url.searchParams.get("teamId") ? { teamId: url.searchParams.get("teamId")! } : {}),
     deviceId,
     requestUrl: publicRequestUrl,
   });
+
+  if ("organizations" in result && result.organizations) {
+    if (!acceptsHtml(request)) return Response.json({ code: "organization_required", organizations: result.organizations }, { status: 409 });
+    const links = result.organizations.map((organization) => {
+      const target = new URL(publicRequestUrl);
+      target.searchParams.set("teamId", organization.teamId);
+      return `<a style="display:block;padding:1rem;border:1px solid #ddd;border-radius:0.5rem;margin-top:0.75rem;color:inherit;text-decoration:none" href="${escapeHtml(target.toString())}">${escapeHtml(organization.teamName)}</a>`;
+    }).join("");
+    return new Response(`<!doctype html><html lang="en"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Choose an organization</title><body style="background:#fff;color:#222;font-family:system-ui;margin:3rem auto;padding:1rem;max-width:30rem"><h1>Choose an organization</h1><p>Choose where this recorder saves meetings.</p>${links}</body></html>`, {
+      headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" },
+    });
+  }
 
   if ("error" in result) {
     if (result.error === "Unauthorized") {

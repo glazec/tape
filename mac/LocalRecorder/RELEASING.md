@@ -81,3 +81,7 @@ open "/Applications/Tape Desktop.app"
 If removing quarantine reports a permission error, run the same `xattr` command with `sudo`. This bypass is necessary because the app is not notarized. Only use the ZIP downloaded from the official `glazec/tape` GitHub Release and verify its published SHA256 checksum before opening it.
 
 Desktop builds discard saved credentials that point to the invalid `0.0.0.0` proxy address and request sign in again. Login callbacks containing that address are rejected. The web handoff uses `NEXT_PUBLIC_APP_URL` as the public server origin.
+
+## Organization pairing
+
+The browser login asks users with multiple memberships which organization should receive recordings. Device sessions remain bound to that workspace when the web workspace changes. Pair the recorder again to select another organization. Verify this prompt before publishing a recorder release against the updated web service.

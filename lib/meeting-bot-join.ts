@@ -7,9 +7,10 @@ import { markMeetingBotScheduled } from "@/lib/meeting-bot-records";
 import { retireScheduledRecallBot } from "@/lib/meeting-bot-retirement";
 import {
   getMeetingBotMetadata,
-  getCalendarMeetingBotProfile,
   getMeetingBotRecallCreateInput,
 } from "@/lib/meeting-bot-profile";
+import { getBotProfileForMeeting } from "@/lib/meeting-bot-record-profile";
+import { getMeetingManagerCondition } from "@/lib/meeting-write-policy";
 import { buildAppUrl } from "@/lib/meeting-links";
 import {
   listRecallCalendarEvents,
@@ -36,7 +37,7 @@ export async function joinScheduledMeetingBotNow(input: {
   sessionUser: SessionUser;
   now?: Date;
 }) {
-  const workspace = await getOrCreateWorkspaceForSessionUser(input.sessionUser);
+  const workspace = await getOrCreateWorkspaceForSessionUser(input.sessionUser, { meetingId: input.meetingId });
   await assertCanCreateMeetings(workspace);
   await assertWorkspaceHasProviderCredit(workspace);
 
@@ -64,6 +65,7 @@ export async function joinScheduledMeetingBotNow(input: {
         eq(meetings.id, input.meetingId),
         eq(meetings.teamId, workspace.teamId),
         eq(meetings.status, "scheduled"),
+        getMeetingManagerCondition(workspace),
       ),
     )
     .limit(1);
@@ -72,7 +74,7 @@ export async function joinScheduledMeetingBotNow(input: {
     throw new MeetingBotJoinUnavailableError();
   }
 
-  const botProfile = await getCalendarMeetingBotProfile({ teamId: meeting.teamId, attendeeEmails: meeting.attendeeEmails ?? [] });
+  const botProfile = await getBotProfileForMeeting(meeting.id);
   const metadata = {
     ...getMeetingBotMetadata(botProfile),
     ...(meeting.calendarEventId

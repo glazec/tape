@@ -43,7 +43,7 @@ export async function POST(
 
   try {
     const { meetingId } = await context.params;
-    const workspace = await getOrCreateWorkspaceForSessionUser(user);
+    const workspace = await getOrCreateWorkspaceForSessionUser(user, { meetingId });
     await assertCanManageMeeting(workspace, meetingId);
     await assertWorkspaceHasProviderCredit(workspace);
     await assertRequestRateLimit({

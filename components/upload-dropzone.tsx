@@ -30,13 +30,15 @@ import {
   uploadMediaAccept,
 } from "@/lib/upload-media";
 
+import { organizationHeaders } from "@/lib/organization-request";
+
 type UploadState = "idle" | "uploading" | "complete" | "error";
 
 type UploadQueuedResponse = {
   redirectTo?: string;
 };
 
-export function UploadDropzone() {
+export function UploadDropzone({ teamId }: { teamId?: string }) {
   const router = useRouter();
   const [state, setState] = useState<UploadState>("idle");
   const [message, setMessage] = useState<string | null>(null);
@@ -148,6 +150,7 @@ export function UploadDropzone() {
         }
 
         const queuedResult = await uploadAudioBatch({
+          teamId,
           completePath: "/api/uploads/audio/batch/complete",
           files: selectedFiles.map((file, index) => ({
             durationMs: durations[index] as number,
@@ -170,7 +173,7 @@ export function UploadDropzone() {
       const uploadMedia = selectedMedia[0]!;
       const signResponse = await fetch("/api/upload", {
         method: "POST",
-        headers: { "content-type": "application/json" },
+        headers: { "content-type": "application/json", ...organizationHeaders(teamId) },
         body: JSON.stringify({
           extension: uploadMedia.extension,
           contentType: uploadMedia.contentType,
@@ -210,11 +213,11 @@ export function UploadDropzone() {
       let queuedResult: UploadQueuedResponse;
 
       if (!uploadedDirectly) {
-        queuedResult = await uploadViaServer(selectedFile, startedAt, durationMs);
+        queuedResult = await uploadViaServer(selectedFile, startedAt, durationMs, teamId);
       } else {
         const completeResponse = await fetch("/api/uploads/complete", {
           method: "POST",
-          headers: { "content-type": "application/json" },
+          headers: { "content-type": "application/json", ...organizationHeaders(teamId) },
           body: JSON.stringify({
             uploadId,
             fileName: selectedFile.name,
@@ -396,6 +399,7 @@ async function uploadViaServer(
   file: File,
   startedAt: string | undefined,
   durationMs: number | undefined,
+  teamId?: string,
 ) {
   const formData = new FormData();
   formData.set("meeting-audio", file);
@@ -407,6 +411,7 @@ async function uploadViaServer(
   }
 
   const response = await fetch("/api/uploads/audio", {
+    headers: organizationHeaders(teamId),
     method: "POST",
     body: formData,
   });

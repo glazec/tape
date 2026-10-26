@@ -36,7 +36,7 @@ export async function POST(
     return Response.json({ error: "Meeting not found" }, { status: 404 });
   }
 
-  const workspace = await getOrCreateWorkspaceForSessionUser(user);
+  const workspace = await getOrCreateWorkspaceForSessionUser(user, { meetingId });
   const meetingRows = await db
     .select({ id: meetings.id })
     .from(meetings)

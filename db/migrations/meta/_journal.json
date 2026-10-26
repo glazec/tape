@@ -414,6 +414,13 @@
       "when": 1792783918565,
       "tag": "0058_meeting_note_blocks",
       "breakpoints": true
+    },
+    {
+      "idx": 59,
+      "version": "7",
+      "when": 1793040294909,
+      "tag": "0059_meeting_bot_organization",
+      "breakpoints": true
     }
   ]
 }

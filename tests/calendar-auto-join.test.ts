@@ -97,6 +97,7 @@ vi.mock("@/lib/vendors/recall", () => ({
 
 vi.mock("@/lib/meeting-bot-profile", () => ({
   getCalendarMeetingBotProfile: getMeetingBotProfile,
+  getMeetingBotProfile,
   getMeetingBotMetadata: (profile: {
     botName: string;
     avatarJpegBase64: string | null;
@@ -2342,6 +2343,7 @@ describe("calendar auto join", () => {
       {
         id: "44444444-4444-4444-8444-444444444444",
         recallBotId: "bot_123",
+        botOrganizationDomain: "second.test",
         meetingUrl: "https://meet.google.com/old-link",
         startedAt: new Date("2026-06-30T12:00:00.000Z"),
         status: "scheduled",
@@ -2388,6 +2390,7 @@ describe("calendar auto join", () => {
       recallBotId: "bot_123",
     });
 
+    expect(getMeetingBotProfile).toHaveBeenCalledWith("22222222-2222-4222-8222-222222222222", "second.test");
     expect(updateScheduledRecallBot).toHaveBeenCalledWith({
       botId: "bot_123",
       meetingUrl: "https://meet.google.com/new-link",

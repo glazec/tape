@@ -24,7 +24,7 @@ export async function GET(request: Request) {
   }
 
   try {
-    const workspace = await getOrCreateWorkspaceForSessionUser(user);
+    const workspace = await getOrCreateWorkspaceForSessionUser(user, { ignoreSelection: true });
     await assertCanCreateMeetings(workspace);
   } catch (error) {
     if (error instanceof SharedOnlyAccessError) {

@@ -50,7 +50,7 @@ export async function POST(request: Request) {
     }
 
     const upload = parseMcpUploadToken(parsed.data.completionToken);
-    const workspace = await getOrCreateWorkspaceForSessionUser(user);
+    const workspace = await getOrCreateWorkspaceForSessionUser(user, upload.teamId ? { teamId: upload.teamId } : { ignoreSelection: true });
 
     if (
       upload.authUserId !== user.id ||

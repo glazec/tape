@@ -16,7 +16,7 @@ export default async function MobileMeetingRecorderPage({
     requireCurrentUser(),
     params,
   ]);
-  const workspace = await getOrCreateWorkspaceForSessionUser(user);
+  const workspace = await getOrCreateWorkspaceForSessionUser(user, { meetingId });
   const meeting = await getMeetingTranscriptForWorkspace(workspace, meetingId);
 
   if (!meeting?.canManage) {

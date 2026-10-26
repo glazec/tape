@@ -1,6 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const getCurrentUser = vi.fn();
+const workspace = { teamId: "team_123", userId: "user_123", domain: "example.com" };
+const selectMeetingBotChoice = vi.fn();
+vi.mock("@/lib/workspace", () => ({ getOrCreateWorkspaceForSessionUser: vi.fn(async () => workspace), assertCanCreateMeetings: vi.fn() }));
+vi.mock("@/lib/meeting-bot-selection", () => ({ selectMeetingBotChoice, MeetingBotOrganizationError: class extends Error {} }));
+vi.mock("@/lib/meeting-bot-record-profile", () => ({ getBotProfileForMeeting: (...args: unknown[]) => getMeetingBotProfile(...args) }));
 const getMeetingBotProfile = vi.fn();
 const scheduleRecallBot = vi.fn();
 const retireScheduledRecallBot = vi.fn();
@@ -74,6 +79,7 @@ async function postMeetingLink(body: unknown) {
 
 describe("POST /api/meetings/link", () => {
   beforeEach(() => {
+    selectMeetingBotChoice.mockReset().mockResolvedValue({ workspace, organizationDomain: "example.com" });
     findMeetingBotRecoveryCandidates.mockResolvedValue([]);
     findScheduledMeetingBotCalendarCandidates.mockResolvedValue([]);
     getMeetingBotProfile.mockResolvedValue({
@@ -98,6 +104,31 @@ describe("POST /api/meetings/link", () => {
     vi.unstubAllEnvs();
     vi.useRealTimers();
     vi.resetModules();
+  });
+
+  it("asks for the bot organization before creating or scheduling anything", async () => {
+    getCurrentUser.mockResolvedValue({ id: "auth", email: "user@example.com" });
+    const botChoices = [{ teamId: "team_123", organizationDomain: "other.test", botName: "Other bot", teamName: "Other" }];
+    selectMeetingBotChoice.mockResolvedValue({ choices: botChoices });
+    const response = await postMeetingLink({ meetingUrl: "https://meet.google.com/abc-defg-hij" });
+    expect(response.status).toBe(409);
+    expect(await response.json()).toEqual({ code: "bot_organization_required", botChoices });
+    expect(createScheduledMeetingBot).not.toHaveBeenCalled();
+    expect(scheduleRecallBot).not.toHaveBeenCalled();
+  });
+
+  it("checks creation permission in the selected organization", async () => {
+    vi.stubEnv("NEXT_PUBLIC_APP_URL", "https://app.example.com");
+    const { assertCanCreateMeetings } = await import("@/lib/workspace");
+    getCurrentUser.mockResolvedValue({ id: "auth", email: "user@example.com" });
+    const selectedWorkspace = { ...workspace, teamId: "selected-team", canCreateMeetings: true };
+    selectMeetingBotChoice.mockResolvedValue({ workspace: selectedWorkspace, organizationDomain: "other.test" });
+    createScheduledMeetingBot.mockResolvedValue({ meetingId: "meeting", teamId: "selected-team" });
+    scheduleRecallBot.mockResolvedValue({ id: "bot" });
+    vi.mocked(assertCanCreateMeetings).mockClear();
+    const response = await postMeetingLink({ meetingUrl: "https://meet.google.com/abc-defg-hij" });
+    expect(response.status).toBe(200);
+    expect(assertCanCreateMeetings).toHaveBeenCalledExactlyOnceWith(selectedWorkspace);
   });
 
   it("returns 401 when unauthenticated", async () => {
@@ -209,9 +240,11 @@ describe("POST /api/meetings/link", () => {
       meetingId: "11111111-1111-4111-8111-111111111111",
       meetingUrl: "https://meet.google.com/abc-defg-hij",
       platform: "google_meet",
-      status: "scheduled",
+      status: "joining",
     });
     expect(createScheduledMeetingBot).toHaveBeenCalledWith({
+      workspace,
+      organizationDomain: "example.com",
       sessionUser: {
         id: "user_123",
         email: "user@example.com",
@@ -396,6 +429,8 @@ describe("POST /api/meetings/link", () => {
 
     expect(response.status).toBe(200);
     expect(createScheduledMeetingBot).toHaveBeenCalledWith({
+      workspace,
+      organizationDomain: "example.com",
       calendarEventId: "33333333-3333-4333-8333-333333333333",
       meetingUrl: "https://meet.google.com/new-call",
       platform: "google_meet",
@@ -428,6 +463,8 @@ describe("POST /api/meetings/link", () => {
 
     expect(response.status).toBe(200);
     expect(createScheduledMeetingBot).toHaveBeenCalledWith({
+      workspace,
+      organizationDomain: "example.com",
       meetingUrl: "https://meet.google.com/new-call",
       platform: "google_meet",
       sessionUser: {
@@ -463,6 +500,7 @@ describe("POST /api/meetings/link", () => {
       status: "joining",
     });
     expect(prepareMeetingBotRecovery).toHaveBeenCalledWith({
+      workspace,
       meetingId: "11111111-1111-4111-8111-111111111111",
       meetingUrl: "https://meet.google.com/new-call",
       platform: "google_meet",
@@ -528,7 +566,7 @@ describe("POST /api/meetings/link", () => {
       botId: "bot_456",
       meetingId: "22222222-2222-4222-8222-222222222222",
       platform: "zoom",
-      status: "scheduled",
+      status: "joining",
     });
   });
 
@@ -569,9 +607,11 @@ describe("POST /api/meetings/link", () => {
       meetingId: "22222222-2222-4222-8222-222222222222",
       meetingUrl: canonicalMeetingUrl,
       platform: "zoom",
-      status: "scheduled",
+      status: "joining",
     });
     expect(createScheduledMeetingBot).toHaveBeenCalledWith({
+      workspace,
+      organizationDomain: "example.com",
       sessionUser: {
         id: "user_123",
         email: "user@example.com",

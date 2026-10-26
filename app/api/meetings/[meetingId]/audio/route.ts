@@ -48,7 +48,7 @@ export async function GET(
     return Response.json({ error: "Audio not found" }, { status: 404 });
   }
 
-  const workspace = await getOrCreateWorkspaceForSessionUser(user);
+  const workspace = await getOrCreateWorkspaceForSessionUser(user, { meetingId });
   const rows = parsedRecordingId?.success
     ? await db
         .select({

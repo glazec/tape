@@ -35,7 +35,7 @@ export default async function NewMeetingPage() {
           </p>
         </div>
 
-        <NewMeetingSources />
+        <NewMeetingSources teamId={workspace.teamId} />
       </section>
     </AppShell>
   );
