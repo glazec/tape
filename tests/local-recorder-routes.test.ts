@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@/lib/provider-credit", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/provider-credit")>()),
@@ -63,7 +63,10 @@ function mockSignedInDevice() {
 }
 
 describe("local recorder API routes", () => {
+  beforeEach(() => vi.stubEnv("NEXT_PUBLIC_APP_URL", undefined));
+
   afterEach(() => {
+    vi.unstubAllEnvs();
     createLocalRecorderDeviceSession.mockReset();
     getLocalRecorderDeviceRequestContext.mockReset();
     listMissedLocalRecorderMeetings.mockReset();
@@ -743,6 +746,39 @@ describe("local recorder API routes", () => {
     expect(response.headers.get("location")).toBe(
       "meetingnote-local-recorder://login?token=token_123&server=https%3A%2F%2Fapp.example.com",
     );
+  });
+
+  it("uses the public server address behind the production reverse proxy", async () => {
+    vi.stubEnv("NEXT_PUBLIC_APP_URL", "https://tape.inevitable.tech");
+    createLocalRecorderDeviceSession.mockResolvedValue({ error: "Unauthorized" });
+    const { GET } = await import("@/app/api/local-recorder/device-login/route");
+    const response = await GET(new Request(
+      "https://0.0.0.0:8080/api/local-recorder/device-login?deviceId=mac_123&callbackUrl=meetingnote-local-recorder%3A%2F%2Flogin",
+    ));
+    expect(createLocalRecorderDeviceSession).toHaveBeenCalledWith({
+      deviceId: "mac_123",
+      callbackUrl: "meetingnote-local-recorder://login",
+      requestUrl: "https://tape.inevitable.tech/api/local-recorder/device-login?deviceId=mac_123&callbackUrl=meetingnote-local-recorder%3A%2F%2Flogin",
+    });
+    expect(new URL(response.headers.get("location")!).origin).toBe("https://tape.inevitable.tech");
+  });
+
+  it("keeps organization selection on the public desktop login URL", async () => {
+    vi.stubEnv("NEXT_PUBLIC_APP_URL", "https://tape.inevitable.tech");
+    createLocalRecorderDeviceSession.mockResolvedValue({ organizations: [
+      { teamId: "team_123", teamName: "First organization" },
+      { teamId: "team_456", teamName: "Second organization" },
+    ] });
+    const { GET } = await import("@/app/api/local-recorder/device-login/route");
+    const response = await GET(new Request(
+      "https://0.0.0.0:8080/api/local-recorder/device-login?deviceId=mac_123&callbackUrl=meetingnote-local-recorder%3A%2F%2Flogin",
+      { headers: { accept: "text/html" } },
+    ));
+    const body = await response.text();
+    expect(body).toContain('href="https://tape.inevitable.tech/api/local-recorder/device-login?');
+    expect(body).toContain("teamId=team_123");
+    expect(body).toContain("teamId=team_456");
+    expect(body).not.toContain("0.0.0.0");
   });
 
   it("finishes the browser page while opening the signed in Mac app", async () => {

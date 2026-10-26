@@ -42,6 +42,7 @@ export default defineConfig({
       },
   use: {
     baseURL,
+    channel: process.env.PLAYWRIGHT_CHANNEL,
     ignoreHTTPSErrors: authenticatedE2EEnabled,
     trace: "on-first-retry",
   },

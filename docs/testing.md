@@ -16,6 +16,10 @@ Calendar import tests also cover invitations with multiple participants but no l
 
 AI followup coverage includes named subjects without pronouns, exact transcript evidence, provider validation retries, full input limits, source invalidation, management authorization, provider credit, changes during generation, shared reader visibility, retry behavior, and timestamp links. Run `npx vitest run tests/meeting-followup.test.ts tests/meeting-followup-route.test.ts tests/meeting-followup-interactions.test.tsx tests/openrouter-followup.test.ts tests/openrouter-translation.test.ts tests/meeting-page.test.tsx tests/migrations.test.ts`. For live verification, generate from a completed meeting, reload to confirm persistence, open as an existing shared reader, and edit a transcript segment to confirm invalidation. For visual review, check collapsed, empty, generating, populated, failed regeneration, and shared reader states on desktop and mobile using the application font and real transcript content. Confirm the Regenerate icon has an accessible name, timestamp bubbles open on hover and keyboard or touch activation, exact source quotes remain readable, Escape dismisses the bubble, and View in transcript targets the cited segment. Confirm long names and quotes wrap without horizontal overflow. Mocked tests and a local UI preview do not prove deployed database persistence.
 
+Session and sharing regressions: run `npx vitest run tests/dashboard-error.test.tsx tests/middleware.test.ts tests/share-dialog-interactions.test.tsx tests/meeting-share-service.test.ts tests/share-recipient-suggestions.test.ts`. For real RLS checks, set `TAPE_SHARING_TEST_DATABASE` to a migrated disposable local PostgreSQL database named `tape_activation_test` or the CI database `meeting_note`. Fixtures roll back. Tests cover new internal and external recipients, multiple organizations, calendar addresses, deduplication, and unrelated tenant exclusion. Run `npm run test:swift` for desktop session classification and native compilation. Production browser sign in, native permission prompts, and release installation still require live verification.
+
+CI sets `PLAYWRIGHT_CHANNEL=chrome` to use the GitHub runner's installed Chrome. Local runs keep the bundled Chromium default unless this variable is set.
+
 ## Test Layers
 
 | Layer | Protects | Command |
@@ -28,7 +32,7 @@ AI followup coverage includes named subjects without pronouns, exact transcript 
 | Python unittest | MCP authentication, caller scope, SQL safety, media tools, signed upload handoff, and read only database boundaries | `npm run test:mcp` |
 | Live calendar probe | Stored production connection, Google token refresh, Calendar read access, Recall connectivity, and recent sync state | `CALENDAR_LIVE_TEST_EMAIL=user@example.com npm run test:calendar-live` |
 
-Playwright starts an isolated Next.js development server on port 3100 unless `PLAYWRIGHT_BASE_URL` points to an existing deployment.
+Playwright starts an isolated Next.js development server on port 3100 unless `PLAYWRIGHT_BASE_URL` points to an existing deployment. CI sets `PLAYWRIGHT_PRODUCTION=true` to test the production bundle from `npm run verify`; authenticated tests serve that bundle over local HTTPS for secure cookies. To run this mode locally, build first, then run `PLAYWRIGHT_PRODUCTION=true npm run test:e2e` with the same environment.
 
 Dashboard scroll restoration is covered by `tests/dashboard-scroll-restoration.test.tsx`,
 including history entry isolation, streamed content taking longer than ten seconds,

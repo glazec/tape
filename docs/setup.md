@@ -16,6 +16,8 @@ Personal meeting notes require migration `0051_meeting_notes` before deploying t
 
 Automatic note answers additionally require migration `0058_meeting_note_blocks` and the existing `OPENROUTER_API_KEY` and `OPENROUTER_MODEL`. No new provider is required. Generation uses the current meeting transcript, the existing meeting credit checks and assistant usage accounting, with a limit of 12 answer requests per user per minute. Questions wait when no transcript has been persisted yet. Contexts larger than 180,000 serialized characters show an explicit size limit rather than silently truncating evidence.
 
+Set `NEXT_PUBLIC_APP_URL` to the public web origin so desktop login never hands off an internal reverse proxy address. Keep `NEON_AUTH_COOKIE_SECRET` stable across releases. Dashboard failures no longer clear cookies. The auth proxy handles meeting URLs and preserves their callback destination. Desktop login logs `recorder.login.started`, `recorder.login.sign_in_required`, `recorder.login.rejected`, and `recorder.login.handoff_ready` without tokens or callback URLs. Device version, permissions, and last activity are stored in `local_recorder_devices` after authenticated status checks, including incomplete permission setup. These records do not prove that a downloaded app launched before sign in.
+
 ## Requirements
 
 1. Node.js 24

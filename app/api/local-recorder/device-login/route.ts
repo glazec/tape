@@ -5,6 +5,10 @@ export const dynamic = "force-dynamic";
 
 export async function GET(request: Request) {
   const url = new URL(request.url);
+  const publicRequestUrl = new URL(
+    `${url.pathname}${url.search}`,
+    process.env.NEXT_PUBLIC_APP_URL?.trim() || url.origin,
+  ).toString();
   const deviceId = url.searchParams.get("deviceId")?.trim();
   const callbackUrl = url.searchParams.get("callbackUrl")?.trim();
 
@@ -12,17 +16,18 @@ export async function GET(request: Request) {
     return Response.json({ error: "Invalid device login" }, { status: 400 });
   }
 
+  console.info("recorder.login.started");
   const result = await createLocalRecorderDeviceSession({
     callbackUrl,
     ...(url.searchParams.get("teamId") ? { teamId: url.searchParams.get("teamId")! } : {}),
     deviceId,
-    requestUrl: request.url,
+    requestUrl: publicRequestUrl,
   });
 
   if ("organizations" in result && result.organizations) {
     if (!acceptsHtml(request)) return Response.json({ code: "organization_required", organizations: result.organizations }, { status: 409 });
     const links = result.organizations.map((organization) => {
-      const target = new URL(request.url);
+      const target = new URL(publicRequestUrl);
       target.searchParams.set("teamId", organization.teamId);
       return `<a style="display:block;padding:1rem;border:1px solid #ddd;border-radius:0.5rem;margin-top:0.75rem;color:inherit;text-decoration:none" href="${escapeHtml(target.toString())}">${escapeHtml(organization.teamName)}</a>`;
     }).join("");
@@ -33,7 +38,8 @@ export async function GET(request: Request) {
 
   if ("error" in result) {
     if (result.error === "Unauthorized") {
-      const signInUrl = buildSignInRedirectUrl(request.url);
+      console.info("recorder.login.sign_in_required");
+      const signInUrl = buildSignInRedirectUrl(publicRequestUrl);
 
       if (acceptsHtml(request)) {
         return buildSignInBridgeResponse(signInUrl);
@@ -42,12 +48,14 @@ export async function GET(request: Request) {
       return Response.redirect(signInUrl);
     }
 
+    console.warn("recorder.login.rejected", { reason: result.error });
     return Response.json(
       { error: result.error },
       { status: "status" in result ? result.status : 401 },
     );
   }
 
+  console.info("recorder.login.handoff_ready");
   if (acceptsHtml(request)) {
     return buildRecorderHandoffResponse(result.redirectUrl);
   }

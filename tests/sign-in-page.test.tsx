@@ -2,6 +2,7 @@
 
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { renderToString } from "react-dom/server";
 
 const { social } = vi.hoisted(() => ({ social: vi.fn() }));
 vi.mock("@/lib/auth/client", () => ({ authClient: { signIn: { social } } }));
@@ -45,6 +46,15 @@ describe("sign in page", () => {
     });
     expect(await screen.findByRole("button", { name: "Opening Google…" })).toBeTruthy();
     expect(social).toHaveBeenCalledWith(expect.objectContaining({ callbackURL: "/meetings/one" }));
+  });
+
+  it("keeps sign in disabled until the client can handle the click", () => {
+    const html = document.createElement("div");
+    html.innerHTML = renderToString(<SignInForm />);
+    expect(html.querySelector("button")?.disabled).toBe(true);
+
+    render(<SignInForm />);
+    expect((screen.getByRole("button", { name: "Continue with Google" }) as HTMLButtonElement).disabled).toBe(false);
   });
 
   it("shows provider errors and allows another attempt", async () => {

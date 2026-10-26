@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
-import { NextRequest } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 
-const neonProxyHandler = vi.fn(() => "next-response");
+const neonProxyHandler = vi.fn(() => NextResponse.next());
 const middleware = vi.fn(() => neonProxyHandler);
 
 vi.mock("@/lib/auth/server", () => ({
@@ -16,13 +16,22 @@ describe("Neon Auth middleware", () => {
     const request = new NextRequest("https://app.example.com/dashboard");
 
     expect(middleware).toHaveBeenCalledWith({ loginUrl: "/auth/sign-in" });
-    expect(proxyModule.proxy(request)).toBe("next-response");
+    expect(await proxyModule.proxy(request)).toBeInstanceOf(Response);
     expect(neonProxyHandler).toHaveBeenCalledWith(request);
     expect(proxyModule.config.matcher).toEqual([
       "/dashboard/:path*",
       "/settings/:path*",
+      "/meetings/:path*",
       "/api/local-recorder/device-login",
     ]);
+  });
+
+  it("returns a shared meeting recipient to the original link after sign in", async () => {
+    neonProxyHandler.mockReturnValueOnce(NextResponse.redirect("https://app.example.com/auth/sign-in"));
+    const { proxy } = await import("../proxy");
+    const response = await proxy(new NextRequest("https://app.example.com/meetings/abc?tab=notes"));
+    const destination = new URL(response.headers.get("location")!);
+    expect(destination.searchParams.get("callbackUrl")).toBe("/meetings/abc?tab=notes");
   });
 
   it("lets plain local recorder device login requests reach the route handler", async () => {
@@ -33,7 +42,7 @@ describe("Neon Auth middleware", () => {
 
     neonProxyHandler.mockClear();
 
-    const response = proxyModule.proxy(request);
+    const response = await proxyModule.proxy(request);
 
     expect(response).not.toBe("next-response");
     expect(neonProxyHandler).not.toHaveBeenCalled();
@@ -47,7 +56,7 @@ describe("Neon Auth middleware", () => {
 
     neonProxyHandler.mockClear();
 
-    expect(proxyModule.proxy(request)).toBe("next-response");
+    expect(await proxyModule.proxy(request)).toBeInstanceOf(Response);
     expect(neonProxyHandler).toHaveBeenCalledWith(request);
   });
 });

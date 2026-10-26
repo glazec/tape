@@ -1,5 +1,7 @@
 # Tape Product
 
+Browser dashboard failures preserve the session and offer Retry. Meeting links return to the requested meeting after authentication. Sharing accepts any valid email, including people who have never signed in; suggestions combine connected organizations and prior recipients. Desktop launch and browser callbacks open the recorder window. Desktop status checks run during permission setup and distinguish expired sessions from connection failures.
+
 ## Users
 
 Internal investors and team operators who need to capture, review, search, share, correct, and follow up on meetings quickly. They should not need technical knowledge of capture, transcription, storage, or background processing systems.

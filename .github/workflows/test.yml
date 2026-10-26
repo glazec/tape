@@ -48,6 +48,10 @@ jobs:
           done
       - name: Check meeting creation and access isolation
         run: psql "$DATABASE_URL" --set ON_ERROR_STOP=1 --file tests/meeting-insert-rls.sql
+      - name: Check email sharing and organization suggestions
+        env:
+          TAPE_SHARING_TEST_DATABASE: postgresql://ci:ci@127.0.0.1:5432/meeting_note
+        run: npx vitest run tests/meeting-share-service.test.ts tests/share-recipient-suggestions.test.ts
       - name: Check company calendar consolidation
         run: psql "$DATABASE_URL" --set ON_ERROR_STOP=1 --file tests/iosf-company-migration.sql
       - name: Check personal notes isolation
@@ -97,6 +101,8 @@ jobs:
       INNGEST_SIGNING_KEY: ci-signing-key
       NEXT_PUBLIC_APP_URL: https://tape.inevitable.tech
       PLAYWRIGHT_AUTHENTICATED: ${{ secrets.E2E_DATABASE_URL != '' && secrets.E2E_DATABASE_AUTHENTICATED_URL != '' }}
+      PLAYWRIGHT_CHANNEL: chrome
+      PLAYWRIGHT_PRODUCTION: "true"
     steps:
       - uses: actions/checkout@v7.0.0
       - uses: actions/setup-node@v7.0.0
@@ -107,9 +113,15 @@ jobs:
         with:
           python-version: "3.14"
           enable-cache: true
-      - run: sudo apt-get update && sudo apt-get install -y ffmpeg
       - run: npm ci
-      - run: npx playwright install --with-deps chromium
+      - name: Install media test binaries
+        run: |
+          npm install --prefix "$RUNNER_TEMP/tape-media-tools" --no-save --package-lock=false @ffprobe-installer/ffprobe@2.1.2
+          mkdir -p "$RUNNER_TEMP/tape-media-tools/bin"
+          ln -s "$(node -p "require('ffmpeg-static')")" "$RUNNER_TEMP/tape-media-tools/bin/ffmpeg"
+          ln -s "$(node -p 'require(process.argv[1]).path' "$RUNNER_TEMP/tape-media-tools/node_modules/@ffprobe-installer/ffprobe")" "$RUNNER_TEMP/tape-media-tools/bin/ffprobe"
+          echo "$RUNNER_TEMP/tape-media-tools/bin" >> "$GITHUB_PATH"
+      - run: google-chrome --version
       - name: Prepare authenticated browser fixtures
         if: env.PLAYWRIGHT_AUTHENTICATED == 'true'
         run: npm run db:migrate && npm run test:e2e:seed

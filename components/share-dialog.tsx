@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useEffect, useState } from "react";
+import { z } from "zod";
 import {
   AlertCircle,
   Building2,
@@ -314,6 +315,7 @@ export function ShareDialog({
   const recipientOptions = buildRecipientOptions(
     teamMembers,
     customAudience,
+    email,
   );
   const selectedRecipient =
     recipientOptions.find(
@@ -599,8 +601,19 @@ function getSubmittedRecipient(form: HTMLFormElement, fallback: string) {
 function buildRecipientOptions(
   teamMembers: ShareRecipient[],
   customAudience: ShareAudienceOption | null,
+  draft: string,
 ): ShareRecipientOption[] {
+  const address = draft.trim().toLowerCase();
   return [
+    ...(z.email().max(320).safeParse(address).success &&
+    !teamMembers.some((member) => member.email.toLowerCase() === address)
+      ? [{
+          description: "Anyone with this email can sign in to view",
+          kind: "person" as const,
+          label: `Share with ${address}`,
+          value: address,
+        }]
+      : []),
     {
       description: "Everyone in this workspace",
       kind: "organization",
@@ -618,7 +631,9 @@ function buildRecipientOptions(
         ]
       : []),
     ...teamMembers.map((member) => ({
-      description: member.name ? member.email : "Workspace member",
+      description: member.organization
+        ? `${member.email} · ${member.organization}`
+        : member.email,
       kind: "person" as const,
       label: member.name ?? member.email,
       value: member.email,

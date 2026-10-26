@@ -10,7 +10,7 @@ import {
   BatchSpanProcessor,
   type SpanProcessor,
 } from "@opentelemetry/sdk-trace-base";
-import Sentry from "@sentry/nextjs";
+import * as SentryModule from "@sentry/nextjs";
 import {
   OTLPHttpJsonTraceExporter,
   registerOTel,
@@ -27,6 +27,13 @@ import {
 } from "@/lib/telemetry/sanitize";
 
 type ConsoleLevel = "debug" | "error" | "info" | "log" | "warn";
+
+// Next bundles named exports; the standalone Node worker loads the CommonJS
+// re-export through its default namespace.
+const Sentry: typeof SentryModule = typeof SentryModule.isEnabled === "function"
+  ? SentryModule
+  : Reflect.get(SentryModule, "default");
+
 type TelemetrySeverity = "DEBUG" | "ERROR" | "INFO" | "WARN";
 
 type TelemetryState = {

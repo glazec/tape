@@ -815,6 +815,22 @@ import Testing
     }
 }
 
+@Test func loginCallbackRejectsInternalProxyAddress() {
+    #expect(throws: LocalRecorderLoginCallbackError.self) {
+        _ = try LocalRecorderLoginCallback(
+            url: URL(string: "meetingnote-local-recorder://login?token=token_123&server=https%3A%2F%2F0.0.0.0%3A8080")!
+        )
+    }
+}
+
+@Test func savedInternalProxyCredentialsRequireFreshSignIn() {
+    let invalid = LocalRecorderCredentials(serverURLText: "https://0.0.0.0:8080", bearerToken: "old_token")
+    let valid = LocalRecorderCredentials(serverURLText: "https://tape.inevitable.tech", bearerToken: "valid_token")
+    #expect(recoverLocalRecorderCredentials(invalid) == nil)
+    #expect(recoverLocalRecorderCredentials(valid) == valid)
+    #expect(recoverLocalRecorderCredentials(nil) == nil)
+}
+
 @Test func browserLoginURLStartsAtSignInWithEncodedDeviceCallback() throws {
     let url = try #require(
         makeLocalRecorderBrowserLoginURL(
@@ -1197,4 +1213,11 @@ private func makeMissedMeeting(
             at: Date(timeIntervalSince1970: 3_100)
         ) == live
     )
+}
+
+@Test func expiredSessionRequiresSignInButConnectionFailureDoesNot() {
+    #expect(localRecorderRequiresSignIn(LocalRecorderAPIError.httpStatus(401)))
+    #expect(!localRecorderRequiresSignIn(LocalRecorderAPIError.httpStatus(403)))
+    #expect(!localRecorderRequiresSignIn(LocalRecorderAPIError.httpStatus(503)))
+    #expect(!localRecorderRequiresSignIn(URLError(.notConnectedToInternet)))
 }

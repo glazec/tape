@@ -26,7 +26,9 @@ vi.mock("@/lib/workspace", () => ({
 vi.mock("@/lib/meeting-queries", () => ({
   getMeetingTranscriptForWorkspace: mocks.getMeeting,
   listMeetingDetailRelatedMeetingsForWorkspace: mocks.listRelated,
-  listWorkspaceShareRecipients: mocks.listRecipients,
+}));
+vi.mock("@/lib/share-recipient-suggestions", () => ({
+  listShareRecipientSuggestions: mocks.listRecipients,
 }));
 vi.mock("@/lib/meeting-share-service", () => ({
   listActiveMeetingShares: mocks.listShares,
