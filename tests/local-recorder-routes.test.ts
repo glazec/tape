@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@/lib/provider-credit", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/provider-credit")>()),
@@ -63,6 +63,8 @@ function mockSignedInDevice() {
 }
 
 describe("local recorder API routes", () => {
+  beforeEach(() => vi.stubEnv("NEXT_PUBLIC_APP_URL", undefined));
+
   afterEach(() => {
     vi.unstubAllEnvs();
     createLocalRecorderDeviceSession.mockReset();
