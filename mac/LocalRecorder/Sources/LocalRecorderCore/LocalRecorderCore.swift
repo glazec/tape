@@ -888,7 +888,8 @@ public struct LocalRecorderLoginCallback: Equatable, Sendable {
             !token.isEmpty,
             let server,
             let serverURL = URL(string: server),
-            serverURL.scheme == "https"
+            serverURL.scheme == "https",
+            serverURL.host != "0.0.0.0"
         else {
             throw LocalRecorderLoginCallbackError.invalidCallback
         }
@@ -912,6 +913,16 @@ public func initialLocalRecorderServerURLText(
     credentials: LocalRecorderCredentials?
 ) -> String {
     credentials?.serverURLText ?? "https://tape.inevitable.tech"
+}
+
+// Older server handoffs exposed the reverse proxy's bind address. Discard those
+// credentials so an existing installation can sign in at the public origin.
+public func recoverLocalRecorderCredentials(
+    _ credentials: LocalRecorderCredentials?
+) -> LocalRecorderCredentials? {
+    guard let credentials,
+          URL(string: credentials.serverURLText)?.host != "0.0.0.0" else { return nil }
+    return credentials
 }
 
 public enum LocalRecorderKeychainCredentialStoreError: Error, Equatable {

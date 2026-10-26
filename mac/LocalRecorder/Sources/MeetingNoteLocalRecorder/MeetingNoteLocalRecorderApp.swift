@@ -243,7 +243,7 @@ final class RecorderAppModel: NSObject, ObservableObject, UNUserNotificationCent
 
     override init() {
         let credentialStore = LocalRecorderKeychainCredentialStore()
-        let credentials = try? credentialStore.load()
+        let credentials = recoverLocalRecorderCredentials(try? credentialStore.load())
         self.credentialStore = credentialStore
         self.uploadQueue = LocalRecordingUploadQueue(
             directoryURL: LocalRecorderFileLocations.uploadQueueDirectoryURL()
