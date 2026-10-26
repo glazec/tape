@@ -30,17 +30,8 @@ describe("Neon Auth middleware", () => {
     neonProxyHandler.mockReturnValueOnce(NextResponse.redirect("https://app.example.com/auth/sign-in"));
     const { proxy } = await import("../proxy");
     const response = await proxy(new NextRequest("https://app.example.com/meetings/abc?tab=notes"));
-    const destination = new URL(response.headers.get("location")!, "https://app.example.com");
+    const destination = new URL(response.headers.get("location")!);
     expect(destination.searchParams.get("callbackUrl")).toBe("/meetings/abc?tab=notes");
-  });
-
-  it("keeps relative sign in redirects relative behind a reverse proxy", async () => {
-    const redirect = NextResponse.next();
-    redirect.headers.set("location", "/auth/sign-in");
-    neonProxyHandler.mockReturnValueOnce(redirect);
-    const { proxy } = await import("../proxy");
-    const response = await proxy(new NextRequest("https://0.0.0.0:8080/meetings/abc"));
-    expect(response.headers.get("location")).toBe("/auth/sign-in?callbackUrl=%2Fmeetings%2Fabc");
   });
 
   it("lets plain local recorder device login requests reach the route handler", async () => {

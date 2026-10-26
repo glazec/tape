@@ -22,7 +22,7 @@ export async function proxy(request: NextRequest) {
       const callback = request.nextUrl.clone();
       callback.searchParams.delete(neonAuthSessionVerifierParam);
       destination.searchParams.set("callbackUrl", `${callback.pathname}${callback.search}`);
-      response.headers.set("location", `${destination.pathname}${destination.search}`);
+      response.headers.set("location", destination.toString());
     }
   }
   return response;
