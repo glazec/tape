@@ -36,7 +36,7 @@ async function authorize(context: Context) {
   const { meetingId } = await context.params;
   if (!z.uuid().safeParse(meetingId).success)
     return Response.json({ error: "Meeting not found" }, { status: 404 });
-  const workspace = await getOrCreateWorkspaceForSessionUser(user);
+  const workspace = await getOrCreateWorkspaceForSessionUser(user, { meetingId });
   if (!(await canReadMeetingNotes(workspace, meetingId)))
     return Response.json({ error: "Meeting not found" }, { status: 404 });
   return { workspace, meetingId };

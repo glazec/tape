@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { z } from "zod";
 
 import { and, asc, eq, sql } from "drizzle-orm";
 
@@ -18,6 +19,9 @@ import type { SessionUser } from "@/lib/auth";
 import { normalizeEmail, normalizeEmailDomain } from "@/lib/access";
 import { getPersonalReadableMeetingsCondition } from "@/lib/meeting-access-policy";
 import { PUBLIC_WORKSPACE_CREDIT_USD_MICROS } from "@/lib/provider-credit";
+import { getSelectedOrganization } from "@/lib/selected-organization";
+import { selectOrganizationWorkspace } from "@/lib/organization-workspaces";
+import { getReadableMeetingsCondition } from "@/lib/meeting-access-policy";
 import { getWorkspaceDisplayName } from "@/lib/team-name";
 
 export type WorkspaceContext = {
@@ -41,6 +45,7 @@ export type WorkspaceMember = {
 
 export async function getOrCreateWorkspaceForSessionUser(
   sessionUser: SessionUser,
+  selection: { meetingId?: string; teamId?: string; ignoreSelection?: boolean } = {},
 ): Promise<WorkspaceContext> {
   const email = normalizeEmail(sessionUser.email);
   const domain = normalizeEmailDomain(email);
@@ -91,7 +96,7 @@ export async function getOrCreateWorkspaceForSessionUser(
         ? { teamName: existingDomain[0].teamName }
         : {}),
       userId,
-    });
+    }, selection);
   }
 
   const existingMembership = await db
@@ -116,6 +121,7 @@ export async function getOrCreateWorkspaceForSessionUser(
     })
     .from(teamMemberships)
     .where(eq(teamMemberships.userId, userId))
+    .orderBy(sql`case when ${teamMemberships.role} = 'external' then 1 else 0 end`, asc(teamMemberships.createdAt))
     .limit(1);
 
   if (existingMembership[0]) {
@@ -142,7 +148,7 @@ export async function getOrCreateWorkspaceForSessionUser(
         ? { teamName: existingMembership[0].teamName }
         : {}),
       userId,
-    });
+    }, selection);
   }
 
   const teamName = `${getWorkspaceDisplayName(domain)} workspace`;
@@ -172,12 +178,32 @@ export async function getOrCreateWorkspaceForSessionUser(
     teamId,
     teamName,
     userId,
-  });
+  }, selection);
 }
 
-function activateWorkspace(workspace: WorkspaceContext) {
+async function activateWorkspace(
+  workspace: WorkspaceContext,
+  selection: { meetingId?: string; teamId?: string; ignoreSelection?: boolean },
+) {
   setDatabaseWorkspace(workspace);
-  return workspace;
+  if (selection.ignoreSelection) return workspace;
+  let teamId = selection.teamId;
+  let required = Boolean(selection.teamId);
+  if (selection.meetingId) {
+    if (!z.uuid().safeParse(selection.meetingId).success) return workspace;
+    const [meeting] = await db.select({ teamId: meetings.teamId }).from(meetings)
+      .where(and(eq(meetings.id, selection.meetingId), getReadableMeetingsCondition(workspace))).limit(1);
+    // Shared guests keep their own workspace; meeting access checks still apply.
+    teamId = meeting?.teamId;
+  } else if (!teamId) {
+    const selected = await getSelectedOrganization();
+    teamId = selected?.teamId;
+    required = selected?.required ?? false;
+  }
+  if (!teamId || teamId === workspace.teamId) return workspace;
+  const selected = await selectOrganizationWorkspace(workspace, teamId);
+  if (!selected && required) throw new Error("Organization unavailable");
+  return selected ?? workspace;
 }
 
 async function promotePublicWorkspaceMembership(input: {

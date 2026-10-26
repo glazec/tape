@@ -35,7 +35,7 @@ export async function POST(
   if (!z.uuid().safeParse(meetingId).success) {
     return Response.json({ error: "Meeting not found" }, { status: 404 });
   }
-  const workspace = await getOrCreateWorkspaceForSessionUser(user);
+  const workspace = await getOrCreateWorkspaceForSessionUser(user, { meetingId });
   const meeting = await getMeetingTranscriptForWorkspace(workspace, meetingId);
   if (!meeting?.canManage) {
     return Response.json({ error: "Meeting not found" }, { status: 404 });

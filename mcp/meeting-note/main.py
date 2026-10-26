@@ -1154,10 +1154,7 @@ def _access_condition(
     params[user_key] = workspace.user_id
     conditions.append(f"{meeting_alias}.owner_user_id = %({user_key})s::uuid")
 
-    if workspace.can_manage_team_meetings and workspace.team_id:
-        team_key = f"{param_prefix}_team_id"
-        params[team_key] = workspace.team_id
-        conditions.append(f"{meeting_alias}.team_id = %({team_key})s::uuid")
+    conditions.append(_manager_condition(meeting_alias, user_key))
 
     conditions.append(
         f"""
@@ -1403,20 +1400,26 @@ def _current_transcript_job_subquery(meeting_id_sql: str) -> str:
     """
 
 
+def _manager_condition(meeting_alias: str, user_key: str) -> str:
+    return f"""exists (
+        select 1 from team_memberships access_membership
+        where access_membership.team_id = {meeting_alias}.team_id
+          and access_membership.user_id = %({user_key})s::uuid
+          and access_membership.role in ('admin', 'owner')
+    )"""
+
+
 def _access_scope_expression(
     workspace: Workspace,
     meeting_alias: str,
     param_prefix: str,
 ) -> str:
     user_key = f"{param_prefix}_user_id"
-    owner_condition = f"{meeting_alias}.owner_user_id = %({user_key})s::uuid"
-    if workspace.can_manage_team_meetings and workspace.team_id:
-        return (
-            f"case when {owner_condition} "
-            f"or {meeting_alias}.team_id = %({param_prefix}_team_id)s::uuid "
-            "then 'workspace' else 'shared' end"
-        )
-    return f"case when {owner_condition} then 'workspace' else 'shared' end"
+    return (
+        f"case when {meeting_alias}.owner_user_id = %({user_key})s::uuid "
+        f"or {_manager_condition(meeting_alias, user_key)} "
+        "then 'workspace' else 'shared' end"
+    )
 
 
 def _build_sql_tool_query(user_sql: str, access_sql: str, access_scope_sql: str) -> str:
@@ -1526,6 +1529,8 @@ def _build_sql_tool_query(user_sql: str, access_sql: str, access_scope_sql: str)
 
 
 def _meeting_access_scope(row: dict[str, Any], workspace: Workspace) -> str:
+    if row.get("access_scope") in {"workspace", "shared"}:
+        return str(row["access_scope"])
     if str(row.get("owner_user_id")) == workspace.user_id:
         return "workspace"
     if workspace.can_manage_team_meetings and workspace.team_id and str(
@@ -1584,6 +1589,7 @@ async def _get_accessible_meeting(
             m.id,
             m.team_id,
             m.owner_user_id,
+            {_access_scope_expression(workspace, "m", "access")} as access_scope,
             m.title,
             m.platform::text as platform,
             m.status::text as status,
@@ -1729,8 +1735,9 @@ async def prepare_meeting_upload(
     content_type: str | None = None,
     duration_ms: int | None = None,
     title: str | None = None,
+    team_id: str | None = None,
 ) -> dict[str, Any]:
-    """Prepare a local audio recording upload to Tape. Use the returned short lived PUT URL to upload the exact local file bytes with the returned Content-Type, then call complete_meeting_upload with the completion_token. meeting_time must be ISO 8601 with a timezone. Supports MP3, M4A, and audio WebM up to 1 GB."""
+    """Prepare a local audio recording upload to Tape. Use the returned short lived PUT URL to upload the exact local file bytes with the returned Content-Type, then call complete_meeting_upload with the completion_token. meeting_time must be ISO 8601 with a timezone. Supports MP3, M4A, and audio WebM up to 1 GB. If organization_required is returned, ask the user which organization to use and retry with its team_id."""
     normalized_file_name = _meeting_upload_file_name(file_name)
     normalized_content_type = _meeting_upload_content_type(
         normalized_file_name,
@@ -1744,6 +1751,7 @@ async def prepare_meeting_upload(
     result = await _post_tape_backend(
         "/api/mcp/uploads/prepare",
         {
+            **({"teamId": _uuid(team_id, "team_id")} if team_id else {}),
             "contentType": normalized_content_type,
             **(
                 {"durationMs": normalized_duration}
@@ -1756,6 +1764,12 @@ async def prepare_meeting_upload(
             **({"title": normalized_title} if normalized_title else {}),
         },
     )
+    if result.get("code") == "organization_required":
+        return {
+            "code": "organization_required",
+            "organizations": result["organizations"],
+            "instructions": "Ask the user which organization to use, then retry prepare_meeting_upload with its team_id.",
+        }
     upload_url = str(result["uploadUrl"])
     completion_token = str(result["completionToken"])
     return {
@@ -1885,6 +1899,7 @@ async def list_accessible_meetings(
                 m.id,
                 m.team_id,
                 m.owner_user_id,
+                {_access_scope_expression(workspace, "m", "inventory_access")} as access_scope,
                 m.title,
                 m.platform::text as platform,
                 m.status::text as status,

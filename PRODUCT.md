@@ -85,3 +85,7 @@ Meeting managers can replace an incorrect recording on a completed meeting throu
 Maintain keyboard access, visible focus states, semantic labels, sufficient contrast, and reduced motion compatibility. Do not rely on color alone to communicate state.
 
 A person can connect multiple Google Calendar accounts without replacing other accounts. Verified work emails join configured organization workspaces as members. Company domains may share one workspace and one scheduled bot per meeting, while keeping domain specific bot names and avatars. Administrators edit only organizations they administer and may select the preferred bot for meetings involving multiple company domains.
+
+## Organization context
+
+A connected calendar account, company workspace, and bot identity are separate choices. Multiple accounts do not imply multiple bots. New bot requests require an explicit choice when multiple organization identities are available. Calendar automation retains the company preference for shared meetings. Other creation flows use the selected workspace; existing meeting actions retain the meeting’s workspace and access rules. Desktop pairing and MCP uploads ask for an organization when membership is ambiguous.

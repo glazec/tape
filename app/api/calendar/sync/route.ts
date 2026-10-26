@@ -1,3 +1,4 @@
+import { CalendarAccountSelectionError } from "@/lib/calendar-account-selection";
 import { z } from "zod";
 import { inngest } from "@/inngest/client";
 
@@ -65,6 +66,9 @@ export async function POST(request: Request) {
     });
     return Response.json({ ...syncResult, historyRepairQueued: true }, { status: 202 });
   } catch (error) {
+    if (error instanceof CalendarAccountSelectionError) {
+      return Response.json({ error: error.message, code: "calendar_account_required" }, { status: 409 });
+    }
     const creditResponse = providerCreditErrorResponse(error);
 
     if (creditResponse) {

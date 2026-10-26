@@ -116,7 +116,7 @@ describe("TeamSettingsPage", () => {
     const { default: TeamSettingsPage } =
       await import("@/app/settings/team/page");
 
-    await expect(TeamSettingsPage()).rejects.toThrow(
+    await expect(TeamSettingsPage({})).rejects.toThrow(
       "NEXT_REDIRECT:/dashboard",
     );
     expect(redirect).toHaveBeenCalledWith("/dashboard");
@@ -199,7 +199,7 @@ describe("TeamSettingsPage", () => {
 
     const { default: TeamSettingsPage } =
       await import("@/app/settings/team/page");
-    const html = renderToStaticMarkup(await TeamSettingsPage());
+    const html = renderToStaticMarkup(await TeamSettingsPage({}));
 
     expect(html).toContain("Transcription vocabulary");
     expect(html).toContain("Workspace defaults");
@@ -290,7 +290,7 @@ describe("TeamSettingsPage", () => {
 
     const { default: TeamSettingsPage } =
       await import("@/app/settings/team/page");
-    const html = renderToStaticMarkup(await TeamSettingsPage());
+    const html = renderToStaticMarkup(await TeamSettingsPage({}));
 
     expect(html).toContain("Default avatar");
     expect(html).toContain("data:image/jpeg;base64,default-avatar");

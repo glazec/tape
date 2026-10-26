@@ -43,3 +43,9 @@ Deploy the MCP and image worker as separate services in one Railway project name
 Keep `DISABLE_AUTH=false`. Configure `MCP_BASE_URL`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `FASTMCP_JWT_SIGNING_KEY`, `OAUTH_STORAGE_PATH`, `NEON_AUTH_JWKS_URL`, `NEON_AUTH_ISSUER`, `DATABASE_URL`, `APP_BASE_URL`, and `MCP_BACKEND_SHARED_SECRET`. Set the same generated `MCP_BACKEND_SHARED_SECRET` on the `tape-web` service. Set `APIKEY_DATABASE_URL` to the shared Neon database containing the `api_keys` table. `DATABASE_URL` must use a login role granted `tape_mcp`, never the Neon owner role. The MCP transaction injects the verified caller claims before every read so PostgreSQL RLS independently enforces the caller boundary. Upload mutations use only the signed Tape web endpoints; the MCP database role remains read only.
 
 Add `https://<mcp-domain>/auth/callback` to the Google OAuth client. Set `NEON_AUTH_AUDIENCE` only when Neon Auth JWTs include a known audience claim. Shared `sk_mcp_` bearer keys are resolved first. Requests without a shared key use Google OAuth, and direct bearer clients may still send a Neon Auth JWT.
+
+## Uploads across organizations
+
+Pass optional `team_id` to `prepare_meeting_upload` to select a workspace. If the response contains `organization_required`, ask the user to select from `organizations` and retry with that team ID. Completion uses the workspace bound to the signed upload token.
+
+Meeting reads evaluate administrator membership against each meeting’s workspace, so membership in one organization does not grant access to another organization. Ownership and active share grants continue to apply across organizations.

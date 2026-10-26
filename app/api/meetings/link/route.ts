@@ -1,7 +1,9 @@
 import { z } from "zod";
 
 import { getCurrentUser } from "@/lib/auth";
-import { normalizeEmailDomain } from "@/lib/access";
+import { getOrCreateWorkspaceForSessionUser, assertCanCreateMeetings } from "@/lib/workspace";
+import { MeetingBotOrganizationError, selectMeetingBotChoice } from "@/lib/meeting-bot-selection";
+import { getBotProfileForMeeting } from "@/lib/meeting-bot-record-profile";
 import {
   createScheduledMeetingBot,
   findScheduledMeetingBotCalendarCandidates,
@@ -33,6 +35,8 @@ export const runtime = "nodejs";
 
 const requestSchema = z
   .strictObject({
+    teamId: z.uuid().optional(),
+    organizationDomain: z.string().max(253).optional(),
     calendarEventId: z.uuid().optional(),
     createSeparateMeeting: z.boolean().optional(),
     meetingUrl: z.url(),
@@ -92,16 +96,29 @@ export async function POST(request: Request) {
   let skipUnconfirmedCalendarMatch = false;
 
   let scheduledRecallBotId: string | null = null;
+  let organizationDomain: string | undefined;
 
   try {
+    let workspace = await getOrCreateWorkspaceForSessionUser(user,
+      result.data.recoveryMeetingId ? { meetingId: result.data.recoveryMeetingId } : { ignoreSelection: true });
+    if (!isRecovery) {
+      const selection = await selectMeetingBotChoice(workspace, result.data);
+      if (selection.choices) {
+        return Response.json({ code: "bot_organization_required", botChoices: selection.choices }, { status: 409 });
+      }
+      workspace = selection.workspace;
+      organizationDomain = selection.organizationDomain;
+    }
+    await assertCanCreateMeetings(workspace);
     if (!hasMeetingChoice) {
       const now = new Date();
       const [calendarMeetings, recentMeetings] = await Promise.all([
         findScheduledMeetingBotCalendarCandidates({
           now,
           sessionUser: user,
+          workspace,
         }),
-        findMeetingBotRecoveryCandidates({ now, sessionUser: user }),
+        findMeetingBotRecoveryCandidates({ now, sessionUser: user, workspace }),
       ]);
       const recentCalendarEventIds = new Set(
         recentMeetings.flatMap((meeting) =>
@@ -151,12 +168,15 @@ export async function POST(request: Request) {
           meetingUrl,
           platform,
           sessionUser: user,
+          workspace,
         })
       : await createScheduledMeetingBot({
           ...(result.data.calendarEventId
             ? { calendarEventId: result.data.calendarEventId }
             : {}),
           sessionUser: user,
+          workspace,
+          organizationDomain,
           meetingUrl,
           platform,
           ...(result.data.createSeparateMeeting || skipUnconfirmedCalendarMatch
@@ -224,7 +244,9 @@ export async function POST(request: Request) {
   }
 
   try {
-    const botProfile = await getMeetingBotProfile(scheduledMeeting.teamId, normalizeEmailDomain(user.email));
+    const botProfile = isRecovery
+      ? await getBotProfileForMeeting(scheduledMeeting.meetingId)
+      : await getMeetingBotProfile(scheduledMeeting.teamId, organizationDomain || undefined);
     const bot = (await scheduleRecallBot({
       meetingUrl,
       ...getMeetingBotRecallCreateInput(botProfile),
@@ -257,7 +279,7 @@ export async function POST(request: Request) {
       meetingId: scheduledMeeting.meetingId,
       meetingUrl,
       platform,
-      status: isRecovery ? "joining" : "scheduled",
+      status: isRecovery || !scheduledMeeting.startAt ? "joining" : "scheduled",
     });
   } catch (error) {
     if (scheduledRecallBotId) {
@@ -345,6 +367,9 @@ function selectBackToBackMeetings(meetings: PotentialMeeting[], now: Date) {
 }
 
 function handleMeetingLinkError(error: unknown) {
+  if (error instanceof MeetingBotOrganizationError) {
+    return Response.json({ error: error.message }, { status: 403 });
+  }
   const creditResponse = providerCreditErrorResponse(error);
 
   if (creditResponse) {

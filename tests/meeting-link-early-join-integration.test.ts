@@ -31,6 +31,10 @@ const {
   select: vi.fn(),
 }));
 
+vi.mock("@/lib/meeting-bot-selection", () => ({
+  selectMeetingBotChoice: async (workspace: unknown) => ({ workspace, organizationDomain: "iosg.vc" }),
+  MeetingBotOrganizationError: class extends Error {},
+}));
 vi.mock("@/lib/auth", () => ({ getCurrentUser }));
 
 vi.mock("@/db/client", () => ({ db: { select } }));

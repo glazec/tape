@@ -1,6 +1,7 @@
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 
+import { ORGANIZATION_COOKIE } from "@/lib/selected-organization";
 import { SharedOnlyAccessError } from "@/lib/access-errors";
 import { getCurrentUser } from "@/lib/auth";
 import {
@@ -48,7 +49,7 @@ export async function GET(request: Request) {
   }
 
   try {
-    let workspace = await getOrCreateWorkspaceForSessionUser(user);
+    let workspace = await getOrCreateWorkspaceForSessionUser(user, { ignoreSelection: true });
     await assertCanCreateMeetings(workspace);
 
     const tokens = await exchangeGoogleCalendarCode(code);
@@ -61,6 +62,10 @@ export async function GET(request: Request) {
       accessToken: tokens.accessToken,
       accessTokenExpiresAt: tokens.accessTokenExpiresAt,
       refreshToken: tokens.refreshToken,
+    });
+
+    cookieStore.set(ORGANIZATION_COOKIE, workspace.teamId, {
+      httpOnly: true, sameSite: "lax", secure: process.env.NODE_ENV === "production", path: "/", maxAge: 60 * 60 * 24 * 30,
     });
 
     try {

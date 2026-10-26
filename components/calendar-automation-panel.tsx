@@ -36,7 +36,7 @@ export function CalendarAutomationPanel({
       <CardHeader className="border-b bg-muted/35">
         <CardTitle>Calendar</CardTitle>
         <CardDescription>
-          {connected
+          {status.accounts?.length ? `${status.accounts.length} calendar accounts` : connected
             ? (status.accountEmail ?? accountLabel ?? "Connected account")
             : "Connect Google Calendar to record and transcribe meetings automatically."}
         </CardDescription>
@@ -47,7 +47,7 @@ export function CalendarAutomationPanel({
         </CardAction>
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
-        {connected ? (
+        {connected && !status.accounts ? (
           <div className="grid gap-3 text-sm">
             <StatusRow
               icon={<Bot />}
@@ -71,7 +71,13 @@ export function CalendarAutomationPanel({
             />
           </div>
         ) : null}
-        <CalendarSyncButton autoSync={autoSync} connected={connected} connectionId={status.connectionId} />
+        {status.accounts ? <ul className="space-y-4">
+          {status.accounts.map((account) => <li key={account.connectionId} className="space-y-2">
+            <p className="break-all text-sm font-medium">{account.accountEmail ?? "Google account"}</p>
+            <p className="text-xs text-muted-foreground">{account.recallCalendarStatus === "connected" ? account.autoJoinEnabled ? "Recording coverage on" : "Recording coverage off" : "Needs attention"}</p>
+            <CalendarSyncButton connected={account.connected} connectionId={account.connectionId} teamId={account.teamId} />
+          </li>)}
+        </ul> : <CalendarSyncButton autoSync={autoSync} connected={connected} connectionId={status.connectionId} teamId={status.teamId} />}
         <Link className="self-end text-sm underline underline-offset-4" href="/settings/team#connected-accounts">
           Manage connected accounts
         </Link>

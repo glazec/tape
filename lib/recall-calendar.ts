@@ -1,3 +1,4 @@
+import { CalendarAccountSelectionError } from "@/lib/calendar-account-selection";
 import { and, eq, isNull, lt, or, sql } from "drizzle-orm";
 import { z } from "zod";
 
@@ -674,6 +675,8 @@ async function findConnectionByWorkspace(workspace: WorkspaceContext, connection
       ),
     )
     .limit(10);
+
+  if (!connectionId && connections.length > 1) throw new CalendarAccountSelectionError();
 
   const connection =
     connections.find((candidate) => candidate.recallCalendarId) ??

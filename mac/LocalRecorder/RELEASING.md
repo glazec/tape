@@ -77,3 +77,7 @@ open "/Applications/Tape Desktop.app"
 5. Grant Microphone, Screen Recording, Accessibility, and Notifications when macOS asks.
 
 If removing quarantine reports a permission error, run the same `xattr` command with `sudo`. This bypass is necessary because the app is not notarized. Only use the ZIP downloaded from the official `glazec/tape` GitHub Release and verify its published SHA256 checksum before opening it.
+
+## Organization pairing
+
+The browser login asks users with multiple memberships which organization should receive recordings. Device sessions remain bound to that workspace when the web workspace changes. Pair the recorder again to select another organization. Verify this prompt before publishing a recorder release against the updated web service.

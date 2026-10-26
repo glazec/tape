@@ -322,7 +322,7 @@ async function getAccessibleMeeting(context: {
     return Response.json({ error: "Meeting not found" }, { status: 404 });
   }
 
-  const workspace = await getOrCreateWorkspaceForSessionUser(user);
+  const workspace = await getOrCreateWorkspaceForSessionUser(user, { meetingId });
   const [meeting] = await db
     .select({
       attendeeEmails: calendarEvents.attendeeEmails,

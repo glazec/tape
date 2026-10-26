@@ -99,7 +99,7 @@ export default async function LandingPage({
   searchParams,
 }: {
   searchParams?: Promise<{ [key: string]: string | string[] | undefined }>;
-} = {}) {
+}) {
   const user = await getAuthenticatedUser();
 
   if (user) {

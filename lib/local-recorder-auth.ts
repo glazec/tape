@@ -7,6 +7,7 @@ import {
   teamMemberships,
   teams,
 } from "@/db/schema";
+import { listOrganizationWorkspaces, selectOrganizationWorkspace } from "@/lib/organization-workspaces";
 import { SharedOnlyAccessError } from "@/lib/access-errors";
 import { getCurrentUser } from "@/lib/auth";
 import {
@@ -150,6 +151,7 @@ function parseLocalRecorderPermissionReadiness(value: string | null) {
 
 export async function createLocalRecorderDeviceSession(input: {
   callbackUrl: string;
+  teamId?: string;
   deviceId: string;
   requestUrl: string;
 }) {
@@ -165,7 +167,17 @@ export async function createLocalRecorderDeviceSession(input: {
     return { error: "Invalid callback" as const };
   }
 
-  const workspace = await getOrCreateWorkspaceForSessionUser(user);
+  let workspace = await getOrCreateWorkspaceForSessionUser(user);
+  const organizations = await listOrganizationWorkspaces(workspace);
+  if (!input.teamId && organizations.length > 1) {
+    return { organizations: organizations.map(({ teamId, teamName }) => ({ teamId, teamName })) };
+  }
+  if (input.teamId) {
+    const selected = organizations.some((organization) => organization.teamId === input.teamId)
+      ? await selectOrganizationWorkspace(workspace, input.teamId) : null;
+    if (!selected) return { error: "Organization unavailable" as const, status: 403 };
+    workspace = selected;
+  }
   try {
     await assertCanCreateMeetings(workspace);
   } catch (error) {

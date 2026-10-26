@@ -51,7 +51,7 @@ export const dynamic = "force-dynamic";
 
 export default async function TeamSettingsPage({ searchParams }: {
   searchParams?: Promise<{ teamId?: string; organizationDomain?: string }>;
-} = {}) {
+}) {
   const user = await requireCurrentUser();
   let workspace = await getOrCreateWorkspaceForSessionUser(user);
   const params = await searchParams;

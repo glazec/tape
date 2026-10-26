@@ -1,3 +1,4 @@
+import { CalendarAccountSelectionError } from "@/lib/calendar-account-selection";
 import { SharedOnlyAccessError } from "@/lib/access-errors";
 import { getCurrentUser } from "@/lib/auth";
 import { z } from "zod";
@@ -10,7 +11,7 @@ import {
 
 export const runtime = "nodejs";
 
-export async function POST(request?: Request) {
+export async function POST(request: Request) {
   const user = await getCurrentUser();
 
   if (!user) {
@@ -18,7 +19,7 @@ export async function POST(request?: Request) {
   }
 
   try {
-    const body = await request?.json().catch(() => ({})) ?? {};
+    const body = await request.json().catch(() => ({}));
     const result = z.strictObject({ connectionId: z.uuid().optional(), teamId: z.uuid().optional() }).safeParse(body);
     if (!result.success) return Response.json({ error: "Invalid calendar disconnect request" }, { status: 400 });
     let workspace = await getOrCreateWorkspaceForSessionUser(user);
@@ -35,6 +36,9 @@ export async function POST(request?: Request) {
 
     return Response.json({ disconnected });
   } catch (error) {
+    if (error instanceof CalendarAccountSelectionError) {
+      return Response.json({ error: error.message, code: "calendar_account_required" }, { status: 409 });
+    }
     if (error instanceof SharedOnlyAccessError) {
       return Response.json(
         { error: "Shared users cannot manage calendars" },

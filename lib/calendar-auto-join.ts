@@ -40,6 +40,7 @@ import {
 import {
   getMeetingBotMetadata,
   getCalendarMeetingBotProfile,
+  getMeetingBotProfile,
   getMeetingBotRecallCreateInput,
   getMeetingBotRecallUpdateInput,
 } from "@/lib/meeting-bot-profile";
@@ -137,6 +138,7 @@ type MeetingPlatform = typeof meetings.$inferSelect.platform;
 type MeetingStatus = typeof meetings.$inferSelect.status;
 
 type ExistingMeeting = {
+  botOrganizationDomain?: string | null;
   id: string;
   ownerUserId: string;
   calendarEventId?: string | null;
@@ -896,6 +898,7 @@ async function autoJoinCalendarEventInternal(input: AutoJoinInput) {
   if (existingMeeting?.recallBotId) {
     return syncExistingCalendarMeeting({
       meeting: existingMeeting,
+      accountDomain: input.connection.workspaceDomain,
       event: input.event,
       calendarEvent,
       title,
@@ -981,6 +984,7 @@ async function autoJoinCalendarEventInternal(input: AutoJoinInput) {
   if (existingMeeting?.recallBotId) {
     return syncExistingCalendarMeeting({
       meeting: existingMeeting,
+      accountDomain: input.connection.workspaceDomain,
       event: input.event,
       calendarEvent,
       title,
@@ -1028,6 +1032,8 @@ async function autoJoinCalendarEventInternal(input: AutoJoinInput) {
   try {
     const scheduledBot = await scheduleBotForCalendarEvent({
       creditLimitUsdMicros: input.connection.creditLimitUsdMicros,
+      accountDomain: input.connection.workspaceDomain,
+      organizationDomain: existingMeeting?.botOrganizationDomain,
       event: input.event,
       meetingUrl,
       startsAt,
@@ -1309,6 +1315,7 @@ async function findMatchingManualLocalRecorderMeeting(input: {
       title: meetings.title,
       titleSource: meetings.titleSource,
       platform: meetings.platform,
+      botOrganizationDomain: meetings.botOrganizationDomain,
       recallBotId: meetings.recallBotId,
       recallRecordingId: meetings.recallRecordingId,
       meetingUrl: meetings.meetingUrl,
@@ -1496,6 +1503,7 @@ async function syncLocationCalendarMeeting(input: {
 }
 
 async function syncExistingCalendarMeeting(input: {
+  accountDomain?: string | null;
   meeting: ExistingMeeting;
   event: SyncedCalendarEvent;
   calendarEvent: CalendarEventRow;
@@ -1573,6 +1581,8 @@ async function syncExistingCalendarMeeting(input: {
     if (shouldScheduleBot) {
       const scheduledBot = await scheduleBotForCalendarEvent({
         creditLimitUsdMicros: input.creditLimitUsdMicros,
+        accountDomain: input.accountDomain,
+        organizationDomain: input.meeting.botOrganizationDomain,
         event: input.event,
         meetingUrl: input.meetingUrl,
         startsAt: input.startsAt,
@@ -1793,6 +1803,7 @@ async function findExistingMeeting(input: {
       title: meetings.title,
       titleSource: meetings.titleSource,
       platform: meetings.platform,
+      botOrganizationDomain: meetings.botOrganizationDomain,
       recallBotId: meetings.recallBotId,
       recallRecordingId: meetings.recallRecordingId,
       meetingUrl: meetings.meetingUrl,
@@ -2059,6 +2070,8 @@ async function cancelScheduledMeetingBotFromCalendar(input: {
 }
 
 async function scheduleBotForCalendarEvent(input: {
+  accountDomain?: string | null;
+  organizationDomain?: string | null;
   creditLimitUsdMicros?: number | null;
   event: SyncedCalendarEvent;
   meetingUrl: string;
@@ -2070,7 +2083,9 @@ async function scheduleBotForCalendarEvent(input: {
   existingBotId?: string;
 }) {
   await assertWorkspaceHasProviderCredit(input);
-  const botProfile = await getCalendarMeetingBotProfile({ teamId: input.teamId, attendeeEmails: getCalendarAttendeeEmails(input.event) });
+  const botProfile = input.organizationDomain != null
+    ? await getMeetingBotProfile(input.teamId, input.organizationDomain || undefined)
+    : await getCalendarMeetingBotProfile({ teamId: input.teamId, accountDomain: input.accountDomain, attendeeEmails: getCalendarAttendeeEmails(input.event) });
   const metadata = {
     ...getMeetingBotMetadata(botProfile),
     calendarEventId: input.calendarEventId,

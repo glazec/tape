@@ -371,3 +371,9 @@ Recommended:
 Every MCP database query opens a read only transaction and applies `SQL_TOOL_STATEMENT_TIMEOUT_MS`. Production should still use a dedicated read only database role so a future code path cannot write by accident. `MCP_BACKEND_SHARED_SECRET` must contain at least 32 characters and must not be reused as `FASTMCP_JWT_SIGNING_KEY`.
 
 Local development can use `DISABLE_AUTH=true`, `MCP_ALLOW_DEV_AUTH=true`, `MCP_HOST=127.0.0.1`, `MCP_DEV_USER_EMAIL`, and `MCP_DEV_AUTH_USER_ID` to test with a known app user. Dev auth bypass is rejected in production runtimes or when configured with a non localhost host or base URL. Production should not use the app owner database URL for the SQL tool.
+
+## Upload organization
+
+`prepare_meeting_upload` accepts optional `team_id`. When omitted for a user with multiple organizations, it returns `code: organization_required` and the permitted `organizations` before creating an upload URL. Ask the user to choose, then repeat the call with `team_id`. The signed completion token retains the selected workspace, and completion checks current membership again. Existing tokens without a team retain the original default workspace behavior.
+
+Meeting reads evaluate administrator membership against each meeting’s workspace, so membership in one organization does not grant access to another organization. Ownership and active share grants continue to apply across organizations.

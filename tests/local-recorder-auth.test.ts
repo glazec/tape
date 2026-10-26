@@ -39,8 +39,15 @@ vi.mock("@/lib/workspace", () => ({
   getOrCreateWorkspaceForSessionUser: getWorkspace,
 }));
 
+const { listOrganizationWorkspaces, selectOrganizationWorkspace } = vi.hoisted(() => ({
+  listOrganizationWorkspaces: vi.fn(async () => []), selectOrganizationWorkspace: vi.fn(),
+}));
+vi.mock("@/lib/organization-workspaces", () => ({ listOrganizationWorkspaces, selectOrganizationWorkspace }));
+
 describe("local recorder auth", () => {
   afterEach(() => {
+    listOrganizationWorkspaces.mockReset().mockResolvedValue([]);
+    selectOrganizationWorkspace.mockReset();
     getCurrentUser.mockReset();
     getWorkspace.mockReset();
     assertCanCreateMeetings.mockReset();
@@ -49,6 +56,16 @@ describe("local recorder auth", () => {
     select.mockReset();
     where.mockReset();
     vi.resetModules();
+  });
+
+  it("asks which organization to pair before issuing a recorder credential", async () => {
+    getCurrentUser.mockResolvedValue({ id: "auth", email: "person@example.com" });
+    getWorkspace.mockResolvedValue({ teamId: "first", userId: "user" });
+    const organizations = [{ teamId: "first", teamName: "First" }, { teamId: "second", teamName: "Second" }];
+    listOrganizationWorkspaces.mockResolvedValueOnce(organizations as never);
+    const { createLocalRecorderDeviceSession } = await import("@/lib/local-recorder-auth");
+    expect(await createLocalRecorderDeviceSession({ callbackUrl: "meetingnote-local-recorder://login", deviceId: "mac", requestUrl: "https://app.example.com" })).toEqual({ organizations });
+    expect(selectOrganizationWorkspace).not.toHaveBeenCalled();
   });
 
   it("does not allow browser session auth for device API routes", async () => {

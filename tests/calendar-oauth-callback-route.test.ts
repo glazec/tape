@@ -51,7 +51,7 @@ vi.mock("@/lib/organization-workspaces", () => ({
 
 describe("GET /api/calendar/oauth/callback", () => {
   it("rejects linking after the signed in user changes during Google consent", async () => {
-    cookies.mockResolvedValue({ get: () => ({ value: "original-user:state_123" }) });
+    cookies.mockResolvedValue({ set: vi.fn(), get: () => ({ value: "original-user:state_123" }) });
     getCurrentUser.mockResolvedValue({ id: "different-user", email: "other@example.com", name: null });
     const { GET } = await import("@/app/api/calendar/oauth/callback/route");
     const response = await GET(new Request("https://app.example.com/api/calendar/oauth/callback?code=code&state=state_123"));
@@ -80,7 +80,7 @@ describe("GET /api/calendar/oauth/callback", () => {
       domain: "example.com",
     };
 
-    cookies.mockResolvedValue({
+    cookies.mockResolvedValue({ set: vi.fn(),
       get: vi.fn().mockReturnValue({ value: "auth_user_123:state_123" }),
     });
     getCurrentUser.mockResolvedValue({
@@ -137,7 +137,7 @@ describe("GET /api/calendar/oauth/callback", () => {
       domain: "example.com",
     };
 
-    cookies.mockResolvedValue({
+    cookies.mockResolvedValue({ set: vi.fn(),
       get: vi.fn().mockReturnValue({ value: "auth_user_123:state_123" }),
     });
     getCurrentUser.mockResolvedValue({
@@ -176,7 +176,7 @@ describe("GET /api/calendar/oauth/callback", () => {
 
   it("returns to the setup guide after an OAuth denial", async () => {
     vi.stubEnv("NEXT_PUBLIC_APP_URL", "https://app.example.com");
-    cookies.mockResolvedValue({
+    cookies.mockResolvedValue({ set: vi.fn(),
       get: vi.fn((name: string) =>
         name === "google-calendar-oauth-return-to-setup"
           ? { value: "1" }
@@ -206,7 +206,7 @@ describe("GET /api/calendar/oauth/callback", () => {
       domain: "example.com",
     };
 
-    cookies.mockResolvedValue({
+    cookies.mockResolvedValue({ set: vi.fn(),
       get: vi.fn((name: string) =>
         name === "google-calendar-oauth-return-to-setup"
           ? { value: "1" }

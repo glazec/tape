@@ -1,3 +1,4 @@
+import { organizationHeaders } from "@/lib/organization-request";
 import type { UploadMedia } from "@/lib/upload-media";
 
 export type BrowserAudioBatchFile = {
@@ -17,6 +18,7 @@ class AudioBatchPreparationRejectedError extends Error {}
 
 export async function uploadAudioBatch(input: {
   completePath: string;
+  teamId?: string;
   files: BrowserAudioBatchFile[];
   signPath?: string;
   stagePath?: string;
@@ -29,7 +31,7 @@ export async function uploadAudioBatch(input: {
       input.signPath ?? "/api/uploads/audio/batch/sign",
       {
         method: "POST",
-        headers: { "content-type": "application/json" },
+        headers: { "content-type": "application/json", ...organizationHeaders(input.teamId) },
         body: JSON.stringify({
           files: input.files.map((file) => ({
             contentType: file.uploadMedia.contentType,
@@ -98,7 +100,7 @@ export async function uploadAudioBatch(input: {
       formData.set("meeting-audio", file.file);
       const stageResponse = await fetch(
         input.stagePath ?? "/api/uploads/audio/batch",
-        { method: "POST", body: formData },
+        { method: "POST", body: formData, headers: organizationHeaders(input.teamId) },
       );
 
       if (stageResponse.status === 401) {
@@ -132,7 +134,7 @@ export async function uploadAudioBatch(input: {
 
   const completeResponse = await fetch(input.completePath, {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers: { "content-type": "application/json", ...organizationHeaders(input.teamId) },
     body: JSON.stringify({
       files: stagedFiles,
       ...(input.startedAt ? { startedAt: input.startedAt } : {}),

@@ -55,6 +55,11 @@ import {
   parseMcpUploadToken,
 } from "@/lib/mcp-upload-token";
 
+const { listOrganizationWorkspaces, selectOrganizationWorkspace } = vi.hoisted(() => ({
+  listOrganizationWorkspaces: vi.fn(async () => []), selectOrganizationWorkspace: vi.fn(),
+}));
+vi.mock("@/lib/organization-workspaces", () => ({ listOrganizationWorkspaces, selectOrganizationWorkspace }));
+
 const sharedSecret = "mcp-backend-test-secret-that-is-long-enough";
 const authUserId = "auth-user-123";
 const userId = "22222222-2222-4222-8222-222222222222";
@@ -105,8 +110,10 @@ function completionToken(overrides: Record<string, unknown> = {}) {
 }
 
 beforeEach(() => {
+  listOrganizationWorkspaces.mockReset().mockResolvedValue([]);
+  selectOrganizationWorkspace.mockReset();
   process.env.MCP_BACKEND_SHARED_SECRET = sharedSecret;
-  getWorkspace.mockResolvedValue({ teamId: "team-123", userId });
+  getWorkspace.mockResolvedValue({ teamId: "77777777-7777-4777-8777-777777777777", userId });
   createUploadUrl.mockResolvedValue("https://uploads.example.com/signed");
   getObjectMetadata.mockResolvedValue({
     contentLength: 123,
@@ -136,6 +143,29 @@ afterEach(() => {
 });
 
 describe("POST /api/mcp/uploads/prepare", () => {
+  it("asks for an organization before signing an ambiguous upload", async () => {
+    const organizations = [{ teamId: "77777777-7777-4777-8777-777777777777", teamName: "First" }, { teamId: "88888888-8888-4888-8888-888888888888", teamName: "Second" }];
+    listOrganizationWorkspaces.mockResolvedValueOnce(organizations as never);
+    const { POST } = await import("@/app/api/mcp/uploads/prepare/route");
+    const response = await POST(signedRequest("https://app.example.com/api/mcp/uploads/prepare", {
+      contentType: "audio/mpeg", fileName: "meeting.mp3", fileSizeBytes: 123, meetingTime: "2026-08-17T15:00:00.000Z",
+    }));
+    expect(await response.json()).toEqual({ code: "organization_required", organizations });
+    expect(createUploadUrl).not.toHaveBeenCalled();
+  });
+
+  it("binds a selected organization to the completion token", async () => {
+    const teamId = "88888888-8888-4888-8888-888888888888";
+    listOrganizationWorkspaces.mockResolvedValueOnce([{ teamId, teamName: "Second" }] as never);
+    selectOrganizationWorkspace.mockResolvedValueOnce({ teamId, userId });
+    const { POST } = await import("@/app/api/mcp/uploads/prepare/route");
+    const response = await POST(signedRequest("https://app.example.com/api/mcp/uploads/prepare", {
+      teamId, contentType: "audio/mpeg", fileName: "meeting.mp3", fileSizeBytes: 123, meetingTime: "2026-08-17T15:00:00.000Z",
+    }));
+    expect(response.status).toBe(200);
+    expect(parseMcpUploadToken((await response.json()).completionToken).teamId).toBe(teamId);
+  });
+
   it("returns a direct upload URL and identity bound completion token", async () => {
     const { POST } = await import("@/app/api/mcp/uploads/prepare/route");
     const response = await POST(
@@ -214,7 +244,7 @@ describe("POST /api/mcp/uploads/complete", () => {
       ],
       startedAt: new Date("2026-08-17T15:00:00.000Z"),
       title: "MCP test meeting",
-      workspace: { teamId: "team-123", userId },
+      workspace: { teamId: "77777777-7777-4777-8777-777777777777", userId },
     });
     expect(dispatchAudioBatchTranscriptions).toHaveBeenCalledWith(
       expect.arrayContaining([

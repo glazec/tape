@@ -1,3 +1,4 @@
+import { CalendarAccountSelectionError } from "@/lib/calendar-account-selection";
 import {
   createCipheriv,
   createDecipheriv,
@@ -184,9 +185,17 @@ export async function disconnectGoogleCalendarForWorkspace(
   workspace: WorkspaceContext,
   connectionId?: string,
 ) {
+  const connections = connectionId ? [] : await db.select({ id: calendarConnections.id,
+    recallCalendarId: calendarConnections.recallCalendarId,
+  }).from(calendarConnections).where(and(
+    eq(calendarConnections.teamId, workspace.teamId),
+    eq(calendarConnections.userId, workspace.userId),
+    eq(calendarConnections.provider, "google"),
+  )).limit(2);
+  if (connections.length > 1) throw new CalendarAccountSelectionError();
   const existing = connectionId
     ? await findGoogleCalendarConnectionById(workspace, connectionId)
-    : await findGoogleCalendarConnection(workspace);
+    : connections[0];
 
   if (!existing) {
     return false;

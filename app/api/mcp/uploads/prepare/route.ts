@@ -1,3 +1,4 @@
+import { listOrganizationWorkspaces, selectOrganizationWorkspace } from "@/lib/organization-workspaces";
 import { randomUUID } from "node:crypto";
 
 import { z } from "zod";
@@ -39,6 +40,7 @@ const UPLOAD_URL_TTL_SECONDS = 15 * 60;
 const COMPLETION_TOKEN_TTL_SECONDS = 30 * 60;
 
 const prepareUploadSchema = z.strictObject({
+  teamId: z.uuid().optional(),
   contentType: z.string().trim().toLowerCase().min(1),
   durationMs: z
     .number()
@@ -81,7 +83,17 @@ export async function POST(request: Request) {
       );
     }
 
-    const workspace = await getOrCreateWorkspaceForSessionUser(user);
+    let workspace = await getOrCreateWorkspaceForSessionUser(user, { ignoreSelection: true });
+    const organizations = await listOrganizationWorkspaces(workspace);
+    if (!parsed.data.teamId && organizations.length > 1) {
+      return Response.json({ code: "organization_required", organizations: organizations.map(({ teamId, teamName }) => ({ teamId, teamName })) });
+    }
+    if (parsed.data.teamId) {
+      const selected = organizations.some((organization) => organization.teamId === parsed.data.teamId)
+        ? await selectOrganizationWorkspace(workspace, parsed.data.teamId) : null;
+      if (!selected) return Response.json({ error: "Organization unavailable" }, { status: 403 });
+      workspace = selected;
+    }
     await assertCanCreateMeetings(workspace);
     await assertWorkspaceHasProviderCredit(workspace);
     await assertRequestRateLimit({
@@ -115,6 +127,7 @@ export async function POST(request: Request) {
       ...(parsed.data.title ? { title: parsed.data.title } : {}),
       uploadId,
       userId: workspace.userId,
+      teamId: workspace.teamId,
       version: 1,
     });
 

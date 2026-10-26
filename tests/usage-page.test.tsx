@@ -135,7 +135,7 @@ describe("UsagePage", () => {
     });
 
     const { default: UsagePage } = await import("@/app/usage/page");
-    const html = renderToStaticMarkup(await UsagePage());
+    const html = renderToStaticMarkup(await UsagePage({}));
 
     expect(getProviderUsageSummary).toHaveBeenCalledWith(
       workspace,
@@ -196,7 +196,7 @@ describe("UsagePage", () => {
     });
 
     const { default: UsagePage } = await import("@/app/usage/page");
-    const html = renderToStaticMarkup(await UsagePage());
+    const html = renderToStaticMarkup(await UsagePage({}));
 
     expect(html).toContain("Historical estimate");
     expect(html).toContain("reconstruct missing Recall recording usage");
@@ -270,7 +270,7 @@ describe("UsagePage", () => {
 
     const { default: UsagePage } = await import("@/app/usage/page");
 
-    await expect(UsagePage()).rejects.toThrow("NEXT_REDIRECT:/dashboard");
+    await expect(UsagePage({})).rejects.toThrow("NEXT_REDIRECT:/dashboard");
     expect(getProviderUsageSummary).not.toHaveBeenCalled();
   });
 });

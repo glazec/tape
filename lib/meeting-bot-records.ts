@@ -1,5 +1,7 @@
 import { and, asc, eq, gte, ilike, inArray, lte, or, sql } from "drizzle-orm";
 
+import { SharedOnlyAccessError } from "@/lib/access-errors";
+
 import { db } from "@/db/client";
 import { calendarEvents, meetings, transcriptSegments } from "@/db/schema";
 import type { SessionUser } from "@/lib/auth";
@@ -16,10 +18,12 @@ import {
 type CreateScheduledMeetingBotInput = {
   calendarEventId?: string;
   sessionUser: SessionUser;
+  workspace?: WorkspaceContext;
   meetingUrl: string;
   platform: SupportedMeetingPlatform;
   now?: Date;
   skipCalendarMatch?: boolean;
+  organizationDomain?: string;
 };
 
 export type ScheduledMeetingBotCalendarCandidate = {
@@ -46,7 +50,7 @@ const LATE_MEETING_GRACE_MS = 15 * 60 * 1_000;
 export async function createScheduledMeetingBot(
   input: CreateScheduledMeetingBotInput,
 ) {
-  const workspace = await getOrCreateWorkspaceForSessionUser(input.sessionUser);
+  const workspace = input.workspace ?? await getOrCreateWorkspaceForSessionUser(input.sessionUser);
   await assertCanCreateMeetings(workspace);
   await assertWorkspaceHasProviderCredit(workspace);
   const now = input.now ?? new Date();
@@ -73,13 +77,15 @@ export async function createScheduledMeetingBot(
   if (calendarEvent) {
     const existingMeeting = await findMeetingForCalendarEvent({
       calendarEventId: calendarEvent.id,
-      teamId: workspace.teamId,
+      workspace,
     });
 
     if (existingMeeting) {
+      if (!existingMeeting.canManage) throw new SharedOnlyAccessError();
       await db
         .update(meetings)
         .set({
+          botOrganizationDomain: input.organizationDomain,
           meetingUrl: input.meetingUrl,
           platform: input.platform,
           status: "scheduled",
@@ -105,6 +111,7 @@ export async function createScheduledMeetingBot(
     const [meeting] = await db
       .insert(meetings)
       .values({
+        botOrganizationDomain: input.organizationDomain,
         teamId: workspace.teamId,
         ownerUserId: workspace.userId,
         calendarEventId: calendarEvent.id,
@@ -129,6 +136,7 @@ export async function createScheduledMeetingBot(
   const [meeting] = await db
     .insert(meetings)
     .values({
+      botOrganizationDomain: input.organizationDomain,
       teamId: workspace.teamId,
       ownerUserId: workspace.userId,
       title: defaultMeetingTitle(input.platform),
@@ -146,8 +154,9 @@ export async function createScheduledMeetingBot(
 export async function findScheduledMeetingBotCalendarCandidates(input: {
   now?: Date;
   sessionUser: SessionUser;
+  workspace?: WorkspaceContext;
 }): Promise<ScheduledMeetingBotCalendarCandidate[]> {
-  const workspace = await getOrCreateWorkspaceForSessionUser(input.sessionUser);
+  const workspace = input.workspace ?? await getOrCreateWorkspaceForSessionUser(input.sessionUser);
   await assertCanCreateMeetings(workspace);
   const calendarEvents = await findNearbyCalendarEvents({
     now: input.now ?? new Date(),
@@ -158,7 +167,7 @@ export async function findScheduledMeetingBotCalendarCandidates(input: {
     calendarEvents.map(async (calendarEvent) => {
       const existingMeeting = await findMeetingForCalendarEvent({
         calendarEventId: calendarEvent.id,
-        teamId: workspace.teamId,
+        workspace,
       });
 
       return {
@@ -381,11 +390,12 @@ function getMeetingUrlPathToken(meetingUrl: string) {
 }
 
 async function findMeetingForCalendarEvent(input: {
-  teamId: string;
+  workspace: WorkspaceContext;
   calendarEventId: string;
 }) {
   const [meeting] = await db
     .select({
+      canManage: getMeetingManagerCondition(input.workspace),
       id: meetings.id,
       recallBotId: meetings.recallBotId,
       status: meetings.status,
@@ -393,7 +403,7 @@ async function findMeetingForCalendarEvent(input: {
     .from(meetings)
     .where(
       and(
-        eq(meetings.teamId, input.teamId),
+        eq(meetings.teamId, input.workspace.teamId),
         eq(meetings.calendarEventId, input.calendarEventId),
         inArray(meetings.status, ["scheduled", "failed", "missed"]),
       ),

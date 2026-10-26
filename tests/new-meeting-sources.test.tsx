@@ -82,7 +82,7 @@ describe("NewMeetingSources", () => {
         status: 201,
       }),
     );
-    render(<NewMeetingSources />);
+    render(<NewMeetingSources teamId="selected-team" />);
 
     fireEvent.click(screen.getByRole("button", { name: /Record on phone/ }));
     fireEvent.change(screen.getByLabelText("Meeting title"), {
@@ -95,7 +95,7 @@ describe("NewMeetingSources", () => {
     await vi.waitFor(() => {
       expect(fetch).toHaveBeenCalledWith(
         "/api/meetings/manual",
-        expect.objectContaining({ method: "POST" }),
+        expect.objectContaining({ method: "POST", headers: expect.objectContaining({ "x-tape-organization": "selected-team" }) }),
       );
       expect(push).toHaveBeenCalledWith("/meetings/meeting_123/record");
     });

@@ -41,7 +41,7 @@ type UsagePageProps = {
   searchParams?: Promise<{ period?: string | string[] }>;
 };
 
-export default async function UsagePage({ searchParams }: UsagePageProps = {}) {
+export default async function UsagePage({ searchParams }: UsagePageProps) {
   const user = await requireCurrentUser();
   const workspace = await getOrCreateWorkspaceForSessionUser(user);
   const accessSummary = await getWorkspaceAccessSummary(workspace);

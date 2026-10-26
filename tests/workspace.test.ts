@@ -39,6 +39,11 @@ vi.mock("@/db/client", () => ({
   },
 }));
 
+const { getSelectedOrganization, selectOrganizationWorkspace } = vi.hoisted(() => ({ getSelectedOrganization: vi.fn(), selectOrganizationWorkspace: vi.fn() }));
+vi.mock("@/lib/selected-organization", () => ({ getSelectedOrganization }));
+vi.mock("@/lib/organization-workspaces", () => ({ selectOrganizationWorkspace }));
+
+const membershipOrder = vi.fn();
 const dialect = new PgDialect();
 
 function toQuery(condition: SQL) {
@@ -50,6 +55,7 @@ function mockLimitedSelect(rows: unknown[]) {
     from: () => ({
       where: () => ({
         limit: vi.fn().mockResolvedValue(rows),
+        orderBy: (...conditions: SQL[]) => { membershipOrder(...conditions); return { limit: vi.fn().mockResolvedValue(rows) }; },
       }),
     }),
   });
@@ -57,6 +63,9 @@ function mockLimitedSelect(rows: unknown[]) {
 
 describe("getOrCreateWorkspaceForSessionUser", () => {
   afterEach(() => {
+    membershipOrder.mockReset();
+    getSelectedOrganization.mockReset();
+    selectOrganizationWorkspace.mockReset();
     execute.mockReset();
     insert.mockReset();
     onConflictDoNothing.mockReset();
@@ -68,6 +77,25 @@ describe("getOrCreateWorkspaceForSessionUser", () => {
     values.mockReset();
     where.mockReset();
     vi.resetModules();
+  });
+
+  it.each(["selected", "meeting", "revoked"])("resolves the %s organization without trusting stale browser state", async (mode) => {
+    mockLimitedSelect([{ id: "user_123" }]);
+    update.mockReturnValueOnce({ set });
+    set.mockReturnValueOnce({ where });
+    where.mockResolvedValueOnce(undefined);
+    mockLimitedSelect([{ creditLimitUsdMicros: null, teamId: "home", teamName: "Home" }]);
+    execute.mockResolvedValueOnce(undefined);
+    insert.mockReturnValueOnce({ values });
+    values.mockReturnValueOnce({ onConflictDoNothing });
+    onConflictDoNothing.mockResolvedValueOnce(undefined);
+    getSelectedOrganization.mockResolvedValue({ teamId: "browser-team", required: false });
+    if (mode === "meeting") mockLimitedSelect([{ teamId: "meeting-team" }]);
+    selectOrganizationWorkspace.mockImplementation(async (workspace, teamId) => mode === "revoked" ? null : { ...workspace, teamId, domain: "other.test" });
+    const { getOrCreateWorkspaceForSessionUser } = await import("@/lib/workspace");
+    const result = await getOrCreateWorkspaceForSessionUser({ email: "user@example.com", id: "auth", name: null }, mode === "meeting" ? { meetingId: "11111111-1111-4111-8111-111111111111" } : {});
+    expect(result.teamId).toBe(mode === "revoked" ? "home" : mode === "meeting" ? "meeting-team" : "browser-team");
+    if (mode === "meeting") expect(getSelectedOrganization).not.toHaveBeenCalled();
   });
 
   it("claims every pending meeting share in one pass", async () => {
@@ -351,6 +379,8 @@ describe("getOrCreateWorkspaceForSessionUser", () => {
       userId: "user_1",
     });
     expect(execute).toHaveBeenCalledTimes(2);
+    expect(toQuery(membershipOrder.mock.calls[0][0]).sql).toContain("case when");
+    expect(toQuery(membershipOrder.mock.calls[0][0]).sql).toContain("external");
   });
 
   it("keeps an external membership on an internal workspace read only", async () => {

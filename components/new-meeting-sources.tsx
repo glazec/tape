@@ -17,6 +17,7 @@ import {
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { organizationHeaders } from "@/lib/organization-request";
 import { cn } from "@/lib/utils";
 
 type MeetingSource = "link" | "recording" | "transcript" | "phone";
@@ -48,7 +49,7 @@ const sourceOptions = [
   },
 ];
 
-export function NewMeetingSources() {
+export function NewMeetingSources({ teamId }: { teamId?: string }) {
   const [source, setSource] = useState<MeetingSource | null>(null);
   const formRef = useRef<HTMLDivElement>(null);
 
@@ -111,16 +112,16 @@ export function NewMeetingSources() {
       {source ? (
         <div className="pb-[50svh]" ref={formRef}>
           {source === "link" ? <MeetingLinkForm /> : null}
-          {source === "recording" ? <UploadDropzone /> : null}
-          {source === "transcript" ? <NewTranscriptForm /> : null}
-          {source === "phone" ? <PhoneRecordingForm /> : null}
+          {source === "recording" ? <UploadDropzone teamId={teamId} /> : null}
+          {source === "transcript" ? <NewTranscriptForm teamId={teamId} /> : null}
+          {source === "phone" ? <PhoneRecordingForm teamId={teamId} /> : null}
         </div>
       ) : null}
     </div>
   );
 }
 
-function NewTranscriptForm() {
+function NewTranscriptForm({ teamId }: { teamId?: string }) {
   const router = useRouter();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [title, setTitle] = useState("");
@@ -152,7 +153,7 @@ function NewTranscriptForm() {
     setState("saving");
 
     try {
-      const meetingId = await createManualMeeting(title || "Transcript upload");
+      const meetingId = await createManualMeeting(title || "Transcript upload", teamId);
       const formData = new FormData();
       if (transcriptText.trim()) {
         formData.set("transcriptText", transcriptText.trim());
@@ -248,7 +249,7 @@ function NewTranscriptForm() {
   );
 }
 
-function PhoneRecordingForm() {
+function PhoneRecordingForm({ teamId }: { teamId?: string }) {
   const router = useRouter();
   const [title, setTitle] = useState("");
   const [state, setState] = useState<"idle" | "saving" | "error">("idle");
@@ -258,7 +259,7 @@ function PhoneRecordingForm() {
     setState("saving");
 
     try {
-      const meetingId = await createManualMeeting(title || "Phone recording");
+      const meetingId = await createManualMeeting(title || "Phone recording", teamId);
       router.push(`/meetings/${meetingId}/record`);
     } catch {
       setState("error");
@@ -300,10 +301,10 @@ function PhoneRecordingForm() {
   );
 }
 
-async function createManualMeeting(title: string) {
+async function createManualMeeting(title: string, teamId?: string) {
   const response = await fetch("/api/meetings/manual", {
     body: JSON.stringify({ title }),
-    headers: { "content-type": "application/json" },
+    headers: { "content-type": "application/json", ...organizationHeaders(teamId) },
     method: "POST",
   });
   const body = (await response.json().catch(() => null)) as {

@@ -40,7 +40,7 @@ export async function PATCH(
     return Response.json({ error: "Invalid translation" }, { status: 400 });
   }
 
-  const workspace = await getOrCreateWorkspaceForSessionUser(user);
+  const workspace = await getOrCreateWorkspaceForSessionUser(user, { meetingId });
   const [segment] = await db
     .select({ id: transcriptSegments.id })
     .from(transcriptSegments)
