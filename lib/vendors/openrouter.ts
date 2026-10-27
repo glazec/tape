@@ -591,6 +591,8 @@ export async function polishTranscriptSegmentsInOriginalLanguage(
       messages: buildOriginalTranscriptPolishMessages(batch),
       model: TRANSCRIPT_MODEL,
       maxTokens: 3000,
+      provider: { require_parameters: true },
+      responseFormat: buildTranslationJsonSchema(batch),
       temperature: 0.1,
       usageContext: {
         category: "transcript_polish",

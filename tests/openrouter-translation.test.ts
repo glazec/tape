@@ -456,7 +456,50 @@ describe("OpenRouter translation", () => {
     expect(body.model).toBe("google/gemini-3.8-flash");
     expect(body.reasoning).toEqual({ effort: "low" });
     expect(body.messages[0].content).toContain("Do not translate");
-    expect(body.response_format).toEqual({ type: "json_object" });
+    expect(body.response_format.type).toBe("json_schema");
+    expect(body.response_format.json_schema.strict).toBe(true);
+    expect(
+      body.response_format.json_schema.schema.properties.translations.minItems,
+    ).toBe(1);
+    expect(body.provider).toEqual({ require_parameters: true });
+  });
+
+  it("keeps short polished edits attached to their original ids and order", async () => {
+    vi.stubEnv("OPENROUTER_API_KEY", "openrouter-key");
+    vi.stubEnv("OPENROUTER_MODEL", "assistant-model");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            choices: [{
+              message: {
+                content: JSON.stringify({
+                  translations: [
+                    { id: "segment_2", text: "Hello." },
+                    { id: "segment_1", text: "我们先看。" },
+                  ],
+                }),
+              },
+            }],
+          }),
+          { status: 200 },
+        ),
+      ),
+    );
+    const { polishTranscriptSegmentsInOriginalLanguage } = await import(
+      "@/lib/vendors/openrouter"
+    );
+
+    await expect(
+      polishTranscriptSegmentsInOriginalLanguage([
+        { id: "segment_1", text: "然后我们先看一下。" },
+        { id: "segment_2", text: "Um, hello." },
+      ]),
+    ).resolves.toEqual([
+      { id: "segment_1", text: "我们先看。" },
+      { id: "segment_2", text: "Hello." },
+    ]);
   });
 
   it("falls back to original text for blank or missing polished rows", async () => {
