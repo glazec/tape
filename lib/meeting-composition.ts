@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, ilike, ne, sql } from "drizzle-orm";
+import { and, asc, eq, ilike, ne, sql } from "drizzle-orm";
 import { db } from "@/db/client";
 import { meetingParts, meetings } from "@/db/schema";
 import { getReadableMeetingsCondition } from "@/lib/meeting-access-policy";
@@ -67,11 +67,13 @@ export async function listMergeCandidates(
   query = "",
 ) {
   const target = await requireManageableComposition(workspace, meetingId);
+  const meetingDate = sql<Date>`coalesce(${meetings.startedAt}, ${meetings.createdAt})`
+    .mapWith(meetings.createdAt);
   const candidates = await db
     .select({
       id: meetings.id,
       title: meetings.title,
-      startedAt: meetings.startedAt,
+      startedAt: meetingDate,
       status: meetings.status,
     })
     .from(meetings)
@@ -99,8 +101,8 @@ export async function listMergeCandidates(
       ),
     )
     .orderBy(
-      desc(meetings.startedAt),
-      desc(meetings.createdAt),
+      sql`${meetingDate} > now()`,
+      sql`abs(extract(epoch from (now() - ${meetingDate})))`,
       asc(meetings.id),
     )
     .limit(30);
