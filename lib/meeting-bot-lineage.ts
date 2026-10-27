@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { and, eq, isNull, sql } from "drizzle-orm";
 
 import { db } from "@/db/client";
 import { meetings } from "@/db/schema";
@@ -13,7 +13,21 @@ export async function isRecallBotAccepted(input: {
     .where(eq(meetings.id, input.meetingId))
     .limit(1);
 
-  return meeting?.recallBotId === input.botId;
+  if (meeting?.recallBotId === input.botId) return true;
+  if (!meeting || meeting.recallBotId) return false;
+  // Signed provider callbacks can confirm a continuation whose POST response
+  // was lost, without accepting replaced bots on ordinary meetings.
+  const accepted = await db.update(meetings).set({ recallBotId: input.botId })
+    .where(and(eq(meetings.id, input.meetingId), isNull(meetings.recallBotId),
+      sql`exists (select 1 from meeting_parts where source_meeting_id=${input.meetingId}
+        and kind='continuation' and dispatch_state='dispatching')`))
+    .returning({ id: meetings.id });
+  if (accepted.length > 0) return true;
+  // Another callback can claim the same bot while this update waits. Its
+  // recording event is still valid, but a different winning bot stays rejected.
+  const [confirmed] = await db.select({ recallBotId: meetings.recallBotId })
+    .from(meetings).where(eq(meetings.id, input.meetingId)).limit(1);
+  return confirmed?.recallBotId === input.botId;
 }
 
 export function getRecallWebhookBotIdentity(payload: unknown) {

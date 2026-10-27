@@ -19,6 +19,7 @@ describe("existing meeting bot identity", () => {
   });
   it("keeps the attendee preference and connected account for calendar-created meetings", async () => {
     row({ teamId: "company", organizationDomain: null, attendeeEmails: ["first@first.test"], accountEmail: "second@second.test" });
+    getCalendarMeetingBotProfile.mockResolvedValue({ botName: "Calendar bot", avatarJpegBase64: null });
     await getBotProfileForMeeting("meeting");
     expect(getCalendarMeetingBotProfile).toHaveBeenCalledWith({ teamId: "company", attendeeEmails: ["first@first.test"], accountDomain: "second.test" });
   });

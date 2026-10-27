@@ -175,7 +175,7 @@ describe("meeting recording resume policy", () => {
     ).toBe(true);
   });
 
-  it("does not offer resume after the scheduled meeting window", () => {
+  it("offers continuation after the scheduled window when actual recording ended recently", () => {
     expect(
       isMeetingRecordingResumeEligible({
         canManage: true,
@@ -186,7 +186,7 @@ describe("meeting recording resume policy", () => {
         scheduledStartedAt: "2026-07-22T17:00:00.000Z",
         status: "ready",
       }),
-    ).toBe(false);
+    ).toBe(true);
   });
 });
 
@@ -349,6 +349,7 @@ function buildMeetingSelect(rows: unknown[]) {
   return {
     from: () => ({
       where: () => ({
+        limit,
         orderBy: () => ({ limit }),
       }),
     }),

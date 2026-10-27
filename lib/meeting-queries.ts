@@ -84,7 +84,7 @@ import {
   applySpeakerAliasesToSegments,
   type SpeakerAlias,
 } from "@/lib/speaker-alias-normalization";
-import { listTeamSpeakerAliases } from "@/lib/speaker-aliases";
+import { listMeetingSpeakerAliases } from "@/lib/speaker-aliases";
 import type { FollowupSource } from "@/lib/meeting-followup";
 import {
   getOrCreateWorkspaceForSessionUser,
@@ -139,6 +139,7 @@ export type MeetingTranscript = {
   translationSummary: MeetingTranslationSummary;
   audioUrl: string | null;
   recordingParts: MeetingRecordingPart[];
+  lastRecordingEndedAt?: string | null;
   scheduledEndedAt: string | null;
   scheduledStartedAt: string | null;
   visualAssets: MeetingVisualAsset[];
@@ -275,6 +276,8 @@ export async function listMeetingLibraryPageForWorkspace(
   const visibleMeetingsCondition = and(
     readableMeetingsCondition,
     ne(meetings.status, "cancelled"),
+    search ? undefined : sql`not exists (select 1 from meeting_parts p where p.source_meeting_id=${meetings.id}
+      and app_private.can_read_meeting(p.meeting_id))`,
   );
   const where = searchCondition
     ? and(visibleMeetingsCondition, searchCondition)
@@ -292,7 +295,16 @@ export async function listMeetingLibraryPageForWorkspace(
       title: meetings.title,
       calendarTitle: calendarEvents.title,
       platform: meetings.platform,
-      status: meetings.status,
+      status: sql<(typeof meetings.$inferSelect)["status"]>`case
+        when ${meetings.status} = 'recording' or exists (select 1 from meeting_parts p join meetings child on child.id=p.source_meeting_id
+          where p.meeting_id=${meetings.id} and app_private.can_read_meeting(child.id) and child.status='recording') then 'recording'::meeting_status
+        when exists (select 1 from meeting_parts p join meetings child on child.id=p.source_meeting_id
+          where p.meeting_id=${meetings.id} and app_private.can_read_meeting(child.id) and child.status='scheduled') then 'scheduled'::meeting_status
+        when exists (select 1 from meeting_parts p join meetings child on child.id=p.source_meeting_id
+          where p.meeting_id=${meetings.id} and app_private.can_read_meeting(child.id) and child.status='processing') then 'processing'::meeting_status
+        when exists (select 1 from meeting_parts p join meetings child on child.id=p.source_meeting_id
+          where p.meeting_id=${meetings.id} and app_private.can_read_meeting(child.id) and child.status='failed') then 'failed'::meeting_status
+        else ${meetings.status} end`,
       transcriptJobStatus: sql<TranscriptJobStatus | null>`(
         select case
           when exists (
@@ -1456,7 +1468,7 @@ export async function getMeetingTranscriptForWorkspace(
       )
       .orderBy(asc(mediaAssets.timestampMs), asc(mediaAssets.createdAt)),
     accessScope === "workspace"
-      ? listTeamSpeakerAliases(meeting.teamId)
+      ? listMeetingSpeakerAliases(meeting.teamId, meeting.id)
       : Promise.resolve([]),
     db
       .select({
@@ -1509,6 +1521,7 @@ export async function getMeetingTranscriptForWorkspace(
   );
 
   return {
+    lastRecordingEndedAt: meeting.recordedEndedAt?.toISOString() ?? null,
     aiFollowup: meeting.aiFollowup,
     followupSource: {
       title: meeting.title,
@@ -1595,7 +1608,9 @@ export async function getMeetingTranscriptForWorkspace(
       emotionLabel: normalizeEmotionLabel(segment.emotionLabel),
     })),
     speakerAliases,
-    speakerSuggestions,
+    speakerSuggestions: speakerSuggestions.map(person => ({ ...person,
+      name: speakerAliases.findLast(alias => alias.alias.trim().toLowerCase() === person.email.trim().toLowerCase())?.canonicalName ?? person.name,
+    })),
     accessScope,
     canDelete: Boolean(meeting.canDelete),
     canManage: Boolean(meeting.canManage),

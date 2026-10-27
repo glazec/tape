@@ -1,3 +1,4 @@
+vi.mock("@/lib/meeting-composition", () => ({ listReadableMeetingSources: vi.fn(async () => []) }));
 import type { SQL } from "drizzle-orm";
 import { PgDialect } from "drizzle-orm/pg-core";
 import { afterEach, describe, expect, it, vi } from "vitest";

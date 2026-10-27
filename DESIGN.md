@@ -324,3 +324,11 @@ Team settings lists each connected Google email with its own sync and disconnect
 ## Organization choices
 
 Show the compact organization control only for users with multiple workspaces. For a new meeting link, ask “Which bot should join?” only when there are multiple bot identities, even if they share a company workspace. Show the bot name and organization domain together, with a Cancel action. Preserve that choice through nearby meeting confirmation and retries. Keep calendar account controls beside the account email. Hide selectors when there is only one choice.
+
+## Meeting continuity controls
+
+Show Continue recording near the notes and transcript when a supported capture has ended. Its dialog contains one meeting link field and a Join and continue action. The trigger disappears one hour after the actual recording ends; an already open dialog keeps an expiry explanation. Do not expose bot naming controls here or in the new meeting flow. Organization settings own that identity.
+
+Keep Merge meetings in the overflow menu. Use a searchable list with title, date, and processing state, then a compact confirmation with Undo. Pending transcripts remain eligible. Combined pages show chronological parts, original source links, and independent audio and transcript states. Private notes remain attached to the current page. Explain the scope of sharing beside the sharing control.
+
+Speaker correction preserves the selected participant email and offers Remember this name only for an identified person and an all matching lines edit. Keep this option separate from the primary correction and never infer identity from a first name alone.

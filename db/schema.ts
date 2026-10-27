@@ -338,6 +338,7 @@ export const meetings = pgTable(
     endedAt: timestamp("ended_at", { withTimezone: true }),
     recallBotId: text("recall_bot_id"),
     botOrganizationDomain: text("bot_organization_domain"),
+    botDisplayName: text("bot_display_name"),
     recallRecordingId: text("recall_recording_id"),
     translationStatus: jobStatus("translation_status"),
     translationErrorMessage: text("translation_error_message"),
@@ -647,6 +648,24 @@ export const recordings = pgTable(
       .where(sql`${table.externalId} is not null`),
   ],
 );
+
+// A composed meeting retains independent sources so provider callbacks and
+// private notes never change ownership when recordings are combined.
+export const meetingParts = pgTable("meeting_parts", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  meetingId: uuid("meeting_id").notNull().references(() => meetings.id, { onDelete: "cascade" }),
+  sourceMeetingId: uuid("source_meeting_id").notNull().references(() => meetings.id, { onDelete: "cascade" }),
+  kind: text("kind").notNull().default("merge"),
+  continuationRecordingId: uuid("continuation_recording_id").references(() => recordings.id, { onDelete: "set null" }),
+  dispatchState: text("dispatch_state"),
+  ...timestamps,
+}, (table) => [
+  uniqueIndex("meeting_parts_source_unique").on(table.sourceMeetingId),
+  uniqueIndex("meeting_parts_continuation_unique").on(table.continuationRecordingId),
+  index("meeting_parts_destination_index").on(table.meetingId),
+  check("meeting_parts_not_self", sql`${table.meetingId} <> ${table.sourceMeetingId}`),
+  check("meeting_parts_kind_check", sql`${table.kind} in ('merge', 'continuation')`),
+]);
 
 export const mediaAssets = pgTable(
   "media_assets",

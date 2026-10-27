@@ -1,3 +1,4 @@
+import { listReadableMeetingSources } from "@/lib/meeting-composition";
 import { currentVisualAssetCondition } from "@/lib/current-audio-asset";
 import { and, asc, eq, inArray, or } from "drizzle-orm";
 import { z } from "zod";
@@ -60,6 +61,8 @@ export async function GET(
     .select({
       id: meetings.id,
       title: meetings.title,
+      startedAt: meetings.startedAt,
+      createdAt: meetings.createdAt,
     })
     .from(meetings)
     .where(
@@ -75,10 +78,14 @@ export async function GET(
     return Response.json({ error: "Meeting not found" }, { status: 404 });
   }
 
+  const sources = await listReadableMeetingSources(workspace, meeting.id);
+  const exportParts = [meeting, ...sources].sort((a, b) =>
+    (a.startedAt ?? a.createdAt)?.getTime() - (b.startedAt ?? b.createdAt)?.getTime());
   if (format === "images") {
-    return exportMeetingImages(meeting);
+    return exportMeetingImages(meeting, exportParts.map(part => part.id));
   }
-
+  const sections: string[] = [];
+  for (const [index, part] of exportParts.entries()) {
   const segments = await db
     .select({
       speaker: transcriptSegments.speaker,
@@ -90,17 +97,20 @@ export async function GET(
     .from(transcriptSegments)
     .where(
       and(
-        eq(transcriptSegments.meetingId, meeting.id),
+        eq(transcriptSegments.meetingId, part.id),
         inArray(
           transcriptSegments.jobId,
-          currentTranscriptJobIdsSubquery(meeting.id),
+          currentTranscriptJobIdsSubquery(part.id),
         ),
       ),
     )
     .orderBy(asc(transcriptSegments.startMs));
+  sections.push(formatTranscriptExport(exportParts.length > 1 ? `Part ${index + 1}: ${part.title}` : part.title, segments));
+  if (segments.length === 0) sections.push("Transcript not available yet.\n");
+  }
   const filename = getTranscriptFilename(meeting.title);
 
-  return new Response(formatTranscriptExport(meeting.title, segments), {
+  return new Response(sections.join("\n"), {
     headers: {
       "content-disposition": `attachment; filename="${filename}"`,
       "content-type": "text/plain; charset=utf-8",
@@ -108,7 +118,7 @@ export async function GET(
   });
 }
 
-async function exportMeetingImages(meeting: { id: string; title: string }) {
+async function exportMeetingImages(meeting: { id: string; title: string }, sourceIds: string[]) {
   const assets = await db
     .select({
       id: mediaAssets.id,
@@ -119,8 +129,8 @@ async function exportMeetingImages(meeting: { id: string; title: string }) {
     .from(mediaAssets)
     .where(
       and(
-        eq(mediaAssets.meetingId, meeting.id),
-        currentVisualAssetCondition(meeting.id),
+        inArray(mediaAssets.meetingId, sourceIds),
+        currentVisualAssetCondition(mediaAssets.meetingId),
         or(
           eq(mediaAssets.type, "screenshot"),
           eq(mediaAssets.type, "video_frame"),

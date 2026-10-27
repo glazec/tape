@@ -56,6 +56,8 @@ jobs:
         run: psql "$DATABASE_URL" --set ON_ERROR_STOP=1 --file tests/iosf-company-migration.sql
       - name: Check personal notes isolation
         run: psql "$DATABASE_URL" --set ON_ERROR_STOP=1 --file tests/meeting-notes-rls.sql
+      - name: Check meeting continuity and source access isolation
+        run: psql "$DATABASE_URL" --set ON_ERROR_STOP=1 --file tests/sql/meeting-continuity.sql
       - name: Check Usage page schema queries
         shell: bash
         run: |

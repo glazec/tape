@@ -7,6 +7,7 @@ import type { SupportedMeetingPlatform } from "@/lib/meeting-links";
 import {
   FAILED_MEETING_BOT_RECOVERY_WINDOW_MS,
   MEETING_BOT_RECOVERY_WINDOW_MS,
+  MEETING_CONTINUATION_WINDOW_MS,
   MEETING_RECORDING_RESUME_MIN_REMAINING_MS,
 } from "@/lib/meeting-bot-recovery-policy";
 import { getMeetingManagerCondition } from "@/lib/meeting-write-policy";
@@ -75,19 +76,15 @@ export async function prepareMeetingBotRecovery(input: {
   await assertCanCreateMeetings(workspace);
   await assertWorkspaceHasProviderCredit(workspace);
   const now = input.now ?? new Date();
-  const [resumableMeeting] = await findResumableMeetings({
-    meetingId: input.meetingId,
-    now,
-    workspace,
-  });
-  const [recoverableMeeting] = resumableMeeting
-    ? []
-    : await findRecoverableMeetings({
-        meetingId: input.meetingId,
-        now,
-        workspace,
-      });
-  const meeting = resumableMeeting ?? recoverableMeeting;
+  const [recording] = await db.select({ id: recordings.id }).from(recordings)
+    .where(sql`(${recordings.meetingId}=${input.meetingId} or ${recordings.meetingId} in
+      (select source_meeting_id from meeting_parts where meeting_id=${input.meetingId}))`).limit(1);
+  if (recording) {
+    const { continueMeetingRecording } = await import("@/lib/meeting-continuation");
+    await continueMeetingRecording(workspace, input.meetingId, input.meetingUrl);
+    return { meetingId: input.meetingId, teamId: workspace.teamId, continued: true };
+  }
+  const [meeting] = await findRecoverableMeetings({ meetingId: input.meetingId, now, workspace });
 
   if (!meeting) {
     throw new Error("Meeting is no longer available for bot recovery");
@@ -106,7 +103,7 @@ export async function prepareMeetingBotRecovery(input: {
 
   return {
     meetingId: meeting.id,
-    resumeRecording: meeting.mode === "resume",
+    resumeRecording: false,
     teamId: workspace.teamId,
   };
 }
@@ -119,19 +116,21 @@ async function findResumableMeetings(input: {
   const conditions = [
     eq(meetings.teamId, input.workspace.teamId),
     getMeetingManagerCondition(input.workspace),
-    inArray(meetings.status, ["processing", "ready"]),
+    inArray(meetings.status, ["processing", "ready", "failed"]),
     inArray(meetings.platform, ["google_meet", "zoom"]),
     sql`${meetings.startedAt} is not null`,
     sql`${meetings.startedAt} <= ${input.now}`,
-    sql`${meetings.endedAt} >= ${new Date(
-      input.now.getTime() + MEETING_RECORDING_RESUME_MIN_REMAINING_MS,
-    )}`,
     sql`exists (
       select 1 from ${recordings}
-      where ${recordings.meetingId} = ${meetings.id}
+      where (${recordings.meetingId} = ${meetings.id} or ${recordings.meetingId} in
+        (select source_meeting_id from meeting_parts where meeting_id = ${meetings.id}))
         and ${recordings.endedAt} is not null
         and ${recordings.endedAt} <= ${input.now}
+        and ${recordings.endedAt} > ${new Date(input.now.getTime() - MEETING_CONTINUATION_WINDOW_MS)}
     )`,
+    sql`not exists (select 1 from meeting_parts where source_meeting_id = ${meetings.id})`,
+    sql`not exists (select 1 from meeting_parts p join meetings child on child.id=p.source_meeting_id
+      where p.meeting_id=${meetings.id} and child.status in ('scheduled','recording'))`,
   ];
 
   if (input.meetingId) {
@@ -200,6 +199,8 @@ async function findRecoverableMeetings(input: {
       select 1 from ${transcriptSegments}
       where ${transcriptSegments.meetingId} = ${meetings.id}
     )`,
+    sql`not exists (select 1 from recordings r where r.meeting_id=${meetings.id} or r.meeting_id in
+      (select source_meeting_id from meeting_parts where meeting_id=${meetings.id}))`,
   ];
 
   if (input.meetingId) {

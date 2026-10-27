@@ -438,7 +438,7 @@ function getMeetingTimingLabel(timing: MeetingChoice["timing"]) {
 
 function getMeetingActionLabel(action: MeetingChoice["action"]) {
   return action === "resume"
-    ? "Resume recording"
+    ? "Continue recording"
     : action === "join"
       ? "Add bot now"
       : "Schedule bot";

@@ -26,22 +26,24 @@ describe("MeetingRecordingResume", () => {
       <MeetingRecordingResume
         meetingId="11111111-1111-4111-8111-111111111111"
         meetingUrl="https://zoom.us/j/123456789"
+        lastRecordingEndedAt={new Date(Date.now() - 60_000).toISOString()}
       />,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "Resume recording" }));
+    fireEvent.click(screen.getByRole("button", { name: "Continue recording" }));
+
+    fireEvent.click(screen.getByRole("button", { name: "Join and continue" }));
 
     await waitFor(() => {
-      expect(fetchMock).toHaveBeenCalledWith("/api/meetings/link", {
+      expect(fetchMock).toHaveBeenCalledWith("/api/meetings/11111111-1111-4111-8111-111111111111/continue", {
         body: JSON.stringify({
           meetingUrl: "https://zoom.us/j/123456789",
-          recoveryMeetingId: "11111111-1111-4111-8111-111111111111",
         }),
         headers: { "content-type": "application/json" },
         method: "POST",
       });
     });
-    expect(await screen.findByText("Bot rejoining")).toBeTruthy();
+    expect(await screen.findByText("Bot joining")).toBeTruthy();
     expect(refresh).toHaveBeenCalled();
   });
 });

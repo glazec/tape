@@ -23,6 +23,13 @@ vi.mock("@/lib/auth-guards", () => ({ requireCurrentUser: mocks.requireUser }));
 vi.mock("@/lib/workspace", () => ({
   getOrCreateWorkspaceForSessionUser: mocks.getWorkspace,
 }));
+vi.mock("@/lib/meeting-composition", () => ({
+  getMeetingCompositionForWorkspace: async (...args: unknown[]) => {
+    const primary = await mocks.getMeeting(...args);
+    return primary ? { primary, parts: [primary], sources: [], parent: null } : null;
+  },
+  composeMeetingForFollowup: ({ primary }: { primary: unknown }) => primary,
+}));
 vi.mock("@/lib/meeting-queries", () => ({
   getMeetingTranscriptForWorkspace: mocks.getMeeting,
   listMeetingDetailRelatedMeetingsForWorkspace: mocks.listRelated,
@@ -369,11 +376,12 @@ describe("meeting page", () => {
     expect(html).not.toContain("recovery panel");
   });
 
-  it("offers to resume an early recording during the scheduled window", async () => {
+  it("offers continuation from actual recording end without a scheduled window", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-07-22T17:20:00.000Z"));
     mocks.getMeeting.mockResolvedValue(
       meeting({
+        lastRecordingEndedAt: "2026-07-22T17:07:23.000Z",
         recordingParts: [
           {
             audioUrl: "/audio?recording=part-1",
@@ -383,8 +391,8 @@ describe("meeting page", () => {
             startedAt: "2026-07-22T17:00:58.000Z",
           },
         ],
-        scheduledEndedAt: "2026-07-22T17:45:00.000Z",
-        scheduledStartedAt: "2026-07-22T17:00:00.000Z",
+        scheduledEndedAt: null,
+        scheduledStartedAt: null,
         status: "ready",
       }),
     );
@@ -395,8 +403,8 @@ describe("meeting page", () => {
       }),
     );
 
-    expect(html).toContain("Recording ended early");
-    expect(html).toContain("Resume recording");
+    expect(html).toContain("Recording stopped");
+    expect(html).toContain("Continue recording");
     vi.useRealTimers();
   });
 

@@ -109,6 +109,7 @@ export async function joinScheduledMeetingBotNow(input: {
     if (botId !== meeting.recallBotId) {
       try {
         await markMeetingBotScheduled({
+          botName: botProfile.botName,
           meetingId: meeting.id,
           recallBotId: botId,
         });
@@ -133,6 +134,7 @@ export async function joinScheduledMeetingBotNow(input: {
 
     try {
       await markMeetingBotScheduled({
+        botName: botProfile.botName,
         meetingId: meeting.id,
         recallBotId: response.id,
       });

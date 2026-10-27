@@ -378,7 +378,7 @@ describe("database migrations", () => {
 
     for (const table of tenantTables) {
       const policySql =
-        table === "meeting_notes"
+        table === "meeting_parts" ? readFileSync("db/migrations/0060_meeting_continuity.sql", "utf8") : table === "meeting_notes"
           ? readFileSync("db/migrations/0051_meeting_notes.sql", "utf8")
           : sql;
       expect(

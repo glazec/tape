@@ -91,3 +91,13 @@ A person can connect multiple Google Calendar accounts without replacing other a
 ## Organization context
 
 A connected calendar account, company workspace, and bot identity are separate choices. Multiple accounts do not imply multiple bots. New bot requests require an explicit choice when multiple organization identities are available. Calendar automation retains the company preference for shared meetings. Other creation flows use the selected workspace; existing meeting actions retain the meeting’s workspace and access rules. Desktop pairing and MCP uploads ask for an organization when membership is ambiguous.
+
+## Meeting continuity
+
+Continue recording joins a new Zoom or Google Meet link under the existing meeting for strictly less than one hour after the actual last recording end. The scheduled calendar end does not extend this window. The prior bot name is reused, with no personal name or email input. New meetings use organization bot settings.
+
+Merge meetings adds an existing meeting even while transcription is pending. Up to 20 sources can be added; nested combinations are not supported. Candidates must have the same workspace, owner, organization visibility, and active recipient roles. Sources retain their records, processing jobs, media, private notes, and access controls. Undo removes a merge relationship and restores the source in the library. Continuation sources stay part of their meeting.
+
+Combined transcript sections remain useful while another source is processing. Note questions and exports include available readable parts; combined followups wait for all visible sources to finish. Sharing the destination alone does not share the sources. Replace audio is available on individual recordings, including original source pages.
+
+Remembering a speaker name is an explicit option during an all matching lines correction. It stores the complete verified email within the workspace. Names alone, generic speaker labels, and single line corrections do not train future identity matching.

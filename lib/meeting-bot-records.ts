@@ -187,11 +187,13 @@ export async function findScheduledMeetingBotCalendarCandidates(input: {
 export async function markMeetingBotScheduled(input: {
   meetingId: string;
   recallBotId: string;
+  botName?: string;
 }) {
   const result = await db
     .update(meetings)
     .set({
       recallBotId: input.recallBotId,
+      ...(input.botName ? { botDisplayName: input.botName } : {}),
       status: "scheduled",
       updatedAt: new Date(),
     })

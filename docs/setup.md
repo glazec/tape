@@ -505,3 +505,9 @@ Calendar accounts use Google’s verified email from the UserInfo endpoint. Appl
 ## Organization workflow migration
 
 Apply migration `0059_meeting_bot_organization` before deploying the organization workflow changes. It adds the nullable `meetings.bot_organization_domain` column used to preserve an explicitly selected bot on retry and resume. Existing calendar records with no override retain attendee and account based bot selection. No new environment variables are required. Local checks do not establish a successful production migration or a live bot join.
+
+## Meeting continuity migration
+
+Apply `0060_meeting_continuity` before deploying the continuity routes. It adds `meetings.bot_display_name`, the access controlled `meeting_parts` relation, merge validation, and the atomic continuation claim function. No new environment variables are required. The one hour window uses `recordings.ended_at`. A definite provider refusal can be retried; an uncertain network outcome keeps its claim so a second bot is not dispatched. Signed provider callbacks can confirm that claim.
+
+This is the cloud bot continuation flow. Existing native recorder uploads and replacement audio processing keep their original source records. Production verification still requires migration success, deployment, and authenticated capture through the provider. Local fixtures do not establish a successful live join.

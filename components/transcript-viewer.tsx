@@ -399,6 +399,9 @@ export function TranscriptViewer({
   );
   const [draftSpeaker, setDraftSpeaker] = useState("");
   const [initialDraftSpeaker, setInitialDraftSpeaker] = useState("");
+  const [participantEmail, setParticipantEmail] = useState<string | null>(null);
+  const [rememberName, setRememberName] = useState(true);
+  const [speakerError, setSpeakerError] = useState<string | null>(null);
   const [speakerApplyScope, setSpeakerApplyScope] =
     useState<SpeakerApplyScope>("matching_speaker");
   const [savingSpeakerKey, setSavingSpeakerKey] = useState<string | null>(null);
@@ -850,6 +853,9 @@ export function TranscriptViewer({
     });
     const initialSpeaker = speakerStat?.speaker ?? speaker ?? "";
 
+    setParticipantEmail(getFullParticipantEmail(speaker) ?? getFullParticipantEmail(initialSpeaker));
+    setRememberName(true);
+    setSpeakerError(null);
     setDraftSpeaker(initialSpeaker);
     setInitialDraftSpeaker(initialSpeaker);
     setSpeakerApplyScope("matching_speaker");
@@ -860,13 +866,14 @@ export function TranscriptViewer({
     event.preventDefault();
     const speaker = draftSpeaker.trim();
 
-    if (!meetingId || !editingSpeaker) {
+    if (!meetingId || !editingSpeaker || savingSpeakerKey) {
       return;
     }
 
     const speakerKey = editingSpeaker.speakerKey;
 
     if (!speaker) {
+      setSpeakerError("Add a speaker name.");
       setErrorSpeakerKey(speakerKey);
       return;
     }
@@ -874,28 +881,30 @@ export function TranscriptViewer({
     setSavingSpeakerKey(speakerKey);
     setErrorSpeakerKey(null);
 
-    const response = await fetch(
-      `/api/meetings/${encodeURIComponent(meetingId)}/speakers`,
-      {
-        method: "PATCH",
-        headers: {
-          "content-type": "application/json",
+    try {
+      const response = await fetch(
+        `/api/meetings/${encodeURIComponent(meetingId)}/speakers`,
+        {
+          method: "PATCH",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            applyTo: speakerApplyScope,
+            currentSpeakerAliases: editingSpeaker.speakerAliases,
+            currentSpeaker: editingSpeaker.currentSpeaker,
+            segmentId: editingSpeaker.segmentId,
+            speaker,
+            ...(speakerApplyScope === "matching_speaker" && participantEmail ? { participantEmail } : {}),
+            rememberName: speakerApplyScope === "matching_speaker" && Boolean(participantEmail) && rememberName,
+          }),
         },
-        body: JSON.stringify({
-          applyTo: speakerApplyScope,
-          currentSpeakerAliases: editingSpeaker.speakerAliases,
-          currentSpeaker: editingSpeaker.currentSpeaker,
-          segmentId: editingSpeaker.segmentId,
-          speaker,
-        }),
-      },
-    );
-
-    setSavingSpeakerKey(null);
-
-    if (!response.ok) {
+      );
+      if (!response.ok) throw new Error("Speaker name could not be saved. Try again.");
+    } catch {
       setErrorSpeakerKey(speakerKey);
+      setSpeakerError("Speaker name could not be saved. Try again.");
       return;
+    } finally {
+      setSavingSpeakerKey(null);
     }
 
     setSegments((currentSegments) =>
@@ -972,6 +981,8 @@ export function TranscriptViewer({
               onValueChange={(suggestion) => {
                 if (suggestion) {
                   setDraftSpeaker(suggestion.name);
+                  setParticipantEmail(getFullParticipantEmail(suggestion.email));
+                  setRememberName(true);
                 }
               }}
               open
@@ -1081,9 +1092,18 @@ export function TranscriptViewer({
             </button>
           </div>
         ) : null}
+        {participantEmail && speakerApplyScope === "matching_speaker" ? (
+          <label className="flex min-h-11 cursor-pointer items-start gap-2.5 rounded-md bg-muted/35 px-3 py-2.5 text-sm">
+            <input className="mt-0.5 size-4 shrink-0 accent-primary" type="checkbox" checked={rememberName} disabled={isSaving} onChange={(event) => setRememberName(event.target.checked)} />
+            <span className="min-w-0">Remember for future meetings
+              <span className="mt-1 block break-all text-xs leading-5 text-muted-foreground">{participantEmail}</span>
+              <span className="block text-xs leading-5 text-muted-foreground">For this email in this workspace.</span>
+            </span>
+          </label>
+        ) : null}
         {hasError ? (
-          <p className="text-xs font-medium text-destructive">
-            Add a speaker name.
+          <p className="text-xs font-medium text-destructive" role="alert">
+            {speakerError ?? "Speaker name could not be saved. Try again."}
           </p>
         ) : null}
       </form>
@@ -3751,4 +3771,9 @@ function getNormalizedSpeakerKey(speaker: string | null) {
 
 function getSpeakerInitial(speaker: string) {
   return speaker.trim().charAt(0).toUpperCase() || "?";
+}
+
+function getFullParticipantEmail(value: string | null) {
+  const email = value?.trim().toLowerCase();
+  return email && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) ? email : null;
 }
