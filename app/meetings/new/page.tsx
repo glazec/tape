@@ -1,7 +1,10 @@
 import { redirect } from "next/navigation";
 
 import { AppShell } from "@/components/app-shell";
-import { NewMeetingSources } from "@/components/new-meeting-sources";
+import {
+  NewMeetingSources,
+  type MeetingSource,
+} from "@/components/new-meeting-sources";
 import { requireCurrentUser } from "@/lib/auth-guards";
 import {
   getOrCreateWorkspaceForSessionUser,
@@ -10,7 +13,11 @@ import {
 
 export const dynamic = "force-dynamic";
 
-export default async function NewMeetingPage() {
+export default async function NewMeetingPage({
+  searchParams,
+}: {
+  searchParams?: Promise<{ source?: string | string[] }>;
+} = {}) {
   const user = await requireCurrentUser();
   const workspace = await getOrCreateWorkspaceForSessionUser(user);
   const accessSummary = await getWorkspaceAccessSummary(workspace);
@@ -25,18 +32,31 @@ export default async function NewMeetingPage() {
       amplitudeTeamId={workspace.teamId}
       oneSignalExternalId={workspace.userId}
     >
-      <section className="flex max-w-3xl flex-col gap-6">
-        <div>
-          <h1 className="text-3xl font-semibold tracking-tight">
-            Add a meeting
-          </h1>
-          <p className="mt-3 text-base leading-7 text-muted-foreground">
-            Choose how you want to add it.
-          </p>
-        </div>
+      <section className="mx-auto flex w-full max-w-xl flex-col gap-6 sm:pt-6">
+        <h1 className="text-2xl font-semibold tracking-[-0.015em]">
+          Add a meeting
+        </h1>
 
-        <NewMeetingSources teamId={workspace.teamId} />
+        <NewMeetingSources
+          initialSource={parseMeetingSource((await searchParams)?.source)}
+          teamId={workspace.teamId}
+        />
       </section>
     </AppShell>
   );
+}
+
+const meetingSources: readonly MeetingSource[] = [
+  "link",
+  "recording",
+  "transcript",
+  "phone",
+];
+
+function parseMeetingSource(value: string | string[] | undefined) {
+  const source = Array.isArray(value) ? value[0] : value;
+
+  return meetingSources.includes(source as MeetingSource)
+    ? (source as MeetingSource)
+    : null;
 }

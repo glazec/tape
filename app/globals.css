@@ -89,11 +89,15 @@ body {
   text-rendering: optimizeLegibility;
 }
 
-button,
-input,
-textarea,
-select {
-  font: inherit;
+/* Layered so Tailwind's text-* utilities on controls still win: an unlayered
+   rule here would outrank every utility and pin all controls to body size. */
+@layer base {
+  button,
+  input,
+  textarea,
+  select {
+    font: inherit;
+  }
 }
 
 /* Fraunces carries an optical-size axis: let the browser use it at display sizes. */

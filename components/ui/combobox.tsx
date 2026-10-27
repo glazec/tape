@@ -117,7 +117,9 @@ function ComboboxEmpty({
     <ComboboxPrimitive.Empty
       data-slot="combobox-empty"
       className={cn(
-        "px-3 py-2.5 text-sm leading-5 text-muted-foreground",
+        // Base UI keeps this element mounted while results exist, so it must
+        // collapse when it has no text or it leaves a blank padded row.
+        "px-3 py-2.5 text-sm leading-5 text-muted-foreground empty:hidden",
         className,
       )}
       {...props}

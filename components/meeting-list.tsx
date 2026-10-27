@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Fragment, useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useRef, useState, type ReactNode } from "react";
 import {
   ArrowDown,
   ArrowUp,
@@ -14,7 +14,6 @@ import {
 } from "lucide-react";
 
 import { MeetingBotRecoveryPanel } from "@/components/meeting-bot-recovery-panel";
-import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
 import {
   Dialog,
@@ -33,7 +32,6 @@ import {
 } from "@/components/ui/table";
 import {
   getMeetingDisplayStatus,
-  getMeetingStatusClassName,
   type MeetingDisplayStatus,
   type MeetingRecordStatus,
   type TranscriptJobStatus,
@@ -131,44 +129,13 @@ export function MeetingList({
   }
 
   return (
-    <div className="bg-card">
+    <div>
       <Table>
-        <TableHeader className="bg-muted/30">
-          <TableRow className="hover:bg-muted/30">
-            <TableHead
-              aria-sort={getHeaderAriaSort("title", sort)}
-              className="pl-8"
-            >
-              <SortableHeader
-                activeDirection={getSortDirection("title", sort)}
-                href={sortLinks?.title}
-                label="Meeting"
-              />
-            </TableHead>
-            <TableHead className="hidden sm:table-cell">Platform</TableHead>
-            <TableHead
-              aria-sort={getHeaderAriaSort("participantCount", sort)}
-              className="hidden md:table-cell"
-            >
-              <SortableHeader
-                activeDirection={getSortDirection("participantCount", sort)}
-                href={sortLinks?.participantCount}
-                label="Participants"
-              />
-            </TableHead>
-            <TableHead
-              aria-sort={getHeaderAriaSort("duration", sort)}
-              className="hidden md:table-cell"
-            >
-              <SortableHeader
-                activeDirection={getSortDirection("duration", sort)}
-                href={sortLinks?.duration}
-                label="Duration"
-              />
-            </TableHead>
+        <TableHeader>
+          <TableRow className="border-border/60 hover:bg-transparent">
             <TableHead
               aria-sort={getHeaderAriaSort("startedAt", sort)}
-              className="hidden md:table-cell"
+              className="hidden w-40 pl-0 text-xs font-normal text-muted-foreground md:table-cell"
             >
               <SortableHeader
                 activeDirection={getSortDirection("startedAt", sort)}
@@ -176,14 +143,26 @@ export function MeetingList({
                 label="Started"
               />
             </TableHead>
-            <TableHead className="w-28 text-center">Status</TableHead>
+            <TableHead
+              aria-sort={getHeaderAriaSort("title", sort)}
+              className="pl-8 text-xs font-normal text-muted-foreground"
+            >
+              <SortableHeader
+                activeDirection={getSortDirection("title", sort)}
+                href={sortLinks?.title}
+                label="Meeting"
+              />
+            </TableHead>
+            <TableHead className="w-28 pr-4 text-right text-xs font-normal text-muted-foreground">
+              Status
+            </TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
           {meetings.length === 0 ? (
             <TableRow>
               <TableCell
-                colSpan={6}
+                colSpan={3}
                 className="h-24 text-center text-muted-foreground"
               >
                 {emptyMessage}
@@ -202,6 +181,30 @@ export function MeetingList({
                   <MeetingTableRow
                     isExpanded={isExpanded}
                     meeting={meeting}
+                    moreAction={
+                      !isExpanded ? null : hasMore ? (
+                        <button
+                          aria-label={`Load more meetings for ${meeting.title}`}
+                          className="rounded-sm text-xs text-muted-foreground underline decoration-border underline-offset-4 hover:text-foreground hover:decoration-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                          onClick={() =>
+                            setVisibleRelatedCounts((counts) => ({
+                              ...counts,
+                              [meeting.id]: visibleCount + 4,
+                            }))
+                          }
+                          type="button"
+                        >
+                          Show more
+                        </button>
+                      ) : meeting.hasMoreRelatedMeetings &&
+                        !meeting.olderRelatedMeetings &&
+                        meeting.relatedHistoryHref ? (
+                        <RelatedHistoryLink
+                          href={meeting.relatedHistoryHref}
+                          months={meeting.relatedHistoryMonths}
+                        />
+                      ) : null
+                    }
                     onToggle={() => toggleMeeting(meeting.id)}
                     relatedCount={relatedMeetings.length || (meeting.hasMoreRelatedMeetings ? 1 : 0)}
                   />
@@ -214,31 +217,6 @@ export function MeetingList({
                             meeting={relatedMeeting}
                           />
                         )),
-                        hasMore ? (
-                          <TableRow key={`${meeting.id}:load-more`} className="bg-muted/15">
-                            <TableCell colSpan={6} className="py-3 pl-16">
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                aria-label={`Load more meetings for ${meeting.title}`}
-                                onClick={() => setVisibleRelatedCounts((counts) => ({
-                                  ...counts,
-                                  [meeting.id]: visibleCount + 4,
-                                }))}
-                              >
-                                Load more meetings
-                              </Button>
-                            </TableCell>
-                          </TableRow>
-                        ) : meeting.hasMoreRelatedMeetings &&
-                        !meeting.olderRelatedMeetings &&
-                        meeting.relatedHistoryHref ? (
-                          <RelatedHistoryRow
-                            href={meeting.relatedHistoryHref}
-                            key={`${meeting.id}:related-history`}
-                            months={meeting.relatedHistoryMonths}
-                          />
-                        ) : null,
                       ]
                     : null}
                 </Fragment>
@@ -251,7 +229,7 @@ export function MeetingList({
   );
 }
 
-function RelatedHistoryRow({
+function RelatedHistoryLink({
   href,
   months,
 }: {
@@ -259,21 +237,18 @@ function RelatedHistoryRow({
   months?: number;
 }) {
   return (
-    <TableRow className="bg-muted/15 hover:bg-muted/25">
-      <TableCell colSpan={6} className="py-3 pl-16">
-        <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
-          <Link
-            className="inline-flex h-8 items-center gap-2 rounded-lg px-3 text-sm font-medium text-foreground hover:bg-muted"
-            href={href}
-            scroll={false}
-          >
-            <History aria-hidden="true" className="size-4" />
-            Load more meetings
-          </Link>
-          <span>Search before last {months ?? 6} months</span>
-        </div>
-      </TableCell>
-    </TableRow>
+    <Link
+      className="inline-flex items-center gap-1 rounded-sm text-xs text-muted-foreground underline decoration-border underline-offset-4 hover:text-foreground hover:decoration-foreground"
+      href={href}
+      scroll={false}
+      title={`Search before last ${months ?? 6} months`}
+    >
+      <History aria-hidden="true" className="size-3" />
+      Earlier
+      <span className="sr-only">
+        : Load more meetings. Search before last {months ?? 6} months
+      </span>
+    </Link>
   );
 }
 
@@ -289,12 +264,14 @@ function MeetingTableRow({
   isChild = false,
   isExpanded = false,
   meeting,
+  moreAction = null,
   onToggle,
   relatedCount = 0,
 }: {
   isChild?: boolean;
   isExpanded?: boolean;
   meeting: MeetingListBaseItem;
+  moreAction?: ReactNode;
   onToggle?: () => void;
   relatedCount?: number;
 }) {
@@ -306,40 +283,29 @@ function MeetingTableRow({
     <TableRow
       aria-expanded={relatedCount > 0 ? isExpanded : undefined}
       className={cn(
-        "group/meeting-row meeting-row",
-        isChild && "bg-muted/15 hover:bg-muted/30",
+        "group/meeting-row meeting-row border-border/45",
+        isChild && "border-b-0",
       )}
     >
-      <TableCell className="min-w-56 py-3">
+      <TableCell
+        className={cn(
+          "hidden w-40 pl-0 align-top whitespace-nowrap text-sm tabular-nums md:table-cell",
+          isChild ? "pt-2.5 text-muted-foreground/80" : "pt-3.5 text-muted-foreground",
+        )}
+      >
+        <LocalDateTime value={meeting.startedAt} />
+      </TableCell>
+      <TableCell className={cn("min-w-56", isChild ? "py-2" : "py-3")}>
         <MeetingTitleCell
           isChild={isChild}
           isExpanded={isExpanded}
           meeting={meeting}
+          moreAction={moreAction}
           onToggle={onToggle}
           relatedCount={relatedCount}
         />
       </TableCell>
-      <TableCell className="hidden text-muted-foreground sm:table-cell">
-        {platformLabels[meeting.platform]}
-      </TableCell>
-      <TableCell className="hidden text-muted-foreground tabular-nums md:table-cell">
-        <ParticipantCount
-          count={meeting.participantCount}
-          names={meeting.participantNames}
-        />
-      </TableCell>
-      <TableCell className="hidden text-muted-foreground tabular-nums md:table-cell">
-        {formatMeetingDuration({
-          durationMs: meeting.durationMs,
-          endedAt: meeting.endedAt,
-          startedAt: meeting.startedAt,
-          status: meeting.status,
-        })}
-      </TableCell>
-      <TableCell className="hidden text-muted-foreground md:table-cell">
-        <LocalDateTime value={meeting.startedAt} />
-      </TableCell>
-      <TableCell className="w-28 text-center">
+      <TableCell className="w-28 pr-4 align-top pt-3 text-right">
         {displayStatus === "failed" && meeting.canRecoverBot ? (
           <FailedMeetingAction meeting={meeting} />
         ) : displayStatus === "scheduled" &&
@@ -347,9 +313,7 @@ function MeetingTableRow({
         meeting.accessScope !== "shared" ? (
           <ScheduledMeetingAction meeting={meeting} />
         ) : (
-          <Badge className={getMeetingStatusClassName(displayStatus)} variant={getStatusVariant(displayStatus)}>
-            {statusLabels[displayStatus]}
-          </Badge>
+          <MeetingStatusLabel status={displayStatus} />
         )}
       </TableCell>
     </TableRow>
@@ -385,13 +349,10 @@ function FailedMeetingAction({ meeting }: { meeting: MeetingListBaseItem }) {
   }
 
   return (
-    <span className="inline-grid w-[5.625rem] items-center justify-items-center">
-      <Badge
-        className="meeting-join-badge col-start-1 row-start-1 hidden transition-opacity"
-        variant="destructive"
-      >
-        Failed
-      </Badge>
+    <span className="inline-grid w-[5.625rem] items-center justify-items-end">
+      <span className="meeting-join-badge col-start-1 row-start-1 hidden transition-opacity">
+        <MeetingStatusLabel status="failed" />
+      </span>
       <Button
         aria-haspopup="dialog"
         aria-label={`Rejoin ${meeting.title}`}
@@ -477,14 +438,11 @@ function ScheduledMeetingAction({ meeting }: { meeting: MeetingListBaseItem }) {
           : "";
 
   return (
-    <span className="inline-grid w-[5.625rem] items-center justify-items-center">
+    <span className="inline-grid w-[5.625rem] items-center justify-items-end">
       {state === "idle" ? (
-        <Badge
-          className={cn("meeting-join-badge col-start-1 row-start-1 hidden transition-opacity", getMeetingStatusClassName("scheduled"))}
-          variant="outline"
-        >
-          Scheduled
-        </Badge>
+        <span className="meeting-join-badge col-start-1 row-start-1 hidden transition-opacity">
+          <MeetingStatusLabel status="scheduled" />
+        </span>
       ) : null}
       <Button
         aria-busy={state === "joining"}
@@ -523,12 +481,14 @@ function MeetingTitleCell({
   isChild,
   isExpanded,
   meeting,
+  moreAction,
   onToggle,
   relatedCount,
 }: {
   isChild: boolean;
   isExpanded: boolean;
   meeting: MeetingListBaseItem;
+  moreAction: ReactNode;
   onToggle?: () => void;
   relatedCount: number;
 }) {
@@ -544,7 +504,7 @@ function MeetingTitleCell({
       className={cn(
         "flex min-w-0 items-start gap-1",
         isChild &&
-          "relative pl-8 before:absolute before:bottom-1 before:left-3 before:top-1 before:w-px before:bg-border",
+          "relative pl-8 before:absolute before:bottom-1 before:left-3 before:top-1 before:w-px before:bg-border/70",
       )}
     >
       {relatedCount > 0 ? (
@@ -575,7 +535,7 @@ function MeetingTitleCell({
         <div className="flex min-w-0 flex-wrap items-center gap-2">
           <Link
             className={cn(
-              "font-medium hover:underline",
+              isChild ? "text-sm hover:underline" : "font-medium hover:underline",
               shouldDimMeetingCopy
                 ? "text-muted-foreground hover:text-foreground"
                 : "text-foreground",
@@ -585,22 +545,15 @@ function MeetingTitleCell({
             {meeting.title}
           </Link>
           {relatedCount > 0 ? (
-            <span className="rounded-full border px-2 py-0.5 text-xs text-muted-foreground">
+            <span className="text-xs text-muted-foreground">
               {relatedCount === 1
                 ? "1 related"
                 : `${relatedCount} related`}
             </span>
           ) : null}
+          {moreAction}
         </div>
-        <span className="mt-1 block text-xs text-muted-foreground sm:hidden">
-          {platformLabels[meeting.platform]}
-        </span>
-        <MeetingCoverageNote
-          accessScope={meeting.accessScope}
-          displayStatus={displayStatus}
-          hasRecallBot={meeting.hasRecallBot}
-          platform={meeting.platform}
-        />
+        <MeetingMeta displayStatus={displayStatus} meeting={meeting} />
       </div>
     </div>
   );
@@ -682,7 +635,7 @@ function getSortDirection(columnId: string, sort: MeetingLibrarySort) {
   return null;
 }
 
-function MeetingCoverageNote({
+function getMeetingCoverageNote({
   accessScope,
   displayStatus,
   hasRecallBot,
@@ -694,77 +647,128 @@ function MeetingCoverageNote({
   platform: MeetingListBaseItem["platform"];
 }) {
   if (accessScope === "shared") {
-    return (
-      <span className="mt-1 block text-xs text-muted-foreground">
-        Shared with you
-      </span>
-    );
+    return "Shared with you";
   }
 
   if (displayStatus === "scheduled") {
-    return (
-      <span className="mt-1 block text-xs text-muted-foreground">
-        {hasRecallBot
-          ? "Bot scheduled"
-          : platform === "microsoft_teams"
-            ? "Local recording planned"
-            : "No bot linked"}
-      </span>
-    );
+    return hasRecallBot
+      ? "Bot scheduled"
+      : platform === "microsoft_teams"
+        ? "Local recording planned"
+        : "No bot linked";
   }
 
   if (displayStatus === "recording") {
-    return (
-      <span className="mt-1 block text-xs text-muted-foreground">
-        {platform === "in_person" || platform === "microsoft_teams"
-          ? "Recording locally"
-          : "Bot in meeting"}
-      </span>
-    );
+    return platform === "in_person" || platform === "microsoft_teams"
+      ? "Recording locally"
+      : "Bot in meeting";
   }
 
   if (displayStatus === "failed") {
-    return (
-      <span className="mt-1 block text-xs text-muted-foreground">
-        Needs review
-      </span>
-    );
+    return "Needs review";
   }
 
   if (displayStatus === "missed") {
-    return (
-      <span className="mt-1 block text-xs text-muted-foreground">
-        Bot did not join
-      </span>
-    );
+    return "Bot did not join";
   }
 
   return null;
 }
 
-function getStatusVariant(status: MeetingDisplayStatus) {
-  if (status === "failed") {
-    return "destructive";
+/**
+ * Platform, people, and length read as one quiet line under the title, so the
+ * row carries one subject instead of four equal-weight columns. Facts that are
+ * not known are left out rather than printed as "Unknown".
+ */
+function MeetingMeta({
+  displayStatus,
+  meeting,
+}: {
+  displayStatus: MeetingDisplayStatus;
+  meeting: MeetingListBaseItem;
+}) {
+  const duration = formatMeetingDuration({
+    durationMs: meeting.durationMs,
+    endedAt: meeting.endedAt,
+    startedAt: meeting.startedAt,
+    status: meeting.status,
+  });
+  const coverageNote = getMeetingCoverageNote({
+    accessScope: meeting.accessScope,
+    displayStatus,
+    hasRecallBot: meeting.hasRecallBot,
+    platform: meeting.platform,
+  });
+  const parts: ReactNode[] = [
+    <span key="platform">{platformLabels[meeting.platform]}</span>,
+  ];
+
+  if (typeof meeting.participantCount === "number") {
+    parts.push(
+      <ParticipantCount
+        count={meeting.participantCount}
+        key="people"
+        names={meeting.participantNames}
+      />,
+    );
   }
 
-  if (status === "ready") {
-    return "secondary";
+  if (duration) {
+    parts.push(
+      <span className="tabular-nums" key="duration">
+        {duration}
+      </span>,
+    );
   }
 
-  if (
-    status === "scheduled" ||
-    status === "queued" ||
-    status === "missed" ||
-    status === "cancelled"
-  ) {
-    return "outline";
+  if (coverageNote) {
+    parts.push(<span key="coverage">{coverageNote}</span>);
   }
 
-  if (status === "processing" || status === "transcribing") {
-    return "secondary";
-  }
+  return (
+    <span className="mt-0.5 flex flex-wrap items-center gap-x-1.5 text-xs text-muted-foreground">
+      {parts.map((part, index) => (
+        <Fragment key={index}>
+          {index > 0 ? <span aria-hidden="true">·</span> : null}
+          {part}
+        </Fragment>
+      ))}
+      {/* The Started column is hidden below md, so the date joins the line. */}
+      <span className="inline-flex items-center gap-x-1.5 md:hidden">
+        <span aria-hidden="true">·</span>
+        <LocalDateTime value={meeting.startedAt} />
+      </span>
+    </span>
+  );
+}
 
-  return "default";
+const statusDotClassNames: Partial<Record<MeetingDisplayStatus, string>> = {
+  scheduled: "bg-slate-400",
+  ready: "bg-emerald-500",
+  queued: "bg-amber-500",
+  transcribing: "bg-amber-500",
+  processing: "bg-amber-500",
+  recording: "bg-rose-500",
+  failed: "bg-destructive",
+};
+
+/** Status as a colored dot and its label: legible without color, and quiet. */
+function MeetingStatusLabel({ status }: { status: MeetingDisplayStatus }) {
+  return (
+    <span
+      className="inline-flex items-center gap-1.5 text-xs text-muted-foreground"
+      data-status={status}
+    >
+      <span
+        aria-hidden="true"
+        className={cn(
+          "size-1.5 rounded-full",
+          statusDotClassNames[status] ?? "bg-muted-foreground/40",
+        )}
+      />
+      {statusLabels[status]}
+    </span>
+  );
 }
 
 function formatParticipantCount(count: number | undefined) {
@@ -844,7 +848,7 @@ function formatMeetingDuration(input: {
     }
   }
 
-  return "Unknown";
+  return null;
 }
 
 function formatDurationMs(durationMs: number) {

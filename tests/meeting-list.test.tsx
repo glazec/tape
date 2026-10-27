@@ -27,13 +27,11 @@ describe("MeetingList", () => {
     );
 
     expect(html).toContain('dateTime="2026-01-01T12:00:00.000Z"');
-    expect(html).toContain("Participants");
-    expect(html).toContain("Duration");
     expect(html).toContain("3 people");
     expect(html).toContain("12m");
     expect(html).not.toContain("1h 30m");
     expect(html).toContain("pl-8");
-    expect(html).toContain("w-28 text-center");
+    expect(html).toContain("w-28 pr-4 text-right");
   });
 
   it("uses planned duration only for an upcoming scheduled meeting", () => {
@@ -248,7 +246,7 @@ describe("MeetingList", () => {
     expect(html).toContain("Scheduled");
     expect(html).toContain("1 related");
     expect(html).toContain("Ready");
-    expect(html).toContain('data-variant="secondary"');
+    expect(html).toContain('data-status="ready"');
     expect(html).toContain("David &lt;&gt; YP");
     expect(html).toContain("size-5 shrink-0");
     expect(html).toContain("items-start gap-1 relative pl-8");
@@ -293,7 +291,7 @@ describe("MeetingList", () => {
     expect(joinButton).toContain("Join now");
     expect(html).toContain("meeting-join-badge");
     expect(html).toContain(
-      "inline-grid w-[5.625rem] items-center justify-items-center",
+      "inline-grid w-[5.625rem] items-center justify-items-end",
     );
     expect(html).toContain("Scheduled");
   });
@@ -362,7 +360,7 @@ describe("MeetingList", () => {
 
     expect(html).toContain("Failed upload");
     expect(html).toContain("Needs review");
-    expect(html).toContain('data-variant="destructive"');
+    expect(html).toContain('data-status="failed"');
     expect(html).toContain(
       "text-muted-foreground hover:text-foreground",
     );
@@ -396,11 +394,11 @@ describe("MeetingList", () => {
     expect(html).toContain("[@media(hover:none)]:h-11");
   });
 
-  it("renders sortable headers for meeting name, participants, duration, and time", () => {
+  it("renders sortable headers for meeting name and time", () => {
     const html = renderToStaticMarkup(
       <MeetingList
         meetings={[]}
-        sort="duration_desc"
+        sort="time_desc"
         sortLinks={{
           title: "/dashboard?sort=title_asc",
           participantCount: "/dashboard?sort=participants_desc",
@@ -411,8 +409,6 @@ describe("MeetingList", () => {
     );
 
     expect(html).toContain('href="/dashboard?sort=title_asc"');
-    expect(html).toContain('href="/dashboard?sort=participants_desc"');
-    expect(html).toContain('href="/dashboard?sort=duration_desc"');
     expect(html).toContain('href="/dashboard?sort=time_desc"');
     expect(html).toContain('aria-sort="descending"');
   });

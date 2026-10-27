@@ -7,6 +7,7 @@ import {
   Building2,
   CheckCircle2,
   Send,
+  Share2,
   UserRound,
   Users,
   X,
@@ -14,6 +15,7 @@ import {
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Dialog, DialogContent } from "@/components/ui/dialog";
 import {
   Combobox,
   ComboboxContent,
@@ -83,6 +85,45 @@ function shouldPreserveRecipientDraft({
     nextValue === "" &&
     reason === "input-clear" &&
     !isTextInputEvent
+  );
+}
+
+/**
+ * Sharing is an occasional action, so the meeting page keeps it behind one
+ * button instead of a permanent side panel competing with the transcript.
+ */
+export function MeetingShareButton({
+  note,
+  ...props
+}: ShareDialogProps & { note?: string }) {
+  const [open, setOpen] = useState(false);
+
+  return (
+    <>
+      <Button
+        data-telemetry-action="meeting_share_opened"
+        onClick={() => setOpen(true)}
+        size="sm"
+        type="button"
+        variant="outline"
+      >
+        <Share2 data-icon="inline-start" />
+        Share
+      </Button>
+      <Dialog onOpenChange={setOpen} open={open}>
+        <DialogContent
+          aria-labelledby={`${props.instanceId}-share-title`}
+          className="max-w-md border-0 bg-transparent p-0 shadow-xl"
+        >
+          <ShareDialog {...props} />
+          {note ? (
+            <p className="mt-2 rounded-lg bg-background px-4 py-3 text-xs leading-5 text-muted-foreground">
+              {note}
+            </p>
+          ) : null}
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }
 

@@ -36,7 +36,7 @@ describe("AppShell", () => {
     expect(html).toContain("Sign out");
     expect(html).toContain("Setup guide");
     expect(html).toContain('href="/dashboard?setup=1"');
-    expect(primaryNav).toContain("Dashboard");
+    expect(primaryNav).toContain("Meetings");
     expect(primaryNav).not.toContain("Setup guide");
     expect(primaryNav).not.toContain("Sign out");
     expect(primaryNav).not.toContain("Usage");
@@ -51,7 +51,7 @@ describe("AppShell", () => {
     expect(html).toContain('aria-current="page"');
   });
 
-  it("renders New meeting as the primary navigation action", () => {
+  it("renders New meeting as a primary action outside the tabs", () => {
     const html = renderToStaticMarkup(
       <AppShell activeHref="/dashboard">Dashboard body</AppShell>,
     );
@@ -62,14 +62,11 @@ describe("AppShell", () => {
       html.indexOf("<nav"),
       html.indexOf("</nav>"),
     );
-    const dashboardLinkIndex = primaryNav.indexOf('href="/dashboard"');
-    const newMeetingLinkIndex = primaryNav.indexOf('href="/meetings/new"');
 
     expect(newMeetingLink).toContain("bg-primary");
     expect(newMeetingLink).toContain("text-primary-foreground");
-    expect(newMeetingLinkIndex).toBeGreaterThan(-1);
-    expect(dashboardLinkIndex).toBeGreaterThan(-1);
-    expect(newMeetingLinkIndex).toBeLessThan(dashboardLinkIndex);
+    expect(primaryNav).toContain('href="/dashboard"');
+    expect(primaryNav).not.toContain('href="/meetings/new"');
   });
 
   it("hides creator navigation for read only users", () => {
@@ -79,9 +76,9 @@ describe("AppShell", () => {
       </AppShell>,
     );
 
-    expect(html).toContain("Dashboard");
+    expect(html).toContain("Meetings");
     expect(html).not.toContain("New meeting");
     expect(html).not.toContain("Setup guide");
-    expect(html).not.toContain("Team settings");
+    expect(html).not.toContain('href="/settings/team"');
   });
 });

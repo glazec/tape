@@ -27,7 +27,7 @@ test("renders the authenticated dashboard with RLS scoped data", async ({
       name: `Welcome back, ${authenticatedDashboardFixture.name.split(" ")[0]}.`,
     }),
   ).toBeVisible();
-  await expect(page.getByText("You had 1 meeting since Monday.")).toBeVisible();
+  await expect(page.getByText("1 meeting", { exact: true })).toBeVisible();
   await expect(
     page.getByRole("link", {
       name: authenticatedDashboardFixture.meetingTitle,

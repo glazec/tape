@@ -5,14 +5,6 @@ import { CalendarCheck, CalendarX, TriangleAlert } from "lucide-react";
 import { AppShell } from "@/components/app-shell";
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
-import {
-  Card,
-  CardAction,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import {
   Select,
@@ -100,118 +92,93 @@ export default async function TeamSettingsPage({ searchParams }: {
       canCreateMeetings
       oneSignalExternalId={workspace.userId}
     >
-      <section className="flex max-w-3xl flex-col gap-6">
-        <div>
-          <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-            Team settings
-          </p>
-          <h1 className="mt-2 text-3xl font-semibold tracking-tight">
-            {teamConfiguration.name}
+      <section className="flex max-w-4xl flex-col">
+        <div className="pb-8">
+          <h1 className="text-2xl font-semibold tracking-[-0.015em]">
+            Settings
           </h1>
           {organizations.length > 1 ? (
-            <nav aria-label="Organizations" className="mt-4 flex flex-wrap gap-2">
-              {organizations.map((organization) => (
-                <Link
-                  key={organization.teamId}
-                  href={`/settings/team?teamId=${organization.teamId}`}
-                  aria-current={organization.teamId === workspace.teamId ? "page" : undefined}
-                  className={buttonVariants({ variant: organization.teamId === workspace.teamId ? "secondary" : "ghost", size: "sm" })}
-                >
-                  {organization.teamName}
-                </Link>
-              ))}
+            <nav
+              aria-label="Organizations"
+              className="mt-3 inline-flex flex-wrap gap-1 rounded-lg bg-muted/60 p-1"
+            >
+              {organizations.map((organization) => {
+                const isCurrent = organization.teamId === workspace.teamId;
+
+                return (
+                  <Link
+                    key={organization.teamId}
+                    href={`/settings/team?teamId=${organization.teamId}`}
+                    aria-current={isCurrent ? "page" : undefined}
+                    className={cn(
+                      "inline-flex min-h-11 items-center rounded-md px-3 text-sm transition-colors sm:min-h-7",
+                      isCurrent
+                        ? "bg-background font-medium text-foreground shadow-xs"
+                        : "text-muted-foreground hover:text-foreground",
+                    )}
+                  >
+                    {organization.teamName}
+                  </Link>
+                );
+              })}
             </nav>
-          ) : null}
+          ) : (
+            <p className="mt-1 text-sm text-muted-foreground">
+              {teamConfiguration.name}
+            </p>
+          )}
           {!canEditTeamSettings ? (
             <p className="mt-3 text-sm text-muted-foreground">
               Only team administrators can edit these settings.
             </p>
           ) : null}
         </div>
-        <Card id="connected-accounts">
-          <CardHeader>
-            <CardTitle>Connected accounts</CardTitle>
-            <CardDescription>Connect work emails to sync each account’s calendar.</CardDescription>
-          </CardHeader>
-          <CardContent className="flex flex-col gap-4">
+        <SettingsSection id="connected-accounts" title="Connected accounts">
+          <div className="flex flex-col gap-3">
             {calendarAccounts.length ? (
-              <ul className="divide-y">
+              <ul className="divide-y border-y">
                 {calendarAccounts.map((account) => (
-                  <li key={account.id} className="flex min-w-0 flex-col gap-3 py-3 sm:flex-row sm:items-center sm:justify-between">
+                  <li
+                    key={account.id}
+                    className="flex min-w-0 flex-col gap-2 py-3 sm:flex-row sm:items-center sm:justify-between"
+                  >
                     <div className="min-w-0">
-                      <p className="break-all text-sm font-medium">{account.email ?? "Google account · reconnect to identify"}</p>
-                      <p className="text-xs text-muted-foreground">{account.teamName} · {account.connected ? account.status === "disconnected" ? "Needs attention" : "Connected" : "Disconnected"}</p>
+                      <p className="break-all text-sm font-medium">
+                        {account.email ?? "Google account · reconnect to identify"}
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        {account.teamName} ·{" "}
+                        {account.connected
+                          ? account.status === "disconnected"
+                            ? "Needs attention"
+                            : "Connected"
+                          : "Disconnected"}
+                      </p>
                     </div>
-                    <CalendarSyncButton connectionId={account.id} teamId={account.teamId} connected={Boolean(account.connected)} />
+                    <CalendarSyncButton
+                      connected={Boolean(account.connected)}
+                      connectionId={account.id}
+                      size="sm"
+                      teamId={account.teamId}
+                    />
                   </li>
                 ))}
               </ul>
             ) : null}
-            <Link href="/api/calendar/oauth/start" className={cn(buttonVariants({ variant: "outline" }), "self-start")}>
+            <Link
+              href="/api/calendar/oauth/start"
+              className={cn(
+                buttonVariants({ variant: "outline", size: "sm" }),
+                "self-start",
+              )}
+            >
               Connect another account
             </Link>
-          </CardContent>
-        </Card>
-        <Card className="overflow-hidden">
-          <CardHeader>
-            <CardTitle>Billing &amp; credits</CardTitle>
-            <CardDescription>
-              Workspace credit and provider consumption for the current month.
-            </CardDescription>
-            <CardAction>
-              <Link
-                className={cn(
-                  buttonVariants({ variant: "outline", size: "sm" }),
-                  "min-h-11 sm:min-h-8",
-                )}
-                href="/usage"
-              >
-                View billing details
-              </Link>
-            </CardAction>
-          </CardHeader>
-          <CardContent>
-            <dl className="grid overflow-hidden rounded-lg border sm:grid-cols-3">
-              <BillingSettingMetric
-                label="Credit remaining"
-                value={
-                  billingOverview.creditLimitUsdMicros === null
-                    ? "No limit"
-                    : formatUsdMicros(
-                        billingOverview.creditRemainingUsdMicros ?? 0,
-                      )
-                }
-              />
-              <BillingSettingMetric
-                className="border-t sm:border-t-0 sm:border-l"
-                label="Workspace this month"
-                value={formatUsdMicros(
-                  billingOverview.organizationMonthUsdMicros,
-                )}
-              />
-              <BillingSettingMetric
-                className="border-t sm:border-t-0 sm:border-l"
-                label="You this month"
-                value={formatUsdMicros(billingOverview.personalMonthUsdMicros)}
-              />
-            </dl>
-            {billingOverview.isCreditExhausted ? (
-              <p className="mt-3 text-sm text-destructive">
-                New provider work is paused because the workspace has used its
-                credit.
-              </p>
-            ) : null}
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader>
-            <CardTitle>Workspace defaults</CardTitle>
-            <CardDescription>
-              Set the team name, translation language, and an optional sharing
-              group.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
+          </div>
+        </SettingsSection>
+        <SettingsSection
+          title="Workspace defaults"
+        >
             {canEditTeamSettings ? (
               <form
                 action={`/api/team/configuration?teamId=${workspace.teamId}`}
@@ -259,9 +226,6 @@ export default async function TeamSettingsPage({ searchParams }: {
                       ))}
                     </SelectContent>
                   </Select>
-                  <p className="text-xs leading-5 text-muted-foreground">
-                    New automatic and manual translations use this language.
-                  </p>
                 </div>
                 <div className="grid gap-2">
                   <label
@@ -295,11 +259,10 @@ export default async function TeamSettingsPage({ searchParams }: {
                     placeholder={"person@example.com\ncolleague@example.com"}
                   />
                   <p className="text-xs leading-5 text-muted-foreground">
-                    Add one email per line. Leave both sharing group fields
-                    empty to hide the group.
+                    One email per line.
                   </p>
                 </div>
-                <Button className="self-start" type="submit">
+                <Button className="self-start" type="submit" variant="outline">
                   Save team settings
                 </Button>
               </form>
@@ -324,29 +287,36 @@ export default async function TeamSettingsPage({ searchParams }: {
                 )}
               </div>
             )}
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader>
-            <CardTitle>Meeting capture</CardTitle>
-            <CardDescription>
-              Set the team bot name and JPG avatar people see when it joins
-              calls.
-            </CardDescription>
+        </SettingsSection>
+        <SettingsSection
+          title="Meeting capture"
+        >
             {botSettings.domains.length > 1 ? (
-              <nav aria-label="Organization bot profiles" className="flex flex-wrap gap-2">
-                {botSettings.domains.map((domain) => (
-                  <Link key={domain}
-                    href={`/settings/team?teamId=${workspace.teamId}&organizationDomain=${encodeURIComponent(domain)}`}
-                    aria-current={domain === botDomain ? "page" : undefined}
-                    className={buttonVariants({ variant: domain === botDomain ? "secondary" : "ghost", size: "sm" })}>
-                    {domain}
-                  </Link>
-                ))}
+              <nav
+                aria-label="Organization bot profiles"
+                className="mb-5 flex flex-wrap gap-x-5 border-b"
+              >
+                {botSettings.domains.map((domain) => {
+                  const isCurrent = domain === botDomain;
+
+                  return (
+                    <Link
+                      key={domain}
+                      href={`/settings/team?teamId=${workspace.teamId}&organizationDomain=${encodeURIComponent(domain)}`}
+                      aria-current={isCurrent ? "page" : undefined}
+                      className={cn(
+                        "relative -mb-px inline-flex min-h-11 items-center border-b-2 text-sm transition-colors sm:min-h-9",
+                        isCurrent
+                          ? "border-foreground font-medium text-foreground"
+                          : "border-transparent text-muted-foreground hover:text-foreground",
+                      )}
+                    >
+                      {domain}
+                    </Link>
+                  );
+                })}
               </nav>
             ) : null}
-          </CardHeader>
-          <CardContent>
             {canEditTeamSettings ? (
               <form
                 key={`${workspace.teamId}:${botDomain ?? ""}`}
@@ -385,13 +355,11 @@ export default async function TeamSettingsPage({ searchParams }: {
                   </label>
                   <Input
                     accept="image/jpeg"
+                    className="h-auto cursor-pointer border-dashed py-2 text-muted-foreground file:mr-3 file:h-7 file:cursor-pointer file:rounded-md file:border file:border-input file:bg-background file:px-2.5 file:text-foreground"
                     id="avatar"
                     name="avatar"
                     type="file"
                   />
-                  <p className="text-xs leading-5 text-muted-foreground">
-                    Upload a JPG image under 1 MB.
-                  </p>
                 </div>
                 <div className="flex flex-wrap items-center gap-3">
                   <div
@@ -422,7 +390,7 @@ export default async function TeamSettingsPage({ searchParams }: {
                     </label>
                   </div>
                 </div>
-                <Button className="self-start" type="submit">
+                <Button className="self-start" type="submit" variant="outline">
                   Save team bot profile
                 </Button>
               </form>
@@ -451,17 +419,12 @@ export default async function TeamSettingsPage({ searchParams }: {
                 </p>
               </div>
             )}
-          </CardContent>
-        </Card>
+        </SettingsSection>
         {canEditTeamSettings || vocabularyTerms.length > 0 ? (
-        <Card>
-          <CardHeader>
-            <CardTitle>Transcription vocabulary</CardTitle>
-            <CardDescription>
-              Help Tape recognize team, company, and deal names correctly.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="flex flex-col gap-4">
+        <SettingsSection
+          title="Transcription vocabulary"
+        >
+          <div className="flex flex-col gap-4">
             {canEditTeamSettings ? (
               <form
                 action={`/api/team/vocabulary?teamId=${workspace.teamId}`}
@@ -478,13 +441,15 @@ export default async function TeamSettingsPage({ searchParams }: {
                   name="hint"
                   placeholder="Optional hint"
                 />
-                <Button type="submit">Add</Button>
+                <Button type="submit" variant="outline">
+                  Add term
+                </Button>
               </form>
             ) : null}
             {vocabularyTerms.length > 0 ? (
-              <ul className="divide-y rounded-lg border">
+              <ul className="divide-y border-y">
                 {vocabularyTerms.map((term) => (
-                  <li className="px-3 py-2" key={term.id}>
+                  <li className="py-2" key={term.id}>
                     <p className="text-sm font-medium">{term.term}</p>
                     {term.hint ? (
                       <p className="mt-1 text-xs text-muted-foreground">
@@ -495,26 +460,35 @@ export default async function TeamSettingsPage({ searchParams }: {
                 ))}
               </ul>
             ) : (
-              <p className="rounded-lg border px-3 py-4 text-sm text-muted-foreground">
+              <p className="text-sm text-muted-foreground">
                 No team vocabulary yet.
               </p>
             )}
-          </CardContent>
-        </Card>
+          </div>
+        </SettingsSection>
         ) : null}
-        <details className="group rounded-lg border bg-card shadow-sm">
-          <summary className="flex min-h-12 cursor-pointer list-none items-center justify-between gap-3 px-4 py-3 font-medium outline-none focus-visible:ring-3 focus-visible:ring-ring/50">
-            <span>Workspace members</span>
-            <span className="text-sm font-normal text-muted-foreground">
-              {teamMembers.length.toLocaleString()}
+        <SettingsSection
+          title="Workspace members"
+        >
+        <details className="group">
+          <summary className="flex min-h-11 cursor-pointer list-none items-center gap-2 text-sm outline-none focus-visible:ring-3 focus-visible:ring-ring/50 sm:min-h-8">
+            <span className="font-medium">
+              {teamMembers.length.toLocaleString()}{" "}
+              {teamMembers.length === 1 ? "member" : "members"}
+            </span>
+            <span className="text-muted-foreground group-open:hidden">
+              Show
+            </span>
+            <span className="hidden text-muted-foreground group-open:inline">
+              Hide
             </span>
           </summary>
-          <div className="border-t p-4">
+          <div className="mt-3">
             {teamMembers.length > 0 ? (
-              <ul className="divide-y rounded-lg border">
+              <ul className="divide-y border-y">
                 {teamMembers.map((member) => (
                   <li
-                    className="flex flex-wrap items-center justify-between gap-3 px-3 py-3"
+                    className="flex flex-wrap items-center justify-between gap-3 py-2.5"
                     key={member.id}
                   >
                     <div className="min-w-0">
@@ -566,26 +540,105 @@ export default async function TeamSettingsPage({ searchParams }: {
             )}
           </div>
         </details>
+        </SettingsSection>
+        <SettingsSection
+          action={
+            <Link
+              className={cn(
+                buttonVariants({ variant: "ghost", size: "sm" }),
+                "-mr-2 min-h-11 text-muted-foreground sm:min-h-8",
+              )}
+              href="/usage"
+            >
+              View billing details
+            </Link>
+          }
+          title="Billing & credits"
+        >
+          <dl className="flex flex-wrap gap-x-6 gap-y-1 text-sm">
+            <BillingSettingMetric
+              label="workspace this month"
+              value={formatUsdMicros(
+                billingOverview.organizationMonthUsdMicros,
+              )}
+            />
+            <BillingSettingMetric
+              label="you this month"
+              value={formatUsdMicros(billingOverview.personalMonthUsdMicros)}
+            />
+            <BillingSettingMetric
+              label="Credit remaining"
+              labelFirst
+              value={
+                billingOverview.creditLimitUsdMicros === null
+                  ? "No limit"
+                  : formatUsdMicros(
+                      billingOverview.creditRemainingUsdMicros ?? 0,
+                    )
+              }
+            />
+          </dl>
+          {billingOverview.isCreditExhausted ? (
+            <p className="mt-3 text-sm text-destructive">
+              New provider work is paused because the workspace has used its
+              credit.
+            </p>
+          ) : null}
+        </SettingsSection>
       </section>
     </AppShell>
   );
 }
 
 function BillingSettingMetric({
-  className,
   label,
+  labelFirst = false,
   value,
 }: {
-  className?: string;
   label: string;
+  labelFirst?: boolean;
   value: string;
 }) {
   return (
-    <div className={cn("p-4", className)}>
-      <dt className="text-xs text-muted-foreground">{label}</dt>
-      <dd className="mt-2 font-mono text-lg font-semibold tabular-nums">
-        {value}
-      </dd>
+    <div
+      className={cn(
+        "flex items-baseline gap-1.5",
+        labelFirst && "flex-row-reverse justify-end",
+      )}
+    >
+      <dd className="font-medium tabular-nums">{value}</dd>
+      <dt className="text-muted-foreground">{label}</dt>
     </div>
+  );
+}
+
+/**
+ * One settings group: its name on the left, the controls on the right, and
+ * a hairline between groups. Whitespace separates them instead of cards.
+ */
+function SettingsSection({
+  action,
+  children,
+  id,
+  title,
+}: {
+  action?: React.ReactNode;
+  children: React.ReactNode;
+  id?: string;
+  title: string;
+}) {
+  return (
+    <section
+      className="scroll-mt-20 grid gap-x-12 gap-y-4 border-t py-8 md:grid-cols-[12rem_minmax(0,1fr)]"
+      id={id}
+    >
+      <div>
+        <div className="flex items-start justify-between gap-3 md:block">
+          <h2 className="text-sm font-semibold">{title}</h2>
+          {action ? <div className="md:mt-2">{action}</div> : null}
+        </div>
+      </div>
+      <div className="min-w-0">{children}</div>
+    </section>
   );
 }

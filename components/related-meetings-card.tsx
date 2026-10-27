@@ -1,17 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { Clock, FileText } from "lucide-react";
+import { FileText } from "lucide-react";
 import { useId, useState } from "react";
 
 import { LocalDateTime } from "@/components/local-date-time";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
 import type { MeetingDetailRelatedMeeting } from "@/lib/meeting-queries";
 import { cn } from "@/lib/utils";
 
@@ -25,25 +18,22 @@ export function RelatedMeetingsCard({ meetings }: RelatedMeetingsCardProps) {
   }
 
   return (
-    <Card
+    <section
       aria-labelledby="related-meetings-title"
       className="overflow-visible"
-      size="sm"
     >
-      <CardHeader>
-        <CardTitle id="related-meetings-title">Related meetings</CardTitle>
-        <CardDescription>
-          Meetings connected by people or repeated titles.
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
-        <ul className="flex flex-col gap-3">
-          {meetings.map((meeting) => (
-            <RelatedMeetingItem key={meeting.id} meeting={meeting} />
-          ))}
-        </ul>
-      </CardContent>
-    </Card>
+      <h2
+        className="text-xs font-medium text-muted-foreground"
+        id="related-meetings-title"
+      >
+        Related meetings
+      </h2>
+      <ul className="mt-3 flex flex-col">
+        {meetings.map((meeting) => (
+          <RelatedMeetingItem key={meeting.id} meeting={meeting} />
+        ))}
+      </ul>
+    </section>
   );
 }
 
@@ -64,19 +54,23 @@ function RelatedMeetingItem({
       onMouseEnter={() => setIsPreviewOpen(true)}
       onMouseLeave={() => setIsPreviewOpen(false)}
     >
-      <div className="rounded-lg border bg-background p-3 transition-colors hover:bg-muted/35">
+      <div className="-mx-2 rounded-md px-2 py-2 transition-colors hover:bg-muted/60">
         <Link
           aria-controls={previewId}
           aria-describedby={previewLabelId}
           aria-expanded={isPreviewOpen}
-          className="block break-words text-sm font-semibold text-foreground hover:underline"
+          className="block break-words text-sm text-foreground after:absolute after:inset-0"
           href={`/meetings/${meeting.id}`}
         >
           {meeting.title}
         </Link>
-        <p className="mt-2 flex items-center gap-1.5 text-xs text-muted-foreground">
-          <Clock aria-hidden="true" className="size-3.5" />
-          Started <LocalDateTime value={meeting.startedAt} />
+        <p className="mt-0.5 text-xs text-muted-foreground">
+          {isUpcoming(meeting.startedAt) ? (
+            <span className="text-foreground">Upcoming · </span>
+          ) : (
+            <span className="sr-only">Started </span>
+          )}
+          <LocalDateTime value={meeting.startedAt} />
         </p>
       </div>
 
@@ -135,4 +129,8 @@ function formatTimestamp(startMs: number) {
   const seconds = totalSeconds % 60;
 
   return `${minutes}:${seconds.toString().padStart(2, "0")}`;
+}
+
+function isUpcoming(startedAt: string) {
+  return new Date(startedAt).getTime() > Date.now();
 }

@@ -16,7 +16,7 @@ import { MeetingRecoveryUploadPanel } from "@/components/meeting-recovery-upload
 import { MeetingRecordingResume } from "@/components/meeting-recording-resume";
 import { MeetingTitleEditor } from "@/components/meeting-title-editor";
 import { RelatedMeetingsCard } from "@/components/related-meetings-card";
-import { ShareDialog } from "@/components/share-dialog";
+import { MeetingShareButton } from "@/components/share-dialog";
 import { TranscriptViewer } from "@/components/transcript-viewer";
 import { requireCurrentUser } from "@/lib/auth-guards";
 import {
@@ -129,10 +129,9 @@ export default async function MeetingPage({
     !isComposed && canManage &&
     (canAddMeetingSource || shouldOfferBotRecovery) &&
     meeting.segments.length === 0;
-  const renderShareDialog = (instanceId: string) =>
+  const renderShareButton = (instanceId: string) =>
     canShare ? (
-      <div>
-      <ShareDialog
+      <MeetingShareButton
         allowRelated={canManage}
         canRemoveAccess={canManage}
         customAudience={
@@ -147,10 +146,13 @@ export default async function MeetingPage({
         initialShares={activeShares}
         instanceId={instanceId}
         meetingId={meetingId}
+        note={
+          isComposed
+            ? "Sharing applies to this meeting. Recipients also need access to each original recording."
+            : undefined
+        }
         teamMembers={shareRecipients}
       />
-      {isComposed ? <p className="mt-2 text-xs leading-5 text-muted-foreground">Sharing applies to this meeting. Recipients also need access to each original recording.</p> : null}
-      </div>
     ) : null;
   return (
     <AppShell
@@ -163,7 +165,7 @@ export default async function MeetingPage({
         className={`grid min-w-0 gap-8 ${
           shouldCenterMeetingSource
             ? "lg:grid-cols-1"
-            : "lg:grid-cols-[1fr_20rem] lg:grid-rows-[auto_1fr]"
+            : "lg:grid-cols-[minmax(0,1fr)_15rem] lg:grid-rows-[auto_1fr] lg:gap-x-14"
         }`}
       >
         <section className="min-w-0">
@@ -173,10 +175,10 @@ export default async function MeetingPage({
             transcriptJobStatus={meeting.transcriptJobStatus}
             translationStatus={meeting.translationSummary.status}
           />
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-              Meeting
-            </p>
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            {shouldCenterMeetingSource
+              ? null
+              : renderShareButton("meeting-sharing")}
             <MeetingActions
               audioExportUrls={
                 isComposed ? parts.flatMap(part => part.recordingParts.length > 1
@@ -205,8 +207,8 @@ export default async function MeetingPage({
               meetingId={meetingId}
             />
           </div>
-          {composition.parent ? <p className="mt-3 text-sm text-muted-foreground">Part of <Link className="underline underline-offset-4" href={`/meetings/${composition.parent.id}`}>{composition.parent.title}</Link></p> : null}
-          <div className="mt-2 min-w-0">
+          {composition.parent ? <p className="mt-2 text-sm text-muted-foreground">Part of <Link className="underline underline-offset-4" href={`/meetings/${composition.parent.id}`}>{composition.parent.title}</Link></p> : null}
+          <div className="mt-1 min-w-0">
             {canManage ? (
               <MeetingTitleEditor
                 meetingId={meetingId}
@@ -226,16 +228,7 @@ export default async function MeetingPage({
             status={displayStatus === "scheduled" && composition.sources.some(source => source.kind === "continuation" && source.status === "scheduled") ? "Waiting to join" : formatStatus(displayStatus)}
           />
           {participants.length > 0 ? (
-            <div className="mt-3 flex flex-wrap items-baseline gap-x-3 gap-y-1 text-sm">
-              <span className="text-muted-foreground">Participants</span>
-              <ul aria-label="Participants" className="flex min-w-0 flex-wrap gap-x-3 gap-y-1">
-                {participants.map((participant) => (
-                  <li className="break-all" key={participant.email} title={participant.email}>
-                    {participant.name || participant.email}
-                  </li>
-                ))}
-              </ul>
-            </div>
+            <ParticipantList participants={participants} />
           ) : null}
         </section>
 
@@ -303,7 +296,6 @@ export default async function MeetingPage({
               <>
                 {isComposed ? <>
                   <p className="mb-5 text-sm text-muted-foreground">{parts.length} recordings. Each part keeps its original audio and sharing.</p>
-                  <div className="mb-4 lg:hidden">{renderShareDialog("combined-sharing-mobile")}</div>
                   <MeetingComposedTranscripts meetings={parts} primaryMeetingId={meetingId} preferredTranslationLanguage={teamConfiguration?.translationLanguage} />
                 </> : <TranscriptViewer
                   audioParts={
@@ -323,10 +315,7 @@ export default async function MeetingPage({
                   })}
                   meetingId={canManage ? meetingId : null}
                   mobileAfterSpeakers={
-                    <>
-                      <MeetingEntityLinks entities={meeting.entities} />
-                      {renderShareDialog("meeting-sharing-mobile")}
-                    </>
+                    <MeetingEntityLinks entities={meeting.entities} />
                   }
                   preferredTranslationLanguage={
                     teamConfiguration?.translationLanguage ??
@@ -364,40 +353,24 @@ export default async function MeetingPage({
         ) : (
           <>
             <aside
-              className={`min-w-0 lg:col-start-2 lg:row-span-2 lg:row-start-1 ${
-                canShare ? "lg:pt-8" : "lg:pt-24"
-              }`}
+              className="min-w-0 lg:col-start-2 lg:row-span-2 lg:row-start-1 lg:pt-12"
             >
               {canManage ? (
                 <>
-                  {canShare ? (
-                    <div className="hidden lg:block">
-                      {renderShareDialog("meeting-sharing-desktop")}
-                    </div>
-                  ) : null}
                   {canAddMeetingSource ? (
-                    <div className="mt-6">
+                    <div className="mb-8">
                       <MeetingRecoveryUploadPanel meetingId={meetingId} />
                     </div>
                   ) : null}
-                  <div className="hidden lg:mt-6 lg:block">
+                  <div className="hidden lg:block">
                     <RelatedMeetingsCard meetings={relatedMeetings} />
                   </div>
                 </>
               ) : (
                 <>
-                  {canShare ? (
-                    <div className="hidden lg:block">
-                      {renderShareDialog("meeting-sharing-desktop")}
-                    </div>
-                  ) : null}
-                  <div
-                    className={`rounded-lg border bg-card p-5 ${
-                      canShare ? "mt-6" : ""
-                    }`}
-                  >
-                    <p className="text-sm font-semibold">Shared transcript</p>
-                    <p className="mt-2 text-sm leading-6 text-muted-foreground">
+                  <div className="mb-8 border-l-2 pl-3">
+                    <p className="text-sm font-medium">Shared transcript</p>
+                    <p className="mt-1 text-sm leading-6 text-muted-foreground">
                       You can read and share this transcript. Editing stays with
                       the meeting owner.
                     </p>
@@ -445,4 +418,53 @@ function formatStatus(status: string) {
   }
 
   return status.charAt(0).toUpperCase() + status.slice(1);
+}
+
+const VISIBLE_PARTICIPANT_COUNT = 6;
+
+/**
+ * Names after the first few sit behind a disclosure, so a large call does not
+ * push the transcript down the page.
+ */
+function ParticipantList({
+  participants,
+}: {
+  participants: Array<{ email: string; name: string | null }>;
+}) {
+  const visible = participants.slice(0, VISIBLE_PARTICIPANT_COUNT);
+  const hidden = participants.slice(VISIBLE_PARTICIPANT_COUNT);
+  const label = (participant: { email: string; name: string | null }) =>
+    participant.name || participant.email;
+
+  return (
+    <div className="mt-2 text-sm text-muted-foreground">
+      <ul aria-label="Participants" className="inline">
+        {visible.map((participant, index) => (
+          <li className="inline" key={participant.email} title={participant.email}>
+            {label(participant)}
+            {index < visible.length - 1 || hidden.length > 0 ? ", " : ""}
+          </li>
+        ))}
+      </ul>
+      {hidden.length > 0 ? (
+        <details className="group inline">
+          <summary className="inline cursor-pointer list-none text-foreground underline decoration-border underline-offset-4 hover:decoration-foreground group-open:hidden [&::-webkit-details-marker]:hidden">
+            {hidden.length} more
+          </summary>
+          <ul aria-label="More participants" className="inline">
+            {hidden.map((participant, index) => (
+              <li
+                className="inline"
+                key={participant.email}
+                title={participant.email}
+              >
+                {label(participant)}
+                {index < hidden.length - 1 ? ", " : ""}
+              </li>
+            ))}
+          </ul>
+        </details>
+      ) : null}
+    </div>
+  );
 }

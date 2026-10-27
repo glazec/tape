@@ -412,7 +412,7 @@ describe("TranscriptViewer interactions", () => {
     expect(window.scrollTo).not.toHaveBeenCalled();
   });
 
-  it("fills the listened portion of the recording waveform in green", () => {
+  it("fills the listened portion of the recording waveform", () => {
     render(<TranscriptViewer audioUrl="/audio.mp3" segments={segments} />);
     const audio = document.querySelector("audio") as HTMLAudioElement;
     Object.defineProperty(audio, "duration", { configurable: true, value: 60 });
@@ -430,12 +430,12 @@ describe("TranscriptViewer interactions", () => {
     expect(
       bars
         .slice(0, 60)
-        .every((bar) => bar.classList.contains("bg-emerald-600")),
+        .every((bar) => bar.classList.contains("bg-foreground/75")),
     ).toBe(true);
     expect(
       bars
         .slice(60)
-        .every((bar) => bar.classList.contains("bg-muted-foreground/80")),
+        .every((bar) => bar.classList.contains("bg-muted-foreground/30")),
     ).toBe(true);
   });
 
@@ -527,7 +527,8 @@ describe("TranscriptViewer interactions", () => {
     );
 
     expect(heights).toHaveLength(120);
-    expect(heights.every((height) => height >= 25)).toBe(true);
+    // Bars top out at 29px, so 17px keeps steady speech above half height.
+    expect(heights.every((height) => height >= 17)).toBe(true);
     expect(fetch).not.toHaveBeenCalled();
   });
 

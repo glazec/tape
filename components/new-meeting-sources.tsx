@@ -2,7 +2,7 @@
 
 import { ChangeEvent, FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Bot, FileText, Mic, UploadCloud } from "lucide-react";
+import { Bot, ChevronRight, FileText, Mic, UploadCloud } from "lucide-react";
 
 import { MeetingLinkForm } from "@/components/meeting-link-form";
 import { UploadDropzone } from "@/components/upload-dropzone";
@@ -20,7 +20,7 @@ import { Label } from "@/components/ui/label";
 import { organizationHeaders } from "@/lib/organization-request";
 import { cn } from "@/lib/utils";
 
-type MeetingSource = "link" | "recording" | "transcript" | "phone";
+export type MeetingSource = "link" | "recording" | "transcript" | "phone";
 
 const sourceOptions = [
   {
@@ -49,8 +49,14 @@ const sourceOptions = [
   },
 ];
 
-export function NewMeetingSources({ teamId }: { teamId?: string }) {
-  const [source, setSource] = useState<MeetingSource | null>(null);
+export function NewMeetingSources({
+  initialSource = null,
+  teamId,
+}: {
+  initialSource?: MeetingSource | null;
+  teamId?: string;
+} = {}) {
+  const [source, setSource] = useState<MeetingSource | null>(initialSource);
   const formRef = useRef<HTMLDivElement>(null);
 
   const centerInput = useCallback(() => {
@@ -73,7 +79,7 @@ export function NewMeetingSources({ teamId }: { teamId?: string }) {
     <div className="space-y-5">
       <div
         aria-label="Meeting source"
-        className="grid gap-3 sm:grid-cols-2"
+        className="divide-y overflow-hidden rounded-xl border"
         role="group"
       >
         {sourceOptions.map((option) => {
@@ -84,8 +90,12 @@ export function NewMeetingSources({ teamId }: { teamId?: string }) {
             <button
               aria-pressed={selected}
               className={cn(
-                "min-h-24 rounded-lg border bg-card p-4 text-left outline-none transition-colors hover:border-primary/50 focus-visible:ring-3 focus-visible:ring-ring/50",
-                selected && "border-primary bg-primary/5",
+                "group flex w-full items-center gap-4 px-4 py-3.5 text-left outline-none transition-colors hover:bg-muted/50 focus-visible:bg-muted/50 focus-visible:ring-3 focus-visible:ring-inset focus-visible:ring-ring/50",
+                selected && "bg-muted/60",
+                // The phone recorder only makes sense on a phone.
+                option.value === "phone" &&
+                  !selected &&
+                  "[@media(hover:hover)_and_(pointer:fine)]:hidden",
               )}
               key={option.value}
               onClick={() => {
@@ -94,16 +104,31 @@ export function NewMeetingSources({ teamId }: { teamId?: string }) {
               }}
               type="button"
             >
-              <Icon
+              <span
                 className={cn(
-                  "size-4",
-                  selected ? "text-primary" : "text-muted-foreground",
+                  "flex size-9 shrink-0 items-center justify-center rounded-lg border bg-background transition-colors",
+                  selected
+                    ? "border-foreground/20 text-foreground"
+                    : "text-muted-foreground group-hover:text-foreground",
+                )}
+              >
+                <Icon aria-hidden="true" className="size-4" />
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="block text-sm font-medium">
+                  {option.label}
+                </span>
+                <span className="block text-sm text-muted-foreground">
+                  {option.description}
+                </span>
+              </span>
+              <ChevronRight
+                aria-hidden="true"
+                className={cn(
+                  "size-4 shrink-0 text-muted-foreground transition-transform",
+                  selected && "rotate-90 text-foreground",
                 )}
               />
-              <span className="mt-2 block font-semibold">{option.label}</span>
-              <span className="mt-1 block text-sm leading-5 text-muted-foreground">
-                {option.description}
-              </span>
             </button>
           );
         })}

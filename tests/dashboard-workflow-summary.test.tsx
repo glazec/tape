@@ -224,8 +224,6 @@ describe("DashboardWorkflowSummary", () => {
     );
 
     expect(html).toContain("This week");
-    expect(html).toContain("Meeting activity since Monday.");
-    expect(html).toContain("bg-secondary");
     expect(html).not.toContain("Upcoming joins");
     expect(html).not.toContain("Founder follow up");
     expect(html).not.toContain("Ready for review");
@@ -283,11 +281,11 @@ describe("DashboardWorkflowSummary", () => {
     );
 
     expect(html).toContain("This week");
-    expect(html).toContain("Meetings");
-    expect(html).toContain("Meeting time");
+    expect(html).toContain("meetings");
+    expect(html).toContain("in meetings");
     expect(html).toContain("+100% vs last week");
     expect(html).toContain("0h");
-    expect(html).toContain("Words");
+    expect(html).toContain("words");
     expect(html).not.toContain("talk share");
     expect(html).not.toContain("Tone");
   });

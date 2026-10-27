@@ -29,13 +29,6 @@ import {
   AlertTitle,
 } from "@/components/ui/alert";
 import { buttonVariants } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -257,7 +250,7 @@ async function DashboardOverview({
             calendarStatusPromise={calendarStatusPromise}
           />
         </Suspense>
-        <div className="grid gap-4 lg:grid-cols-2">
+        <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between lg:gap-10">
           <Suspense fallback={<DashboardStatsSkeleton />}>
             <DashboardStatsSection
               dashboardSummaryPromise={dashboardSummaryPromise}
@@ -341,7 +334,7 @@ async function DashboardOverview({
           forceCalendarSync={calendarErrorCode === "sync_failed"}
         />
       ) : (
-        <div className="grid gap-4 lg:grid-cols-2">
+        <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between lg:gap-10">
           {dashboardSummary ? (
             <DashboardStats
               initialResult={dashboardSummary}
@@ -554,26 +547,26 @@ async function DashboardMeetingLibrary({
   );
 
   return (
-    <Card className="gap-0 py-0 shadow-sm">
-      <CardHeader className="border-b bg-muted/25 px-4 py-4 sm:px-5">
-        <CardTitle>
-          {isSharedOnly ? (
-            <h1 className="text-lg font-semibold tracking-[-0.01em]">
-              Meetings
-            </h1>
-          ) : (
-            <h2 className="text-lg font-semibold tracking-[-0.01em]">
-              Meetings
-            </h2>
-          )}
-        </CardTitle>
-        <CardDescription>
-          {isSharedOnly
-            ? "Transcripts shared with you."
-            : "Search transcripts, recordings, and upcoming meetings."}
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="flex flex-col px-0">
+    <section
+      aria-label="Meeting library"
+      className="flex flex-col pt-4"
+    >
+      <header className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+        {isSharedOnly ? (
+          <h1 className="text-lg font-semibold tracking-[-0.01em]">
+            Meetings
+          </h1>
+        ) : (
+          <h2 className="text-lg font-semibold tracking-[-0.01em]">
+            Meetings
+          </h2>
+        )}
+        {isSharedOnly ? (
+          <p className="text-sm text-muted-foreground">
+            Transcripts shared with you.
+          </p>
+        ) : null}
+      </header>
         <MeetingLibrarySearch
           controls={
             <MeetingLibraryControls
@@ -607,7 +600,7 @@ async function DashboardMeetingLibrary({
             })}
           />
           <MeetingLibraryPagination
-            className="border-t px-4 py-3 sm:px-5"
+            className="pt-5"
             hasNextPage={meetingLibraryPage.hasNextPage}
             hasOlderMeetings={meetingLibraryPage.hasOlderMeetings}
             hasPreviousPage={meetingLibraryPage.hasPreviousPage}
@@ -644,8 +637,7 @@ async function DashboardMeetingLibrary({
             })}
           />
         </MeetingLibrarySearch>
-      </CardContent>
-    </Card>
+    </section>
   );
 }
 
@@ -811,7 +803,7 @@ function MeetingLibraryControls({
   const syncCalendarValue = getSearchParamValue(syncCalendar);
 
   return (
-    <div className="grid gap-3 border-b bg-muted/20 px-4 py-3 sm:px-5 md:grid-cols-[minmax(12rem,1fr)_10rem_auto] md:items-end">
+    <div className="grid gap-2 pt-4 pb-3 md:grid-cols-[minmax(12rem,1fr)_11rem_auto] md:items-center">
       {syncCalendarValue ? (
         <input name="syncCalendar" type="hidden" value={syncCalendarValue} />
       ) : null}
@@ -839,7 +831,7 @@ function MeetingLibraryControls({
             name="q"
             type="search"
             defaultValue={activeViewConfig.query ?? ""}
-            className="h-11 bg-background pl-8"
+            className="h-11 bg-background pl-8 sm:h-9"
             placeholder={
               isSharedOnly
                 ? "Search shared transcript"
@@ -849,6 +841,7 @@ function MeetingLibraryControls({
         </div>
       </div>
       <SelectField
+        hideLabel
         id="meeting-status"
         label="Status"
         name="status"
@@ -858,15 +851,18 @@ function MeetingLibraryControls({
         }))}
         value={activeViewConfig.status}
       />
-      <button className={cn(buttonVariants(), "h-11")} type="submit">
+      <button
+        className={cn(buttonVariants({ variant: "outline" }), "h-11 sm:h-9")}
+        type="submit"
+      >
         Search
       </button>
       <details className="group md:col-span-3">
-        <summary className="flex min-h-11 w-fit cursor-pointer list-none items-center gap-2 rounded-lg px-1 text-sm font-medium text-muted-foreground outline-none hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50">
+        <summary className="flex min-h-11 w-fit cursor-pointer list-none items-center gap-1.5 rounded-md text-xs text-muted-foreground outline-none hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50 sm:min-h-6">
           More filters
-          <ChevronDown className="size-4 transition-transform group-open:rotate-180" />
+          <ChevronDown className="size-3.5 transition-transform group-open:rotate-180" />
         </summary>
-        <div className="mt-3 grid gap-3 border-t pt-3 md:grid-cols-2">
+        <div className="mt-2 grid gap-3 rounded-lg bg-muted/40 p-3 md:grid-cols-2">
           <SelectField
             id="meeting-search-scope"
             label="Search in"
@@ -903,12 +899,14 @@ function MeetingLibraryControls({
 }
 
 function SelectField({
+  hideLabel = false,
   id,
   label,
   name,
   options,
   value,
 }: {
+  hideLabel?: boolean;
   id: string;
   label: string;
   name: string;
@@ -917,13 +915,21 @@ function SelectField({
 }) {
   return (
     <div className="min-w-0 space-y-2">
-      <Label htmlFor={id}>{label}</Label>
+      <Label className={hideLabel ? "sr-only" : undefined} htmlFor={id}>
+        {label}
+      </Label>
       <Select
         defaultValue={value}
         items={options}
         name={name}
       >
-        <SelectTrigger className="h-11 w-full min-w-0 bg-background" id={id}>
+        <SelectTrigger
+          className={cn(
+            "h-11 w-full min-w-0 bg-background",
+            hideLabel && "sm:h-9",
+          )}
+          id={id}
+        >
           <SelectValue />
         </SelectTrigger>
         <SelectContent align="start">

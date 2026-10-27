@@ -102,6 +102,7 @@ vi.mock("@/components/related-meetings-card", () => ({
   RelatedMeetingsCard: () => <span>related meetings</span>,
 }));
 vi.mock("@/components/share-dialog", () => ({
+  MeetingShareButton: () => <span>share dialog</span>,
   ShareDialog: () => <span>share dialog</span>,
 }));
 vi.mock("@/components/transcript-viewer", () => ({
@@ -189,16 +190,15 @@ describe("meeting page", () => {
     expect(html).toContain("recovery panel");
     expect(html).toContain("Google Meet:Failed");
     expect(html).toContain("transcript:meeting_1");
-    expect(html).toContain("lg:grid-cols-[1fr_20rem]");
+    expect(html).toContain("lg:grid-cols-[minmax(0,1fr)_15rem]");
     expect(html.indexOf("speaker summary")).toBeLessThan(
       html.indexOf("entity links"),
     );
-    expect(html.indexOf("entity links")).toBeLessThan(
-      html.indexOf("share dialog"),
-    );
+    // Sharing is one header action, ahead of the transcript content.
     expect(html.indexOf("share dialog")).toBeLessThan(
       html.indexOf("transcript lines"),
     );
+    expect(html.match(/share dialog/g)).toHaveLength(1);
     expect(mocks.listRecipients).toHaveBeenCalled();
   });
 
@@ -336,7 +336,7 @@ describe("meeting page", () => {
     expect(html).toContain("meeting actions:delete only");
     expect(html).not.toContain("share dialog");
     expect(html).toContain("lg:grid-cols-1");
-    expect(html).not.toContain("lg:grid-cols-[1fr_20rem]");
+    expect(html).not.toContain("lg:grid-cols-[minmax(0,1fr)_15rem]");
   });
 
   it("offers bot recovery and keeps existing content uploads available", async () => {
