@@ -36,17 +36,21 @@ describe("landing page smoke test", () => {
     expect(html).toContain("Every conversation,");
     expect(html).toContain("/media/tape-launch-v4.mp4");
     expect(html).toContain("/media/tape-launch-v4-en.vtt");
-    expect(html).toContain("01 · Memory");
-    expect(html).toContain("02 · Every language");
-    expect(html).toContain("03 · Agents");
-    expect(html).toContain("04 · Capture");
-    expect(html).toContain("05 · Enterprise");
-    expect(html).toContain("06 · Pricing");
-    expect(html).toContain("07 · Questions");
+    for (const id of [
+      "memory",
+      "languages",
+      "agents",
+      "capture",
+      "enterprise",
+      "pricing",
+      "faq",
+    ]) {
+      expect(html).toContain(`id="${id}"`);
+    }
     expect(html).toContain("Google Meet");
     expect(html).toContain("ElevenLabs");
-    expect(html).toContain("A workspace per team");
-    expect(html).toContain("Nobody wonders what they missed");
+    expect(html).toContain("Every team gets its own workspace.");
+    expect(html).toContain("Share a series once");
     expect(html).toContain('href="/auth/sign-in"');
     expect(html).toContain('href="/blog"');
     expect(html).toContain(

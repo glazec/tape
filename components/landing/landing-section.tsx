@@ -1,7 +1,7 @@
 "use client";
 
 import type { ReactNode } from "react";
-import { motion, useReducedMotion } from "framer-motion";
+import { motion } from "framer-motion";
 
 import { cn } from "@/lib/utils";
 
@@ -36,14 +36,12 @@ export function FadeIn({
   className?: string;
   delay?: number;
 }) {
-  const reducedMotion = useReducedMotion();
-
-  if (reducedMotion) {
-    return <div className={className}>{children}</div>;
-  }
-
+  // The server cannot know the motion preference, so branching on it here
+  // would hydrate a hidden element that never animates in. The reduced-motion
+  // override lives in CSS instead (see [data-fade] in globals.css).
   return (
     <motion.div
+      data-fade
       initial={{ opacity: 0, y: 20 }}
       whileInView={{ opacity: 1, y: 0 }}
       viewport={{ once: true, margin: "-70px" }}
@@ -148,22 +146,18 @@ export function PointList({
  */
 export function SplitSection({
   id,
-  label,
   heading,
   points,
   still,
-  caption,
   footer,
   flip = false,
   stillWidth = "wide",
   surface = "paper",
 }: {
   id: string;
-  label: ReactNode;
   heading: ReactNode;
   points: readonly Point[];
   still: ReactNode;
-  caption: ReactNode;
   footer?: ReactNode;
   flip?: boolean;
   /** A full app capture wants the wide track; a small app window does not. */
@@ -191,26 +185,15 @@ export function SplitSection({
         )}
       >
         <FadeIn className={flip ? "lg:order-2" : undefined}>
-          <SectionLabel>{label}</SectionLabel>
-          <SectionHeading>{heading}</SectionHeading>
+          <SectionHeading className="mt-0">{heading}</SectionHeading>
           <PointList points={points} />
           {footer}
         </FadeIn>
         <FadeIn delay={0.1} className={flip ? "lg:order-1" : undefined}>
           {still}
-          <Caption>{caption}</Caption>
         </FadeIn>
       </Container>
     </section>
-  );
-}
-
-/** Caption under a product still. Small, but never smaller than 11px. */
-export function Caption({ children }: { children: ReactNode }) {
-  return (
-    <p className="mt-5 font-mono text-label uppercase tracking-[0.16em] text-ash">
-      {children}
-    </p>
   );
 }
 
@@ -228,7 +211,7 @@ export function Still({
   return (
     <div
       className={cn(
-        "overflow-hidden rounded-xl border border-ink/10 bg-mist shadow-[0_28px_64px_-32px_oklch(0.195_0.012_30/0.28)]",
+        "overflow-hidden rounded-xl border border-ink/10 bg-mist",
         className,
       )}
     >

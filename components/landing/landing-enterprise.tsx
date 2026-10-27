@@ -1,68 +1,61 @@
 "use client";
 
-import { Container, FadeIn, SectionLabel, type Point } from "./landing-section";
-import { ShareSeriesMockup } from "./mockups";
+import { REPOSITORY_URL } from "@/lib/site";
 
-const POINTS: readonly Point[] = [
+import { Container, FadeIn } from "./landing-section";
+
+/**
+ * Six commitments read as one paragraph. Each claim is short enough to stand
+ * on its own, so they carry the section without cards or a feature grid.
+ */
+const CLAIMS = [
   {
-    title: "A workspace per team",
-    body: "Each team gets its own archive, its own members, and its own calendar connections. Nothing leaks sideways.",
+    claim: "Every team gets its own workspace.",
+    detail: "Nothing leaks sideways.",
   },
   {
-    title: "Access that matches the room",
-    body: "Members see their team's meetings. External readers see only what was handed to them, and nothing else in the archive.",
+    claim: "Readers see what was handed to them,",
+    detail: "and nothing else in the archive.",
   },
+  { claim: "Share links expire", detail: "when you decide they do." },
+  { claim: "Share a series once", detail: "and every future meeting follows." },
+  { claim: "Any meeting leaves as text and mp3,", detail: "on every plan." },
   {
-    title: "Links that stop working",
-    body: "Send a transcript outside the workspace with a link that expires. Access ends when you decide it ends.",
-  },
-  {
-    title: "Nobody wonders what they missed",
-    body: "Share a recurring series once and a colleague receives every future instance of it, without having to ask again.",
-  },
-  {
-    title: "Your transcripts leave whenever you want",
-    body: "Take any meeting out as plain text and its audio as an mp3, whenever you like. Reading your own record is not something we would put behind a plan.",
-  },
-  {
-    title: "Never training a public model",
-    body: "Recordings, transcripts, and audio sit in a database you control and are not handed to third parties to train on. The source is on GitHub if you would rather check than trust.",
+    claim: "Nothing trains a public model.",
+    detail: "The source is open if you would rather check.",
   },
 ];
 
 export function LandingEnterprise() {
   return (
     <section id="enterprise" className="bg-ink text-paper">
-      <Container className="py-24 lg:py-32">
-        {/* Heading runs the full measure: it needs the room to break into two
-            clean lines before the italic clause. */}
+      <Container className="py-24 lg:py-36">
         <FadeIn>
-          <SectionLabel className="text-brand">05 · Enterprise</SectionLabel>
-          <h2 className="font-display mt-5 text-display-2 tracking-[-0.02em]">
-            Built for the whole company,
-            <br />
-            <em className="italic text-paper/55">careful with every word.</em>
+          <h2 className="font-display max-w-[20ch] text-display-2 tracking-[-0.02em]">
+            Built for the whole company,{" "}
+            <em className="italic text-brand">careful with every word.</em>
           </h2>
         </FadeIn>
-        <div className="mt-14 grid gap-x-16 gap-y-12 [&>*]:min-w-0 lg:grid-cols-[minmax(0,23rem)_minmax(0,1fr)]">
-          <FadeIn>
-            <ShareSeriesMockup />
-          </FadeIn>
-          <dl className="grid gap-x-12 gap-y-9 sm:grid-cols-2">
-            {POINTS.map((point, index) => (
-              <FadeIn key={point.title} delay={index * 0.07}>
-                <div className="border-t border-paper/15 pt-5">
-                  <dt className="text-[0.9375rem] font-medium leading-6">
-                    {point.title}
-                  </dt>
-                  <dd className="mt-2.5 max-w-[34ch] text-[0.9375rem] leading-[1.75] text-pretty text-paper/70">
-                    {point.body}
-                  </dd>
-                </div>
-              </FadeIn>
+        <FadeIn delay={0.1}>
+          <p className="font-display mt-14 max-w-[52rem] text-[clamp(1.375rem,1.1rem+1vw,1.875rem)] leading-[1.45] tracking-[-0.01em] text-pretty">
+            {CLAIMS.map((item) => (
+              <span key={item.claim}>
+                {item.claim}{" "}
+                <span className="text-paper/45">{item.detail}</span>{" "}
+              </span>
             ))}
-          </dl>
-        </div>
+          </p>
+        </FadeIn>
+        <FadeIn delay={0.15}>
+          <a
+            href={REPOSITORY_URL}
+            target="_blank"
+            rel="noreferrer"
+            className="mt-12 inline-block rounded-sm text-[0.9375rem] text-paper/80 underline decoration-paper/30 underline-offset-[6px] transition-colors hover:text-paper hover:decoration-paper focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-4 focus-visible:ring-offset-ink"
+          >
+            Read the source on GitHub
+          </a>
+        </FadeIn>
       </Container>
     </section>
   );

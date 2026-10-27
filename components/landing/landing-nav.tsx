@@ -1,6 +1,6 @@
 "use client";
 
-import { motion, useReducedMotion } from "framer-motion";
+import { motion } from "framer-motion";
 import Link from "next/link";
 
 import { ProductLogo } from "@/components/product-logo";
@@ -20,11 +20,12 @@ const LINKS = [
 ];
 
 export function LandingNav() {
-  const reducedMotion = useReducedMotion();
-
+  // Reduced motion is honoured in CSS through [data-fade]; branching on the
+  // preference here would differ between the server and client renders.
   return (
     <motion.header
-      initial={reducedMotion ? false : { y: -64 }}
+      data-fade
+      initial={{ y: -64 }}
       animate={{ y: 0 }}
       transition={{ duration: 0.7, ease: EASE }}
       className="fixed inset-x-0 top-0 z-50 border-b border-ink/8 bg-paper/85 backdrop-blur-md"

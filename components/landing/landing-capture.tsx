@@ -1,11 +1,9 @@
 "use client";
 
-import Image from "next/image";
-
-import macosRecorder from "@/assets/product/macos-recorder.png";
 import { DESKTOP_APP_DOWNLOAD_URL } from "@/lib/desktop-app";
 
-import { SplitSection, Still, type Point } from "./landing-section";
+import { SplitSection, type Point } from "./landing-section";
+import { RecorderMockup } from "./mockups";
 
 const POINTS: readonly Point[] = [
   {
@@ -26,29 +24,17 @@ export function LandingCapture() {
   return (
     <SplitSection
       id="capture"
-      label="04 · Capture"
       heading={
         <>
           It records
           <br />
-          <em className="italic text-graphite">itself.</em>
+          <em className="italic">itself.</em>
         </>
       }
       points={POINTS}
       flip
       stillWidth="narrow"
-      still={
-        <Still className="mx-auto max-w-[22rem] rounded-[1.75rem] bg-paper">
-          <Image
-            src={macosRecorder}
-            alt="Tape local recorder for macOS, recording microphone and system audio with one click"
-            className="h-auto w-full"
-            placeholder="blur"
-            sizes="(min-width: 1024px) 352px, 100vw"
-          />
-        </Still>
-      }
-      caption="Tape for macOS · local recorder"
+      still={<RecorderMockup />}
       footer={
         <div className="mt-10 flex flex-wrap items-center gap-x-8 gap-y-4">
           <a

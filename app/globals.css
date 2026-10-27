@@ -37,8 +37,8 @@
   --text-display-2--line-height: 1.06;
   --text-display-3: clamp(1.625rem, 1.3rem + 1.3vw, 2.125rem);
   --text-display-3--line-height: 1.12;
-  --text-lede: clamp(1.0625rem, 1.0rem + 0.35vw, 1.1875rem);
-  --text-lede--line-height: 1.65;
+  --text-lede: clamp(1rem, 0.96rem + 0.2vw, 1.0625rem);
+  --text-lede--line-height: 1.6;
   --text-label: 0.6875rem;
   --text-label--line-height: 1.4;
 }
@@ -97,6 +97,13 @@ body {
   textarea,
   select {
     font: inherit;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-fade] {
+    opacity: 1 !important;
+    transform: none !important;
   }
 }
 

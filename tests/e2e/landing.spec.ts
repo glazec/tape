@@ -11,6 +11,7 @@ test("shows the Tape landing page", async ({ page }) => {
   await expect(
     page.getByRole("link", { name: "Sign in to Tape" }).first(),
   ).toHaveAttribute("href", "/auth/sign-in");
+  await page.getByRole("button", { name: /Watch the film/ }).click();
   const launchFilm = page.getByLabel("Tape product launch film");
   await expect(launchFilm).toBeVisible();
   await expect(launchFilm).toHaveAttribute(
@@ -25,7 +26,8 @@ test("shows the Tape landing page", async ({ page }) => {
     "src",
     "/media/tape-launch-v4-en.vtt",
   );
-  await expect(page.getByText("01 · Memory")).toBeVisible();
+  await page.getByRole("button", { name: "Close film" }).click();
+  await expect(launchFilm).toBeHidden();
   await expect(page.getByText("Google Meet", { exact: true })).toBeVisible();
   await expect(
     page.getByRole("heading", { name: "Two languages, one transcript." }),
