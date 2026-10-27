@@ -22,7 +22,12 @@ export async function isRecallBotAccepted(input: {
       sql`exists (select 1 from meeting_parts where source_meeting_id=${input.meetingId}
         and kind='continuation' and dispatch_state='dispatching')`))
     .returning({ id: meetings.id });
-  return accepted.length > 0;
+  if (accepted.length > 0) return true;
+  // Another callback can claim the same bot while this update waits. Its
+  // recording event is still valid, but a different winning bot stays rejected.
+  const [confirmed] = await db.select({ recallBotId: meetings.recallBotId })
+    .from(meetings).where(eq(meetings.id, input.meetingId)).limit(1);
+  return confirmed?.recallBotId === input.botId;
 }
 
 export function getRecallWebhookBotIdentity(payload: unknown) {

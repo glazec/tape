@@ -54,6 +54,19 @@ describe("meeting bot lineage", () => {
     expect(await isRecallBotAccepted({ botId: "unclaimed", meetingId: "meeting" })).toBe(false);
   });
 
+  it.each(["same_bot", "other_bot"])("rechecks a concurrent callback claim by %s", async (winner) => {
+    select.mockReturnValue({ from: () => ({ where: () => ({ limit }) }) });
+    limit.mockResolvedValueOnce([{ recallBotId: null }])
+      .mockResolvedValueOnce([{ recallBotId: winner }]);
+    update.mockReturnValue({ set: () => ({ where: whereUpdate }) });
+    whereUpdate.mockReturnValue({ returning });
+    returning.mockResolvedValue([]);
+    const { isRecallBotAccepted } = await import("@/lib/meeting-bot-lineage");
+
+    expect(await isRecallBotAccepted({ botId: "same_bot", meetingId: "meeting" }))
+      .toBe(winner === "same_bot");
+  });
+
   it("reads the meeting and bot identity from realtime payload metadata", async () => {
     const { getRecallWebhookBotIdentity } =
       await import("@/lib/meeting-bot-lineage");
