@@ -6,13 +6,6 @@ import { AlertCircle, CheckCircle2, UploadCloud } from "lucide-react";
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -259,24 +252,8 @@ export function UploadDropzone({ teamId }: { teamId?: string }) {
     state === "error" && message === "Enter a valid start time";
 
   return (
-    <Card>
-      <CardHeader className="border-b bg-muted/35">
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <CardTitle>Upload recording</CardTitle>
-            <CardDescription>
-              Add an existing recording and queue transcription.
-            </CardDescription>
-          </div>
-          <span
-            aria-hidden="true"
-            className="flex size-9 items-center justify-center rounded-lg bg-muted text-muted-foreground"
-          >
-            <UploadCloud className="size-4" />
-          </span>
-        </div>
-      </CardHeader>
-      <CardContent>
+    <div>
+        <h2 className="sr-only">Upload recording</h2>
         <form onSubmit={handleSubmit} className="flex flex-col gap-4">
           <div
             onDragEnter={handleDragEnter}
@@ -372,8 +349,7 @@ export function UploadDropzone({ teamId }: { teamId?: string }) {
             </Alert>
           ) : null}
         </form>
-      </CardContent>
-    </Card>
+    </div>
   );
 }
 

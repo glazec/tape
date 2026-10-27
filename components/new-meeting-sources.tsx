@@ -8,13 +8,6 @@ import { MeetingLinkForm } from "@/components/meeting-link-form";
 import { UploadDropzone } from "@/components/upload-dropzone";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { organizationHeaders } from "@/lib/organization-request";
@@ -24,7 +17,7 @@ export type MeetingSource = "link" | "recording" | "transcript" | "phone";
 
 const sourceOptions = [
   {
-    description: "Send a bot to Google Meet or Zoom",
+    description: "Tape joins a live Google Meet or Zoom call now, or schedules one for later.",
     icon: Bot,
     label: "Meeting link",
     value: "link" as const,
@@ -198,12 +191,8 @@ function NewTranscriptForm({ teamId }: { teamId?: string }) {
   }
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Add a transcript</CardTitle>
-        <CardDescription>Create a meeting from transcript text or a file.</CardDescription>
-      </CardHeader>
-      <CardContent>
+    <div>
+        <h2 className="sr-only">Add a transcript</h2>
         <form className="space-y-4" onSubmit={submit}>
           <div className="space-y-2">
             <Label htmlFor="new-transcript-title">Meeting title</Label>
@@ -254,8 +243,7 @@ function NewTranscriptForm({ teamId }: { teamId?: string }) {
             </Alert>
           ) : null}
         </form>
-      </CardContent>
-    </Card>
+    </div>
   );
 }
 
@@ -277,12 +265,8 @@ function PhoneRecordingForm({ teamId }: { teamId?: string }) {
   }
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Record on this phone</CardTitle>
-        <CardDescription>Create the meeting, then open the focused recorder.</CardDescription>
-      </CardHeader>
-      <CardContent>
+    <div>
+        <h2 className="sr-only">Record on this phone</h2>
         <form className="space-y-4" onSubmit={submit}>
           <div className="space-y-2">
             <Label htmlFor="phone-recording-title">Meeting title</Label>
@@ -306,8 +290,7 @@ function PhoneRecordingForm({ teamId }: { teamId?: string }) {
             </Alert>
           ) : null}
         </form>
-      </CardContent>
-    </Card>
+    </div>
   );
 }
 

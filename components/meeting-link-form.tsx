@@ -5,13 +5,6 @@ import { AlertCircle, CalendarPlus, CheckCircle2 } from "lucide-react";
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button, buttonVariants } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -203,24 +196,7 @@ export function MeetingLinkForm() {
   }
 
   return (
-    <Card>
-      <CardHeader className="border-b bg-muted/35">
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <CardTitle>Meeting link</CardTitle>
-            <CardDescription>
-              Tape joins an active meeting now or schedules a future meeting.
-            </CardDescription>
-          </div>
-          <span
-            aria-hidden="true"
-            className="flex size-9 items-center justify-center rounded-lg bg-muted text-muted-foreground"
-          >
-            <CalendarPlus className="size-4" />
-          </span>
-        </div>
-      </CardHeader>
-      <CardContent>
+    <div>
         <form onSubmit={handleSubmit} className="flex flex-col gap-4">
           <div className="flex flex-col gap-2">
             <Label htmlFor="meeting-link">Meeting link</Label>
@@ -274,7 +250,6 @@ export function MeetingLinkForm() {
             </Alert>
           ) : null}
         </form>
-      </CardContent>
       <Dialog open={botChoices.length > 0} onOpenChange={(open) => {
         if (!open) { setBotChoices([]); setSelectedBot(null); }
       }}>
@@ -400,7 +375,7 @@ export function MeetingLinkForm() {
           </DialogContent>
         ) : null}
       </Dialog>
-    </Card>
+    </div>
   );
 }
 
