@@ -104,6 +104,10 @@ export async function POST(
   } catch (error) {
     const creditResponse = providerCreditErrorResponse(error);
     if (creditResponse) return creditResponse;
+    console.error("meeting_followup_generation_failed", {
+      meetingId,
+      error: error instanceof Error ? error.message : String(error),
+    });
     return Response.json(
       { error: "Could not generate the followup. Please try again." },
       { status: 502 },
