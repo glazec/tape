@@ -196,16 +196,17 @@ export function MeetingActions({
   }
 
   return (
-    <div className="flex min-w-0 flex-wrap items-center gap-2">
+    <div className="flex min-w-0 flex-wrap items-center gap-0.5">
       {hasExportableContent ? (
         <div className="relative" ref={exportMenuRef}>
           <Button
             aria-controls={isExportMenuOpen ? exportMenuId : undefined}
             aria-expanded={isExportMenuOpen}
             aria-haspopup="menu"
+            className="text-muted-foreground"
             onClick={() => setIsExportMenuOpen((current) => !current)}
             type="button"
-            variant="outline"
+            variant="ghost"
           >
             <Download data-icon="inline-start" />
             Export
@@ -265,10 +266,11 @@ export function MeetingActions({
       ) : null}
       {hasTranscript ? (
         <Button
+          className="text-muted-foreground"
           disabled={isCopying}
           onClick={copyTranscript}
           type="button"
-          variant="outline"
+          variant="ghost"
         >
           {copyStatus === "copied" ? (
             <Check data-icon="inline-start" />

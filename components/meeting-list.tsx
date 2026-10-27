@@ -14,7 +14,6 @@ import {
   ArrowDown,
   ArrowUp,
   ChevronDown,
-  ChevronRight,
   History,
   LogIn,
   RotateCcw,
@@ -141,21 +140,23 @@ export function MeetingList({
   return (
     <div>
       <Table>
-        <TableHeader>
+        {/* The rows describe themselves; headers stay for screen readers and
+            keep their sort links reachable by keyboard. */}
+        <TableHeader className="sr-only">
           <TableRow className="border-border/60 hover:bg-transparent">
             <TableHead
               aria-sort={getHeaderAriaSort("startedAt", sort)}
-              className="hidden w-40 pl-0 text-xs font-normal text-muted-foreground md:table-cell"
+              className="hidden w-28 pl-0 text-xs font-normal text-muted-foreground md:table-cell"
             >
               <SortableHeader
                 activeDirection={getSortDirection("startedAt", sort)}
                 href={sortLinks?.startedAt}
-                label="Started"
+                label="Time"
               />
             </TableHead>
             <TableHead
               aria-sort={getHeaderAriaSort("title", sort)}
-              className="pl-8 text-xs font-normal text-muted-foreground"
+              className="text-xs font-normal text-muted-foreground"
             >
               <SortableHeader
                 activeDirection={getSortDirection("title", sort)}
@@ -192,7 +193,7 @@ export function MeetingList({
                   {groupLabel ? (
                     <TableRow className="border-0 hover:bg-transparent">
                       <TableCell
-                        className="pt-6 pb-1.5 pl-0 text-xs font-medium text-muted-foreground"
+                        className="border-b border-border pt-8 pb-2 pl-0 text-[0.8125rem] font-semibold text-foreground"
                         colSpan={3}
                         scope="rowgroup"
                       >
@@ -306,7 +307,7 @@ function MeetingTableRow({
     >
       <TableCell
         className={cn(
-          "hidden w-40 pl-0 align-top whitespace-nowrap text-sm tabular-nums md:table-cell",
+          "hidden w-28 pl-0 align-top whitespace-nowrap text-sm tabular-nums md:table-cell",
           isChild ? "pt-2.5 text-muted-foreground/80" : "pt-3.5 text-muted-foreground",
         )}
       >
@@ -519,35 +520,11 @@ function MeetingTitleCell({
   return (
     <div
       className={cn(
-        "flex min-w-0 items-start gap-1",
+        "flex min-w-0 items-start",
         isChild &&
-          "relative pl-8 before:absolute before:bottom-1 before:left-3 before:top-1 before:w-px before:bg-border/70",
+          "relative pl-4 before:absolute before:bottom-1 before:left-0 before:top-1 before:w-px before:bg-border",
       )}
     >
-      {relatedCount > 0 ? (
-        <Button
-          aria-expanded={isExpanded}
-          aria-label={`${isExpanded ? "Collapse" : "Expand"} ${meeting.title}`}
-          className="mt-0.5 size-5 shrink-0 rounded-md"
-          onClick={onToggle}
-          size="icon-xs"
-          type="button"
-          variant="ghost"
-        >
-          {isExpanded ? (
-            <ChevronDown aria-hidden="true" />
-          ) : (
-            <ChevronRight aria-hidden="true" />
-          )}
-        </Button>
-      ) : isChild ? (
-        <span
-          aria-hidden="true"
-          className="mt-0.5 flex size-5 shrink-0 items-center justify-center"
-        />
-      ) : (
-        <span aria-hidden="true" className="mt-0.5 flex size-5 shrink-0" />
-      )}
       <div className="min-w-0">
         <div className="flex min-w-0 flex-wrap items-center gap-2">
           <Link
@@ -562,11 +539,24 @@ function MeetingTitleCell({
             {meeting.title}
           </Link>
           {relatedCount > 0 ? (
-            <span className="text-xs tabular-nums text-muted-foreground">
-              {relatedCount === 1
-                ? "1 related"
-                : `${relatedCount} related`}
-            </span>
+            // The related count is the toggle, so rows need no chevron
+            // column and titles share one left edge.
+            <button
+              aria-expanded={isExpanded}
+              aria-label={`${isExpanded ? "Collapse" : "Expand"} ${meeting.title}`}
+              className="inline-flex items-center gap-0.5 rounded-sm text-xs tabular-nums text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              onClick={onToggle}
+              type="button"
+            >
+              {relatedCount === 1 ? "1 related" : `${relatedCount} related`}
+              <ChevronDown
+                aria-hidden="true"
+                className={cn(
+                  "size-3 transition-transform",
+                  isExpanded && "rotate-180",
+                )}
+              />
+            </button>
           ) : null}
           {moreAction}
         </div>

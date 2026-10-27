@@ -30,7 +30,6 @@ describe("MeetingList", () => {
     expect(html).toContain("3 people");
     expect(html).toContain("12m");
     expect(html).not.toContain("1h 30m");
-    expect(html).toContain("pl-8");
     expect(html).toContain("w-28 pr-4 text-right");
   });
 
@@ -212,7 +211,7 @@ describe("MeetingList", () => {
     expect(html).toContain("Scheduled");
     expect(html).toContain("1 related");
     expect(html).toContain("David &lt;&gt; YP");
-    expect(html).toContain("size-5 shrink-0");
+    expect(html).toContain('aria-label="Expand David &lt;&gt; YP"');
     expect(html).not.toContain("rounded-full bg-muted-foreground/40");
     expect(html).not.toContain("bg-muted/20");
     expect(html).not.toContain("has-aria-expanded:bg-muted/50");

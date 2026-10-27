@@ -21,13 +21,14 @@ function UserStatsCard({ stats }: { stats: DashboardUserStats }) {
       aria-label="This week activity"
       className="text-sm text-muted-foreground"
     >
-      This week, <Stat>{formatMeetingCount(stats.thisWeekMeetings)}</Stat>{" "}
-      over <Stat>{formatMeetingHours(stats.meetingHours)}</Stat>
+      <Stat>{formatMeetingCount(stats.thisWeekMeetings)}</Stat> and{" "}
+      <Stat>{formatMeetingHours(stats.meetingHours)}</Stat> this week
       <span className="sr-only">
         {" "}
-        in meetings, {stats.spokenWords.toLocaleString()} words
+        in meetings, {stats.spokenWords.toLocaleString()} words,{" "}
+        {formatMeetingChange(stats)}
       </span>
-      , {formatMeetingChange(stats)}.
+      .
     </p>
   );
 }

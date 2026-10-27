@@ -93,7 +93,7 @@ export default async function TeamSettingsPage({ searchParams }: {
       canCreateMeetings
       oneSignalExternalId={workspace.userId}
     >
-      <section className="mx-auto flex w-full max-w-3xl flex-col">
+      <section className="flex w-full flex-col">
         <div className="pb-8">
           <h1 className="text-2xl font-semibold tracking-[-0.015em]">
             Settings
@@ -137,11 +137,11 @@ export default async function TeamSettingsPage({ searchParams }: {
         <SettingsSection id="connected-accounts" title="Connected accounts">
           <div className="flex flex-col gap-3">
             {calendarAccounts.length ? (
-              <ul className="divide-y border-y">
+              <ul className="divide-y border-b">
                 {calendarAccounts.map((account) => (
                   <li
                     key={account.id}
-                    className="flex min-w-0 flex-col gap-2 py-3 sm:flex-row sm:items-center sm:justify-between"
+                    className="flex min-w-0 flex-col gap-2 pb-3 not-first:pt-3 sm:flex-row sm:items-center sm:justify-between"
                   >
                     <div className="min-w-0">
                       <p className="break-all text-sm font-medium">
@@ -215,7 +215,7 @@ export default async function TeamSettingsPage({ searchParams }: {
                     name="translationLanguage"
                   >
                     <SelectTrigger
-                      className="h-11 w-full bg-background sm:max-w-xs"
+                      className="h-11 w-full bg-background sm:max-w-sm"
                       id="translationLanguage"
                     >
                       <SelectValue />
@@ -253,7 +253,7 @@ export default async function TeamSettingsPage({ searchParams }: {
                     Sharing group member emails
                   </label>
                   <textarea
-                    className="border-input bg-background min-h-28 w-full rounded-md border px-3 py-2 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px]"
+                    className="border-input bg-background min-h-28 w-full rounded-md border px-3 py-2 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] sm:max-w-lg"
                     defaultValue={
                       teamConfiguration.shareAudience?.emails.join("\n") ?? ""
                     }
@@ -514,7 +514,7 @@ export default async function TeamSettingsPage({ searchParams }: {
             <Link
               className={cn(
                 buttonVariants({ variant: "ghost", size: "sm" }),
-                "-mr-2 min-h-11 text-muted-foreground sm:min-h-8",
+                "-ml-2.5 min-h-11 text-muted-foreground sm:min-h-8",
               )}
               href="/usage"
             >
@@ -601,12 +601,12 @@ function SettingsSection({
       id={id}
     >
       <div>
-        <div className="flex items-start justify-between gap-3 md:block">
-          <h2 className="text-sm font-semibold">{title}</h2>
-          {action ? <div className="md:mt-2">{action}</div> : null}
-        </div>
+        <h2 className="text-sm font-semibold">{title}</h2>
       </div>
-      <div className="min-w-0">{children}</div>
+      <div className="min-w-0">
+        {children}
+        {action ? <div className="mt-3">{action}</div> : null}
+      </div>
     </section>
   );
 }

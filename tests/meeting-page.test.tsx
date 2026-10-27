@@ -190,7 +190,7 @@ describe("meeting page", () => {
     expect(html).toContain("recovery panel");
     expect(html).toContain("Google Meet:Failed");
     expect(html).toContain("transcript:meeting_1");
-    expect(html).toContain("mx-auto flex w-full max-w-3xl");
+    expect(html).toContain("flex w-full min-w-0 flex-col gap-8");
     expect(html.indexOf("speaker summary")).toBeLessThan(
       html.indexOf("entity links"),
     );
@@ -312,7 +312,7 @@ describe("meeting page", () => {
     expect(html).toContain("Record this Teams meeting locally");
     expect(html).toContain("Open Tape for Mac");
     expect(html).toContain("recovery panel");
-    expect(html).toContain("mx-auto flex w-full max-w-3xl");
+    expect(html).toContain("flex w-full min-w-0 flex-col gap-8");
   });
 
   it("offers uploads when a manageable meeting has no recording", async () => {
@@ -335,7 +335,7 @@ describe("meeting page", () => {
     expect(html).not.toContain("transcript:missed_meeting");
     expect(html).toContain("meeting actions:delete only");
     expect(html).not.toContain("share dialog");
-    expect(html).toContain("mx-auto flex w-full max-w-3xl");
+    expect(html).toContain("flex w-full min-w-0 flex-col gap-8");
   });
 
   it("offers bot recovery and keeps existing content uploads available", async () => {

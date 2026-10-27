@@ -40,13 +40,13 @@ export function CalendarAutomationPanel({
         />
         {connected ? (
           <>
-            <span className="text-foreground">
+            <span className="sr-only">
               {autoJoinActive
                 ? "Recording coverage on"
                 : "Recording coverage off"}
+              .{" "}
             </span>
-            <span aria-hidden="true">·</span>
-            <span>
+            <span className="text-foreground">
               {autoJoinActive
                 ? nextJoinTitle
                   ? `Next join: ${nextJoinTitle}`

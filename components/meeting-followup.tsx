@@ -3,7 +3,7 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Popover } from "@base-ui/react/popover";
-import { ChevronDown, LoaderCircle, RefreshCw } from "lucide-react";
+import { LoaderCircle, RefreshCw } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import type { MeetingFollowup as Followup } from "@/lib/meeting-followup";
@@ -185,20 +185,19 @@ export function MeetingFollowup({
   ) : null;
 
   return (
-    <details className="group/followup mb-10 border-y" open={Boolean(result)}>
-      <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-4 py-3 outline-none transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring [&::-webkit-details-marker]:hidden">
-        <span className="text-sm font-medium">AI followup</span>
-        <ChevronDown
-          aria-hidden="true"
-          className="size-4 shrink-0 text-muted-foreground transition-transform group-open/followup:rotate-180 motion-reduce:transition-none"
-        />
-      </summary>
+    <div className="mb-10">
+      <p
+        aria-hidden="true"
+        className="mb-2 text-xs font-medium text-muted-foreground"
+      >
+        AI followup
+      </p>
       <p className="sr-only" role="status">
         {announcement}
       </p>
       <section
         aria-labelledby={headingId}
-        className="pb-5 pt-1"
+
         aria-busy={busy}
       >
         <h2 className="sr-only" id={headingId}>
@@ -249,6 +248,6 @@ export function MeetingFollowup({
           </div>
         ) : null}
       </section>
-    </details>
+    </div>
   );
 }

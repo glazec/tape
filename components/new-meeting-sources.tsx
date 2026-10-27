@@ -79,7 +79,7 @@ export function NewMeetingSources({
     <div className="space-y-5">
       <div
         aria-label="Meeting source"
-        className="divide-y overflow-hidden rounded-xl border"
+        className="-mx-4 divide-y divide-border/60"
         role="group"
       >
         {sourceOptions.map((option) => {

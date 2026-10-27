@@ -42,8 +42,10 @@ const props = {
     { id: "two", startMs: 186000 },
   ],
 };
+// The followup is always open now; keep the helper so each test still reads
+// as "open the followup, then act".
 const open = () => {
-  fireEvent.click(screen.getByText("AI followup", { selector: "summary span" }));
+  expect(screen.getByRole("heading", { name: "AI followup" })).toBeTruthy();
 };
 afterEach(() => {
   cleanup();

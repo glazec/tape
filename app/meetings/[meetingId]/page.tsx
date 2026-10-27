@@ -161,7 +161,7 @@ export default async function MeetingPage({
       canCreateMeetings={workspace.canCreateMeetings !== false}
       oneSignalExternalId={workspace.userId}
     >
-      <div className="mx-auto flex w-full max-w-3xl min-w-0 flex-col gap-8">
+      <div className="flex w-full min-w-0 flex-col gap-8">
         <section className="flex min-w-0 flex-wrap items-start gap-x-6">
           <MeetingAutoRefresh
             meetingStatus={meeting.status}

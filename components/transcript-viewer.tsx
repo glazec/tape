@@ -18,9 +18,9 @@ import {
   ChevronLeft,
   ChevronRight,
   Check,
+  Images,
   Languages,
   LoaderCircle,
-  Maximize2,
   Pause,
   Pencil,
   Play,
@@ -225,7 +225,7 @@ type TranscriptSelectOption = {
   value: string;
 };
 
-const INLINE_VISUAL_ASSET_LIMIT = 3;
+const INLINE_VISUAL_ASSET_LIMIT = 1;
 function formatTimestamp(startMs: number) {
   const totalSeconds = Math.floor(startMs / 1000);
   const minutes = Math.floor(totalSeconds / 60);
@@ -461,6 +461,10 @@ export function TranscriptViewer({
       displayTranslationSummary.status !== "running" &&
       translationLanguage !== effectivePreferredTranslationLanguage,
   );
+  const translationNotNeeded =
+    displayTranslationSummary?.status === "not_needed" &&
+    displayTranslationSummary.totalSegments > 0 &&
+    !translationTargetChanged;
   const activeTranslationLanguageLabel =
     displayTranslationSummary?.status === "queued" ||
     displayTranslationSummary?.status === "running"
@@ -595,7 +599,7 @@ export function TranscriptViewer({
   function renderInlineVisualAssets(assetIndexes: number[], rowKey: string) {
     return (
       <li
-        className="grid grid-cols-[2.25rem_minmax(0,1fr)] gap-3 pr-3 sm:-ml-12"
+        className="grid grid-cols-[3rem_minmax(0,1fr)] gap-4 pr-3 sm:-ml-16"
         key={rowKey}
       >
         <span aria-hidden="true" />
@@ -1189,8 +1193,23 @@ export function TranscriptViewer({
         <header className="mb-5">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <h2 className="text-lg font-semibold">Transcript</h2>
-            {hasOriginalPolish || hasTranslations ? (
+            {hasOriginalPolish || hasTranslations || translationNotNeeded ? (
               <div className="flex flex-wrap items-center gap-2">
+                {translationNotNeeded && meetingId ? (
+                  <Button
+                    aria-label="Translate anyway"
+                    className="text-muted-foreground"
+                    disabled={isRequestingTranslation}
+                    onClick={requestTranslation}
+                    size="sm"
+                    title={`Already ${activeTranslationLanguageLabel}`}
+                    type="button"
+                    variant="ghost"
+                  >
+                    <Languages aria-hidden="true" />
+                    Translate
+                  </Button>
+                ) : null}
                 {hasTranslations ? (
                   <TranscriptControlSelect
                     ariaLabel="Transcript language"
@@ -1237,31 +1256,20 @@ export function TranscriptViewer({
             ) ? (
               displayTranslationSummary.status === "not_needed" &&
               !translationTargetChanged ? (
-                <p className="mb-5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
-                  <Languages aria-hidden="true" className="size-3.5" />
-                  <span>
+                <>
+                  <p className="sr-only">
                     Translation not needed.{" "}
                     {getTranslationStatusBody(
-                    displayTranslationSummary,
+                      displayTranslationSummary,
                       activeTranslationLanguageLabel,
                     ).trim()}
-                  </span>
-                  {meetingId ? (
-                    <button
-                      className="font-medium text-foreground underline decoration-border underline-offset-4 hover:decoration-foreground disabled:opacity-50"
-                      disabled={isRequestingTranslation}
-                      onClick={requestTranslation}
-                      type="button"
-                    >
-                      Translate anyway
-                    </button>
-                  ) : null}
+                  </p>
                   {translationRequestError ? (
-                    <span className="font-medium text-destructive">
+                    <p className="mb-5 text-xs font-medium text-destructive">
                       {translationRequestError}
-                    </span>
+                    </p>
                   ) : null}
-                </p>
+                </>
               ) : (
               <div className="mb-5 rounded-lg border bg-muted/30 p-4">
                 <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
@@ -1320,7 +1328,6 @@ export function TranscriptViewer({
             ) : null}
             <MeetingVisualTimeline
               onOpenGallery={() => setIsGalleryOverviewOpen(true)}
-              onOpenAsset={setLightboxAssetIndex}
               visualAssets={visualAssets}
             />
             <div className="mb-6">
@@ -1465,7 +1472,9 @@ export function TranscriptViewer({
                   : segment.text;
                 const shouldShowRawTooltip =
                   displayedText.trim() !== segment.text.trim();
-                const textTokens = getTranscriptTextTokens(displayedText);
+                const textTokens = getTranscriptTextTokens(
+                  trimLeadingPunctuation(displayedText),
+                );
                 const segmentEndMs = getSegmentDisplayEndMs(
                   segment,
                   displaySegments,
@@ -1509,7 +1518,7 @@ export function TranscriptViewer({
                       segmentRefs.current.delete(segment.id);
                     }}
                     className={cn(
-                      "group/line grid grid-cols-[2.25rem_minmax(0,1fr)] gap-3 rounded-lg pr-3 transition-colors sm:-ml-12",
+                      "group/line grid grid-cols-[3rem_minmax(0,1fr)] gap-4 rounded-lg pr-3 transition-colors sm:-ml-16",
                       isContinuation ? "py-0.5" : "mt-2 pt-2.5 pb-0.5",
                       isActive ? "bg-primary/5" : "hover:bg-muted/35",
                     )}
@@ -1517,23 +1526,25 @@ export function TranscriptViewer({
                     {isContinuation ? (
                       <span
                         aria-hidden="true"
-                        className="pt-1 text-right text-[0.6875rem] tabular-nums text-muted-foreground opacity-0 transition-opacity group-hover/line:opacity-100"
+                        className="pt-1.5 text-right text-[0.6875rem] tabular-nums text-muted-foreground opacity-0 transition-opacity group-hover/line:opacity-100"
                       >
                         {formatTimestamp(segment.startMs)}
                       </span>
+                    ) : canSeekTranscript ? (
+                      // One fixed gutter keeps every turn's time on the same
+                      // edge, whatever the speaker's name length.
+                      <button
+                        aria-label={`Play from ${formatTimestamp(segment.startMs)}`}
+                        className="h-7 justify-self-end rounded-sm text-right text-[0.6875rem] tabular-nums text-muted-foreground outline-none hover:text-foreground hover:underline focus-visible:ring-2 focus-visible:ring-ring/50"
+                        onClick={() => seekTo(segment.startMs)}
+                        type="button"
+                      >
+                        {formatTimestamp(segment.startMs)}
+                      </button>
                     ) : (
-                    <span
-                      aria-hidden="true"
-                      className="mt-3 ml-auto size-2 rounded-full text-[0px]"
-                      style={{
-                        backgroundColor: getWaveformSpeakerColor(
-                          displaySpeaker,
-                          speakerColorByKey,
-                        ),
-                      }}
-                    >
-                      {getSpeakerInitial(speakerLabel)}
-                    </span>
+                      <span className="flex h-7 items-center justify-end text-[0.6875rem] tabular-nums text-muted-foreground">
+                        {formatTimestamp(segment.startMs)}
+                      </span>
                     )}
                     <div className="min-w-0">
                       <div
@@ -1542,6 +1553,16 @@ export function TranscriptViewer({
                           isContinuation && "sr-only",
                         )}
                       >
+                        <span
+                          aria-hidden="true"
+                          className="size-2 shrink-0 rounded-full"
+                          style={{
+                            backgroundColor: getWaveformSpeakerColor(
+                              displaySpeaker,
+                              speakerColorByKey,
+                            ),
+                          }}
+                        />
                         {isEditing ? (
                           renderSpeakerEditor({
                             hasError,
@@ -1567,20 +1588,6 @@ export function TranscriptViewer({
                           <p className="text-sm font-semibold text-foreground">
                             {speakerLabel}
                           </p>
-                        )}
-                        {canSeekTranscript ? (
-                          <button
-                            aria-label={`Play from ${formatTimestamp(segment.startMs)}`}
-                            className="h-6 shrink-0 rounded-md text-left text-xs font-medium text-muted-foreground outline-none hover:text-primary hover:underline focus-visible:ring-3 focus-visible:ring-ring/50"
-                            onClick={() => seekTo(segment.startMs)}
-                            type="button"
-                          >
-                            {formatTimestamp(segment.startMs)}
-                          </button>
-                        ) : (
-                          <span className="text-xs font-medium text-muted-foreground">
-                            {formatTimestamp(segment.startMs)}
-                          </span>
                         )}
                       </div>
                       <div className="group/original relative inline-block max-w-full">
@@ -1841,67 +1848,32 @@ function normalizeTranscriptDisplayText(text: string) {
 
 function MeetingVisualTimeline({
   onOpenGallery,
-  onOpenAsset,
   visualAssets,
 }: {
   onOpenGallery: () => void;
-  onOpenAsset: (assetIndex: number) => void;
   visualAssets: MeetingVisualAsset[];
 }) {
   if (visualAssets.length === 0) {
     return null;
   }
 
+  // Frames appear beside the moment they were captured, so the top of the
+  // transcript only offers the whole gallery.
   return (
-    <section className="mb-6">
-      <div className="flex items-center justify-between gap-3">
-        <h3 className="text-xs font-medium text-muted-foreground">
-          Meeting images
-        </h3>
-        <div className="flex items-center gap-1">
-          <span className="text-xs tabular-nums text-muted-foreground">
-            {visualAssets.length} captured
-          </span>
-          <Button
-            aria-label="Browse all captured images"
-            onClick={onOpenGallery}
-            size="icon-sm"
-            title="Browse all captured images"
-            type="button"
-            variant="ghost"
-          >
-            <Maximize2 />
-          </Button>
-        </div>
-      </div>
-      <div className="mt-2 flex gap-2 overflow-x-auto pb-1">
-        {visualAssets.map((asset, assetIndex) => {
-          const timestampLabel = formatVisualAssetTimestamp(asset);
-
-          return (
-            <button
-              aria-label={`Open image from ${timestampLabel}`}
-              className="relative w-28 shrink-0 overflow-hidden rounded-md border bg-background text-left outline-none transition-opacity hover:opacity-85 focus-visible:ring-3 focus-visible:ring-ring/50"
-              key={asset.id}
-              onClick={() => onOpenAsset(assetIndex)}
-              type="button"
-            >
-              <span className="block aspect-video w-full overflow-hidden bg-muted">
-                {/* eslint-disable-next-line @next/next/no-img-element -- protected image routes need browser auth cookies */}
-                <img
-                  alt=""
-                  className="h-full w-full object-cover"
-                  loading="lazy"
-                  src={asset.url}
-                />
-              </span>
-              <span className="absolute bottom-1 left-1 rounded-sm bg-black/60 px-1 py-px text-[0.625rem] font-medium tabular-nums text-white">
-                {timestampLabel}
-              </span>
-            </button>
-          );
-        })}
-      </div>
+    <section aria-label="Meeting images" className="mb-6">
+      <button
+        aria-label="Browse all captured images"
+        className="inline-flex items-center gap-1.5 rounded-sm text-xs text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+        onClick={onOpenGallery}
+        title="Browse all captured images"
+        type="button"
+      >
+        <Images aria-hidden="true" className="size-3.5" />
+        Meeting images
+        <span className="tabular-nums text-foreground">
+          {visualAssets.length} captured
+        </span>
+      </button>
     </section>
   );
 }
@@ -2548,7 +2520,7 @@ function TranscriptAudioPlayer({
             : audioUrl
         }
       />
-      <div className="mx-auto flex max-w-3xl flex-col gap-2 px-4 py-2.5 sm:flex-row sm:items-center sm:gap-4 sm:px-0">
+      <div className="mx-auto flex max-w-4xl flex-col gap-2 px-4 py-2.5 sm:flex-row sm:items-center sm:gap-4 sm:px-6">
         <div className="order-2 flex shrink-0 items-center justify-center gap-1 sm:order-none">
           <Button
             className="min-w-11 gap-1 rounded-full px-2"
@@ -2776,7 +2748,7 @@ function TranscriptAudioPlayer({
           <label className="flex items-center gap-1 text-xs font-medium text-muted-foreground">
             <span className="sr-only">Playback speed</span>
             <select
-              className="h-7 rounded-md border bg-background px-1.5 text-xs text-foreground outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+              className="h-7 cursor-pointer appearance-none rounded-md bg-transparent px-2 text-xs font-medium tabular-nums text-foreground outline-none hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/50"
               onChange={changePlaybackRate}
               value={playbackRate}
             >
@@ -3777,11 +3749,17 @@ function getNormalizedSpeakerKey(speaker: string | null) {
   return getSpeakerIdentityKey(speaker);
 }
 
-function getSpeakerInitial(speaker: string) {
-  return speaker.trim().charAt(0).toUpperCase() || "?";
-}
-
 function getFullParticipantEmail(value: string | null) {
   const email = value?.trim().toLowerCase();
   return email && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) ? email : null;
+}
+
+/**
+ * Speech recognition sometimes starts a line with the comma that closed the
+ * previous one. Drop it for reading; the stored text is untouched.
+ */
+function trimLeadingPunctuation(text: string) {
+  const trimmed = text.replace(/^[\s,，、。.;；:：]+/, "");
+
+  return trimmed.length > 0 ? trimmed : text;
 }
