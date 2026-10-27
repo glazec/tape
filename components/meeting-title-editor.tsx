@@ -117,10 +117,13 @@ export function MeetingTitleEditor({
   }
 
   return (
-    <div className="flex min-w-0 flex-1 items-start gap-2">
-      <h1 className="min-w-0 text-3xl font-semibold tracking-tight">{title}</h1>
+    <div className="group/title flex min-w-0 flex-1 items-start gap-2">
+      <h1 className="min-w-0 text-2xl font-semibold tracking-[-0.015em]">
+        {title}
+      </h1>
       <Button
         aria-label="Rename meeting"
+        className="mt-0.5 text-muted-foreground opacity-0 transition-opacity group-hover/title:opacity-100 focus-visible:opacity-100 [@media(hover:none)]:opacity-100"
         onClick={startEditing}
         size="icon-sm"
         title="Rename meeting"

@@ -13,7 +13,6 @@ import {
 import {
   ArrowDown,
   ArrowUp,
-  ChevronDown,
   History,
   LogIn,
   RotateCcw,
@@ -538,29 +537,27 @@ function MeetingTitleCell({
           >
             {meeting.title}
           </Link>
-          {relatedCount > 0 ? (
-            // The related count is the toggle, so rows need no chevron
-            // column and titles share one left edge.
-            <button
-              aria-expanded={isExpanded}
-              aria-label={`${isExpanded ? "Collapse" : "Expand"} ${meeting.title}`}
-              className="inline-flex items-center gap-0.5 rounded-sm text-xs tabular-nums text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              onClick={onToggle}
-              type="button"
-            >
-              {relatedCount === 1 ? "1 related" : `${relatedCount} related`}
-              <ChevronDown
-                aria-hidden="true"
-                className={cn(
-                  "size-3 transition-transform",
-                  isExpanded && "rotate-180",
-                )}
-              />
-            </button>
-          ) : null}
-          {moreAction}
         </div>
-        <MeetingMeta displayStatus={displayStatus} meeting={meeting} />
+        <MeetingMeta
+          displayStatus={displayStatus}
+          meeting={meeting}
+          related={
+            relatedCount > 0 ? (
+              <>
+                <button
+                  aria-expanded={isExpanded}
+                  aria-label={`${isExpanded ? "Collapse" : "Expand"} ${meeting.title}`}
+                  className="rounded-sm tabular-nums underline decoration-border underline-offset-4 hover:text-foreground hover:decoration-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  onClick={onToggle}
+                  type="button"
+                >
+                  {relatedCount === 1 ? "1 related" : `${relatedCount} related`}
+                </button>
+                {moreAction ? <span className="ml-1.5">{moreAction}</span> : null}
+              </>
+            ) : null
+          }
+        />
       </div>
     </div>
   );
@@ -672,14 +669,7 @@ function getMeetingCoverageNote({
       : "Bot in meeting";
   }
 
-  if (displayStatus === "failed") {
-    return "Needs review";
-  }
-
-  if (displayStatus === "missed") {
-    return "Bot did not join";
-  }
-
+  // Failed and missed meetings say so in the status column.
   return null;
 }
 
@@ -691,9 +681,11 @@ function getMeetingCoverageNote({
 function MeetingMeta({
   displayStatus,
   meeting,
+  related = null,
 }: {
   displayStatus: MeetingDisplayStatus;
   meeting: MeetingListBaseItem;
+  related?: ReactNode;
 }) {
   const duration = formatMeetingDuration({
     durationMs: meeting.durationMs,
@@ -733,6 +725,10 @@ function MeetingMeta({
     parts.push(<span key="coverage">{coverageNote}</span>);
   }
 
+  if (related) {
+    parts.push(<span key="related">{related}</span>);
+  }
+
   return (
     <span className="mt-0.5 flex flex-wrap items-center gap-x-1.5 text-xs text-muted-foreground">
       {parts.map((part, index) => (
@@ -751,20 +747,33 @@ function MeetingMeta({
 }
 
 const statusDotClassNames: Partial<Record<MeetingDisplayStatus, string>> = {
-  scheduled: "bg-slate-400",
-  ready: "bg-emerald-500",
   queued: "bg-amber-500",
   transcribing: "bg-amber-500",
   processing: "bg-amber-500",
   recording: "bg-rose-500",
-  failed: "bg-destructive",
 };
 
-/** Status as a colored dot and its label: legible without color, and quiet. */
+/**
+ * One status, said once. Ready is the normal state of a past meeting, so it
+ * stays silent; live work gets a dot; a failure is the only red text.
+ */
 function MeetingStatusLabel({ status }: { status: MeetingDisplayStatus }) {
+  if (status === "ready") {
+    return (
+      <span className="sr-only" data-status={status}>
+        {statusLabels[status]}
+      </span>
+    );
+  }
+
   return (
     <span
-      className="inline-flex items-center gap-1.5 text-xs text-muted-foreground"
+      className={cn(
+        "inline-flex items-center gap-1.5 text-xs",
+        status === "failed" || status === "missed"
+          ? "text-destructive"
+          : "text-muted-foreground",
+      )}
       data-status={status}
     >
       {statusDotClassNames[status] ? (
@@ -773,7 +782,14 @@ function MeetingStatusLabel({ status }: { status: MeetingDisplayStatus }) {
           className={cn("size-1.5 rounded-full", statusDotClassNames[status])}
         />
       ) : null}
-      {statusLabels[status]}
+      {status === "missed" ? (
+        <>
+          Bot did not join
+          <span className="sr-only"> ({statusLabels[status]})</span>
+        </>
+      ) : (
+        statusLabels[status]
+      )}
     </span>
   );
 }
@@ -877,9 +893,9 @@ function formatDurationMs(durationMs: number) {
 const groupableSorts = new Set<MeetingLibrarySort>(["smart", "time_desc", "time_asc"]);
 
 /**
- * Day headers for a time ordered library: upcoming meetings under one
- * "Upcoming" header, then one header per local day. Computed only in the
- * browser, because day boundaries depend on the viewer's timezone.
+ * Day headers for a time ordered library, one per local day, including
+ * Today and Tomorrow. Computed only in the browser, because day boundaries
+ * depend on the viewer's timezone.
  */
 function useDayGroupLabels(
   meetings: MeetingListItem[],
@@ -896,14 +912,10 @@ function useDayGroupLabels(
   }
 
   const now = new Date();
-  const labels = meetings.map((meeting) => {
-    const startedAt = new Date(meeting.startedAt);
-
-    return meeting.status === "scheduled" &&
-      startedAt.getTime() > now.getTime()
-      ? "Upcoming"
-      : formatDayLabel(startedAt, now);
-  });
+  // Every group is a real day, so upcoming rows say when they happen.
+  const labels = meetings.map((meeting) =>
+    formatDayLabel(new Date(meeting.startedAt), now),
+  );
 
   // Only the first meeting of each run carries the header.
   return labels.map((label, index) =>
@@ -922,6 +934,10 @@ function formatDayLabel(date: Date, now: Date) {
 
   if (days === 0) {
     return "Today";
+  }
+
+  if (days === -1) {
+    return "Tomorrow";
   }
 
   if (days === 1) {

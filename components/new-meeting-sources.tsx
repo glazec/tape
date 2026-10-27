@@ -2,7 +2,7 @@
 
 import { ChangeEvent, FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Bot, ChevronRight, FileText, Mic, UploadCloud } from "lucide-react";
+import { Bot, FileText, Mic, UploadCloud } from "lucide-react";
 
 import { MeetingLinkForm } from "@/components/meeting-link-form";
 import { UploadDropzone } from "@/components/upload-dropzone";
@@ -79,7 +79,7 @@ export function NewMeetingSources({
     <div className="space-y-5">
       <div
         aria-label="Meeting source"
-        className="-mx-4 divide-y divide-border/60"
+        className="flex flex-wrap gap-1 rounded-lg bg-muted/60 p-1"
         role="group"
       >
         {sourceOptions.map((option) => {
@@ -90,8 +90,10 @@ export function NewMeetingSources({
             <button
               aria-pressed={selected}
               className={cn(
-                "group flex w-full items-center gap-4 px-4 py-3.5 text-left outline-none transition-colors hover:bg-muted/50 focus-visible:bg-muted/50 focus-visible:ring-3 focus-visible:ring-inset focus-visible:ring-ring/50",
-                selected && "bg-muted/60",
+                "inline-flex min-h-11 flex-1 items-center justify-center gap-2 rounded-md px-3 text-sm whitespace-nowrap outline-none transition-colors focus-visible:ring-3 focus-visible:ring-ring/50 sm:min-h-8",
+                selected
+                  ? "bg-background font-medium text-foreground shadow-xs"
+                  : "text-muted-foreground hover:text-foreground",
                 // The phone recorder only makes sense on a phone.
                 option.value === "phone" &&
                   !selected &&
@@ -102,37 +104,20 @@ export function NewMeetingSources({
                 if (source === option.value) centerInput();
                 else setSource(option.value);
               }}
+              title={option.description}
               type="button"
             >
-              <span
-                className={cn(
-                  "flex size-9 shrink-0 items-center justify-center rounded-lg border bg-background transition-colors",
-                  selected
-                    ? "border-foreground/20 text-foreground"
-                    : "text-muted-foreground group-hover:text-foreground",
-                )}
-              >
-                <Icon aria-hidden="true" className="size-4" />
-              </span>
-              <span className="min-w-0 flex-1">
-                <span className="block text-sm font-medium">
-                  {option.label}
-                </span>
-                <span className="block text-sm text-muted-foreground">
-                  {option.description}
-                </span>
-              </span>
-              <ChevronRight
-                aria-hidden="true"
-                className={cn(
-                  "size-4 shrink-0 text-muted-foreground transition-transform",
-                  selected && "rotate-90 text-foreground",
-                )}
-              />
+              <Icon aria-hidden="true" className="size-4" />
+              {option.label}
             </button>
           );
         })}
       </div>
+      {source ? (
+        <p className="-mt-2 text-sm text-muted-foreground">
+          {sourceOptions.find((option) => option.value === source)?.description}
+        </p>
+      ) : null}
 
       {source ? (
         <div className="pb-[50svh]" ref={formRef}>

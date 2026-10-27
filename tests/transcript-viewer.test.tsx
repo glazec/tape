@@ -897,7 +897,7 @@ describe("TranscriptViewer", () => {
 
     expect(html).toContain('aria-label="Skip back 5 seconds"');
     expect(html).toContain('aria-label="Skip forward 5 seconds"');
-    expect((html.match(/5s/g) ?? []).length).toBeGreaterThanOrEqual(2);
+    expect(html).toContain('title="Back 5 seconds"');
   });
 
   it("calculates the WPM tooltip from the hovered waveform position", () => {

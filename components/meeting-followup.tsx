@@ -159,13 +159,13 @@ export function MeetingFollowup({
       className={
         result && !error
           ? "min-h-11 min-w-11 text-muted-foreground hover:text-foreground"
-          : "min-h-11 gap-2"
+          : "min-h-11 gap-2 sm:min-h-8"
       }
       title={result && !error ? "Regenerate followup" : undefined}
       disabled={busy}
       onClick={generate}
       size={result && !error ? "icon-sm" : "sm"}
-      variant={error ? "outline" : result ? "ghost" : "default"}
+      variant={error || !result ? "outline" : "ghost"}
     >
       {busy ? (
         <LoaderCircle aria-hidden="true" className="size-4 motion-safe:animate-spin" />
@@ -232,12 +232,7 @@ export function MeetingFollowup({
             ) : null}
           </>
         ) : (
-          <div className="space-y-4 pb-1">
-            <p className="max-w-[52ch] text-sm leading-6 text-muted-foreground">
-              Find next actions and what people offer or need.
-            </p>
-            {!error ? generateButton : null}
-          </div>
+          <div className="pb-1">{!error ? generateButton : null}</div>
         )}
         {error ? (
           <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-destructive/20 bg-destructive/5 p-3">

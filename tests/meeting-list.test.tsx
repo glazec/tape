@@ -321,12 +321,11 @@ describe("MeetingList", () => {
     );
 
     expect(html).toContain("Failed upload");
-    expect(html).toContain("Needs review");
+    expect(html).not.toContain("Needs review");
     expect(html).toContain('data-status="failed"');
     expect(html).toContain(
       "text-muted-foreground hover:text-foreground",
     );
-    expect(html).not.toContain("text-xs text-destructive");
     expect(html).not.toContain("Rejoin");
   });
 

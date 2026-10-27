@@ -209,7 +209,7 @@ export default async function MeetingPage({
                 meetingTitle={meeting.title}
               />
             ) : (
-              <h1 className="break-words text-3xl font-semibold tracking-tight">
+              <h1 className="break-words text-2xl font-semibold tracking-[-0.015em]">
                 {meeting.title}
               </h1>
             )}
@@ -223,14 +223,19 @@ export default async function MeetingPage({
             status={displayStatus === "scheduled" && composition.sources.some(source => source.kind === "continuation" && source.status === "scheduled") ? "Waiting to join" : formatStatus(displayStatus)}
           />
           </div>
-          {participants.length > 0 ? (
-            <div className="order-3 basis-full">
-              <ParticipantList participants={participants} />
-            </div>
-          ) : null}
-          {relatedMeetings.length > 0 ? (
-            <div className="order-3 mt-3 basis-full">
-              <RelatedMeetingsCard meetings={relatedMeetings} />
+          {participants.length > 0 || relatedMeetings.length > 0 ? (
+            <div className="order-3 mt-1 flex basis-full flex-wrap items-baseline gap-x-3 gap-y-1">
+              {participants.length > 0 ? (
+                <ParticipantList participants={participants} />
+              ) : null}
+              {participants.length > 0 && relatedMeetings.length > 0 ? (
+                <span aria-hidden="true" className="text-muted-foreground/50">
+                  ·
+                </span>
+              ) : null}
+              {relatedMeetings.length > 0 ? (
+                <RelatedMeetingsCard meetings={relatedMeetings} />
+              ) : null}
             </div>
           ) : null}
           {canManage ? null : (
@@ -405,7 +410,7 @@ function ParticipantList({
     participant.name || participant.email;
 
   return (
-    <div className="mt-2 text-sm text-muted-foreground">
+    <div className="text-sm text-muted-foreground">
       <ul aria-label="Participants" className="inline">
         {visible.map((participant, index) => (
           <li className="inline" key={participant.email} title={participant.email}>

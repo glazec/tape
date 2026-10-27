@@ -32,7 +32,7 @@ export default async function NewMeetingPage({
       amplitudeTeamId={workspace.teamId}
       oneSignalExternalId={workspace.userId}
     >
-      <section className="flex w-full max-w-xl flex-col gap-6">
+      <section className="flex w-full max-w-2xl flex-col gap-6">
         <h1 className="text-2xl font-semibold tracking-[-0.015em]">
           Add a meeting
         </h1>
@@ -56,7 +56,8 @@ const meetingSources: readonly MeetingSource[] = [
 function parseMeetingSource(value: string | string[] | undefined) {
   const source = Array.isArray(value) ? value[0] : value;
 
+  // Most meetings start from a link, so that form is open by default.
   return meetingSources.includes(source as MeetingSource)
     ? (source as MeetingSource)
-    : null;
+    : "link";
 }

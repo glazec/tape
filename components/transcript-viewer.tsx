@@ -226,6 +226,7 @@ type TranscriptSelectOption = {
 };
 
 const INLINE_VISUAL_ASSET_LIMIT = 1;
+const VISIBLE_SPEAKER_COUNT = 4;
 function formatTimestamp(startMs: number) {
   const totalSeconds = Math.floor(startMs / 1000);
   const minutes = Math.floor(totalSeconds / 60);
@@ -585,13 +586,13 @@ export function TranscriptViewer({
     scrollTranscriptToTime(asset.timestampMs / 1000);
   }
 
-  // Speakers under 1% of the conversation wait behind "N more" so the legend
-  // stays one line; the one being renamed always stays visible.
+  // The legend stays one line: the main speakers, then "N more". The one
+  // being renamed always stays visible.
   const visibleSpeakerStats = showAllSpeakers
     ? speakerStats
     : speakerStats.filter(
-        (speaker) =>
-          speaker.percent > 0 ||
+        (speaker, index) =>
+          (index < VISIBLE_SPEAKER_COUNT && speaker.percent > 0) ||
           editingSpeaker?.speakerKey === speaker.speakerKey,
       );
   const hiddenSpeakerCount = speakerStats.length - visibleSpeakerStats.length;
@@ -1334,7 +1335,7 @@ export function TranscriptViewer({
               <h3 className="text-xs font-medium text-muted-foreground">
                 Speakers
               </h3>
-              <div className="mt-2 flex min-w-0 flex-wrap gap-x-5 gap-y-1">
+              <div className="mt-2 flex min-w-0 flex-wrap items-center gap-x-4 gap-y-1">
                 {visibleSpeakerStats.map((speaker) => {
                   const speakerLabel = speaker.speaker ?? "Unknown speaker";
                   const speakerKey = speaker.speakerKey;
@@ -1379,11 +1380,15 @@ export function TranscriptViewer({
                             ),
                           }}
                         />
-                        <p className="min-w-0 truncate text-sm">
+                        <p
+                          className="min-w-0 truncate text-sm"
+                          title={`${speaker.percent > 0 ? `${speaker.percent}%` : "<1%"} of the conversation`}
+                        >
                           {speakerLabel}
-                          <span className="ml-1.5 text-xs tabular-nums text-muted-foreground">
+                          <span className="sr-only">
+                            {" "}
                             {speaker.percent > 0 ? `${speaker.percent}%` : "<1%"}
-                            <span className="sr-only">
+                            <span>
                               {" "}
                               · {formatLineCount(speaker.lineCount)}
                             </span>
@@ -2523,15 +2528,15 @@ function TranscriptAudioPlayer({
       <div className="mx-auto flex max-w-4xl flex-col gap-2 px-4 py-2.5 sm:flex-row sm:items-center sm:gap-4 sm:px-6">
         <div className="order-2 flex shrink-0 items-center justify-center gap-1 sm:order-none">
           <Button
-            className="min-w-11 gap-1 rounded-full px-2"
+            className="min-w-9 rounded-full px-2"
             aria-label="Skip back 5 seconds"
             onClick={() => onSkipBy(-5)}
+            title="Back 5 seconds"
             size="sm"
             type="button"
             variant="ghost"
           >
-            <RotateCcw className="size-3.5" />
-            <span className="text-xs font-medium tabular-nums">5s</span>
+            <RotateCcw className="size-4" />
           </Button>
           <Button
             aria-label={isPlaying ? "Pause audio" : "Play audio"}
@@ -2543,15 +2548,15 @@ function TranscriptAudioPlayer({
             {isPlaying ? <Pause /> : <Play />}
           </Button>
           <Button
-            className="min-w-11 gap-1 rounded-full px-2"
+            className="min-w-9 rounded-full px-2"
             aria-label="Skip forward 5 seconds"
             onClick={() => onSkipBy(5)}
+            title="Forward 5 seconds"
             size="sm"
             type="button"
             variant="ghost"
           >
-            <span className="text-xs font-medium tabular-nums">5s</span>
-            <RotateCw className="size-3.5" />
+            <RotateCw className="size-4" />
           </Button>
         </div>
         <div className="order-1 min-w-0 flex-1 sm:order-none">

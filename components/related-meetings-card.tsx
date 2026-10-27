@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { ChevronDown, FileText, History } from "lucide-react";
+import { FileText } from "lucide-react";
 import { useId, useState } from "react";
 
 import { LocalDateTime } from "@/components/local-date-time";
@@ -19,14 +19,9 @@ export function RelatedMeetingsCard({ meetings }: RelatedMeetingsCardProps) {
 
   return (
     <details className="group relative inline-block overflow-visible">
-      <summary className="inline-flex min-h-11 cursor-pointer list-none items-center gap-1.5 rounded-full border px-3 text-xs text-muted-foreground outline-none transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring sm:min-h-7 [&::-webkit-details-marker]:hidden">
-        <History aria-hidden="true" className="size-3.5" />
+      <summary className="inline-flex min-h-11 cursor-pointer list-none items-center gap-1 rounded-sm text-sm text-muted-foreground underline decoration-border underline-offset-4 outline-none transition-colors hover:text-foreground hover:decoration-foreground focus-visible:ring-2 focus-visible:ring-ring sm:min-h-0 [&::-webkit-details-marker]:hidden">
+        <span className="tabular-nums">{meetings.length}</span>
         <span id="related-meetings-title">Related meetings</span>
-        <span className="tabular-nums text-foreground">{meetings.length}</span>
-        <ChevronDown
-          aria-hidden="true"
-          className="size-3.5 transition-transform group-open:rotate-180"
-        />
       </summary>
       <section
         aria-labelledby="related-meetings-title"

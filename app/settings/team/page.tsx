@@ -259,11 +259,8 @@ export default async function TeamSettingsPage({ searchParams }: {
                     }
                     id="shareAudienceEmails"
                     name="shareAudienceEmails"
-                    placeholder={"person@example.com\ncolleague@example.com"}
+                    placeholder={"One email per line\nperson@example.com"}
                   />
-                  <p className="text-xs leading-5 text-muted-foreground">
-                    One email per line.
-                  </p>
                 </div>
                 <Button className="self-start" type="submit" variant="outline">
                   Save team settings
@@ -523,28 +520,21 @@ export default async function TeamSettingsPage({ searchParams }: {
           }
           title="Billing & credits"
         >
-          <dl className="flex flex-wrap gap-x-6 gap-y-1 text-sm">
-            <BillingSettingMetric
-              label="workspace this month"
-              value={formatUsdMicros(
-                billingOverview.organizationMonthUsdMicros,
-              )}
-            />
-            <BillingSettingMetric
-              label="you this month"
-              value={formatUsdMicros(billingOverview.personalMonthUsdMicros)}
-            />
-            <BillingSettingMetric
-              label="Credit remaining"
-              labelFirst
-              value={
-                billingOverview.creditLimitUsdMicros === null
-                  ? "No limit"
-                  : formatUsdMicros(
-                      billingOverview.creditRemainingUsdMicros ?? 0,
-                    )
-              }
-            />
+          <dl className="grid max-w-sm grid-cols-[1fr_auto] gap-x-6 gap-y-1.5 text-sm">
+            <dt className="text-muted-foreground">Workspace this month</dt>
+            <dd className="text-right tabular-nums">
+              {formatUsdMicros(billingOverview.organizationMonthUsdMicros)}
+            </dd>
+            <dt className="text-muted-foreground">You this month</dt>
+            <dd className="text-right tabular-nums">
+              {formatUsdMicros(billingOverview.personalMonthUsdMicros)}
+            </dd>
+            <dt className="text-muted-foreground">Credit remaining</dt>
+            <dd className="text-right tabular-nums text-muted-foreground">
+              {billingOverview.creditLimitUsdMicros === null
+                ? "No limit"
+                : formatUsdMicros(billingOverview.creditRemainingUsdMicros ?? 0)}
+            </dd>
           </dl>
           {billingOverview.isCreditExhausted ? (
             <p className="mt-3 text-sm text-destructive">
@@ -555,28 +545,6 @@ export default async function TeamSettingsPage({ searchParams }: {
         </SettingsSection>
       </section>
     </AppShell>
-  );
-}
-
-function BillingSettingMetric({
-  label,
-  labelFirst = false,
-  value,
-}: {
-  label: string;
-  labelFirst?: boolean;
-  value: string;
-}) {
-  return (
-    <div
-      className={cn(
-        "flex items-baseline gap-1.5",
-        labelFirst && "flex-row-reverse justify-end",
-      )}
-    >
-      <dd className="font-medium tabular-nums">{value}</dd>
-      <dt className="text-muted-foreground">{label}</dt>
-    </div>
   );
 }
 

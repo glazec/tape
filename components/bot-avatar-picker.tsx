@@ -78,8 +78,8 @@ export function BotAvatarPicker({
           {fileName
             ? `${fileName} · saves with the profile`
             : isCustom
-              ? "Custom avatar · JPG under 1 MB"
-              : "Default avatar · JPG under 1 MB"}
+              ? "Custom avatar"
+              : "Default avatar"}
         </p>
       </div>
     </div>

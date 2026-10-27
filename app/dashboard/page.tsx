@@ -960,13 +960,16 @@ function MeetingLibraryPagination({
       aria-label="Meeting library pages"
       className={cn("flex flex-wrap items-center justify-between gap-3", className)}
     >
-      <span className="text-sm text-muted-foreground">
+      <span className="text-xs text-muted-foreground">
         Showing last {historyMonths} months{page > 1 ? `, page ${page}` : ""}
       </span>
-      <div className="flex min-w-0 flex-wrap items-center gap-2">
+      <div className="flex min-w-0 flex-wrap items-center gap-1">
         {hasPreviousPage ? (
           <Link
-            className={cn(buttonVariants({ variant: "outline" }))}
+            className={cn(
+              buttonVariants({ variant: "ghost", size: "sm" }),
+              "text-muted-foreground",
+            )}
             href={previousHref}
           >
             <ChevronLeft data-icon="inline-start" />
@@ -974,7 +977,10 @@ function MeetingLibraryPagination({
           </Link>
         ) : historyMonths > DEFAULT_MEETING_LIBRARY_HISTORY_MONTHS ? (
           <Link
-            className={cn(buttonVariants({ variant: "outline" }))}
+            className={cn(
+              buttonVariants({ variant: "ghost", size: "sm" }),
+              "text-muted-foreground",
+            )}
             href={resetHistoryHref}
           >
             <ChevronLeft data-icon="inline-start" />
@@ -983,10 +989,7 @@ function MeetingLibraryPagination({
         ) : (
           <span
             aria-disabled="true"
-            className={cn(
-              buttonVariants({ variant: "outline" }),
-              "pointer-events-none opacity-50",
-            )}
+            className="sr-only"
           >
             <ChevronLeft data-icon="inline-start" />
             Previous
@@ -994,7 +997,10 @@ function MeetingLibraryPagination({
         )}
         {hasNextPage ? (
           <Link
-            className={cn(buttonVariants({ variant: "outline" }))}
+            className={cn(
+              buttonVariants({ variant: "ghost", size: "sm" }),
+              "text-muted-foreground",
+            )}
             href={nextHref}
           >
             Load more meetings
@@ -1002,7 +1008,10 @@ function MeetingLibraryPagination({
           </Link>
         ) : hasOlderMeetings ? (
           <Link
-            className={cn(buttonVariants({ variant: "outline" }))}
+            className={cn(
+              buttonVariants({ variant: "ghost", size: "sm" }),
+              "text-muted-foreground",
+            )}
             href={historyHref}
           >
             Load older history
@@ -1011,10 +1020,7 @@ function MeetingLibraryPagination({
         ) : (
           <span
             aria-disabled="true"
-            className={cn(
-              buttonVariants({ variant: "outline" }),
-              "pointer-events-none opacity-50",
-            )}
+            className="sr-only"
           >
             No more in this view
             <ChevronRight data-icon="inline-end" />
