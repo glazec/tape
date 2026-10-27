@@ -30,7 +30,7 @@ function Chrome({
   return (
     <div
       className={cn(
-        "overflow-hidden rounded-xl border border-ink/10 bg-paper shadow-[0_28px_64px_-32px_oklch(0.19_0.007_30/0.26)]",
+        "overflow-hidden rounded-xl border border-ink/10 bg-paper",
         className,
       )}
     >
@@ -48,67 +48,93 @@ function Chrome({
 const LINES = [
   {
     speaker: "Lin",
-    tone: "bg-brand",
     at: "04:12",
     source: "我们下周把数据管道切到新的调度器。",
     translation: "We move the data pipeline onto the new scheduler next week.",
   },
   {
     speaker: "Marco",
-    tone: "bg-graphite",
+    misheard: "Marko",
     at: "04:26",
     source: "回滚方案要先写好，别到时候手忙脚乱。",
     translation:
       "Write the rollback plan first, so nobody is scrambling on the day.",
+    playing: true,
   },
   {
     speaker: "Lin",
-    tone: "bg-brand",
     at: "04:41",
     source: "预算那块我下午发你一份明细。",
     translation: "I will send you a breakdown of the budget this afternoon.",
   },
 ];
 
-export function BilingualTranscriptMockup() {
+/** Original and translation as two aligned columns, one row per line. */
+export function SideBySideTranscriptMockup() {
   return (
     <Chrome
       title="Platform planning · 41 min"
       action={
-        <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-ink/12 bg-paper px-2.5 py-1 font-mono text-[0.625rem] uppercase tracking-[0.12em] text-graphite">
-          <Languages aria-hidden className="size-3" />
-          中文 → EN
+        <span className="inline-flex shrink-0 items-center gap-1.5 font-mono text-[0.6875rem] uppercase tracking-[0.12em] text-graphite">
+          <Languages aria-hidden className="size-3.5" />
+          中文 · English
         </span>
       }
     >
-      <ul className="divide-y divide-ink/8">
-        {LINES.map((line) => (
-          <li key={line.at} className="px-5 py-4">
-            <div className="flex items-center gap-2">
-              <span
-                aria-hidden
-                className={cn("size-1.5 rounded-full", line.tone)}
-              />
-              <span className="text-[0.75rem] font-medium text-ink">
-                {line.speaker}
-              </span>
-              <span className="font-mono text-[0.6875rem] tabular-nums text-ash">
-                {line.at}
-              </span>
-            </div>
-            <p className="mt-2 text-[0.875rem] leading-[1.7] text-ink">
-              {line.source}
-            </p>
-            <p className="mt-1 flex gap-2 text-[0.875rem] leading-[1.7] text-graphite">
-              <span
-                aria-hidden
-                className="mt-[0.3rem] h-3.5 w-px shrink-0 bg-brand/45"
-              />
-              {line.translation}
-            </p>
-          </li>
-        ))}
-      </ul>
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[40rem] border-collapse text-left">
+          <thead>
+            <tr className="border-b border-ink/8 font-mono text-[0.6875rem] uppercase tracking-[0.12em] text-ash">
+              <th className="w-[9.5rem] px-5 py-2.5 font-normal">Speaker</th>
+              <th className="px-5 py-2.5 font-normal">Original</th>
+              <th className="px-5 py-2.5 font-normal">Translation</th>
+            </tr>
+          </thead>
+          <tbody>
+            {LINES.map((line) => (
+              <tr
+                key={line.at}
+                className={cn(
+                  "border-b border-ink/8 align-top last:border-0",
+                  line.playing && "bg-brand/[0.05]",
+                )}
+              >
+                <td className="px-5 py-4">
+                  <div className="flex items-baseline gap-2">
+                    <span className="text-[0.8125rem] font-medium text-ink">
+                      {line.misheard ? (
+                        <>
+                          <s className="mr-1.5 font-normal text-ash decoration-brand-ink/60">
+                            {line.misheard}
+                          </s>
+                          {line.speaker}
+                        </>
+                      ) : (
+                        line.speaker
+                      )}
+                    </span>
+                  </div>
+                  <p className="mt-1 flex items-center gap-1.5 font-mono text-[0.6875rem] tabular-nums text-ash">
+                    {line.playing ? (
+                      <Play
+                        aria-hidden
+                        className="size-2.5 fill-brand-ink text-brand-ink"
+                      />
+                    ) : null}
+                    {line.at}
+                  </p>
+                </td>
+                <td className="px-5 py-4 text-[0.9375rem] leading-[1.65] text-ink">
+                  {line.source}
+                </td>
+                <td className="px-5 py-4 text-[0.9375rem] leading-[1.65] text-graphite">
+                  {line.translation}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </Chrome>
   );
 }
@@ -206,36 +232,71 @@ export function MeetingSeriesMockup() {
   );
 }
 
-/** Dark variant, for the enterprise section. */
-export function ShareSeriesMockup() {
+const LEVELS = [
+  3, 5, 8, 6, 11, 14, 9, 12, 16, 10, 7, 13, 15, 9, 6, 10, 12, 8, 5, 4,
+];
+
+/**
+ * The macOS menu bar recorder, redrawn: only the parts a reader needs to see,
+ * with none of the account and maintenance controls the real window carries.
+ */
+export function RecorderMockup() {
   return (
-    <div className="overflow-hidden rounded-xl border border-paper/15 bg-paper/[0.04] p-5 sm:p-6">
-      <p className="font-mono text-label uppercase tracking-[0.16em] text-paper/55">
-        Share
-      </p>
-      <div className="mt-4 flex items-center justify-between gap-3 rounded-lg border border-paper/15 bg-ink px-3.5 py-2.5">
-        <span className="truncate text-[0.875rem] text-paper/85">
-          colleague@yourteam.com
-        </span>
-        <span className="shrink-0 rounded-full bg-paper/10 px-2 py-0.5 font-mono text-[0.625rem] uppercase tracking-[0.1em] text-paper/60">
-          Reader
+    <div className="mx-auto w-full max-w-[22rem] overflow-hidden rounded-xl border border-ink/10 bg-paper">
+      <div className="flex items-center gap-1.5 border-b border-ink/8 bg-mist/60 px-4 py-3">
+        <span aria-hidden className="size-2.5 rounded-full bg-ink/15" />
+        <span aria-hidden className="size-2.5 rounded-full bg-ink/15" />
+        <span aria-hidden className="size-2.5 rounded-full bg-ink/15" />
+        <p className="ml-2 text-[0.75rem] font-medium text-graphite">Tape</p>
+      </div>
+      <div className="px-5 pt-5">
+        <p className="text-[0.75rem] text-ash">Next meeting · in 4 min</p>
+        <p className="mt-1 text-[0.9375rem] font-medium text-ink">
+          Platform planning
+        </p>
+      </div>
+      <div className="mx-5 mt-5 rounded-lg border border-ink/10 px-4 py-4">
+        <div className="flex items-center justify-between">
+          <span className="inline-flex items-center gap-2 text-[0.8125rem] font-medium text-ink">
+            <span aria-hidden className="size-2 rounded-full bg-brand" />
+            Recording
+          </span>
+          <span className="font-mono text-[0.75rem] tabular-nums text-graphite">
+            12:48
+          </span>
+        </div>
+        <div aria-hidden className="mt-4 flex h-5 items-center gap-[3px]">
+          {LEVELS.map((level, index) => (
+            <span
+              key={index}
+              className="w-[3px] rounded-full bg-ink/70"
+              style={{ height: `${level + 4}px` }}
+            />
+          ))}
+        </div>
+      </div>
+      <ul className="mt-4 divide-y divide-ink/8 border-t border-ink/8 text-[0.8125rem]">
+        {[
+          ["Microphone", "MacBook Pro"],
+          ["System audio", "Zoom, Chrome"],
+        ].map(([label, value]) => (
+          <li
+            key={label}
+            className="flex items-center justify-between px-5 py-3"
+          >
+            <span className="text-graphite">{label}</span>
+            <span className="inline-flex items-center gap-1.5 text-ink">
+              <Check aria-hidden className="size-3.5 text-brand-ink" />
+              {value}
+            </span>
+          </li>
+        ))}
+      </ul>
+      <div className="border-t border-ink/8 px-5 py-4">
+        <span className="flex h-10 w-full items-center justify-center rounded-full bg-ink text-[0.8125rem] font-medium text-paper">
+          Stop and upload
         </span>
       </div>
-      <label className="mt-3.5 flex items-start gap-3">
-        <span
-          aria-hidden
-          className="mt-px inline-flex size-4 shrink-0 items-center justify-center rounded-[0.25rem] bg-brand text-paper"
-        >
-          <Check aria-hidden className="size-3" strokeWidth={3} />
-        </span>
-        <span className="text-[0.875rem] leading-[1.6] text-paper/85">
-          Include past and future related meetings
-        </span>
-      </label>
-      <p className="mt-4 border-t border-paper/12 pt-4 text-[0.8125rem] leading-[1.65] text-paper/60">
-        Every future meeting in this series reaches them on its own. They never
-        have to ask what they missed.
-      </p>
     </div>
   );
 }

@@ -3,9 +3,16 @@
 import { useEffect, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import { motion, useMotionValue, useTransform } from "framer-motion";
+import Image from "next/image";
 import Link from "next/link";
 
+import { LaunchFilmButton } from "./landing-launch-film";
 import { Container } from "./landing-section";
+
+const WORKS_WITH = [
+  { name: "Google Meet", src: "/brand/partners/googlemeet.svg" },
+  { name: "Zoom", src: "/brand/partners/zoom.svg" },
+];
 
 const HeroScene = dynamic(() => import("./hero-scene"), { ssr: false });
 
@@ -46,7 +53,9 @@ function useHeroSceneEnabled() {
 
       idleHandle =
         typeof window.requestIdleCallback === "function"
-          ? window.requestIdleCallback(() => setEnabled(true), { timeout: 1200 })
+          ? window.requestIdleCallback(() => setEnabled(true), {
+              timeout: 1200,
+            })
           : window.setTimeout(() => setEnabled(true), 300);
     };
 
@@ -62,26 +71,20 @@ function useHeroSceneEnabled() {
   return enabled;
 }
 
-/** Still spools, for viewports that do not get the animated scene. */
+/**
+ * A frame of the scene itself, for viewports that do not get the animated
+ * render, so everyone sees the same reels rather than a placeholder motif.
+ */
 function HeroStill() {
   return (
-    <svg
-      aria-hidden
-      viewBox="0 0 420 260"
-      className="h-full w-full text-ink"
-      preserveAspectRatio="xMidYMid meet"
-    >
-      <g fill="none" stroke="currentColor" opacity={0.16}>
-        <circle cx="120" cy="130" r="42" strokeWidth="5" />
-        <circle cx="300" cy="130" r="74" strokeWidth="5" />
-        <path d="M120 88h180" strokeWidth="4" />
-        <path d="M120 172h180" strokeWidth="4" />
-      </g>
-      <g fill="currentColor" opacity={0.16}>
-        <circle cx="120" cy="130" r="12" />
-        <circle cx="300" cy="130" r="20" />
-      </g>
-    </svg>
+    <Image
+      src="/media/hero-reels.webp"
+      alt=""
+      fill
+      priority
+      sizes="100vw"
+      className="object-cover object-[70%_center]"
+    />
   );
 }
 
@@ -139,12 +142,10 @@ export function LandingHero() {
           {sceneEnabled ? (
             <HeroScene progress={scrollYProgress} />
           ) : (
-            // Below sm the copy fills the measure, so the motif would only
-            // show as a cropped arc behind the text. Type carries it instead.
-            <div className="hidden h-full items-center justify-end pr-[6vw] sm:flex">
-              <div className="h-[48%] w-[52%] max-w-[24rem]">
-                <HeroStill />
-              </div>
+            // Below sm the copy fills the measure, so the reels would only
+            // show as a cropped ribbon behind the text. Type carries it instead.
+            <div className="absolute inset-0 hidden sm:block">
+              <HeroStill />
             </div>
           )}
         </div>
@@ -164,7 +165,7 @@ export function LandingHero() {
           className={
             sceneEnabled
               ? "pointer-events-none relative flex h-full items-center pb-20 pt-24 sm:pt-28"
-              : "pointer-events-none relative flex items-center pb-16 pt-32 sm:pb-24 sm:pt-40"
+              : "pointer-events-none relative flex items-center pb-16 pt-32 sm:min-h-[min(56.25vw,100vh)] sm:pb-24 sm:pt-28"
           }
         >
           <Container>
@@ -180,23 +181,37 @@ export function LandingHero() {
               <p className="mt-7 max-w-[46ch] text-lede text-pretty text-graphite">
                 Nothing to pick before the call, nothing to file after it. Every
                 conversation comes back transcribed in the language it happened
-                in, readable in Chinese or English, and open to the AI
-                assistant you already work in.
+                in, readable in Chinese or English, and open to the AI assistant
+                you already work in.
               </p>
-              <div className="mt-9 flex flex-wrap items-center gap-x-8 gap-y-4">
+              <div className="mt-9 flex flex-wrap items-center gap-x-9 gap-y-4">
                 <Link
                   href="/auth/sign-in"
                   className="inline-flex h-12 items-center rounded-full bg-ink px-8 text-[0.9375rem] font-medium text-paper transition-colors hover:bg-graphite focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-4"
                 >
                   Sign in to Tape
                 </Link>
-                <a
-                  href="#memory"
-                  className="rounded-sm text-[0.9375rem] text-graphite underline decoration-ink/25 underline-offset-[6px] transition-colors hover:text-ink hover:decoration-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-4"
-                >
-                  See how it works
-                </a>
+                <LaunchFilmButton />
               </div>
+              <p className="mt-12 flex flex-wrap items-center gap-x-5 gap-y-2 text-[0.8125rem] text-ash">
+                Joins
+                {WORKS_WITH.map((tool) => (
+                  <span
+                    key={tool.name}
+                    className="inline-flex items-center gap-2 text-graphite"
+                  >
+                    <Image
+                      src={tool.src}
+                      alt=""
+                      width={16}
+                      height={16}
+                      unoptimized
+                    />
+                    {tool.name}
+                  </span>
+                ))}
+                <span>or records on your Mac</span>
+              </p>
             </div>
           </Container>
         </motion.div>

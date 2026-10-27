@@ -3,6 +3,7 @@
 import Link from "next/link";
 
 import { ProductLogo } from "@/components/product-logo";
+import { DESKTOP_APP_DOWNLOAD_URL } from "@/lib/desktop-app";
 
 import { Container, FadeIn, Lede } from "./landing-section";
 
@@ -27,27 +28,33 @@ export function LandingCta() {
   return (
     <>
       <section className="bg-paper">
-        <Container className="py-28 lg:py-36">
-          <FadeIn className="max-w-[34rem]">
-            <h2 className="font-display text-display-2 tracking-[-0.02em] text-balance text-ink">
+        <Container className="py-28 lg:py-40">
+          <FadeIn className="mx-auto flex max-w-[44rem] flex-col items-center text-center">
+            <h2 className="font-display text-display-1 tracking-[-0.025em] text-balance text-ink">
               Your next meeting,{" "}
               <em className="italic text-brand">on the record.</em>
             </h2>
-            <Lede>
+            <Lede className="mx-auto">
               Connect a calendar, or record the room you are sitting in. Tape
               takes it from there and hands you the archive.
             </Lede>
-            <div className="mt-9 flex flex-wrap items-center gap-x-8 gap-y-4">
+            <div className="mt-10 flex flex-wrap items-center justify-center gap-3">
               <Link
                 href="/auth/sign-in"
                 className="inline-flex h-12 items-center rounded-full bg-ink px-8 text-[0.9375rem] font-medium text-paper transition-colors hover:bg-graphite focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-4"
               >
-                Sign in to Tape
+                Sign in with Google
               </Link>
-              <p className="font-mono text-label uppercase tracking-[0.16em] text-ash">
-                SSO with Google · No credit card
-              </p>
+              <a
+                href={DESKTOP_APP_DOWNLOAD_URL}
+                className="inline-flex h-12 items-center rounded-full border border-ink/15 px-8 text-[0.9375rem] font-medium text-ink transition-colors hover:border-ink/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-4"
+              >
+                Download for macOS
+              </a>
             </div>
+            <p className="mt-5 text-[0.8125rem] text-ash">
+              No credit card. No seat licence.
+            </p>
           </FadeIn>
         </Container>
       </section>

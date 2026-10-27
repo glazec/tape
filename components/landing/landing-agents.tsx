@@ -5,7 +5,6 @@ import {
   FadeIn,
   Lede,
   SectionHeading,
-  SectionLabel,
   type Point,
 } from "./landing-section";
 
@@ -36,11 +35,10 @@ export function LandingAgents() {
       <Container className="py-20 lg:py-28">
         <div className="grid items-end gap-x-16 gap-y-10 [&>*]:min-w-0 lg:grid-cols-[minmax(0,30rem)_minmax(0,1fr)]">
           <FadeIn>
-            <SectionLabel>03 · Agents</SectionLabel>
-            <SectionHeading>
+            <SectionHeading className="mt-0">
               Your archive,
               <br />
-              <em className="italic text-graphite">in your assistant.</em>
+              <em className="italic">in your assistant.</em>
             </SectionHeading>
             <Lede>
               Every notetaker now has a chatbot of its own. Tape takes the other
@@ -49,7 +47,7 @@ export function LandingAgents() {
             </Lede>
           </FadeIn>
           <FadeIn delay={0.1}>
-            <div className="rounded-xl border border-ink/10 bg-paper p-6 font-mono text-[0.8125rem] leading-6 shadow-[0_20px_48px_-32px_oklch(0.195_0.012_30/0.22)] sm:p-7">
+            <div className="rounded-xl border border-ink/10 bg-paper p-6 font-mono text-[0.8125rem] leading-6 sm:p-7">
               <p className="text-graphite">
                 <span className="text-brand-ink">you</span> · ask your assistant
               </p>

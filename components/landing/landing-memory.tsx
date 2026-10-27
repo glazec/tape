@@ -22,19 +22,17 @@ export function LandingMemory() {
   return (
     <SplitSection
       id="memory"
-      label="01 · Memory"
       heading={
         <>
           Context that
           <br />
-          <em className="italic text-graphite">carries over.</em>
+          <em className="italic">carries over.</em>
         </>
       }
       points={POINTS}
       flip
       surface="mist"
       still={<MeetingSeriesMockup />}
-      caption="Related meetings, grouped as they arrive"
     />
   );
 }
