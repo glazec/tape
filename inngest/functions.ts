@@ -5,6 +5,7 @@ import { db } from "@/db/client";
 import { transcriptJobs, transcriptSegments } from "@/db/schema";
 import { inngest } from "./client";
 import { reconcileMeetingEmails, sendMeetingEmail } from "./meeting-email";
+import { generateMeetingFollowupOnTranscript } from "./meeting-followup";
 import { currentTranscriptJobIdsSubquery } from "@/lib/current-transcript-job";
 import { convertVideoObjectToAudio } from "@/lib/media-conversion";
 import { createReadUrl } from "@/lib/r2";
@@ -816,6 +817,7 @@ export const functions = [
   enrichTranscript,
   sendMeetingEmail,
   reconcileMeetingEmails,
+  generateMeetingFollowupOnTranscript,
   sendLocationReminder,
   reconcileLocationReminderSchedules,
   syncRecallCalendarsHourly,

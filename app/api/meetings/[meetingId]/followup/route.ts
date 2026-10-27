@@ -1,22 +1,9 @@
-import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 
-import { db } from "@/db/client";
-import { meetings } from "@/db/schema";
 import { getCurrentUser } from "@/lib/auth";
-import { FOLLOWUP_SOURCE_LIMIT } from "@/lib/meeting-followup";
-import {
-  getFollowupSource,
-  getFollowupSourceHash,
-  isFollowupReady,
-} from "@/lib/meeting-followup-source";
 import { getComposedMeetingForFollowup } from "@/lib/meeting-composition";
-import { getManageableMeetingCondition } from "@/lib/meeting-write-policy";
-import {
-  assertWorkspaceHasProviderCredit,
-  providerCreditErrorResponse,
-} from "@/lib/provider-credit";
-import { generateMeetingFollowup } from "@/lib/vendors/openrouter";
+import { generateAndSaveMeetingFollowup } from "@/lib/meeting-followup-generation";
+import { providerCreditErrorResponse } from "@/lib/provider-credit";
 import { getOrCreateWorkspaceForSessionUser } from "@/lib/workspace";
 
 export const runtime = "nodejs";
@@ -48,59 +35,39 @@ export async function POST(
       { error: "Invalid followup request" },
       { status: 400 },
     );
-  const source = getFollowupSource(meeting);
-  const sourceHash = getFollowupSourceHash(source);
-  if (!isFollowupReady(meeting) || sourceHash !== parsed.data.sourceHash) {
-    return Response.json(
-      { error: "The transcript changed. Refresh the meeting and try again." },
-      { status: 409 },
-    );
-  }
-  if (JSON.stringify(source).length > FOLLOWUP_SOURCE_LIMIT) {
-    return Response.json(
-      { error: "This transcript is too long to generate a followup." },
-      { status: 422 },
-    );
-  }
   try {
-    await assertWorkspaceHasProviderCredit(workspace);
-    const result = await generateMeetingFollowup(source, meetingId);
-    const current = await getComposedMeetingForFollowup(
-      workspace,
+    const outcome = await generateAndSaveMeetingFollowup({
+      expectedSourceHash: parsed.data.sourceHash,
+      meeting,
       meetingId,
-    );
-    if (!current?.canManage)
-      return Response.json({ error: "Meeting not found" }, { status: 404 });
-    if (
-      !isFollowupReady(current) ||
-      getFollowupSourceHash(current) !== sourceHash
-    ) {
-      return Response.json(
-        { error: "The transcript changed. Refresh the meeting and try again." },
-        { status: 409 },
-      );
+      workspace,
+    });
+
+    switch (outcome.status) {
+      case "saved":
+        return Response.json(
+          { result: outcome.result },
+          { headers: { "Cache-Control": "private, no-store" } },
+        );
+      case "not_found":
+        return Response.json({ error: "Meeting not found" }, { status: 404 });
+      case "too_long":
+        return Response.json(
+          { error: "This transcript is too long to generate a followup." },
+          { status: 422 },
+        );
+      case "meeting_changed":
+        return Response.json(
+          { error: "The meeting changed. Refresh the meeting and try again." },
+          { status: 409 },
+        );
+      case "not_ready":
+      case "transcript_changed":
+        return Response.json(
+          { error: "The transcript changed. Refresh the meeting and try again." },
+          { status: 409 },
+        );
     }
-    const saved = await db
-      .update(meetings)
-      .set({ aiFollowup: { sourceHash, result } })
-      .where(
-        and(
-          getManageableMeetingCondition(workspace, meetingId),
-          eq(meetings.status, "ready"),
-          eq(meetings.updatedAt, new Date(current.updatedAt)),
-        ),
-      )
-      .returning({ id: meetings.id });
-    if (!saved[0]) {
-      return Response.json(
-        { error: "The meeting changed. Refresh the meeting and try again." },
-        { status: 409 },
-      );
-    }
-    return Response.json(
-      { result },
-      { headers: { "Cache-Control": "private, no-store" } },
-    );
   } catch (error) {
     const creditResponse = providerCreditErrorResponse(error);
     if (creditResponse) return creditResponse;
