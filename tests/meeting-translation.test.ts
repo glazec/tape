@@ -81,23 +81,26 @@ describe("meeting translation", () => {
   });
 
   it("builds an original-language polish prompt that handles Chinese meetings", () => {
-    expect(
-      buildOriginalTranscriptPolishMessages([
+    const [system, user] = buildOriginalTranscriptPolishMessages([
+      { id: "segment_1", text: "然后我们先看一下 pipeline。" },
+      { id: "segment_2", text: "Um we should review the API cost." },
+    ]);
+
+    expect(system.content).toContain("Actively rewrite awkward wording");
+    expect(system.content).toContain("Do not translate");
+    expect(system.content).toContain("Keep every substantive point");
+    expect(system.content).toContain(
+      "Do not turn a tentative suggestion into a commitment",
+    );
+    expect(system.content).toContain(
+      "Never move, merge, split, or complete content across segment ids",
+    );
+    expect(JSON.parse(user.content)).toEqual({
+      segments: [
         { id: "segment_1", text: "然后我们先看一下 pipeline。" },
         { id: "segment_2", text: "Um we should review the API cost." },
-      ]),
-    ).toEqual([
-      {
-        role: "system",
-        content:
-          "Polish meeting transcript segments in their original language. Do not translate. Keep Chinese segments in Chinese and English segments in English. Revise every segment using only the text with that same id. Never move, merge, split, or complete content across segment ids, even when a segment is a short fragment. Remove filler words, hesitation, repeated starts, and phrases that do not carry meaning, such as 然后, then, um, uh, you know, kind of, and sort of. When a speaker corrects a fact or number, keep only the final corrected value, for example 2018, oh 2019 becomes 2019. Make each line concise and smooth while preserving speaker intent, team tone, product names, company names, numbers, tickers, and sentence structure. Keep readable sentences, not bullet points, summaries, or action items. Return only JSON. Do not wrap the JSON in markdown fences.",
-      },
-      {
-        role: "user",
-        content:
-          '{"segments":[{"id":"segment_1","text":"然后我们先看一下 pipeline。"},{"id":"segment_2","text":"Um we should review the API cost."}]}',
-      },
-    ]);
+      ],
+    });
   });
 
   it("maps explicit translation ids back to segment ids", () => {
@@ -177,12 +180,46 @@ describe("meeting translation", () => {
     ).toEqual([{ id: "segment_2", text: "Review API cost." }]);
   });
 
+  it.each([
+    ["然后我们先看一下。", "我们先看。"],
+    ["Um, hello.", "Hello."],
+    ["we was late", "We were late."],
+    ["嗯，好的。", "好的。"],
+    ["um hi", "Hi!"],
+  ])("accepts useful short edits: %s", (source, polished) => {
+    expect(
+      parseOriginalTranscriptPolishResponse({
+        content: JSON.stringify({
+          segments: [{ id: "segment_1", text: polished }],
+        }),
+        segments: [{ id: "segment_1", text: source }],
+      }),
+    ).toEqual([{ id: "segment_1", text: polished }]);
+  });
+
   it("falls back when polish moves a long sentence onto a short fragment", () => {
     expect(
       parseOriginalTranscriptPolishResponse({
         content:
           '{"segments":[{"id":"segment_1","text":"This sentence belongs to the next speaker and must not replace a short acknowledgment."}]}',
         segments: [{ id: "segment_1", text: "Yeah." }],
+      }),
+    ).toEqual([]);
+  });
+
+  it.each([
+    ["No.", "O."],
+    ["3.5", "35"],
+    ["-5", "5"],
+    ["-3.5", "3.5"],
+    ["1,000", "10.00"],
+  ])("rejects changed short facts: %s", (source, polished) => {
+    expect(
+      parseOriginalTranscriptPolishResponse({
+        content: JSON.stringify({
+          segments: [{ id: "segment_1", text: polished }],
+        }),
+        segments: [{ id: "segment_1", text: source }],
       }),
     ).toEqual([]);
   });
