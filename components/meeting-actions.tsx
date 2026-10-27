@@ -8,10 +8,12 @@ import {
   Copy,
   Download,
   MoreHorizontal,
+  Combine,
   UploadCloud,
   Trash2,
 } from "lucide-react";
 
+import { MeetingMergeDialog } from "@/components/meeting-merge-dialog";
 import { MeetingRecoveryUploadPanel } from "@/components/meeting-recovery-upload-panel";
 import {
   Dialog,
@@ -26,6 +28,8 @@ type MeetingActionsProps = {
   audioExportUrls?: string[];
   canDelete?: boolean;
   canReplaceAudio?: boolean;
+  canMerge?: boolean;
+  meetingTitle?: string;
   hasAudio?: boolean;
   hasTranscript?: boolean;
   meetingId: string;
@@ -39,6 +43,8 @@ export function MeetingActions({
   audioExportUrls,
   canDelete = true,
   canReplaceAudio = false,
+  canMerge = false,
+  meetingTitle = "This meeting",
   hasAudio = true,
   hasTranscript = true,
   meetingId,
@@ -48,6 +54,7 @@ export function MeetingActions({
   const router = useRouter();
   const actionsMenuRef = useRef<HTMLDetailsElement>(null);
   const actionsTriggerRef = useRef<HTMLElement>(null);
+  const [isMergeOpen, setIsMergeOpen] = useState(false);
   const [isReplaceOpen, setIsReplaceOpen] = useState(false);
   const [isReplacing, setIsReplacing] = useState(false);
   const exportMenuRef = useRef<HTMLDivElement>(null);
@@ -271,7 +278,7 @@ export function MeetingActions({
           {copyStatus === "copied" ? "Copied" : "Copy"}
         </Button>
       ) : null}
-      {canDelete || canReplaceAudio ? (
+      {canDelete || canReplaceAudio || canMerge ? (
         <details className="group relative" ref={actionsMenuRef}>
           <summary
             ref={actionsTriggerRef}
@@ -281,7 +288,15 @@ export function MeetingActions({
             <MoreHorizontal />
             <span className="sr-only">More meeting actions</span>
           </summary>
-          <div className="absolute right-0 z-20 mt-2 w-44 rounded-lg border bg-popover p-1.5 text-popover-foreground shadow-lg">
+          <div className="absolute right-0 z-20 mt-2 w-52 rounded-lg border bg-popover p-1.5 text-popover-foreground shadow-lg">
+            {canMerge ? (
+              <Button className="min-h-11 w-full justify-start" onClick={() => {
+                if (actionsMenuRef.current) actionsMenuRef.current.open = false;
+                setIsMergeOpen(true);
+              }} type="button" variant="ghost">
+                <Combine data-icon="inline-start" />Merge meetings
+              </Button>
+            ) : null}
             {canReplaceAudio ? (
               <Button
                 className="w-full justify-start"
@@ -312,6 +327,7 @@ export function MeetingActions({
           </div>
         </details>
       ) : null}
+      {canMerge ? <MeetingMergeDialog meetingId={meetingId} title={meetingTitle} open={isMergeOpen} onOpenChange={setIsMergeOpen} finalFocus={actionsTriggerRef} /> : null}
       {isReplaceOpen ? (
         <Dialog
           open

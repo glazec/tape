@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { and, asc, eq, inArray } from "drizzle-orm";
+import { and, asc, inArray, sql } from "drizzle-orm";
 import { z } from "zod";
 
 import { db } from "@/db/client";
@@ -30,14 +30,17 @@ export async function getNoteTranscript(meetingId: string) {
     .from(transcriptSegments)
     .where(
       and(
-        eq(transcriptSegments.meetingId, meetingId),
+        sql`(${transcriptSegments.meetingId} = ${meetingId} or ${transcriptSegments.meetingId} in
+          (select source_meeting_id from meeting_parts where meeting_id = ${meetingId}
+            and app_private.can_read_meeting(source_meeting_id)))`,
         inArray(
           transcriptSegments.jobId,
-          activeTranscriptJobIdsSubquery(meetingId),
+          activeTranscriptJobIdsSubquery(transcriptSegments.meetingId),
         ),
       ),
     )
     .orderBy(
+      sql`(select coalesce(started_at, created_at) from meetings where id=${transcriptSegments.meetingId})`,
       asc(transcriptSegments.startMs),
       asc(transcriptSegments.endMs),
       asc(transcriptSegments.id),

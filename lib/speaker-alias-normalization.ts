@@ -27,48 +27,12 @@ export function buildTeamSpeakerAliasRows(input: {
   teamId: string;
 }) {
   const canonicalName = input.canonicalName.trim();
-  const canonicalKey = getSpeakerAliasKey(canonicalName);
-
-  if (!canonicalName || !canonicalKey || isGenericSpeakerAlias(canonicalName)) {
-    return [];
-  }
-
-  const meaningfulAlias = input.aliases.some((alias) => {
-    const aliasLabel = alias?.trim();
-    const aliasKey = aliasLabel ? getSpeakerAliasKey(aliasLabel) : null;
-
-    return (
-      aliasLabel &&
-      aliasKey &&
-      aliasKey !== canonicalKey &&
-      !isGenericSpeakerAlias(aliasLabel)
-    );
-  });
-
-  if (!meaningfulAlias) {
-    return [];
-  }
-
-  const aliasByKey = new Map<string, string>();
-  aliasByKey.set(canonicalKey, canonicalName);
-
-  for (const alias of input.aliases) {
-    const aliasLabel = alias?.trim();
-    const aliasKey = aliasLabel ? getSpeakerAliasKey(aliasLabel) : null;
-
-    if (!aliasLabel || !aliasKey || isGenericSpeakerAlias(aliasLabel)) {
-      continue;
-    }
-
-    aliasByKey.set(aliasKey, aliasLabel);
-  }
-
-  return Array.from(aliasByKey.entries()).map(([aliasKey, alias]) => ({
-    alias,
-    aliasKey,
-    canonicalName,
-    teamId: input.teamId,
+  if (!canonicalName || isGenericSpeakerAlias(canonicalName)) return [];
+  const emails = new Set(input.aliases.flatMap(alias => {
+    const email = alias?.trim().toLowerCase();
+    return email && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) ? [email] : [];
   }));
+  return [...emails].map(email => ({ alias: email, aliasKey: `email:${email}`, canonicalName, teamId: input.teamId }));
 }
 
 export function groupSpeakerAliasesByCanonicalKey(aliases: SpeakerAlias[]) {
@@ -103,7 +67,7 @@ function buildSpeakerAliasMap(aliases: SpeakerAlias[]) {
     }
 
     aliasMap.set(aliasKey, canonicalName);
-    aliasMap.set(canonicalKey, canonicalName);
+    if (!aliasKey.startsWith("email:")) aliasMap.set(canonicalKey, canonicalName);
   }
 
   return aliasMap;
@@ -119,6 +83,7 @@ function getCanonicalSpeakerName(
 }
 
 function getSpeakerAliasKey(speaker: string | null) {
+  if (speaker && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(speaker.trim())) return `email:${speaker.trim().toLowerCase()}`;
   const speakerKey = getSpeakerIdentityKey(speaker);
 
   return speakerKey === "__unknown__" ? null : speakerKey;
@@ -126,4 +91,23 @@ function getSpeakerAliasKey(speaker: string | null) {
 
 function isGenericSpeakerAlias(label: string) {
   return /^(speaker\s*\d+|unknown speaker)$/i.test(label.trim());
+}
+
+export function resolveParticipantSpeakerAliases(aliases: SpeakerAlias[], people: Array<{ name: string | null; email: string | null }>) {
+  const names = new Map<string, Set<string>>();
+  for (const person of people) {
+    if (!person.name?.trim()) continue;
+    if (/^(speaker\s*\d+|unknown speaker)$/i.test(person.name.trim())) continue;
+    const key = getSpeakerIdentityKey(person.name);
+    const emails = names.get(key) ?? new Set<string>();
+    emails.add(person.email?.trim().toLowerCase() ?? "");
+    names.set(key, emails);
+  }
+  const remembered = new Map(aliases.map(alias => [alias.alias.trim().toLowerCase(), alias.canonicalName]));
+  const resolved = [...names].flatMap(([name, emails]) => {
+    const email = emails.size === 1 ? [...emails][0] : "";
+    const canonicalName = remembered.get(email);
+    return email && canonicalName ? [{ alias: name, canonicalName }] : [];
+  });
+  return [...aliases, ...resolved];
 }

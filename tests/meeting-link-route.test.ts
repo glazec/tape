@@ -264,6 +264,7 @@ describe("POST /api/meetings/link", () => {
       },
     });
     expect(markMeetingBotScheduled).toHaveBeenCalledWith({
+      botName: "Deal Scribe",
       meetingId: "11111111-1111-4111-8111-111111111111",
       recallBotId: "bot_123",
     });

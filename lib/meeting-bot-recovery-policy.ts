@@ -1,5 +1,6 @@
 export const MEETING_BOT_RECOVERY_WINDOW_MS = 15 * 60 * 1_000;
 export const FAILED_MEETING_BOT_RECOVERY_WINDOW_MS = 60 * 60 * 1_000;
+export const MEETING_CONTINUATION_WINDOW_MS = 60 * 60 * 1_000;
 export const MEETING_RECORDING_RESUME_MIN_REMAINING_MS = 60 * 1_000;
 
 export function isMeetingBotRecoveryEligible(input: {
@@ -93,22 +94,16 @@ export function isMeetingRecordingResumeEligible(input: {
   if (
     !input.canManage ||
     !["google_meet", "zoom"].includes(input.platform) ||
-    !["processing", "ready"].includes(input.status)
+    !["processing", "ready", "failed"].includes(input.status)
   ) {
     return false;
   }
 
   const nowMs = (input.now ?? new Date()).getTime();
-  const scheduledStartMs = Date.parse(input.scheduledStartedAt ?? "");
-  const scheduledEndMs = Date.parse(input.scheduledEndedAt ?? "");
   const lastRecordingEndMs = Date.parse(input.lastRecordingEndedAt ?? "");
-
   return (
-    Number.isFinite(scheduledStartMs) &&
-    Number.isFinite(scheduledEndMs) &&
     Number.isFinite(lastRecordingEndMs) &&
-    scheduledStartMs <= nowMs &&
     lastRecordingEndMs <= nowMs &&
-    scheduledEndMs - nowMs >= MEETING_RECORDING_RESUME_MIN_REMAINING_MS
+    nowMs - lastRecordingEndMs < MEETING_CONTINUATION_WINDOW_MS
   );
 }

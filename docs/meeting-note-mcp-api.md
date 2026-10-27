@@ -377,3 +377,7 @@ Local development can use `DISABLE_AUTH=true`, `MCP_ALLOW_DEV_AUTH=true`, `MCP_H
 `prepare_meeting_upload` accepts optional `team_id`. When omitted for a user with multiple organizations, it returns `code: organization_required` and the permitted `organizations` before creating an upload URL. Ask the user to choose, then repeat the call with `team_id`. The signed completion token retains the selected workspace, and completion checks current membership again. Existing tokens without a team retain the original default workspace behavior.
 
 Meeting reads evaluate administrator membership against each meeting’s workspace, so membership in one organization does not grant access to another organization. Ownership and active share grants continue to apply across organizations.
+
+## Combined meetings in the web application
+
+The web application can compose source meetings with Merge meetings and Continue recording. The original meeting IDs, media, private notes, and permissions remain independent. Existing MCP read and export operations continue to address the original source records; they do not flatten the web application's combined view. Use each accessible source ID when retrieving all parts through MCP.

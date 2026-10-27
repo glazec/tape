@@ -1,3 +1,6 @@
+import Link from "next/link";
+import { MeetingComposedTranscripts } from "@/components/meeting-composed-transcripts";
+import { getMeetingCompositionForWorkspace, composeMeetingForFollowup } from "@/lib/meeting-composition";
 import { listShareRecipientSuggestions } from "@/lib/share-recipient-suggestions";
 import { notFound } from "next/navigation";
 
@@ -24,12 +27,10 @@ import {
 import { getMeetingDisplayStatus } from "@/lib/meeting-display-status";
 import {
   isMeetingBotRecoveryEligible,
-  isMeetingRecordingResumeEligible,
 } from "@/lib/meeting-bot-recovery-policy";
 import { listActiveMeetingShares } from "@/lib/meeting-share-service";
 import { getTranscriptViewerRenderKey } from "@/lib/meeting-transcript-render-key";
 import {
-  getMeetingTranscriptForWorkspace,
   listMeetingDetailRelatedMeetingsForWorkspace,
 } from "@/lib/meeting-queries";
 import { moveRecordingTimestampToAppendedTimeline } from "@/lib/meeting-recording-timeline";
@@ -48,19 +49,27 @@ export default async function MeetingPage({
     params,
   ]);
   const workspace = await getOrCreateWorkspaceForSessionUser(user, { meetingId });
-  const [meeting, relatedMeetings] = await Promise.all([
-    getMeetingTranscriptForWorkspace(workspace, meetingId),
+  const [composition, relatedMeetings] = await Promise.all([
+    getMeetingCompositionForWorkspace(workspace, meetingId),
     listMeetingDetailRelatedMeetingsForWorkspace(workspace, meetingId),
   ]);
 
-  if (!meeting) {
+  if (!composition) {
     notFound();
   }
 
+  const meeting = composition.primary;
+  const parts = composition.parts;
+  const isComposed = parts.length > 1;
+  const followupMeeting = composeMeetingForFollowup(composition);
+  const latestPart = [...parts].sort((a,b) => Date.parse(b.lastRecordingEndedAt ?? "1970-01-01") - Date.parse(a.lastRecordingEndedAt ?? "1970-01-01"))[0];
+  const hasActivePart = parts.some(part => ["scheduled", "recording"].includes(part.status));
   const canManage = meeting.canManage;
-  const followupResult = getCurrentMeetingFollowup(meeting);
-  const followupSourceHash = getFollowupSourceHash(meeting);
-  const canShare = meeting.segments.length > 0;
+  const participants = [...new Map(parts.flatMap(part => part.speakerSuggestions)
+    .map(person => [person.email.trim().toLowerCase(), person])).values()];
+  const followupResult = getCurrentMeetingFollowup(followupMeeting);
+  const followupSourceHash = getFollowupSourceHash(followupMeeting);
+  const canShare = parts.some(part => part.segments.length > 0);
   const [shareRecipients, activeShares, teamConfiguration] = canShare
     ? await Promise.all([
         listShareRecipientSuggestions(workspace),
@@ -68,10 +77,16 @@ export default async function MeetingPage({
         getTeamConfiguration(workspace.teamId),
       ])
     : [[], [], null];
-  const displayStatus = getMeetingDisplayStatus({
+  const primaryDisplayStatus = getMeetingDisplayStatus({
     meetingStatus: meeting.status,
     transcriptJobStatus: meeting.transcriptJobStatus,
   });
+  const displayStatus = isComposed
+    ? parts.some(part => part.status === "recording") ? "recording"
+      : hasActivePart ? "scheduled"
+      : parts.some(part => ["queued", "running"].includes(part.transcriptJobStatus ?? "") || part.status === "processing") ? "processing"
+      : parts.some(part => part.status === "failed") ? "failed" : primaryDisplayStatus
+    : primaryDisplayStatus;
   const recordingParts = meeting.recordingParts ?? [];
   const continuousVisualAssets =
     recordingParts.length > 1
@@ -86,38 +101,37 @@ export default async function MeetingPage({
                 ),
         }))
       : meeting.visualAssets;
-  const shouldOfferBotRecovery = isMeetingBotRecoveryEligible({
+  const shouldOfferBotRecovery = !meeting.lastRecordingEndedAt && isMeetingBotRecoveryEligible({
     canManage,
     endedAt: meeting.endedAt,
     platform: meeting.platform,
     segmentCount: meeting.segments.length,
     startedAt: meeting.startedAt,
-    status: displayStatus,
+    status: primaryDisplayStatus,
     updatedAt: meeting.updatedAt,
   });
-  const shouldOfferRecordingResume = isMeetingRecordingResumeEligible({
-    canManage,
-    lastRecordingEndedAt: recordingParts.at(-1)?.endedAt ?? meeting.endedAt,
-    platform: meeting.platform,
-    scheduledEndedAt: meeting.scheduledEndedAt,
-    scheduledStartedAt: meeting.scheduledStartedAt,
-    status: displayStatus,
-  });
+  // Keep the component mounted when its deadline passes so an open dialog can
+  // explain expiry. The client hides its trigger and the API enforces the cutoff.
+  const shouldOfferRecordingResume = canManage && !composition.parent && !hasActivePart
+    && ["processing", "ready", "failed"].includes(meeting.status)
+    && ["google_meet", "zoom"].includes(latestPart.platform)
+    && Boolean(latestPart.lastRecordingEndedAt);
   const shouldOfferLocalRecorderGuidance =
     canManage &&
     meeting.platform === "microsoft_teams" &&
     displayStatus === "scheduled";
   const canAddMeetingSource =
-    displayStatus === "failed" ||
-    displayStatus === "missed" ||
+    primaryDisplayStatus === "failed" ||
+    primaryDisplayStatus === "missed" ||
     (meeting.platform === "in_person" && displayStatus === "scheduled") ||
     shouldOfferLocalRecorderGuidance;
   const shouldCenterMeetingSource =
-    canManage &&
+    !isComposed && canManage &&
     (canAddMeetingSource || shouldOfferBotRecovery) &&
     meeting.segments.length === 0;
   const renderShareDialog = (instanceId: string) =>
     canShare ? (
+      <div>
       <ShareDialog
         allowRelated={canManage}
         canRemoveAccess={canManage}
@@ -135,6 +149,8 @@ export default async function MeetingPage({
         meetingId={meetingId}
         teamMembers={shareRecipients}
       />
+      {isComposed ? <p className="mt-2 text-xs leading-5 text-muted-foreground">Sharing applies to this meeting. Recipients also need access to each original recording.</p> : null}
+      </div>
     ) : null;
   return (
     <AppShell
@@ -163,7 +179,9 @@ export default async function MeetingPage({
             </p>
             <MeetingActions
               audioExportUrls={
-                recordingParts.length > 1
+                isComposed ? parts.flatMap(part => part.recordingParts.length > 1
+                  ? part.recordingParts.map(recording => `/api/meetings/${part.id}/audio?recording=${recording.id}&download=1`)
+                  : part.audioUrl ? [`/api/meetings/${part.id}/audio?download=1`] : []) : recordingParts.length > 1
                   ? recordingParts.map(
                       (part) =>
                         `/api/meetings/${encodeURIComponent(
@@ -174,17 +192,20 @@ export default async function MeetingPage({
                     )
                   : undefined
               }
+              canMerge={canManage && !composition.parent}
+              meetingTitle={meeting.title}
               canDelete={meeting.canDelete}
-              canReplaceAudio={canManage && meeting.status === "ready"}
+              canReplaceAudio={!isComposed && canManage && meeting.status === "ready"}
               hasAudio={
-                Boolean(meeting.audioUrl) || recordingParts.length > 0
+                parts.some(part => Boolean(part.audioUrl) || part.recordingParts.length > 0)
               }
-              hasTranscript={meeting.segments.length > 0}
-              imageCount={meeting.visualAssets.length}
+              hasTranscript={parts.some(part => part.segments.length > 0)}
+              imageCount={parts.reduce((sum, part) => sum + part.visualAssets.length, 0)}
               instanceId="header"
               meetingId={meetingId}
             />
           </div>
+          {composition.parent ? <p className="mt-3 text-sm text-muted-foreground">Part of <Link className="underline underline-offset-4" href={`/meetings/${composition.parent.id}`}>{composition.parent.title}</Link></p> : null}
           <div className="mt-2 min-w-0">
             {canManage ? (
               <MeetingTitleEditor
@@ -198,17 +219,17 @@ export default async function MeetingPage({
             )}
           </div>
           <MeetingHeaderMetadata
-            durationMs={meeting.durationMs}
+            durationMs={isComposed ? parts.every(part => part.durationMs !== null) ? parts.reduce((sum, part) => sum + (part.durationMs ?? 0), 0) : null : meeting.durationMs}
             endedAt={meeting.endedAt}
             platform={formatPlatform(meeting.platform)}
             startedAt={meeting.startedAt}
-            status={formatStatus(displayStatus)}
+            status={displayStatus === "scheduled" && composition.sources.some(source => source.kind === "continuation" && source.status === "scheduled") ? "Waiting to join" : formatStatus(displayStatus)}
           />
-          {meeting.speakerSuggestions.length > 0 ? (
+          {participants.length > 0 ? (
             <div className="mt-3 flex flex-wrap items-baseline gap-x-3 gap-y-1 text-sm">
               <span className="text-muted-foreground">Participants</span>
               <ul aria-label="Participants" className="flex min-w-0 flex-wrap gap-x-3 gap-y-1">
-                {meeting.speakerSuggestions.map((participant) => (
+                {participants.map((participant) => (
                   <li className="break-all" key={participant.email} title={participant.email}>
                     {participant.name || participant.email}
                   </li>
@@ -229,6 +250,13 @@ export default async function MeetingPage({
               meetingId={meetingId}
               userId={workspace.userId}
             />
+                {shouldOfferRecordingResume && latestPart.meetingUrl && latestPart.lastRecordingEndedAt ? (
+                  <MeetingRecordingResume
+                    meetingId={meetingId}
+                    meetingUrl={latestPart.meetingUrl}
+                    lastRecordingEndedAt={latestPart.lastRecordingEndedAt}
+                  />
+                ) : null}
             {shouldCenterMeetingSource ? (
               <div className="mx-auto w-full max-w-2xl py-2 sm:py-6">
                 {shouldOfferLocalRecorderGuidance ? (
@@ -273,13 +301,11 @@ export default async function MeetingPage({
               </div>
             ) : (
               <>
-                {shouldOfferRecordingResume && meeting.meetingUrl ? (
-                  <MeetingRecordingResume
-                    meetingId={meetingId}
-                    meetingUrl={meeting.meetingUrl}
-                  />
-                ) : null}
-                <TranscriptViewer
+                {isComposed ? <>
+                  <p className="mb-5 text-sm text-muted-foreground">{parts.length} recordings. Each part keeps its original audio and sharing.</p>
+                  <div className="mb-4 lg:hidden">{renderShareDialog("combined-sharing-mobile")}</div>
+                  <MeetingComposedTranscripts meetings={parts} primaryMeetingId={meetingId} preferredTranslationLanguage={teamConfiguration?.translationLanguage} />
+                </> : <TranscriptViewer
                   audioParts={
                     recordingParts.length > 1 ? recordingParts : undefined
                   }
@@ -312,14 +338,14 @@ export default async function MeetingPage({
                   translationLanguage={meeting.translationLanguage}
                   translationSummary={meeting.translationSummary}
                   visualAssets={continuousVisualAssets}
-                />
-                {isFollowupReady(meeting) ? (
+                />}
+                {isFollowupReady(followupMeeting) ? (
                   <MeetingFollowup
                     canGenerate={canManage}
                     initialResult={followupResult}
                     key={`${workspace.userId}:${meetingId}:${followupSourceHash}:${canManage}:${JSON.stringify(followupResult)}`}
                     meetingId={meetingId}
-                    segments={meeting.segments.map(({ id, startMs }) => ({ id, startMs }))}
+                    segments={followupMeeting.segments.map(({ id, startMs }) => ({ id, startMs }))}
                     sourceHash={followupSourceHash}
                   />
                 ) : null}

@@ -27,6 +27,8 @@ const speakerUpdateSchema = z
       .default([]),
     segmentId: z.uuid().optional(),
     speaker: z.string().trim().min(1).max(80),
+    participantEmail: z.email().max(254).optional(),
+    rememberName: z.boolean().default(false),
   })
   .refine(
     (value) => value.applyTo === "matching_speaker" || Boolean(value.segmentId),
@@ -73,6 +75,22 @@ export async function PATCH(
     return Response.json({ error: "Meeting not found" }, { status: 404 });
   }
 
+  const { rememberName, participantEmail, applyTo } = result.data;
+  if (rememberName) {
+    if (applyTo !== "matching_speaker" || !participantEmail) {
+      return Response.json({ error: "Choose a participant email to remember this name." }, { status: 400 });
+    }
+    const email = participantEmail.toLowerCase();
+    const [identity] = await db.select({ id: meetings.id }).from(meetings).where(and(
+      eq(meetings.id, meetingId),
+      sql`(exists (select 1 from meeting_attendees where meeting_id=${meetingId} and lower(email)=${email})
+        or exists (select 1 from meeting_participant_timeline where meeting_id=${meetingId} and lower(email)=${email})
+        or exists (select 1 from calendar_events where id=${meetings.calendarEventId}
+          and exists (select 1 from jsonb_array_elements_text(attendee_emails) e where lower(e)=${email}))
+        or exists (select 1 from transcript_segments where meeting_id=${meetingId} and lower(btrim(speaker))=${email}))`,
+    )).limit(1);
+    if (!identity) return Response.json({ error: "This email is not a participant in this meeting." }, { status: 400 });
+  }
   const targetFilter = getSpeakerUpdateFilter(result.data);
 
   await db
@@ -92,12 +110,9 @@ export async function PATCH(
       ),
     );
 
-  if (result.data.applyTo === "matching_speaker") {
+  if (rememberName && participantEmail) {
     await upsertTeamSpeakerAliases({
-      aliases: [
-        result.data.currentSpeaker,
-        ...result.data.currentSpeakerAliases,
-      ],
+      aliases: [participantEmail],
       canonicalName: result.data.speaker,
       teamId: workspace.teamId,
     });

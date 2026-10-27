@@ -213,3 +213,11 @@ Company calendar consolidation is verified against PostgreSQL with `psql "$DATAB
 ## Organization workflow checks
 
 Run `npm test`, `npx tsc --noEmit`, `npm run lint`, and `npm run test:migrations`. Organization regressions cover bot choices within one company, unauthorized choices, cancellation, nearby meeting confirmation, stored bot profiles, workspace switching, and API membership checks. Test desktop pairing and MCP uploads with two memberships. Browser checks using local provider responses establish UI behavior only; a deployed authenticated meeting join is a separate release check.
+
+## Meeting continuity verification
+
+Run `npx vitest run tests/meeting-continuation-policy.test.ts tests/meeting-continuation.test.ts tests/meeting-continuity-routes.test.ts tests/meeting-continuity-interactions.test.tsx tests/meeting-composed-transcripts.test.tsx tests/remembered-speaker-names.test.ts` for the deadline, dispatch, API boundaries, source composition, and email identity regressions. The existing speaker route, meeting page, export, followup, and bot recovery suites cover the integrations.
+
+Replay migrations in an isolated PostgreSQL database, then run `psql "$TEST_DATABASE_URL" -v ON_ERROR_STOP=1 -f tests/sql/meeting-continuity.sql`. The script uses a transaction and rolls back its fixtures. It checks pending merges, reverse merge rejection, independent source access, durable continuation recipients, strict expiry, duplicate claims, and retained bot lineage. Never run fixture SQL on production.
+
+For the actual React component preview, run `node tests/fixtures/meeting-continuity/serve.mjs` and open `http://127.0.0.1:8777`. Run `node tests/fixtures/meeting-continuity/verify.mjs` for desktop and mobile screenshots, keyboard focus, expiry, merge undo, real notes autosave through mocked persistence, and exact email correction. The fixture is localhost only and uses example data and mocked APIs. It does not replace authenticated database and provider verification.

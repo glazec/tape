@@ -16,8 +16,8 @@ vi.mock("@/lib/auth", () => ({ getCurrentUser: mocks.user }));
 vi.mock("@/lib/workspace", () => ({
   getOrCreateWorkspaceForSessionUser: mocks.workspace,
 }));
-vi.mock("@/lib/meeting-queries", () => ({
-  getMeetingTranscriptForWorkspace: mocks.meeting,
+vi.mock("@/lib/meeting-composition", () => ({
+  getComposedMeetingForFollowup: mocks.meeting,
 }));
 vi.mock("@/lib/provider-credit", () => ({
   assertWorkspaceHasProviderCredit: mocks.credit,

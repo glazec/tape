@@ -1,3 +1,4 @@
+import { MeetingCompositionError } from "@/lib/meeting-composition-error";
 import { z } from "zod";
 
 import { getCurrentUser } from "@/lib/auth";
@@ -92,6 +93,7 @@ export async function POST(request: Request) {
     startAt?: string;
     recallBotId?: string;
     resumeRecording?: boolean;
+    continued?: boolean;
   };
   let skipUnconfirmedCalendarMatch = false;
 
@@ -197,6 +199,7 @@ export async function POST(request: Request) {
       }),
       userId: user.id,
     });
+    if (error instanceof MeetingCompositionError) return Response.json({ error: error.message }, { status: error.status });
     const response = handleMeetingLinkError(error);
 
     if (response) {
@@ -205,6 +208,8 @@ export async function POST(request: Request) {
 
     return Response.json({ error: "Meeting unavailable" }, { status: 500 });
   }
+
+  if (scheduledMeeting.continued) return Response.json({ meetingId: scheduledMeeting.meetingId, status: "joining", meetingUrl, platform });
 
   if (scheduledMeeting.recallBotId) {
     try {
@@ -271,6 +276,7 @@ export async function POST(request: Request) {
     await markMeetingBotScheduled({
       meetingId: scheduledMeeting.meetingId,
       recallBotId: bot.id,
+      botName: botProfile.botName,
     });
     scheduledRecallBotId = null;
 

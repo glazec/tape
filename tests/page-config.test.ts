@@ -1,3 +1,4 @@
+vi.mock("@/lib/meeting-composition", () => ({ getMeetingCompositionForWorkspace: vi.fn(), composeMeetingForFollowup: vi.fn() }));
 vi.mock("@/lib/share-recipient-suggestions", () => ({ listShareRecipientSuggestions: vi.fn() }));
 import { describe, expect, it, vi } from "vitest";
 

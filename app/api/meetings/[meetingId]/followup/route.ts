@@ -10,7 +10,7 @@ import {
   getFollowupSourceHash,
   isFollowupReady,
 } from "@/lib/meeting-followup-source";
-import { getMeetingTranscriptForWorkspace } from "@/lib/meeting-queries";
+import { getComposedMeetingForFollowup } from "@/lib/meeting-composition";
 import { getManageableMeetingCondition } from "@/lib/meeting-write-policy";
 import {
   assertWorkspaceHasProviderCredit,
@@ -36,7 +36,7 @@ export async function POST(
     return Response.json({ error: "Meeting not found" }, { status: 404 });
   }
   const workspace = await getOrCreateWorkspaceForSessionUser(user, { meetingId });
-  const meeting = await getMeetingTranscriptForWorkspace(workspace, meetingId);
+  const meeting = await getComposedMeetingForFollowup(workspace, meetingId);
   if (!meeting?.canManage) {
     return Response.json({ error: "Meeting not found" }, { status: 404 });
   }
@@ -65,7 +65,7 @@ export async function POST(
   try {
     await assertWorkspaceHasProviderCredit(workspace);
     const result = await generateMeetingFollowup(source, meetingId);
-    const current = await getMeetingTranscriptForWorkspace(
+    const current = await getComposedMeetingForFollowup(
       workspace,
       meetingId,
     );

@@ -192,8 +192,9 @@ describe("PATCH /api/meetings/[meetingId]/speakers", () => {
 
     const response = await patchSpeakerLabel({
       applyTo: "matching_speaker",
-      currentSpeaker: "Saved Alias",
-      currentSpeakerAliases: ["Test User"],
+      currentSpeaker: "test@iosf.vc",
+      participantEmail: "test@iosf.vc",
+      rememberName: true,
       speaker: "Test User",
     });
 
@@ -202,14 +203,8 @@ describe("PATCH /api/meetings/[meetingId]/speakers", () => {
     expect(values).toHaveBeenCalledWith(
       expect.arrayContaining([
         expect.objectContaining({
-          alias: "Saved Alias",
-          aliasKey: "saved alias",
-          canonicalName: "Test User",
-          teamId: "team_123",
-        }),
-        expect.objectContaining({
-          alias: "Test User",
-          aliasKey: "test user",
+          alias: "test@iosf.vc",
+          aliasKey: "email:test@iosf.vc",
           canonicalName: "Test User",
           teamId: "team_123",
         }),

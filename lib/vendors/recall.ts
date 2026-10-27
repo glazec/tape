@@ -374,6 +374,12 @@ export function getRecallApiBaseUrl(env?: {
     .origin;
 }
 
+export class RecallBotSchedulingError extends Error {
+  constructor(public status: number, statusText: string) {
+    super(`Recall bot scheduling failed with ${status} ${statusText}`);
+  }
+}
+
 export async function scheduleRecallBot(input: {
   meetingUrl: string;
   botName?: string;
@@ -414,9 +420,7 @@ export async function scheduleRecallBot(input: {
   });
 
   if (!response.ok) {
-    throw new Error(
-      `Recall bot scheduling failed with ${response.status} ${response.statusText}`,
-    );
+    throw new RecallBotSchedulingError(response.status, response.statusText);
   }
 
   return response.json();

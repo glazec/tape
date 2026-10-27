@@ -238,6 +238,7 @@ describe("New Meeting existing URL early join", () => {
     );
     expect(fetchMock.mock.calls[2][1]?.method).toBe("DELETE");
     expect(markMeetingBotScheduled).toHaveBeenCalledWith({
+      botName: "IOSG Old Friend",
       meetingId: "11111111-1111-4111-8111-111111111111",
       recallBotId: "immediate_bot",
     });
@@ -317,6 +318,7 @@ describe("New Meeting existing URL early join", () => {
       expect.objectContaining({ method: "DELETE" }),
     ]);
     expect(markMeetingBotScheduled).toHaveBeenCalledWith({
+      botName: "IOSG Old Friend",
       meetingId: "11111111-1111-4111-8111-111111111111",
       recallBotId: "immediate_bot",
     });

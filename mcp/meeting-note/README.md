@@ -49,3 +49,7 @@ Add `https://<mcp-domain>/auth/callback` to the Google OAuth client. Set `NEON_A
 Pass optional `team_id` to `prepare_meeting_upload` to select a workspace. If the response contains `organization_required`, ask the user to select from `organizations` and retry with that team ID. Completion uses the workspace bound to the signed upload token.
 
 Meeting reads evaluate administrator membership against each meeting’s workspace, so membership in one organization does not grant access to another organization. Ownership and active share grants continue to apply across organizations.
+
+## Web meeting combinations
+
+Merge meetings and Continue recording in the web application retain independent source records. MCP tools still read the requested source meeting ID; they do not flatten the combined web view. Source permissions remain authoritative. See `docs/meeting-note-mcp-api.md` for this boundary.
