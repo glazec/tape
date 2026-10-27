@@ -88,7 +88,6 @@ export default async function TeamSettingsPage() {
         </div>
         <SettingsSection
           title="Workspace defaults"
-          description="Set the team name, translation language, and an optional sharing group."
         >
             {canEditTeamSettings ? (
               <form
@@ -137,9 +136,6 @@ export default async function TeamSettingsPage() {
                       ))}
                     </SelectContent>
                   </Select>
-                  <p className="text-xs leading-5 text-muted-foreground">
-                    New automatic and manual translations use this language.
-                  </p>
                 </div>
                 <div className="grid gap-2">
                   <label
@@ -173,8 +169,7 @@ export default async function TeamSettingsPage() {
                     placeholder={"person@example.com\ncolleague@example.com"}
                   />
                   <p className="text-xs leading-5 text-muted-foreground">
-                    Add one email per line. Leave both sharing group fields
-                    empty to hide the group.
+                    One email per line.
                   </p>
                 </div>
                 <Button className="self-start" type="submit" variant="outline">
@@ -205,7 +200,6 @@ export default async function TeamSettingsPage() {
         </SettingsSection>
         <SettingsSection
           title="Meeting capture"
-          description="Set the team bot name and JPG avatar people see when it joins calls."
         >
             {canEditTeamSettings ? (
               <form
@@ -243,9 +237,6 @@ export default async function TeamSettingsPage() {
                     name="avatar"
                     type="file"
                   />
-                  <p className="text-xs leading-5 text-muted-foreground">
-                    Upload a JPG image under 1 MB.
-                  </p>
                 </div>
                 <div className="flex flex-wrap items-center gap-3">
                   <div
@@ -309,7 +300,6 @@ export default async function TeamSettingsPage() {
         {canEditTeamSettings || vocabularyTerms.length > 0 ? (
         <SettingsSection
           title="Transcription vocabulary"
-          description="Help Tape recognize team, company, and deal names correctly."
         >
           <div className="flex flex-col gap-4">
             {canEditTeamSettings ? (
@@ -356,7 +346,6 @@ export default async function TeamSettingsPage() {
         ) : null}
         <SettingsSection
           title="Workspace members"
-          description="People in this workspace and their calendar status."
         >
         <details className="group">
           <summary className="flex min-h-11 cursor-pointer list-none items-center gap-2 text-sm outline-none focus-visible:ring-3 focus-visible:ring-ring/50 sm:min-h-8">
@@ -442,11 +431,21 @@ export default async function TeamSettingsPage() {
             </Link>
           }
           title="Billing & credits"
-          description="This month's provider consumption."
         >
-          <dl className="grid gap-x-8 gap-y-3 text-sm sm:grid-cols-3">
+          <dl className="flex flex-wrap gap-x-6 gap-y-1 text-sm">
+            <BillingSettingMetric
+              label="workspace this month"
+              value={formatUsdMicros(
+                billingOverview.organizationMonthUsdMicros,
+              )}
+            />
+            <BillingSettingMetric
+              label="you this month"
+              value={formatUsdMicros(billingOverview.personalMonthUsdMicros)}
+            />
             <BillingSettingMetric
               label="Credit remaining"
+              labelFirst
               value={
                 billingOverview.creditLimitUsdMicros === null
                   ? "No limit"
@@ -454,16 +453,6 @@ export default async function TeamSettingsPage() {
                       billingOverview.creditRemainingUsdMicros ?? 0,
                     )
               }
-            />
-            <BillingSettingMetric
-              label="Workspace this month"
-              value={formatUsdMicros(
-                billingOverview.organizationMonthUsdMicros,
-              )}
-            />
-            <BillingSettingMetric
-              label="You this month"
-              value={formatUsdMicros(billingOverview.personalMonthUsdMicros)}
             />
           </dl>
           {billingOverview.isCreditExhausted ? (
@@ -480,44 +469,46 @@ export default async function TeamSettingsPage() {
 
 function BillingSettingMetric({
   label,
+  labelFirst = false,
   value,
 }: {
   label: string;
+  labelFirst?: boolean;
   value: string;
 }) {
   return (
-    <div>
+    <div
+      className={cn(
+        "flex items-baseline gap-1.5",
+        labelFirst && "flex-row-reverse justify-end",
+      )}
+    >
+      <dd className="font-medium tabular-nums">{value}</dd>
       <dt className="text-muted-foreground">{label}</dt>
-      <dd className="mt-0.5 font-medium tabular-nums">{value}</dd>
     </div>
   );
 }
 
 /**
- * One settings group: what it is on the left, the controls on the right, and
+ * One settings group: its name on the left, the controls on the right, and
  * a hairline between groups. Whitespace separates them instead of cards.
  */
 function SettingsSection({
   action,
   children,
-  description,
   title,
 }: {
   action?: React.ReactNode;
   children: React.ReactNode;
-  description: string;
   title: string;
 }) {
   return (
-    <section className="grid gap-x-12 gap-y-4 border-t py-8 md:grid-cols-[14rem_minmax(0,1fr)]">
+    <section className="grid gap-x-12 gap-y-4 border-t py-8 md:grid-cols-[12rem_minmax(0,1fr)]">
       <div>
         <div className="flex items-start justify-between gap-3 md:block">
           <h2 className="text-sm font-semibold">{title}</h2>
           {action ? <div className="md:mt-2">{action}</div> : null}
         </div>
-        <p className="mt-1 text-sm leading-6 text-muted-foreground">
-          {description}
-        </p>
       </div>
       <div className="min-w-0">{children}</div>
     </section>

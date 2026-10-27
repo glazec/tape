@@ -225,6 +225,7 @@ type TranscriptSelectOption = {
   value: string;
 };
 
+const INLINE_VISUAL_ASSET_LIMIT = 3;
 function formatTimestamp(startMs: number) {
   const totalSeconds = Math.floor(startMs / 1000);
   const minutes = Math.floor(totalSeconds / 60);
@@ -584,7 +585,9 @@ export function TranscriptViewer({
       >
         <span aria-hidden="true" />
         <div className="flex flex-wrap gap-2">
-          {assetIndexes.map((assetIndex) => {
+          {/* A long screen share produces dozens of near-identical frames.
+              Show a few inline and send the rest to the lightbox. */}
+          {assetIndexes.slice(0, INLINE_VISUAL_ASSET_LIMIT).map((assetIndex) => {
             const asset = visualAssets[assetIndex];
 
             if (!asset) {
@@ -594,7 +597,7 @@ export function TranscriptViewer({
             return (
               <button
                 aria-label={`Open image from ${formatVisualAssetTimestamp(asset)}`}
-                className="h-20 overflow-hidden rounded-md border bg-muted outline-none transition-shadow hover:shadow-md focus-visible:ring-3 focus-visible:ring-ring/50"
+                className="h-16 overflow-hidden rounded-md border bg-muted outline-none transition-opacity hover:opacity-85 focus-visible:ring-3 focus-visible:ring-ring/50"
                 key={asset.id}
                 onClick={() => setLightboxAssetIndex(assetIndex)}
                 type="button"
@@ -609,6 +612,20 @@ export function TranscriptViewer({
               </button>
             );
           })}
+          {assetIndexes.length > INLINE_VISUAL_ASSET_LIMIT ? (
+            <button
+              aria-label={`Open ${assetIndexes.length - INLINE_VISUAL_ASSET_LIMIT} more images from this moment`}
+              className="flex h-16 min-w-16 items-center justify-center rounded-md border bg-muted/50 px-3 text-xs font-medium text-muted-foreground outline-none transition-colors hover:bg-muted hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50"
+              onClick={() =>
+                setLightboxAssetIndex(
+                  assetIndexes[INLINE_VISUAL_ASSET_LIMIT] ?? assetIndexes[0],
+                )
+              }
+              type="button"
+            >
+              +{assetIndexes.length - INLINE_VISUAL_ASSET_LIMIT}
+            </button>
+          ) : null}
         </div>
       </li>
     );
@@ -1326,7 +1343,7 @@ export function TranscriptViewer({
                         <p className="min-w-0 truncate text-sm">
                           {speakerLabel}
                           <span className="ml-1.5 text-xs tabular-nums text-muted-foreground">
-                            {speaker.percent}%
+                            {speaker.percent > 0 ? `${speaker.percent}%` : "<1%"}
                             <span className="sr-only">
                               {" "}
                               · {formatLineCount(speaker.lineCount)}
@@ -1452,7 +1469,7 @@ export function TranscriptViewer({
                     }}
                     className={cn(
                       "group/line grid grid-cols-[2rem_minmax(0,1fr)] gap-3 rounded-lg px-3 transition-colors sm:-mx-3",
-                      isContinuation ? "py-1" : "mt-3 pt-3 pb-1",
+                      isContinuation ? "py-0.5" : "mt-2 pt-2.5 pb-0.5",
                       isActive ? "bg-primary/5" : "hover:bg-muted/35",
                     )}
                   >
@@ -1480,7 +1497,7 @@ export function TranscriptViewer({
                     <div className="min-w-0">
                       <div
                         className={cn(
-                          "mb-1 flex min-h-8 flex-wrap items-center gap-x-2 gap-y-1",
+                          "flex min-h-7 flex-wrap items-center gap-x-2 gap-y-1",
                           isContinuation && "sr-only",
                         )}
                       >
@@ -1795,11 +1812,13 @@ function MeetingVisualTimeline({
   }
 
   return (
-    <section className="mb-5 border-t py-4">
+    <section className="mb-6">
       <div className="flex items-center justify-between gap-3">
-        <h3 className="text-sm font-semibold">Meeting images</h3>
-        <div className="flex items-center gap-1.5">
-          <span className="text-xs font-medium text-muted-foreground">
+        <h3 className="text-xs font-medium text-muted-foreground">
+          Meeting images
+        </h3>
+        <div className="flex items-center gap-1">
+          <span className="text-xs tabular-nums text-muted-foreground">
             {visualAssets.length} captured
           </span>
           <Button
@@ -1814,14 +1833,14 @@ function MeetingVisualTimeline({
           </Button>
         </div>
       </div>
-      <div className="mt-3 flex gap-3 overflow-x-auto pb-1">
+      <div className="mt-2 flex gap-2 overflow-x-auto pb-1">
         {visualAssets.map((asset, assetIndex) => {
           const timestampLabel = formatVisualAssetTimestamp(asset);
 
           return (
             <button
               aria-label={`Open image from ${timestampLabel}`}
-              className="w-40 shrink-0 overflow-hidden rounded-md border bg-background text-left outline-none transition-shadow hover:shadow-md focus-visible:ring-3 focus-visible:ring-ring/50"
+              className="relative w-28 shrink-0 overflow-hidden rounded-md border bg-background text-left outline-none transition-opacity hover:opacity-85 focus-visible:ring-3 focus-visible:ring-ring/50"
               key={asset.id}
               onClick={() => onOpenAsset(assetIndex)}
               type="button"
@@ -1835,7 +1854,7 @@ function MeetingVisualTimeline({
                   src={asset.url}
                 />
               </span>
-              <span className="block px-2 py-1.5 text-xs font-medium text-muted-foreground">
+              <span className="absolute bottom-1 left-1 rounded-sm bg-black/60 px-1 py-px text-[0.625rem] font-medium tabular-nums text-white">
                 {timestampLabel}
               </span>
             </button>
@@ -2503,9 +2522,9 @@ function TranscriptAudioPlayer({
           </Button>
           <Button
             aria-label={isPlaying ? "Pause audio" : "Play audio"}
-            className="rounded-full"
+            className="size-9 rounded-full"
             onClick={onTogglePlayback}
-            size="icon-lg"
+            size="icon"
             type="button"
           >
             {isPlaying ? <Pause /> : <Play />}
@@ -2530,7 +2549,7 @@ function TranscriptAudioPlayer({
               ? `${waveformAccessibleName}, ${activeWaveformLabel}`
               : waveformAccessibleName
           }
-          className="group/wave relative h-14 w-full overflow-hidden rounded-md px-2 outline-none focus-visible:ring-3 focus-visible:ring-ring/50 sm:px-1"
+          className="group/wave relative h-12 w-full overflow-hidden rounded-md px-2 outline-none focus-visible:ring-3 focus-visible:ring-ring/50 sm:px-1"
           onClick={seekFromWaveform}
           type="button"
         >
@@ -2596,7 +2615,7 @@ function TranscriptAudioPlayer({
                   )}
                   key={index}
                   style={{
-                    height: `${Math.round(4 + peak * 32)}px`,
+                    height: `${Math.round(3 + peak * 26)}px`,
                   }}
                 />
               );
@@ -2688,7 +2707,7 @@ function TranscriptAudioPlayer({
         </button>
         <input
           aria-label="Audio progress"
-          className="mt-1 h-1 w-full cursor-pointer accent-primary"
+          className="mt-0.5 block h-1 w-full cursor-pointer accent-primary opacity-60 transition-opacity hover:opacity-100 focus-visible:opacity-100"
           max={safeDuration || 0}
           min={0}
           onChange={seek}

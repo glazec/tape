@@ -22,10 +22,10 @@ export function CalendarAutomationPanel({
   return (
     <section
       aria-label="Calendar"
-      className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-start sm:gap-6"
+      className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-center sm:gap-4"
     >
-      <div className="min-w-0 text-sm">
-        <p className="flex flex-wrap items-center gap-x-2 gap-y-1">
+      <div className="min-w-0 text-sm sm:text-right">
+        <p className="flex flex-wrap items-center gap-x-2 gap-y-1 sm:justify-end lg:flex-nowrap lg:whitespace-nowrap">
           <span
             aria-hidden="true"
             className={cn(
@@ -33,35 +33,40 @@ export function CalendarAutomationPanel({
               autoJoinActive ? "bg-emerald-500" : "bg-muted-foreground/40",
             )}
           />
-          <span className="font-medium">Calendar</span>
-          <span className="text-muted-foreground">
-            {connected ? "Connected" : "Not connected"}
-          </span>
-          {connected ? (
-            <span className="truncate text-muted-foreground">
-              {accountLabel ?? "Connected account"}
-            </span>
-          ) : null}
-        </p>
-        <p className="mt-1 text-muted-foreground">
           {connected ? (
             <>
-              <span className="text-foreground">
+              <span>
                 {autoJoinActive
                   ? "Recording coverage on"
                   : "Recording coverage off"}
               </span>
-              {" · "}
-              {autoJoinActive
-                ? nextJoinTitle
-                  ? `Next join: ${nextJoinTitle}`
-                  : "Meet and Zoom use bots; Teams uses Tape for Mac"
-                : "Sync calendar to enable recording"}
-              {" · "}
-              Last checked {formatLastSynced(status.recallCalendarLastSyncedAt)}
+              <span className="text-muted-foreground">
+                {autoJoinActive
+                  ? nextJoinTitle
+                    ? `Next join: ${nextJoinTitle}`
+                    : "Meet and Zoom use bots; Teams uses Tape for Mac"
+                  : "Sync calendar to enable recording"}
+              </span>
             </>
           ) : (
-            "Connect Google Calendar to record and transcribe meetings automatically."
+            <span>Calendar not connected</span>
+          )}
+        </p>
+        <p className="mt-0.5 text-xs text-muted-foreground lg:whitespace-nowrap">
+          {connected ? (
+            <>
+              Calendar <span className="sr-only">status: </span>Connected
+              {" · "}
+              {accountLabel ?? "Connected account"}
+              {" · Last checked "}
+              {formatLastSynced(status.recallCalendarLastSyncedAt)}
+            </>
+          ) : (
+            <>
+              <span className="sr-only">Calendar: Not connected. </span>
+              Connect Google Calendar to record and transcribe meetings
+              automatically.
+            </>
           )}
         </p>
       </div>

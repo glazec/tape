@@ -2,9 +2,7 @@
 
 import { useSyncExternalStore } from "react";
 
-import { getMeetingStatusClassName } from "@/lib/meeting-display-status";
-
-import { Badge } from "@/components/ui/badge";
+import { cn } from "@/lib/utils";
 
 type MeetingHeaderMetadataProps = {
   durationMs: number | null;
@@ -34,32 +32,44 @@ export function MeetingHeaderMetadata({
   });
 
   return (
-    <div className="mt-3 flex flex-wrap items-center gap-3 text-sm text-muted-foreground tabular-nums">
-      <Badge className={getMeetingStatusClassName(status)} variant={getStatusBadgeVariant(status)}>{status}</Badge>
-      <span>{platform}</span>
+    <div className="mt-2 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-sm text-muted-foreground tabular-nums">
+      <span className="inline-flex items-center gap-1.5 text-foreground">
+        <span
+          aria-hidden="true"
+          className={cn("size-1.5 rounded-full", getStatusDotClassName(status))}
+        />
+        {status}
+      </span>
+      <MetadataPart>{platform}</MetadataPart>
       {durationLabel ? <MetadataPart>{durationLabel}</MetadataPart> : null}
       {dateLabel ? <MetadataPart>{dateLabel}</MetadataPart> : null}
     </div>
   );
 }
 
-function getStatusBadgeVariant(status: string) {
-  if (status === "Failed") {
-    return "destructive" as const;
+function getStatusDotClassName(status: string) {
+  switch (status) {
+    case "Ready":
+    case "Completed":
+      return "bg-emerald-500";
+    case "Recording":
+      return "bg-rose-500";
+    case "Failed":
+      return "bg-destructive";
+    case "Processing":
+    case "Queued":
+    case "Transcribing":
+      return "bg-amber-500";
+    default:
+      return "bg-muted-foreground/50";
   }
-
-  if (status === "Recording") {
-    return "default" as const;
-  }
-
-  return "secondary" as const;
 }
 
 function MetadataPart({ children }: { children: React.ReactNode }) {
   return (
-    <span className="inline-flex items-center gap-3">
-      <span aria-hidden="true" className="text-border">
-        •
+    <span className="inline-flex items-center gap-2.5">
+      <span aria-hidden="true" className="text-muted-foreground/50">
+        ·
       </span>
       <span>{children}</span>
     </span>

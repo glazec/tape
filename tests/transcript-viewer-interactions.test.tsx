@@ -483,8 +483,8 @@ describe("TranscriptViewer interactions", () => {
     );
 
     expect(heights).toHaveLength(120);
-    // Bars top out at 36px, so 21px keeps steady speech above half height.
-    expect(heights.every((height) => height >= 21)).toBe(true);
+    // Bars top out at 29px, so 17px keeps steady speech above half height.
+    expect(heights.every((height) => height >= 17)).toBe(true);
     expect(fetch).not.toHaveBeenCalled();
   });
 

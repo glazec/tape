@@ -65,7 +65,11 @@ function RelatedMeetingItem({
           {meeting.title}
         </Link>
         <p className="mt-0.5 text-xs text-muted-foreground">
-          <span className="sr-only">Started </span>
+          {isUpcoming(meeting.startedAt) ? (
+            <span className="text-foreground">Upcoming · </span>
+          ) : (
+            <span className="sr-only">Started </span>
+          )}
           <LocalDateTime value={meeting.startedAt} />
         </p>
       </div>
@@ -125,4 +129,8 @@ function formatTimestamp(startMs: number) {
   const seconds = totalSeconds % 60;
 
   return `${minutes}:${seconds.toString().padStart(2, "0")}`;
+}
+
+function isUpcoming(startedAt: string) {
+  return new Date(startedAt).getTime() > Date.now();
 }

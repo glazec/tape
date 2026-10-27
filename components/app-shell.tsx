@@ -2,6 +2,7 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 
 import { AmplitudeIdentity } from "@/components/amplitude-identity";
+import { NewMeetingMenu } from "@/components/new-meeting-menu";
 import { OneSignalLogin } from "@/components/onesignal-login";
 import { ProductLogo } from "@/components/product-logo";
 import { SignOutButton } from "@/components/sign-out-button";
@@ -87,17 +88,7 @@ export function AppShell({
             ) : null}
             <SignOutButton />
             {canCreateMeetings ? (
-              <Link
-                href="/meetings/new"
-                aria-current={newMeetingActive ? "page" : undefined}
-                data-telemetry-action="nav_meetings_new"
-                className={cn(
-                  buttonVariants({ variant: "default", size: "sm" }),
-                  "ml-2 min-h-11 shadow-none sm:min-h-8",
-                )}
-              >
-                New meeting
-              </Link>
+              <NewMeetingMenu active={newMeetingActive} />
             ) : null}
           </div>
         </div>

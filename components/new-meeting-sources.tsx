@@ -19,7 +19,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
 
-type MeetingSource = "link" | "recording" | "transcript" | "phone";
+export type MeetingSource = "link" | "recording" | "transcript" | "phone";
 
 const sourceOptions = [
   {
@@ -48,8 +48,12 @@ const sourceOptions = [
   },
 ];
 
-export function NewMeetingSources() {
-  const [source, setSource] = useState<MeetingSource | null>(null);
+export function NewMeetingSources({
+  initialSource = null,
+}: {
+  initialSource?: MeetingSource | null;
+} = {}) {
+  const [source, setSource] = useState<MeetingSource | null>(initialSource);
   const formRef = useRef<HTMLDivElement>(null);
 
   const centerInput = useCallback(() => {
@@ -85,6 +89,10 @@ export function NewMeetingSources() {
               className={cn(
                 "group flex w-full items-center gap-4 px-4 py-3.5 text-left outline-none transition-colors hover:bg-muted/50 focus-visible:bg-muted/50 focus-visible:ring-3 focus-visible:ring-inset focus-visible:ring-ring/50",
                 selected && "bg-muted/60",
+                // The phone recorder only makes sense on a phone.
+                option.value === "phone" &&
+                  !selected &&
+                  "[@media(hover:hover)_and_(pointer:fine)]:hidden",
               )}
               key={option.value}
               onClick={() => {

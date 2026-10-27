@@ -1,7 +1,10 @@
 import { redirect } from "next/navigation";
 
 import { AppShell } from "@/components/app-shell";
-import { NewMeetingSources } from "@/components/new-meeting-sources";
+import {
+  NewMeetingSources,
+  type MeetingSource,
+} from "@/components/new-meeting-sources";
 import { requireCurrentUser } from "@/lib/auth-guards";
 import {
   getOrCreateWorkspaceForSessionUser,
@@ -10,7 +13,11 @@ import {
 
 export const dynamic = "force-dynamic";
 
-export default async function NewMeetingPage() {
+export default async function NewMeetingPage({
+  searchParams,
+}: {
+  searchParams?: Promise<{ source?: string | string[] }>;
+} = {}) {
   const user = await requireCurrentUser();
   const workspace = await getOrCreateWorkspaceForSessionUser(user);
   const accessSummary = await getWorkspaceAccessSummary(workspace);
@@ -30,8 +37,25 @@ export default async function NewMeetingPage() {
           Add a meeting
         </h1>
 
-        <NewMeetingSources />
+        <NewMeetingSources
+          initialSource={parseMeetingSource((await searchParams)?.source)}
+        />
       </section>
     </AppShell>
   );
+}
+
+const meetingSources: readonly MeetingSource[] = [
+  "link",
+  "recording",
+  "transcript",
+  "phone",
+];
+
+function parseMeetingSource(value: string | string[] | undefined) {
+  const source = Array.isArray(value) ? value[0] : value;
+
+  return meetingSources.includes(source as MeetingSource)
+    ? (source as MeetingSource)
+    : null;
 }

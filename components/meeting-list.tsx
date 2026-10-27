@@ -134,6 +134,16 @@ export function MeetingList({
         <TableHeader>
           <TableRow className="hover:bg-transparent">
             <TableHead
+              aria-sort={getHeaderAriaSort("startedAt", sort)}
+              className="hidden w-40 pl-0 text-xs font-normal text-muted-foreground md:table-cell"
+            >
+              <SortableHeader
+                activeDirection={getSortDirection("startedAt", sort)}
+                href={sortLinks?.startedAt}
+                label="Started"
+              />
+            </TableHead>
+            <TableHead
               aria-sort={getHeaderAriaSort("title", sort)}
               className="pl-8 text-xs font-normal text-muted-foreground"
             >
@@ -141,16 +151,6 @@ export function MeetingList({
                 activeDirection={getSortDirection("title", sort)}
                 href={sortLinks?.title}
                 label="Meeting"
-              />
-            </TableHead>
-            <TableHead
-              aria-sort={getHeaderAriaSort("startedAt", sort)}
-              className="hidden w-44 text-xs font-normal text-muted-foreground md:table-cell"
-            >
-              <SortableHeader
-                activeDirection={getSortDirection("startedAt", sort)}
-                href={sortLinks?.startedAt}
-                label="Started"
               />
             </TableHead>
             <TableHead className="w-28 pr-4 text-right text-xs font-normal text-muted-foreground">
@@ -181,6 +181,30 @@ export function MeetingList({
                   <MeetingTableRow
                     isExpanded={isExpanded}
                     meeting={meeting}
+                    moreAction={
+                      !isExpanded ? null : hasMore ? (
+                        <button
+                          aria-label={`Load more meetings for ${meeting.title}`}
+                          className="rounded-sm text-xs text-muted-foreground underline decoration-border underline-offset-4 hover:text-foreground hover:decoration-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                          onClick={() =>
+                            setVisibleRelatedCounts((counts) => ({
+                              ...counts,
+                              [meeting.id]: visibleCount + 4,
+                            }))
+                          }
+                          type="button"
+                        >
+                          Show more
+                        </button>
+                      ) : meeting.hasMoreRelatedMeetings &&
+                        !meeting.olderRelatedMeetings &&
+                        meeting.relatedHistoryHref ? (
+                        <RelatedHistoryLink
+                          href={meeting.relatedHistoryHref}
+                          months={meeting.relatedHistoryMonths}
+                        />
+                      ) : null
+                    }
                     onToggle={() => toggleMeeting(meeting.id)}
                     relatedCount={relatedMeetings.length || (meeting.hasMoreRelatedMeetings ? 1 : 0)}
                   />
@@ -193,32 +217,6 @@ export function MeetingList({
                             meeting={relatedMeeting}
                           />
                         )),
-                        hasMore ? (
-                          <TableRow key={`${meeting.id}:load-more`} className="hover:bg-transparent">
-                            <TableCell colSpan={3} className="py-1.5 pl-[3.25rem]">
-                              <Button
-                                className="h-7 px-2 text-xs text-muted-foreground"
-                                variant="ghost"
-                                size="sm"
-                                aria-label={`Load more meetings for ${meeting.title}`}
-                                onClick={() => setVisibleRelatedCounts((counts) => ({
-                                  ...counts,
-                                  [meeting.id]: visibleCount + 4,
-                                }))}
-                              >
-                                Load more meetings
-                              </Button>
-                            </TableCell>
-                          </TableRow>
-                        ) : meeting.hasMoreRelatedMeetings &&
-                        !meeting.olderRelatedMeetings &&
-                        meeting.relatedHistoryHref ? (
-                          <RelatedHistoryRow
-                            href={meeting.relatedHistoryHref}
-                            key={`${meeting.id}:related-history`}
-                            months={meeting.relatedHistoryMonths}
-                          />
-                        ) : null,
                       ]
                     : null}
                 </Fragment>
@@ -231,7 +229,7 @@ export function MeetingList({
   );
 }
 
-function RelatedHistoryRow({
+function RelatedHistoryLink({
   href,
   months,
 }: {
@@ -239,21 +237,18 @@ function RelatedHistoryRow({
   months?: number;
 }) {
   return (
-    <TableRow className="hover:bg-transparent">
-      <TableCell colSpan={3} className="py-1.5 pl-[3.25rem]">
-        <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
-          <Link
-            className="inline-flex h-7 items-center gap-1.5 rounded-md px-2 text-xs text-muted-foreground hover:bg-muted hover:text-foreground"
-            href={href}
-            scroll={false}
-          >
-            <History aria-hidden="true" className="size-3.5" />
-            Load more meetings
-          </Link>
-          <span>Search before last {months ?? 6} months</span>
-        </div>
-      </TableCell>
-    </TableRow>
+    <Link
+      className="inline-flex items-center gap-1 rounded-sm text-xs text-muted-foreground underline decoration-border underline-offset-4 hover:text-foreground hover:decoration-foreground"
+      href={href}
+      scroll={false}
+      title={`Search before last ${months ?? 6} months`}
+    >
+      <History aria-hidden="true" className="size-3" />
+      Earlier
+      <span className="sr-only">
+        : Load more meetings. Search before last {months ?? 6} months
+      </span>
+    </Link>
   );
 }
 
@@ -269,12 +264,14 @@ function MeetingTableRow({
   isChild = false,
   isExpanded = false,
   meeting,
+  moreAction = null,
   onToggle,
   relatedCount = 0,
 }: {
   isChild?: boolean;
   isExpanded?: boolean;
   meeting: MeetingListBaseItem;
+  moreAction?: ReactNode;
   onToggle?: () => void;
   relatedCount?: number;
 }) {
@@ -290,17 +287,23 @@ function MeetingTableRow({
         isChild && "border-b-0",
       )}
     >
+      <TableCell
+        className={cn(
+          "hidden w-40 pl-0 align-top whitespace-nowrap text-sm tabular-nums md:table-cell",
+          isChild ? "pt-2.5 text-muted-foreground/80" : "pt-3.5 text-muted-foreground",
+        )}
+      >
+        <LocalDateTime value={meeting.startedAt} />
+      </TableCell>
       <TableCell className={cn("min-w-56", isChild ? "py-2" : "py-3")}>
         <MeetingTitleCell
           isChild={isChild}
           isExpanded={isExpanded}
           meeting={meeting}
+          moreAction={moreAction}
           onToggle={onToggle}
           relatedCount={relatedCount}
         />
-      </TableCell>
-      <TableCell className="hidden align-top whitespace-nowrap pt-3.5 text-sm text-muted-foreground tabular-nums md:table-cell">
-        <LocalDateTime value={meeting.startedAt} />
       </TableCell>
       <TableCell className="w-28 pr-4 align-top pt-3 text-right">
         {displayStatus === "failed" && meeting.canRecoverBot ? (
@@ -478,12 +481,14 @@ function MeetingTitleCell({
   isChild,
   isExpanded,
   meeting,
+  moreAction,
   onToggle,
   relatedCount,
 }: {
   isChild: boolean;
   isExpanded: boolean;
   meeting: MeetingListBaseItem;
+  moreAction: ReactNode;
   onToggle?: () => void;
   relatedCount: number;
 }) {
@@ -546,6 +551,7 @@ function MeetingTitleCell({
                 : `${relatedCount} related`}
             </span>
           ) : null}
+          {moreAction}
         </div>
         <MeetingMeta displayStatus={displayStatus} meeting={meeting} />
       </div>

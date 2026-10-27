@@ -196,21 +196,7 @@ export default async function MeetingPage({
             status={formatStatus(displayStatus)}
           />
           {meeting.speakerSuggestions.length > 0 ? (
-            <ul
-              aria-label="Participants"
-              className="mt-3 flex min-w-0 flex-wrap gap-x-1 gap-y-1 text-sm text-muted-foreground"
-            >
-              {meeting.speakerSuggestions.map((participant, index) => (
-                <li
-                  className="break-all"
-                  key={participant.email}
-                  title={participant.email}
-                >
-                  {participant.name || participant.email}
-                  {index < meeting.speakerSuggestions.length - 1 ? "," : ""}
-                </li>
-              ))}
-            </ul>
+            <ParticipantList participants={meeting.speakerSuggestions} />
           ) : null}
         </section>
 
@@ -381,4 +367,53 @@ function formatStatus(status: string) {
   }
 
   return status.charAt(0).toUpperCase() + status.slice(1);
+}
+
+const VISIBLE_PARTICIPANT_COUNT = 6;
+
+/**
+ * Names after the first few sit behind a disclosure, so a large call does not
+ * push the transcript down the page.
+ */
+function ParticipantList({
+  participants,
+}: {
+  participants: Array<{ email: string; name: string | null }>;
+}) {
+  const visible = participants.slice(0, VISIBLE_PARTICIPANT_COUNT);
+  const hidden = participants.slice(VISIBLE_PARTICIPANT_COUNT);
+  const label = (participant: { email: string; name: string | null }) =>
+    participant.name || participant.email;
+
+  return (
+    <div className="mt-2 text-sm text-muted-foreground">
+      <ul aria-label="Participants" className="inline">
+        {visible.map((participant, index) => (
+          <li className="inline" key={participant.email} title={participant.email}>
+            {label(participant)}
+            {index < visible.length - 1 || hidden.length > 0 ? ", " : ""}
+          </li>
+        ))}
+      </ul>
+      {hidden.length > 0 ? (
+        <details className="group inline">
+          <summary className="inline cursor-pointer list-none text-foreground underline decoration-border underline-offset-4 hover:decoration-foreground group-open:hidden [&::-webkit-details-marker]:hidden">
+            {hidden.length} more
+          </summary>
+          <ul aria-label="More participants" className="inline">
+            {hidden.map((participant, index) => (
+              <li
+                className="inline"
+                key={participant.email}
+                title={participant.email}
+              >
+                {label(participant)}
+                {index < hidden.length - 1 ? ", " : ""}
+              </li>
+            ))}
+          </ul>
+        </details>
+      ) : null}
+    </div>
+  );
 }
