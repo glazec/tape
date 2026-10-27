@@ -18,9 +18,8 @@ type AppShellProps = {
 };
 
 const navItems = [
-  { href: "/meetings/new", label: "New meeting" },
-  { href: "/dashboard", label: "Dashboard" },
-  { href: "/settings/team", label: "Team settings" },
+  { href: "/dashboard", label: "Meetings" },
+  { href: "/settings/team", label: "Settings" },
 ];
 
 export function AppShell({
@@ -33,59 +32,52 @@ export function AppShell({
   const visibleNavItems = canCreateMeetings
     ? navItems
     : navItems.filter((item) => item.href === "/dashboard");
+  const newMeetingActive = activeHref === "/meetings/new";
   const oneSignalAllowedOrigins = getOneSignalAllowedOrigins();
 
   return (
-    <div className="min-h-screen bg-[linear-gradient(180deg,var(--background)_0%,var(--surface)_100%)] text-foreground">
-      <header className="sticky top-0 z-30 border-b border-border/70 bg-background/85 backdrop-blur-md">
-        <div className="mx-auto flex w-full max-w-6xl flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:gap-6 sm:px-6">
+    <div className="min-h-screen bg-background text-foreground">
+      <header className="sticky top-0 z-30 border-b border-border/70 bg-background/90 backdrop-blur-md">
+        <div className="mx-auto flex h-14 w-full max-w-6xl items-center gap-8 px-4 sm:px-6">
           <Link
             href="/dashboard"
             aria-label="Tape home"
-            className="inline-flex w-fit rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-4"
+            className="inline-flex w-fit shrink-0 rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-4"
             data-telemetry-action="nav_home"
           >
             <ProductLogo />
           </Link>
-          <div className="flex flex-wrap items-center gap-2">
-            <nav
-              aria-label="Primary navigation"
-              className="flex flex-wrap gap-1 rounded-lg border bg-card p-1"
-            >
-              {visibleNavItems.map((item) => {
-                const isPrimaryAction = item.href === "/meetings/new";
-                const isActive = activeHref === item.href;
+          <nav
+            aria-label="Primary navigation"
+            className="flex h-full items-stretch gap-6"
+          >
+            {visibleNavItems.map((item) => {
+              const isActive = activeHref === item.href;
 
-                return (
-                  <Link
-                    key={item.href}
-                    href={item.href}
-                    data-telemetry-action={`nav_${item.href.slice(1).replaceAll("/", "_")}`}
-                    aria-current={isActive ? "page" : undefined}
-                    className={cn(
-                      buttonVariants({
-                        variant: isPrimaryAction
-                          ? "default"
-                          : isActive
-                            ? "secondary"
-                            : "ghost",
-                        size: "sm",
-                      }),
-                      !isPrimaryAction &&
-                        (isActive ? "text-foreground" : "text-muted-foreground"),
-                      "min-h-11 shadow-none sm:min-h-8",
-                    )}
-                  >
-                    {item.label}
-                  </Link>
-                );
-              })}
-            </nav>
+              return (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  data-telemetry-action={`nav_${item.href.slice(1).replaceAll("/", "_")}`}
+                  aria-current={isActive ? "page" : undefined}
+                  className={cn(
+                    "relative inline-flex min-h-11 items-center text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                    isActive
+                      ? "font-medium text-foreground after:absolute after:inset-x-0 after:-bottom-px after:h-0.5 after:rounded-full after:bg-foreground"
+                      : "text-muted-foreground hover:text-foreground",
+                  )}
+                >
+                  {item.label}
+                </Link>
+              );
+            })}
+          </nav>
+          <div className="ml-auto flex items-center gap-1">
             {canCreateMeetings ? (
               <Link
                 className={cn(
                   buttonVariants({ variant: "ghost", size: "sm" }),
-                  "min-h-11 text-muted-foreground sm:min-h-8",
+                  "hidden min-h-11 text-muted-foreground sm:inline-flex sm:min-h-8",
                 )}
                 href="/dashboard?setup=1"
                 data-telemetry-action="setup_guide_opened"
@@ -94,10 +86,23 @@ export function AppShell({
               </Link>
             ) : null}
             <SignOutButton />
+            {canCreateMeetings ? (
+              <Link
+                href="/meetings/new"
+                aria-current={newMeetingActive ? "page" : undefined}
+                data-telemetry-action="nav_meetings_new"
+                className={cn(
+                  buttonVariants({ variant: "default", size: "sm" }),
+                  "ml-2 min-h-11 shadow-none sm:min-h-8",
+                )}
+              >
+                New meeting
+              </Link>
+            ) : null}
           </div>
         </div>
       </header>
-      <main className="mx-auto w-full max-w-6xl px-4 py-7 sm:px-6 sm:py-10">
+      <main className="mx-auto w-full max-w-6xl px-4 py-8 sm:px-6 sm:py-10">
         {children}
       </main>
       {oneSignalExternalId ? (

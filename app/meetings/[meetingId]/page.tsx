@@ -10,7 +10,7 @@ import { MeetingRecoveryUploadPanel } from "@/components/meeting-recovery-upload
 import { MeetingRecordingResume } from "@/components/meeting-recording-resume";
 import { MeetingTitleEditor } from "@/components/meeting-title-editor";
 import { RelatedMeetingsCard } from "@/components/related-meetings-card";
-import { ShareDialog } from "@/components/share-dialog";
+import { MeetingShareButton } from "@/components/share-dialog";
 import { TranscriptViewer } from "@/components/transcript-viewer";
 import { requireCurrentUser } from "@/lib/auth-guards";
 import { getMeetingDisplayStatus } from "@/lib/meeting-display-status";
@@ -107,9 +107,9 @@ export default async function MeetingPage({
     canManage &&
     (canAddMeetingSource || shouldOfferBotRecovery) &&
     meeting.segments.length === 0;
-  const renderShareDialog = (instanceId: string) =>
+  const renderShareButton = (instanceId: string) =>
     canShare ? (
-      <ShareDialog
+      <MeetingShareButton
         allowRelated={canManage}
         canRemoveAccess={canManage}
         customAudience={
@@ -138,7 +138,7 @@ export default async function MeetingPage({
         className={`grid min-w-0 gap-8 ${
           shouldCenterMeetingSource
             ? "lg:grid-cols-1"
-            : "lg:grid-cols-[1fr_20rem] lg:grid-rows-[auto_1fr]"
+            : "lg:grid-cols-[minmax(0,1fr)_15rem] lg:grid-rows-[auto_1fr] lg:gap-x-14"
         }`}
       >
         <section className="min-w-0">
@@ -148,10 +148,10 @@ export default async function MeetingPage({
             transcriptJobStatus={meeting.transcriptJobStatus}
             translationStatus={meeting.translationSummary.status}
           />
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-              Meeting
-            </p>
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            {shouldCenterMeetingSource
+              ? null
+              : renderShareButton("meeting-sharing")}
             <MeetingActions
               audioExportUrls={
                 recordingParts.length > 1
@@ -176,7 +176,7 @@ export default async function MeetingPage({
               meetingId={meetingId}
             />
           </div>
-          <div className="mt-2 min-w-0">
+          <div className="mt-1 min-w-0">
             {canManage ? (
               <MeetingTitleEditor
                 meetingId={meetingId}
@@ -196,16 +196,21 @@ export default async function MeetingPage({
             status={formatStatus(displayStatus)}
           />
           {meeting.speakerSuggestions.length > 0 ? (
-            <div className="mt-3 flex flex-wrap items-baseline gap-x-3 gap-y-1 text-sm">
-              <span className="text-muted-foreground">Participants</span>
-              <ul aria-label="Participants" className="flex min-w-0 flex-wrap gap-x-3 gap-y-1">
-                {meeting.speakerSuggestions.map((participant) => (
-                  <li className="break-all" key={participant.email} title={participant.email}>
-                    {participant.name || participant.email}
-                  </li>
-                ))}
-              </ul>
-            </div>
+            <ul
+              aria-label="Participants"
+              className="mt-3 flex min-w-0 flex-wrap gap-x-1 gap-y-1 text-sm text-muted-foreground"
+            >
+              {meeting.speakerSuggestions.map((participant, index) => (
+                <li
+                  className="break-all"
+                  key={participant.email}
+                  title={participant.email}
+                >
+                  {participant.name || participant.email}
+                  {index < meeting.speakerSuggestions.length - 1 ? "," : ""}
+                </li>
+              ))}
+            </ul>
           ) : null}
         </section>
 
@@ -283,10 +288,7 @@ export default async function MeetingPage({
                   })}
                   meetingId={canManage ? meetingId : null}
                   mobileAfterSpeakers={
-                    <>
-                      <MeetingEntityLinks entities={meeting.entities} />
-                      {renderShareDialog("meeting-sharing-mobile")}
-                    </>
+                    <MeetingEntityLinks entities={meeting.entities} />
                   }
                   preferredTranslationLanguage={
                     teamConfiguration?.translationLanguage ??
@@ -314,40 +316,24 @@ export default async function MeetingPage({
         ) : (
           <>
             <aside
-              className={`min-w-0 lg:col-start-2 lg:row-span-2 lg:row-start-1 ${
-                canShare ? "lg:pt-8" : "lg:pt-24"
-              }`}
+              className="min-w-0 lg:col-start-2 lg:row-span-2 lg:row-start-1 lg:pt-12"
             >
               {canManage ? (
                 <>
-                  {canShare ? (
-                    <div className="hidden lg:block">
-                      {renderShareDialog("meeting-sharing-desktop")}
-                    </div>
-                  ) : null}
                   {canAddMeetingSource ? (
-                    <div className="mt-6">
+                    <div className="mb-8">
                       <MeetingRecoveryUploadPanel meetingId={meetingId} />
                     </div>
                   ) : null}
-                  <div className="hidden lg:mt-6 lg:block">
+                  <div className="hidden lg:block">
                     <RelatedMeetingsCard meetings={relatedMeetings} />
                   </div>
                 </>
               ) : (
                 <>
-                  {canShare ? (
-                    <div className="hidden lg:block">
-                      {renderShareDialog("meeting-sharing-desktop")}
-                    </div>
-                  ) : null}
-                  <div
-                    className={`rounded-lg border bg-card p-5 ${
-                      canShare ? "mt-6" : ""
-                    }`}
-                  >
-                    <p className="text-sm font-semibold">Shared transcript</p>
-                    <p className="mt-2 text-sm leading-6 text-muted-foreground">
+                  <div className="mb-8 border-l-2 pl-3">
+                    <p className="text-sm font-medium">Shared transcript</p>
+                    <p className="mt-1 text-sm leading-6 text-muted-foreground">
                       You can read and share this transcript. Editing stays with
                       the meeting owner.
                     </p>

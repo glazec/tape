@@ -742,7 +742,7 @@ describe("TranscriptViewer", () => {
     expect(html).not.toContain("Edit translation");
   });
 
-  it("shows emotion labels without exposing model details", () => {
+  it("keeps emotion labels off transcript lines and hides model details", () => {
     const html = renderToStaticMarkup(
       <TranscriptViewer
         segments={[
@@ -755,7 +755,7 @@ describe("TranscriptViewer", () => {
       />,
     );
 
-    expect(html).toContain("Hard");
+    expect(html).not.toContain(">Hard<");
     expect(html).not.toContain("High pressure words or fast pace");
   });
 
@@ -875,11 +875,9 @@ describe("TranscriptViewer", () => {
     expect(html).toContain("<svg");
     expect(html).toContain("Words per minute trend");
     expect(html).not.toContain("<polygon");
-    expect(html).toContain('stroke-dasharray="2 3"');
     expect(html).toContain("<polyline");
     expect(html).toContain("group-hover/rail:opacity-100");
     expect(html).toContain("top-0 z-40 h-6");
-    expect(html).toContain("bottom-0 z-40 h-6");
     expect(html).toContain("group-hover/wpm:opacity-100");
     expect(html).toContain("WPM trend: 120 wpm");
     expect(html).toContain("Speaker: Speaker 1");
@@ -889,8 +887,7 @@ describe("TranscriptViewer", () => {
       (html.match(/background-color:#2563eb/g) ?? []).length,
     ).toBeGreaterThanOrEqual(2);
     expect(html).toContain('title="Speaker 1"');
-    expect(html).toContain('title="Hard emotion"');
-    expect(html).toContain('stroke="#f97316"');
+    expect(html).toContain('stroke="var(--primary)"');
   });
 
   it("shows 5 second backward and forward controls on the audio player", () => {
@@ -901,8 +898,6 @@ describe("TranscriptViewer", () => {
     expect(html).toContain('aria-label="Skip back 5 seconds"');
     expect(html).toContain('aria-label="Skip forward 5 seconds"');
     expect((html.match(/5s/g) ?? []).length).toBeGreaterThanOrEqual(2);
-    expect(html).toContain("grid-cols-2");
-    expect(html).toContain("col-span-2");
   });
 
   it("calculates the WPM tooltip from the hovered waveform position", () => {
@@ -958,45 +953,6 @@ describe("TranscriptViewer", () => {
     expect(html).not.toContain("Speaker 1 · Neutral");
     expect(html).not.toContain('title="Neutral emotion"');
     expect(html).not.toContain("background-color:#94a3b8");
-    expect(html).toContain("No emotion signal");
-  });
-
-  it("limits waveform emotion colors to hard and chill", () => {
-    const html = renderToStaticMarkup(
-      <TranscriptViewer
-        audioUrl="/api/meetings/11111111-1111-4111-8111-111111111111/audio"
-        segments={[
-          {
-            ...segments[0],
-            emotionLabel: "hard",
-            id: "segment_hard",
-            startMs: 0,
-            endMs: 10000,
-            text: pacedText,
-          },
-          {
-            ...segments[0],
-            emotionLabel: "chill",
-            id: "segment_chill",
-            startMs: 10000,
-            endMs: 20000,
-            text: pacedText,
-          },
-          {
-            ...segments[0],
-            emotionLabel: "neutral",
-            id: "segment_neutral",
-            startMs: 20000,
-            endMs: 30000,
-            text: pacedText,
-          },
-        ]}
-      />,
-    );
-
-    expect(html).toContain("background-color:#dc2626");
-    expect(html).toContain("background-color:#059669");
-    expect(html).not.toContain("background-color:#94a3b8");
   });
 
   it("uses multilingual words for smoothed waveform pace", () => {
@@ -1014,6 +970,6 @@ describe("TranscriptViewer", () => {
     );
 
     expect(html).toMatch(/Audio waveform, Speaker 1, (?!0 wpm)\d+ wpm/);
-    expect(html).toContain('stroke="#f97316"');
+    expect(html).toContain('stroke="var(--primary)"');
   });
 });

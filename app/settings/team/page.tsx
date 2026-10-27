@@ -5,14 +5,6 @@ import { CalendarCheck, CalendarX, TriangleAlert } from "lucide-react";
 import { AppShell } from "@/components/app-shell";
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
-import {
-  Card,
-  CardAction,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import {
   Select,
@@ -80,80 +72,24 @@ export default async function TeamSettingsPage() {
       canCreateMeetings
       oneSignalExternalId={workspace.userId}
     >
-      <section className="flex max-w-3xl flex-col gap-6">
-        <div>
-          <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-            Team settings
-          </p>
-          <h1 className="mt-2 text-3xl font-semibold tracking-tight">
-            {teamConfiguration.name}
+      <section className="flex max-w-4xl flex-col">
+        <div className="pb-8">
+          <h1 className="text-2xl font-semibold tracking-[-0.015em]">
+            Settings
           </h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            {teamConfiguration.name}
+          </p>
           {!canEditTeamSettings ? (
             <p className="mt-3 text-sm text-muted-foreground">
               Only team administrators can edit these settings.
             </p>
           ) : null}
         </div>
-        <Card className="overflow-hidden">
-          <CardHeader>
-            <CardTitle>Billing &amp; credits</CardTitle>
-            <CardDescription>
-              Workspace credit and provider consumption for the current month.
-            </CardDescription>
-            <CardAction>
-              <Link
-                className={cn(
-                  buttonVariants({ variant: "outline", size: "sm" }),
-                  "min-h-11 sm:min-h-8",
-                )}
-                href="/usage"
-              >
-                View billing details
-              </Link>
-            </CardAction>
-          </CardHeader>
-          <CardContent>
-            <dl className="grid overflow-hidden rounded-lg border sm:grid-cols-3">
-              <BillingSettingMetric
-                label="Credit remaining"
-                value={
-                  billingOverview.creditLimitUsdMicros === null
-                    ? "No limit"
-                    : formatUsdMicros(
-                        billingOverview.creditRemainingUsdMicros ?? 0,
-                      )
-                }
-              />
-              <BillingSettingMetric
-                className="border-t sm:border-t-0 sm:border-l"
-                label="Workspace this month"
-                value={formatUsdMicros(
-                  billingOverview.organizationMonthUsdMicros,
-                )}
-              />
-              <BillingSettingMetric
-                className="border-t sm:border-t-0 sm:border-l"
-                label="You this month"
-                value={formatUsdMicros(billingOverview.personalMonthUsdMicros)}
-              />
-            </dl>
-            {billingOverview.isCreditExhausted ? (
-              <p className="mt-3 text-sm text-destructive">
-                New provider work is paused because the workspace has used its
-                credit.
-              </p>
-            ) : null}
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader>
-            <CardTitle>Workspace defaults</CardTitle>
-            <CardDescription>
-              Set the team name, translation language, and an optional sharing
-              group.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
+        <SettingsSection
+          title="Workspace defaults"
+          description="Set the team name, translation language, and an optional sharing group."
+        >
             {canEditTeamSettings ? (
               <form
                 action="/api/team/configuration"
@@ -241,7 +177,7 @@ export default async function TeamSettingsPage() {
                     empty to hide the group.
                   </p>
                 </div>
-                <Button className="self-start" type="submit">
+                <Button className="self-start" type="submit" variant="outline">
                   Save team settings
                 </Button>
               </form>
@@ -266,17 +202,11 @@ export default async function TeamSettingsPage() {
                 )}
               </div>
             )}
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader>
-            <CardTitle>Meeting capture</CardTitle>
-            <CardDescription>
-              Set the team bot name and JPG avatar people see when it joins
-              calls.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
+        </SettingsSection>
+        <SettingsSection
+          title="Meeting capture"
+          description="Set the team bot name and JPG avatar people see when it joins calls."
+        >
             {canEditTeamSettings ? (
               <form
                 action="/api/team/bot-profile"
@@ -308,6 +238,7 @@ export default async function TeamSettingsPage() {
                   </label>
                   <Input
                     accept="image/jpeg"
+                    className="h-auto cursor-pointer border-dashed py-2 text-muted-foreground file:mr-3 file:h-7 file:cursor-pointer file:rounded-md file:border file:border-input file:bg-background file:px-2.5 file:text-foreground"
                     id="avatar"
                     name="avatar"
                     type="file"
@@ -345,7 +276,7 @@ export default async function TeamSettingsPage() {
                     </label>
                   </div>
                 </div>
-                <Button className="self-start" type="submit">
+                <Button className="self-start" type="submit" variant="outline">
                   Save team bot profile
                 </Button>
               </form>
@@ -374,17 +305,13 @@ export default async function TeamSettingsPage() {
                 </p>
               </div>
             )}
-          </CardContent>
-        </Card>
+        </SettingsSection>
         {canEditTeamSettings || vocabularyTerms.length > 0 ? (
-        <Card>
-          <CardHeader>
-            <CardTitle>Transcription vocabulary</CardTitle>
-            <CardDescription>
-              Help Tape recognize team, company, and deal names correctly.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="flex flex-col gap-4">
+        <SettingsSection
+          title="Transcription vocabulary"
+          description="Help Tape recognize team, company, and deal names correctly."
+        >
+          <div className="flex flex-col gap-4">
             {canEditTeamSettings ? (
               <form
                 action="/api/team/vocabulary"
@@ -401,13 +328,15 @@ export default async function TeamSettingsPage() {
                   name="hint"
                   placeholder="Optional hint"
                 />
-                <Button type="submit">Add</Button>
+                <Button type="submit" variant="outline">
+                  Add term
+                </Button>
               </form>
             ) : null}
             {vocabularyTerms.length > 0 ? (
-              <ul className="divide-y rounded-lg border">
+              <ul className="divide-y border-y">
                 {vocabularyTerms.map((term) => (
-                  <li className="px-3 py-2" key={term.id}>
+                  <li className="py-2" key={term.id}>
                     <p className="text-sm font-medium">{term.term}</p>
                     {term.hint ? (
                       <p className="mt-1 text-xs text-muted-foreground">
@@ -418,26 +347,36 @@ export default async function TeamSettingsPage() {
                 ))}
               </ul>
             ) : (
-              <p className="rounded-lg border px-3 py-4 text-sm text-muted-foreground">
+              <p className="text-sm text-muted-foreground">
                 No team vocabulary yet.
               </p>
             )}
-          </CardContent>
-        </Card>
+          </div>
+        </SettingsSection>
         ) : null}
-        <details className="group rounded-lg border bg-card shadow-sm">
-          <summary className="flex min-h-12 cursor-pointer list-none items-center justify-between gap-3 px-4 py-3 font-medium outline-none focus-visible:ring-3 focus-visible:ring-ring/50">
-            <span>Workspace members</span>
-            <span className="text-sm font-normal text-muted-foreground">
-              {teamMembers.length.toLocaleString()}
+        <SettingsSection
+          title="Workspace members"
+          description="People in this workspace and their calendar status."
+        >
+        <details className="group">
+          <summary className="flex min-h-11 cursor-pointer list-none items-center gap-2 text-sm outline-none focus-visible:ring-3 focus-visible:ring-ring/50 sm:min-h-8">
+            <span className="font-medium">
+              {teamMembers.length.toLocaleString()}{" "}
+              {teamMembers.length === 1 ? "member" : "members"}
+            </span>
+            <span className="text-muted-foreground group-open:hidden">
+              Show
+            </span>
+            <span className="hidden text-muted-foreground group-open:inline">
+              Hide
             </span>
           </summary>
-          <div className="border-t p-4">
+          <div className="mt-3">
             {teamMembers.length > 0 ? (
-              <ul className="divide-y rounded-lg border">
+              <ul className="divide-y border-y">
                 {teamMembers.map((member) => (
                   <li
-                    className="flex flex-wrap items-center justify-between gap-3 px-3 py-3"
+                    className="flex flex-wrap items-center justify-between gap-3 py-2.5"
                     key={member.id}
                   >
                     <div className="min-w-0">
@@ -489,26 +428,98 @@ export default async function TeamSettingsPage() {
             )}
           </div>
         </details>
+        </SettingsSection>
+        <SettingsSection
+          action={
+            <Link
+              className={cn(
+                buttonVariants({ variant: "ghost", size: "sm" }),
+                "-mr-2 min-h-11 text-muted-foreground sm:min-h-8",
+              )}
+              href="/usage"
+            >
+              View billing details
+            </Link>
+          }
+          title="Billing & credits"
+          description="This month's provider consumption."
+        >
+          <dl className="grid gap-x-8 gap-y-3 text-sm sm:grid-cols-3">
+            <BillingSettingMetric
+              label="Credit remaining"
+              value={
+                billingOverview.creditLimitUsdMicros === null
+                  ? "No limit"
+                  : formatUsdMicros(
+                      billingOverview.creditRemainingUsdMicros ?? 0,
+                    )
+              }
+            />
+            <BillingSettingMetric
+              label="Workspace this month"
+              value={formatUsdMicros(
+                billingOverview.organizationMonthUsdMicros,
+              )}
+            />
+            <BillingSettingMetric
+              label="You this month"
+              value={formatUsdMicros(billingOverview.personalMonthUsdMicros)}
+            />
+          </dl>
+          {billingOverview.isCreditExhausted ? (
+            <p className="mt-3 text-sm text-destructive">
+              New provider work is paused because the workspace has used its
+              credit.
+            </p>
+          ) : null}
+        </SettingsSection>
       </section>
     </AppShell>
   );
 }
 
 function BillingSettingMetric({
-  className,
   label,
   value,
 }: {
-  className?: string;
   label: string;
   value: string;
 }) {
   return (
-    <div className={cn("p-4", className)}>
-      <dt className="text-xs text-muted-foreground">{label}</dt>
-      <dd className="mt-2 font-mono text-lg font-semibold tabular-nums">
-        {value}
-      </dd>
+    <div>
+      <dt className="text-muted-foreground">{label}</dt>
+      <dd className="mt-0.5 font-medium tabular-nums">{value}</dd>
     </div>
+  );
+}
+
+/**
+ * One settings group: what it is on the left, the controls on the right, and
+ * a hairline between groups. Whitespace separates them instead of cards.
+ */
+function SettingsSection({
+  action,
+  children,
+  description,
+  title,
+}: {
+  action?: React.ReactNode;
+  children: React.ReactNode;
+  description: string;
+  title: string;
+}) {
+  return (
+    <section className="grid gap-x-12 gap-y-4 border-t py-8 md:grid-cols-[14rem_minmax(0,1fr)]">
+      <div>
+        <div className="flex items-start justify-between gap-3 md:block">
+          <h2 className="text-sm font-semibold">{title}</h2>
+          {action ? <div className="md:mt-2">{action}</div> : null}
+        </div>
+        <p className="mt-1 text-sm leading-6 text-muted-foreground">
+          {description}
+        </p>
+      </div>
+      <div className="min-w-0">{children}</div>
+    </section>
   );
 }

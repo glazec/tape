@@ -1,18 +1,7 @@
-import type { ReactNode } from "react";
-import { Bot, Clock3 } from "lucide-react";
-
-import { Badge } from "@/components/ui/badge";
-import {
-  Card,
-  CardAction,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
 import { CalendarSyncButton } from "@/components/calendar-sync-button";
 import { LocalDateTime } from "@/components/local-date-time";
 import type { CalendarConnectionSummary } from "@/lib/calendar-connection-queries";
+import { cn } from "@/lib/utils";
 
 type CalendarAutomationPanelProps = {
   accountLabel?: string | null;
@@ -31,70 +20,57 @@ export function CalendarAutomationPanel({
   const autoJoinActive = connected && status.autoJoinEnabled;
 
   return (
-    <Card size="sm" className="h-full w-full shadow-sm">
-      <CardHeader className="border-b bg-muted/35">
-        <CardTitle>Calendar</CardTitle>
-        <CardDescription>
-          {connected
-            ? (accountLabel ?? "Connected account")
-            : "Connect Google Calendar to record and transcribe meetings automatically."}
-        </CardDescription>
-        <CardAction>
-          <Badge variant={connected ? "secondary" : "outline"}>
+    <section
+      aria-label="Calendar"
+      className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-start sm:gap-6"
+    >
+      <div className="min-w-0 text-sm">
+        <p className="flex flex-wrap items-center gap-x-2 gap-y-1">
+          <span
+            aria-hidden="true"
+            className={cn(
+              "size-1.5 rounded-full",
+              autoJoinActive ? "bg-emerald-500" : "bg-muted-foreground/40",
+            )}
+          />
+          <span className="font-medium">Calendar</span>
+          <span className="text-muted-foreground">
             {connected ? "Connected" : "Not connected"}
-          </Badge>
-        </CardAction>
-      </CardHeader>
-      <CardContent className="flex flex-col gap-4">
-        {connected ? (
-          <div className="grid gap-3 text-sm">
-            <StatusRow
-              icon={<Bot />}
-              label={
-                autoJoinActive
+          </span>
+          {connected ? (
+            <span className="truncate text-muted-foreground">
+              {accountLabel ?? "Connected account"}
+            </span>
+          ) : null}
+        </p>
+        <p className="mt-1 text-muted-foreground">
+          {connected ? (
+            <>
+              <span className="text-foreground">
+                {autoJoinActive
                   ? "Recording coverage on"
-                  : "Recording coverage off"
-              }
-              value={
-                autoJoinActive
-                  ? nextJoinTitle
-                    ? `Next join: ${nextJoinTitle}`
-                    : "Meet and Zoom use bots; Teams uses Tape for Mac"
-                  : "Sync calendar to enable recording"
-              }
-            />
-            <StatusRow
-              icon={<Clock3 />}
-              label="Last checked"
-              value={formatLastSynced(status.recallCalendarLastSyncedAt)}
-            />
-          </div>
-        ) : null}
-        <CalendarSyncButton autoSync={autoSync} connected={connected} />
-      </CardContent>
-    </Card>
-  );
-}
-
-function StatusRow({
-  icon,
-  label,
-  value,
-}: {
-  icon: ReactNode;
-  label: string;
-  value: ReactNode;
-}) {
-  return (
-    <div className="grid grid-cols-[1.5rem_1fr] gap-x-2">
-      <span className="flex size-6 items-center justify-center rounded-md bg-muted text-muted-foreground [&>svg]:size-3.5">
-        {icon}
-      </span>
-      <span className="min-w-0">
-        <span className="block font-medium leading-5">{label}</span>
-        <span className="block text-muted-foreground">{value}</span>
-      </span>
-    </div>
+                  : "Recording coverage off"}
+              </span>
+              {" · "}
+              {autoJoinActive
+                ? nextJoinTitle
+                  ? `Next join: ${nextJoinTitle}`
+                  : "Meet and Zoom use bots; Teams uses Tape for Mac"
+                : "Sync calendar to enable recording"}
+              {" · "}
+              Last checked {formatLastSynced(status.recallCalendarLastSyncedAt)}
+            </>
+          ) : (
+            "Connect Google Calendar to record and transcribe meetings automatically."
+          )}
+        </p>
+      </div>
+      <CalendarSyncButton
+        autoSync={autoSync}
+        connected={connected}
+        size="sm"
+      />
+    </section>
   );
 }
 

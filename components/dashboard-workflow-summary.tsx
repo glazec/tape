@@ -1,12 +1,5 @@
-import { Badge } from "@/components/ui/badge";
-import {
-  Card,
-  CardAction,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import type { ReactNode } from "react";
+
 import type {
   DashboardUserStats,
   DashboardWorkflowSummaryModel,
@@ -24,55 +17,39 @@ export function DashboardWorkflowSummary({
 
 function UserStatsCard({ stats }: { stats: DashboardUserStats }) {
   return (
-    <Card aria-label="This week activity" className="h-full">
-      <CardHeader>
-        <CardTitle>This week</CardTitle>
-        <CardDescription>Meeting activity since Monday.</CardDescription>
-        <CardAction>
-          <Badge variant="secondary">{formatMeetingChange(stats)}</Badge>
-        </CardAction>
-      </CardHeader>
-      <CardContent className="flex flex-1 flex-col gap-4">
-        <div className="grid grid-cols-3 gap-4">
-          <StatBlock
-            label="Meetings"
-            value={stats.thisWeekMeetings.toLocaleString()}
-          />
-          <StatBlock
-            label="Meeting time"
-            value={formatMeetingHours(stats.meetingHours)}
-          />
-          <StatBlock
-            label="Words"
-            value={stats.spokenWords.toLocaleString()}
-          />
-        </div>
-      </CardContent>
-    </Card>
+    <p
+      aria-label="This week activity"
+      className="flex flex-wrap items-baseline gap-x-2 gap-y-1 text-sm text-muted-foreground"
+    >
+      <span className="font-medium text-foreground">This week</span>
+      <Stat>{formatMeetingCount(stats.thisWeekMeetings)}</Stat>
+      <Separator />
+      <Stat>{formatMeetingHours(stats.meetingHours)} in meetings</Stat>
+      <Separator />
+      <Stat>{stats.spokenWords.toLocaleString()} words</Stat>
+      <Separator />
+      <span>{formatMeetingChange(stats)}</span>
+    </p>
   );
 }
 
-function StatBlock({
-  detail,
-  label,
-  value,
-}: {
-  detail?: string;
-  label: string;
-  value: string;
-}) {
+function Stat({ children }: { children: ReactNode }) {
   return (
-    <div className="min-w-0">
-      <p className="truncate text-2xl font-semibold leading-none tracking-[-0.015em] tabular-nums text-foreground">
-        {value}
-      </p>
-      <p className="mt-1.5 truncate text-xs font-medium text-muted-foreground">
-        {label}
-      </p>
-      {detail ? (
-        <p className="mt-1 truncate text-xs text-muted-foreground">{detail}</p>
-      ) : null}
-    </div>
+    <span className="font-medium tabular-nums text-foreground">{children}</span>
+  );
+}
+
+function formatMeetingCount(count: number) {
+  return count === 1
+    ? "1 meeting"
+    : `${count.toLocaleString()} meetings`;
+}
+
+function Separator() {
+  return (
+    <span aria-hidden="true" className="text-border">
+      /
+    </span>
   );
 }
 

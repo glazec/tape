@@ -90,16 +90,17 @@ export function SignOutButton() {
   return (
     <div className="flex min-w-0 flex-wrap items-center gap-2">
       <Button
-        className="min-h-11 text-muted-foreground sm:min-h-7"
+        aria-label={isPending ? "Signing out" : "Sign out"}
+        className="min-h-11 min-w-11 text-muted-foreground sm:min-h-8 sm:min-w-8"
         disabled={isPending}
         data-telemetry-action="sign_out_started"
         onClick={signOut}
         type="button"
         variant="ghost"
-        size="sm"
+        size="icon-sm"
       >
-        <LogOut data-icon="inline-start" />
-        {isPending ? "Signing out" : "Sign out"}
+        <LogOut aria-hidden="true" />
+        <span className="sr-only">{isPending ? "Signing out" : "Sign out"}</span>
       </Button>
       {error ? (
         <p role="status" className="text-xs font-medium text-destructive">

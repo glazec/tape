@@ -64,7 +64,7 @@ describe("DashboardStats", () => {
     );
 
     expect(
-      screen.getByText("You had 1 meeting since Monday."),
+      screen.getByText("1 meeting"),
     ).toBeTruthy();
 
     await act(async () => {
@@ -72,7 +72,7 @@ describe("DashboardStats", () => {
     });
     await waitFor(() => {
       expect(
-        screen.getByText("You had 2 meetings since Monday."),
+        screen.getByText("2 meetings"),
       ).toBeTruthy();
     });
     expect(fetchMock).toHaveBeenCalledWith(

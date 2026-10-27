@@ -25,15 +25,10 @@ export default async function NewMeetingPage() {
       amplitudeTeamId={workspace.teamId}
       oneSignalExternalId={workspace.userId}
     >
-      <section className="flex max-w-3xl flex-col gap-6">
-        <div>
-          <h1 className="text-3xl font-semibold tracking-tight">
-            Add a meeting
-          </h1>
-          <p className="mt-3 text-base leading-7 text-muted-foreground">
-            Choose how you want to add it.
-          </p>
-        </div>
+      <section className="mx-auto flex w-full max-w-xl flex-col gap-6 sm:pt-6">
+        <h1 className="text-2xl font-semibold tracking-[-0.015em]">
+          Add a meeting
+        </h1>
 
         <NewMeetingSources />
       </section>

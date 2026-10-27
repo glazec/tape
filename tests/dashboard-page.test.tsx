@@ -233,7 +233,7 @@ describe("DashboardPage", () => {
     let html = "";
 
     while (
-      !html.includes("You had 2 meetings since Monday.") ||
+      !html.includes(">2 meetings<") ||
       !html.includes('aria-label="Loading meetings"')
     ) {
       const chunk = await reader.read();
@@ -245,7 +245,7 @@ describe("DashboardPage", () => {
       html += decoder.decode(chunk.value, { stream: true });
     }
 
-    expect(html).toContain("You had 2 meetings since Monday.");
+    expect(html).toContain(">2 meetings<");
     expect(html).toContain('aria-label="Loading meetings"');
 
     await reader.cancel();
@@ -425,7 +425,7 @@ describe("DashboardPage", () => {
       '<h2 class="text-lg font-semibold tracking-[-0.01em]">Meetings</h2>',
     );
     expect(html).toContain("Welcome back, member.");
-    expect(html).toContain("You had 0 meetings since Monday.");
+    expect(html).toContain(">0 meetings<");
     expect(html).not.toContain("need your attention");
     expect(html).not.toContain("Everything is on track");
     expect(html).not.toContain("Workspace activity");

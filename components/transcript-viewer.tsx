@@ -1186,6 +1186,34 @@ export function TranscriptViewer({
               displayTranslationSummary,
               translationTargetChanged,
             ) ? (
+              displayTranslationSummary.status === "not_needed" &&
+              !translationTargetChanged ? (
+                <p className="mb-5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
+                  <Languages aria-hidden="true" className="size-3.5" />
+                  <span>
+                    Translation not needed.{" "}
+                    {getTranslationStatusBody(
+                    displayTranslationSummary,
+                      activeTranslationLanguageLabel,
+                    ).trim()}
+                  </span>
+                  {meetingId ? (
+                    <button
+                      className="font-medium text-foreground underline decoration-border underline-offset-4 hover:decoration-foreground disabled:opacity-50"
+                      disabled={isRequestingTranslation}
+                      onClick={requestTranslation}
+                      type="button"
+                    >
+                      Translate anyway
+                    </button>
+                  ) : null}
+                  {translationRequestError ? (
+                    <span className="font-medium text-destructive">
+                      {translationRequestError}
+                    </span>
+                  ) : null}
+                </p>
+              ) : (
               <div className="mb-5 rounded-lg border bg-muted/30 p-4">
                 <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                   <div className="min-w-0">
@@ -1239,6 +1267,7 @@ export function TranscriptViewer({
                   ) : null}
                 </div>
               </div>
+              )
             ) : null}
             <MeetingVisualTimeline
               onOpenGallery={() => setIsGalleryOverviewOpen(true)}
@@ -1246,8 +1275,10 @@ export function TranscriptViewer({
               visualAssets={visualAssets}
             />
             <div className="mb-6">
-              <h3 className="text-sm font-semibold">Speakers</h3>
-              <div className="mt-3 grid min-w-0 gap-2 sm:grid-cols-2">
+              <h3 className="text-xs font-medium text-muted-foreground">
+                Speakers
+              </h3>
+              <div className="mt-2 flex min-w-0 flex-wrap gap-x-5 gap-y-1">
                 {speakerStats.map((speaker) => {
                   const speakerLabel = speaker.speaker ?? "Unknown speaker";
                   const speakerKey = speaker.speakerKey;
@@ -1264,7 +1295,7 @@ export function TranscriptViewer({
 
                   if (canEditSpeakers && isSummaryEditing) {
                     return (
-                      <div className="sm:col-span-2" key={speakerKey}>
+                      <div className="w-full" key={speakerKey}>
                         {renderSpeakerEditor({
                           hasError,
                           isSaving,
@@ -1277,7 +1308,7 @@ export function TranscriptViewer({
 
                   return (
                     <div
-                      className="flex min-w-0 items-center justify-between gap-2 rounded-lg border bg-background p-2.5"
+                      className="group/speaker flex min-w-0 items-center gap-1"
                       key={speakerKey}
                       title={`Rename ${speakerLabel} everywhere`}
                     >
@@ -1292,39 +1323,40 @@ export function TranscriptViewer({
                             ),
                           }}
                         />
-                        <div className="min-w-0">
-                          <p className="truncate text-sm font-semibold">
-                            {speakerLabel}
-                          </p>
-                          <p className="text-xs font-medium text-muted-foreground">
-                            {speaker.percent}% ·{" "}
-                            {formatLineCount(speaker.lineCount)}
-                          </p>
-                        </div>
+                        <p className="min-w-0 truncate text-sm">
+                          {speakerLabel}
+                          <span className="ml-1.5 text-xs tabular-nums text-muted-foreground">
+                            {speaker.percent}%
+                            <span className="sr-only">
+                              {" "}
+                              · {formatLineCount(speaker.lineCount)}
+                            </span>
+                          </span>
+                        </p>
                       </div>
-                      <div className="flex shrink-0 items-center gap-1">
+                      <div className="flex shrink-0 items-center opacity-0 transition-opacity group-hover/speaker:opacity-100 focus-within:opacity-100 [@media(hover:none)]:opacity-100">
                         {canSeekTranscript && previewClips.length > 0 ? (
                           <Button
                             aria-label={`Preview ${speakerLabel}`}
                             onClick={() => playSpeakerPreview(previewClips)}
-                            size="icon-sm"
+                            size="icon-xs"
                             title={`Preview ${speakerLabel}`}
                             type="button"
-                            variant="outline"
+                            variant="ghost"
                           >
-                            <Play className="size-3.5" />
+                            <Play className="size-3" />
                           </Button>
                         ) : null}
                         {canEditSpeakers ? (
                           <Button
                             aria-label={`Rename ${speakerLabel} everywhere`}
                             onClick={() => startEditing(speaker.speaker)}
-                            size="icon-sm"
+                            size="icon-xs"
                             title={`Rename ${speakerLabel} everywhere`}
                             type="button"
-                            variant="outline"
+                            variant="ghost"
                           >
-                            <Pencil className="size-3.5" />
+                            <Pencil className="size-3" />
                           </Button>
                         ) : null}
                       </div>
@@ -1338,7 +1370,7 @@ export function TranscriptViewer({
                 {mobileAfterSpeakers}
               </div>
             ) : null}
-            <ol className="space-y-2">
+            <ol>
               {visualAssetPlacements.leading.length > 0
                 ? renderInlineVisualAssets(
                     visualAssetPlacements.leading,
@@ -1394,6 +1426,17 @@ export function TranscriptViewer({
                   : null;
                 const inlineAssetIndexes =
                   visualAssetPlacements.bySegmentId.get(segment.id);
+                const previousSegment =
+                  index > 0 ? displaySegments[index - 1] : null;
+                // A run of lines from one speaker reads as one block: only the
+                // first line carries the avatar and name. Images placed after
+                // the previous line break the run so the header returns.
+                const isContinuation =
+                  !isEditing &&
+                  previousSegment !== null &&
+                  getSpeakerKey(previousSegment.speaker) ===
+                    getSpeakerKey(segment.speaker) &&
+                  !visualAssetPlacements.bySegmentId.has(previousSegment.id);
 
                 return (
                   <Fragment key={segment.id}>
@@ -1408,13 +1451,22 @@ export function TranscriptViewer({
                       segmentRefs.current.delete(segment.id);
                     }}
                     className={cn(
-                      "grid grid-cols-[2rem_minmax(0,1fr)] gap-3 rounded-lg px-3 py-3 transition-colors sm:-mx-3",
+                      "group/line grid grid-cols-[2rem_minmax(0,1fr)] gap-3 rounded-lg px-3 transition-colors sm:-mx-3",
+                      isContinuation ? "py-1" : "mt-3 pt-3 pb-1",
                       isActive ? "bg-primary/5" : "hover:bg-muted/35",
                     )}
                   >
+                    {isContinuation ? (
+                      <span
+                        aria-hidden="true"
+                        className="pt-1 text-right text-[0.6875rem] tabular-nums text-muted-foreground opacity-0 transition-opacity group-hover/line:opacity-100"
+                      >
+                        {formatTimestamp(segment.startMs)}
+                      </span>
+                    ) : (
                     <span
                       aria-hidden="true"
-                      className="mt-1 flex size-7 items-center justify-center rounded-full text-xs font-semibold text-white shadow-sm"
+                      className="mt-1 flex size-7 items-center justify-center rounded-full text-xs font-semibold text-white"
                       style={{
                         backgroundColor: getWaveformSpeakerColor(
                           displaySpeaker,
@@ -1424,8 +1476,14 @@ export function TranscriptViewer({
                     >
                       {getSpeakerInitial(speakerLabel)}
                     </span>
+                    )}
                     <div className="min-w-0">
-                      <div className="mb-1.5 flex min-h-8 flex-wrap items-center gap-x-2 gap-y-1">
+                      <div
+                        className={cn(
+                          "mb-1 flex min-h-8 flex-wrap items-center gap-x-2 gap-y-1",
+                          isContinuation && "sr-only",
+                        )}
+                      >
                         {isEditing ? (
                           renderSpeakerEditor({
                             hasError,
@@ -1466,12 +1524,6 @@ export function TranscriptViewer({
                             {formatTimestamp(segment.startMs)}
                           </span>
                         )}
-                        {segment.emotionLabel &&
-                        segment.emotionLabel !== "neutral" ? (
-                          <span className="inline-flex h-6 items-center rounded-md border px-2 text-xs font-medium text-muted-foreground">
-                            {formatEmotionLabel(segment.emotionLabel)}
-                          </span>
-                        ) : null}
                       </div>
                       <div className="group/original relative inline-block max-w-full">
                         {canSeekTranscript ? (
@@ -2436,7 +2488,41 @@ function TranscriptAudioPlayer({
             : audioUrl
         }
       />
-      <div className="mx-auto flex max-w-6xl flex-col gap-2 px-4 py-3">
+      <div className="mx-auto flex max-w-6xl flex-col gap-2 px-4 py-2.5 sm:flex-row sm:items-center sm:gap-5 sm:px-6">
+        <div className="order-2 flex shrink-0 items-center justify-center gap-1 sm:order-none">
+          <Button
+            className="min-w-11 gap-1 rounded-full px-2"
+            aria-label="Skip back 5 seconds"
+            onClick={() => onSkipBy(-5)}
+            size="sm"
+            type="button"
+            variant="ghost"
+          >
+            <RotateCcw className="size-3.5" />
+            <span className="text-xs font-medium tabular-nums">5s</span>
+          </Button>
+          <Button
+            aria-label={isPlaying ? "Pause audio" : "Play audio"}
+            className="rounded-full"
+            onClick={onTogglePlayback}
+            size="icon-lg"
+            type="button"
+          >
+            {isPlaying ? <Pause /> : <Play />}
+          </Button>
+          <Button
+            className="min-w-11 gap-1 rounded-full px-2"
+            aria-label="Skip forward 5 seconds"
+            onClick={() => onSkipBy(5)}
+            size="sm"
+            type="button"
+            variant="ghost"
+          >
+            <span className="text-xs font-medium tabular-nums">5s</span>
+            <RotateCw className="size-3.5" />
+          </Button>
+        </div>
+        <div className="order-1 min-w-0 flex-1 sm:order-none">
         <button
           aria-busy={false}
           aria-label={
@@ -2444,7 +2530,7 @@ function TranscriptAudioPlayer({
               ? `${waveformAccessibleName}, ${activeWaveformLabel}`
               : waveformAccessibleName
           }
-          className="relative h-24 w-full overflow-hidden rounded-lg border bg-background px-2 outline-none focus-visible:ring-3 focus-visible:ring-ring/50 sm:px-1"
+          className="group/wave relative h-14 w-full overflow-hidden rounded-md px-2 outline-none focus-visible:ring-3 focus-visible:ring-ring/50 sm:px-1"
           onClick={seekFromWaveform}
           type="button"
         >
@@ -2493,7 +2579,7 @@ function TranscriptAudioPlayer({
           </span>
           <span
             aria-hidden="true"
-            className="absolute inset-x-2 bottom-4 top-8 z-0 flex items-center gap-[2px] opacity-70 sm:inset-x-1 sm:gap-px"
+            className="absolute inset-x-2 bottom-1 top-4 z-0 flex items-center gap-[2px] sm:inset-x-1 sm:gap-px"
           >
             {waveformValues.map((peak, index) => {
               const barPercent =
@@ -2506,11 +2592,11 @@ function TranscriptAudioPlayer({
                     "min-w-0 flex-1 rounded-[2px] transition-colors",
                     isResolvingAudioWaveform &&
                       "animate-pulse motion-reduce:animate-none",
-                    isPast ? "bg-emerald-600" : "bg-muted-foreground/80",
+                    isPast ? "bg-foreground/75" : "bg-muted-foreground/30",
                   )}
                   key={index}
                   style={{
-                    height: `${Math.round(6 + peak * 34)}px`,
+                    height: `${Math.round(4 + peak * 32)}px`,
                   }}
                 />
               );
@@ -2519,7 +2605,7 @@ function TranscriptAudioPlayer({
           {wpmLinePoints ? (
             <span
               aria-hidden="true"
-              className="group/wpm absolute inset-x-2 bottom-5 top-4 z-10 sm:inset-x-1"
+              className="group/wpm absolute inset-x-2 bottom-1 top-4 z-10 sm:inset-x-1"
               onPointerLeave={() => setHoveredWpmSnapshot(null)}
               onPointerMove={updateWpmHover}
             >
@@ -2528,19 +2614,6 @@ function TranscriptAudioPlayer({
                 preserveAspectRatio="none"
                 viewBox="0 0 100 100"
               >
-                {[24, 50, 76].map((gridY) => (
-                  <line
-                    key={gridY}
-                    stroke="var(--border)"
-                    strokeDasharray="2 3"
-                    strokeWidth="0.8"
-                    vectorEffect="non-scaling-stroke"
-                    x1="0"
-                    x2="100"
-                    y1={gridY}
-                    y2={gridY}
-                  />
-                ))}
                 <polyline
                   fill="none"
                   points={wpmLinePoints}
@@ -2557,16 +2630,17 @@ function TranscriptAudioPlayer({
                   stroke="var(--background)"
                   strokeLinecap="round"
                   strokeLinejoin="round"
-                  strokeWidth="6"
+                  strokeWidth="3.5"
                   vectorEffect="non-scaling-stroke"
                 />
                 <polyline
                   fill="none"
                   points={wpmLinePoints}
-                  stroke="#f97316"
+                  stroke="var(--primary)"
                   strokeLinecap="round"
                   strokeLinejoin="round"
-                  strokeWidth="3"
+                  strokeOpacity="0.55"
+                  strokeWidth="1.5"
                   vectorEffect="non-scaling-stroke"
                 />
               </svg>
@@ -2583,56 +2657,13 @@ function TranscriptAudioPlayer({
           ) : null}
           <span
             aria-hidden="true"
-            className="absolute inset-x-2 bottom-0 z-40 h-6 sm:inset-x-1"
-          >
-            <span className="pointer-events-none absolute inset-x-0 bottom-1 h-1 rounded-full bg-muted" />
-            {sectionMarkers.map((section) => {
-              const tooltipAlignClass = getWaveformTooltipAlignClass(
-                section.left,
-                section.width,
-              );
-
-              return (
-                <span
-                  className="group/rail absolute inset-y-0"
-                  key={`${section.id}-rail`}
-                  style={{
-                    left: `${section.left}%`,
-                    width: `${section.width}%`,
-                  }}
-                  title={formatEmotionTooltip(section.emotionLabel)}
-                >
-                  <span
-                    className="absolute inset-x-0 bottom-1 h-1 rounded-full"
-                    style={{
-                      backgroundColor: getWaveformEmotionColor(section.emotionLabel),
-                      opacity: getWaveformEmotionOpacity(
-                        section.emotionLabel,
-                        section.id === activeSegmentId,
-                      ),
-                    }}
-                  />
-                  <span
-                    className={cn(
-                      "pointer-events-none absolute bottom-6 z-50 whitespace-nowrap rounded-sm border bg-background px-1.5 py-1 text-[0.65rem] font-medium leading-none text-foreground opacity-0 shadow-sm ring-1 ring-border transition-opacity group-hover/rail:opacity-100",
-                      tooltipAlignClass,
-                    )}
-                  >
-                    Emotion: {formatEmotionName(section.emotionLabel)}
-                  </span>
-                </span>
-              );
-            })}
-          </span>
-          <span
-            aria-hidden="true"
             className="absolute bottom-1 top-1 z-30 w-0.5 rounded-full bg-primary shadow-[0_0_0_1px_var(--background)]"
             style={{ left: `${progressPercent}%` }}
           />
           {activeWaveformSection ? (
             <span
               aria-hidden="true"
-              className="pointer-events-none absolute right-2 top-3 z-30 flex max-w-[calc(100%-1rem)] flex-wrap justify-end gap-1.5 text-[0.65rem] leading-none sm:right-1"
+              className="pointer-events-none absolute right-2 top-3 z-30 flex max-w-[calc(100%-1rem)] flex-wrap justify-end gap-1.5 text-[0.65rem] leading-none opacity-0 transition-opacity group-hover/wave:opacity-100 group-focus-visible/wave:opacity-100 sm:right-1"
             >
               <span className="rounded-sm border bg-background/95 px-1.5 py-1 font-medium text-foreground shadow-sm ring-1 ring-border">
                 Speaker: {activeWaveformSection.speakerLabel}
@@ -2657,7 +2688,7 @@ function TranscriptAudioPlayer({
         </button>
         <input
           aria-label="Audio progress"
-          className="h-2 w-full accent-primary"
+          className="mt-1 h-1 w-full cursor-pointer accent-primary"
           max={safeDuration || 0}
           min={0}
           onChange={seek}
@@ -2673,59 +2704,29 @@ function TranscriptAudioPlayer({
             Recording could not be played. Reload and try again.
           </p>
         ) : null}
-        <div className="grid min-w-0 grid-cols-2 items-center gap-x-3 gap-y-2 sm:grid-cols-[5rem_1fr_5rem]">
-          <p className="order-2 text-xs font-medium tabular-nums text-muted-foreground sm:order-none">
+        </div>
+        <div className="order-3 flex shrink-0 items-center justify-between gap-3 sm:order-none sm:justify-end">
+          <p className="text-xs tabular-nums text-muted-foreground">
             {formatPlayerTime(currentTime)}
+            <span className="text-muted-foreground/60">
+              {" / "}
+              {formatPlayerTime(safeDuration)}
+            </span>
           </p>
-          <div className="order-1 col-span-2 flex min-w-0 items-center justify-center gap-2 sm:order-none sm:col-span-1">
-            <Button
-              className="min-w-12 gap-1 rounded-full px-2"
-              aria-label="Skip back 5 seconds"
-              onClick={() => onSkipBy(-5)}
-              size="sm"
-              type="button"
-              variant="ghost"
+          <label className="flex items-center gap-1 text-xs font-medium text-muted-foreground">
+            <span className="sr-only">Playback speed</span>
+            <select
+              className="h-7 rounded-md border bg-background px-1.5 text-xs text-foreground outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+              onChange={changePlaybackRate}
+              value={playbackRate}
             >
-              <RotateCcw className="size-3.5" />
-              <span className="text-xs font-semibold tabular-nums">5s</span>
-            </Button>
-            <Button
-              aria-label={isPlaying ? "Pause audio" : "Play audio"}
-              onClick={onTogglePlayback}
-              size="icon-lg"
-              type="button"
-            >
-              {isPlaying ? <Pause /> : <Play />}
-            </Button>
-            <Button
-              className="min-w-12 gap-1 rounded-full px-2"
-              aria-label="Skip forward 5 seconds"
-              onClick={() => onSkipBy(5)}
-              size="sm"
-              type="button"
-              variant="ghost"
-            >
-              <span className="text-xs font-semibold tabular-nums">5s</span>
-              <RotateCw className="size-3.5" />
-            </Button>
-            <label className="flex items-center gap-1 text-xs font-medium text-muted-foreground">
-              <span className="sr-only">Playback speed</span>
-              <select
-                className="h-8 rounded-md border bg-background px-2 text-sm text-foreground outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
-                onChange={changePlaybackRate}
-                value={playbackRate}
-              >
-                <option value={0.75}>0.75x</option>
-                <option value={1}>1x</option>
-                <option value={1.25}>1.25x</option>
-                <option value={1.5}>1.5x</option>
-                <option value={2}>2x</option>
-              </select>
-            </label>
-          </div>
-          <p className="order-3 text-right text-xs font-medium tabular-nums text-muted-foreground sm:order-none">
-            {formatPlayerTime(safeDuration)}
-          </p>
+              <option value={0.75}>0.75x</option>
+              <option value={1}>1x</option>
+              <option value={1.25}>1.25x</option>
+              <option value={1.5}>1.5x</option>
+              <option value={2}>2x</option>
+            </select>
+          </label>
         </div>
       </div>
     </div>
@@ -3353,31 +3354,6 @@ function getWaveformSpeakerColor(
   );
 }
 
-function getWaveformEmotionColor(
-  emotionLabel?: TranscriptSegment["emotionLabel"],
-) {
-  if (emotionLabel === "hard") {
-    return "#dc2626";
-  }
-
-  if (emotionLabel === "chill") {
-    return "#059669";
-  }
-
-  return "transparent";
-}
-
-function getWaveformEmotionOpacity(
-  emotionLabel: TranscriptSegment["emotionLabel"],
-  isActive: boolean,
-) {
-  if (emotionLabel !== "hard" && emotionLabel !== "chill") {
-    return 0;
-  }
-
-  return isActive ? 0.95 : 0.6;
-}
-
 function formatEmotionLabel(label: NonNullable<TranscriptSegment["emotionLabel"]>) {
   return label.charAt(0).toUpperCase() + label.slice(1);
 }
@@ -3393,14 +3369,6 @@ function formatWaveformSectionLabel(
   }
 
   return speakerLabel;
-}
-
-function formatEmotionTooltip(emotionLabel?: TranscriptSegment["emotionLabel"]) {
-  if (!emotionLabel || emotionLabel === "neutral") {
-    return "No emotion signal";
-  }
-
-  return `${formatEmotionName(emotionLabel)} emotion`;
 }
 
 function formatEmotionName(emotionLabel?: TranscriptSegment["emotionLabel"]) {

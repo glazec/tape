@@ -32,6 +32,7 @@ type CalendarSyncButtonProps = {
   autoSync?: boolean;
   connected?: boolean;
   setupMode?: boolean;
+  size?: "default" | "sm";
 };
 
 type CalendarSyncResponse = {
@@ -95,6 +96,7 @@ export function CalendarSyncButton({
   autoSync = false,
   connected = true,
   setupMode = false,
+  size = "default",
 }: CalendarSyncButtonProps) {
   const router = useRouter();
   const autoSyncAttempted = useRef(false);
@@ -210,6 +212,7 @@ export function CalendarSyncButton({
             type="button"
             onClick={connectCalendar}
             disabled={isBusy}
+            size={size}
             variant="default"
           >
             <CalendarCheck data-icon="inline-start" />
@@ -221,6 +224,7 @@ export function CalendarSyncButton({
               type="button"
               onClick={syncCalendar}
               disabled={isBusy}
+              size={size}
               variant="outline"
               className="rounded-r-none"
             >
@@ -234,6 +238,7 @@ export function CalendarSyncButton({
                     aria-label="Calendar options"
                     className="-ml-px rounded-l-none px-2"
                     disabled={isBusy}
+                    size={size}
                     type="button"
                     variant="outline"
                   />

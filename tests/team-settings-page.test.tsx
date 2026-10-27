@@ -214,7 +214,7 @@ describe("TeamSettingsPage", () => {
       html.match(/Calendar (connected|not connected|needs attention)/g),
     ).toHaveLength(3);
     expect(html).toContain("You");
-    expect(html).toContain(">9<");
+    expect(html).toContain("9 members");
     expect(html).not.toContain("max-h-80");
     expect(html).not.toContain("overflow-y-auto");
     expect(html).toContain("Only team administrators can edit these settings");
