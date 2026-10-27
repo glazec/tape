@@ -161,21 +161,15 @@ export default async function MeetingPage({
       canCreateMeetings={workspace.canCreateMeetings !== false}
       oneSignalExternalId={workspace.userId}
     >
-      <div
-        className={`grid min-w-0 gap-8 ${
-          shouldCenterMeetingSource
-            ? "lg:grid-cols-1"
-            : "lg:grid-cols-[minmax(0,1fr)_15rem] lg:grid-rows-[auto_1fr] lg:gap-x-14"
-        }`}
-      >
-        <section className="min-w-0">
+      <div className="mx-auto flex w-full max-w-3xl min-w-0 flex-col gap-8">
+        <section className="flex min-w-0 flex-wrap items-start gap-x-6">
           <MeetingAutoRefresh
             meetingStatus={meeting.status}
             segmentCount={meeting.segments.length}
             transcriptJobStatus={meeting.transcriptJobStatus}
             translationStatus={meeting.translationSummary.status}
           />
-          <div className="flex flex-wrap items-center justify-end gap-2">
+          <div className="order-2 ml-auto flex flex-wrap items-center justify-end gap-1 pt-1">
             {shouldCenterMeetingSource
               ? null
               : renderShareButton("meeting-sharing")}
@@ -207,8 +201,8 @@ export default async function MeetingPage({
               meetingId={meetingId}
             />
           </div>
-          {composition.parent ? <p className="mt-2 text-sm text-muted-foreground">Part of <Link className="underline underline-offset-4" href={`/meetings/${composition.parent.id}`}>{composition.parent.title}</Link></p> : null}
-          <div className="mt-1 min-w-0">
+          {composition.parent ? <p className="order-3 mt-2 basis-full text-sm text-muted-foreground">Part of <Link className="underline underline-offset-4" href={`/meetings/${composition.parent.id}`}>{composition.parent.title}</Link></p> : null}
+          <div className="order-1 min-w-0 flex-1">
             {canManage ? (
               <MeetingTitleEditor
                 meetingId={meetingId}
@@ -220,6 +214,7 @@ export default async function MeetingPage({
               </h1>
             )}
           </div>
+          <div className="order-3 basis-full">
           <MeetingHeaderMetadata
             durationMs={isComposed ? parts.every(part => part.durationMs !== null) ? parts.reduce((sum, part) => sum + (part.durationMs ?? 0), 0) : null : meeting.durationMs}
             endedAt={meeting.endedAt}
@@ -227,22 +222,42 @@ export default async function MeetingPage({
             startedAt={meeting.startedAt}
             status={displayStatus === "scheduled" && composition.sources.some(source => source.kind === "continuation" && source.status === "scheduled") ? "Waiting to join" : formatStatus(displayStatus)}
           />
+          </div>
           {participants.length > 0 ? (
-            <ParticipantList participants={participants} />
+            <div className="order-3 basis-full">
+              <ParticipantList participants={participants} />
+            </div>
           ) : null}
+          {relatedMeetings.length > 0 ? (
+            <div className="order-3 mt-3 basis-full">
+              <RelatedMeetingsCard meetings={relatedMeetings} />
+            </div>
+          ) : null}
+          {canManage ? null : (
+            <p className="order-3 mt-3 basis-full text-sm text-muted-foreground">
+              Shared transcript. You can read and share this transcript.
+              Editing stays with the meeting owner.
+            </p>
+          )}
         </section>
 
-        <section
-          className={`min-w-0 ${
-            shouldCenterMeetingSource ? "" : "lg:col-start-1 lg:row-start-2"
-          }`}
-        >
+        <section className="min-w-0">
           <div>
             <MeetingNotes
               key={`${workspace.userId}:${meetingId}`}
               meetingId={meetingId}
               userId={workspace.userId}
             />
+            {isFollowupReady(followupMeeting) ? (
+              <MeetingFollowup
+                canGenerate={canManage}
+                initialResult={followupResult}
+                key={`${workspace.userId}:${meetingId}:${followupSourceHash}:${canManage}:${JSON.stringify(followupResult)}`}
+                meetingId={meetingId}
+                segments={followupMeeting.segments.map(({ id, startMs }) => ({ id, startMs }))}
+                sourceHash={followupSourceHash}
+              />
+            ) : null}
                 {shouldOfferRecordingResume && latestPart.meetingUrl && latestPart.lastRecordingEndedAt ? (
                   <MeetingRecordingResume
                     meetingId={meetingId}
@@ -328,16 +343,7 @@ export default async function MeetingPage({
                   translationSummary={meeting.translationSummary}
                   visualAssets={continuousVisualAssets}
                 />}
-                {isFollowupReady(followupMeeting) ? (
-                  <MeetingFollowup
-                    canGenerate={canManage}
-                    initialResult={followupResult}
-                    key={`${workspace.userId}:${meetingId}:${followupSourceHash}:${canManage}:${JSON.stringify(followupResult)}`}
-                    meetingId={meetingId}
-                    segments={followupMeeting.segments.map(({ id, startMs }) => ({ id, startMs }))}
-                    sourceHash={followupSourceHash}
-                  />
-                ) : null}
+
                 <div className="hidden lg:block">
                   <MeetingEntityLinks entities={meeting.entities} />
                 </div>
@@ -346,47 +352,9 @@ export default async function MeetingPage({
           </div>
         </section>
 
-        {shouldCenterMeetingSource ? (
-          <aside className="mx-auto w-full max-w-2xl min-w-0">
-            <RelatedMeetingsCard meetings={relatedMeetings} />
-          </aside>
-        ) : (
-          <>
-            <aside
-              className="min-w-0 lg:col-start-2 lg:row-span-2 lg:row-start-1 lg:pt-12"
-            >
-              {canManage ? (
-                <>
-                  {canAddMeetingSource ? (
-                    <div className="mb-8">
-                      <MeetingRecoveryUploadPanel meetingId={meetingId} />
-                    </div>
-                  ) : null}
-                  <div className="hidden lg:block">
-                    <RelatedMeetingsCard meetings={relatedMeetings} />
-                  </div>
-                </>
-              ) : (
-                <>
-                  <div className="mb-8 border-l-2 pl-3">
-                    <p className="text-sm font-medium">Shared transcript</p>
-                    <p className="mt-1 text-sm leading-6 text-muted-foreground">
-                      You can read and share this transcript. Editing stays with
-                      the meeting owner.
-                    </p>
-                  </div>
-                  <div className="hidden lg:mt-6 lg:block">
-                    <RelatedMeetingsCard meetings={relatedMeetings} />
-                  </div>
-                </>
-              )}
-            </aside>
-
-            <aside className="min-w-0 lg:hidden">
-              <RelatedMeetingsCard meetings={relatedMeetings} />
-            </aside>
-          </>
-        )}
+        {canManage && canAddMeetingSource && !shouldCenterMeetingSource ? (
+          <MeetingRecoveryUploadPanel meetingId={meetingId} />
+        ) : null}
       </div>
     </AppShell>
   );

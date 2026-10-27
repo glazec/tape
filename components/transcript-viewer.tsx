@@ -550,6 +550,7 @@ export function TranscriptViewer({
   const [lightboxAssetIndex, setLightboxAssetIndex] = useState<number | null>(
     null,
   );
+  const [showAllSpeakers, setShowAllSpeakers] = useState(false);
   const [isGalleryOverviewOpen, setIsGalleryOverviewOpen] = useState(false);
   const [returnToGalleryOverview, setReturnToGalleryOverview] =
     useState(false);
@@ -580,10 +581,21 @@ export function TranscriptViewer({
     scrollTranscriptToTime(asset.timestampMs / 1000);
   }
 
+  // Speakers under 1% of the conversation wait behind "N more" so the legend
+  // stays one line; the one being renamed always stays visible.
+  const visibleSpeakerStats = showAllSpeakers
+    ? speakerStats
+    : speakerStats.filter(
+        (speaker) =>
+          speaker.percent > 0 ||
+          editingSpeaker?.speakerKey === speaker.speakerKey,
+      );
+  const hiddenSpeakerCount = speakerStats.length - visibleSpeakerStats.length;
+
   function renderInlineVisualAssets(assetIndexes: number[], rowKey: string) {
     return (
       <li
-        className="grid grid-cols-[2rem_minmax(0,1fr)] gap-3 px-3 sm:-mx-3"
+        className="grid grid-cols-[2.25rem_minmax(0,1fr)] gap-3 pr-3 sm:-ml-12"
         key={rowKey}
       >
         <span aria-hidden="true" />
@@ -1316,7 +1328,7 @@ export function TranscriptViewer({
                 Speakers
               </h3>
               <div className="mt-2 flex min-w-0 flex-wrap gap-x-5 gap-y-1">
-                {speakerStats.map((speaker) => {
+                {visibleSpeakerStats.map((speaker) => {
                   const speakerLabel = speaker.speaker ?? "Unknown speaker";
                   const speakerKey = speaker.speakerKey;
                   const previewClips = getSpeakerPreviewClips(
@@ -1400,6 +1412,15 @@ export function TranscriptViewer({
                     </div>
                   );
                 })}
+                {hiddenSpeakerCount > 0 ? (
+                  <button
+                    className="text-sm text-muted-foreground underline decoration-border underline-offset-4 hover:text-foreground hover:decoration-foreground"
+                    onClick={() => setShowAllSpeakers(true)}
+                    type="button"
+                  >
+                    {hiddenSpeakerCount} more
+                  </button>
+                ) : null}
               </div>
             </div>
             {mobileAfterSpeakers ? (
@@ -1488,7 +1509,7 @@ export function TranscriptViewer({
                       segmentRefs.current.delete(segment.id);
                     }}
                     className={cn(
-                      "group/line grid grid-cols-[2rem_minmax(0,1fr)] gap-3 rounded-lg px-3 transition-colors sm:-mx-3",
+                      "group/line grid grid-cols-[2.25rem_minmax(0,1fr)] gap-3 rounded-lg pr-3 transition-colors sm:-ml-12",
                       isContinuation ? "py-0.5" : "mt-2 pt-2.5 pb-0.5",
                       isActive ? "bg-primary/5" : "hover:bg-muted/35",
                     )}
@@ -1503,7 +1524,7 @@ export function TranscriptViewer({
                     ) : (
                     <span
                       aria-hidden="true"
-                      className="mt-1 flex size-7 items-center justify-center rounded-full text-xs font-semibold text-white"
+                      className="mt-3 ml-auto size-2 rounded-full text-[0px]"
                       style={{
                         backgroundColor: getWaveformSpeakerColor(
                           displaySpeaker,
@@ -2527,7 +2548,7 @@ function TranscriptAudioPlayer({
             : audioUrl
         }
       />
-      <div className="mx-auto flex max-w-6xl flex-col gap-2 px-4 py-2.5 sm:flex-row sm:items-center sm:gap-5 sm:px-6">
+      <div className="mx-auto flex max-w-3xl flex-col gap-2 px-4 py-2.5 sm:flex-row sm:items-center sm:gap-4 sm:px-0">
         <div className="order-2 flex shrink-0 items-center justify-center gap-1 sm:order-none">
           <Button
             className="min-w-11 gap-1 rounded-full px-2"
@@ -2542,7 +2563,7 @@ function TranscriptAudioPlayer({
           </Button>
           <Button
             aria-label={isPlaying ? "Pause audio" : "Play audio"}
-            className="size-9 rounded-full"
+            className="size-9 rounded-full bg-foreground text-background hover:bg-foreground/85"
             onClick={onTogglePlayback}
             size="icon"
             type="button"
@@ -2678,7 +2699,7 @@ function TranscriptAudioPlayer({
                   stroke="var(--primary)"
                   strokeLinecap="round"
                   strokeLinejoin="round"
-                  strokeOpacity="0.55"
+                  strokeOpacity="0.4"
                   strokeWidth="1.5"
                   vectorEffect="non-scaling-stroke"
                 />
@@ -2696,7 +2717,7 @@ function TranscriptAudioPlayer({
           ) : null}
           <span
             aria-hidden="true"
-            className="absolute bottom-1 top-1 z-30 w-0.5 rounded-full bg-primary shadow-[0_0_0_1px_var(--background)]"
+            className="absolute bottom-1 top-1 z-30 w-0.5 rounded-full bg-foreground shadow-[0_0_0_1px_var(--background)]"
             style={{ left: `${progressPercent}%` }}
           />
           {activeWaveformSection ? (
@@ -2727,7 +2748,7 @@ function TranscriptAudioPlayer({
         </button>
         <input
           aria-label="Audio progress"
-          className="mt-0.5 block h-1 w-full cursor-pointer accent-primary opacity-60 transition-opacity hover:opacity-100 focus-visible:opacity-100"
+          className="mt-0.5 block h-1 w-full cursor-pointer accent-[var(--foreground)] opacity-50 transition-opacity hover:opacity-100 focus-visible:opacity-100"
           max={safeDuration || 0}
           min={0}
           onChange={seek}

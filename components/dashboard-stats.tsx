@@ -67,9 +67,10 @@ export function DashboardStats({
   return (
     <div className="min-w-0 shrink-0">
       <h1 className="text-2xl font-semibold tracking-[-0.015em]">
-        Welcome back, {name}.
+        Meetings
       </h1>
-      <div className="mt-2">
+      <p className="sr-only">Signed in as {name}.</p>
+      <div className="mt-1">
         <DashboardWorkflowSummary summary={displayedResult.summary} />
       </div>
       {isRefreshing ? (

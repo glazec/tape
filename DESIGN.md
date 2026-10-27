@@ -168,7 +168,7 @@ Motion should explain a state change. Use short transitions for menus, disclosur
 
 ### Navigation
 
-Keep global navigation short and stable. Make the active location clear. The primary create action may use coral; other navigation items should remain quiet. Move infrequent account actions behind a compact account control when navigation becomes crowded.
+Keep global navigation short and stable. Make the active location clear. The primary create action may use coral; other navigation items should remain quiet. Account actions, including Setup guide and Sign out, live behind the compact account control at the end of the header.
 
 Task critical flows such as recording use a focused layout for the entire route, including setup, active recording, and upload. Remove global navigation, provide a clear safe exit before recording starts, and warn before any action would discard unsaved work.
 
@@ -192,7 +192,9 @@ Meeting rows should prioritize title, time, people, and actionable state. Hide l
 
 Do not expose every detected entity, provider detail, or repeated meeting relationship in the default row. Reveal supporting context when it helps disambiguate a meeting.
 
-Related meeting groups start expanded with at most four visible meetings, including the parent, and only related meetings from the past two months. A “Load more meetings” button at the end reveals up to four additional meetings in that group, including older history once recent meetings are exhausted. Manual collapse controls should preserve the user’s place. Keep page size and rendered length small enough that the next meeting and pagination remain easy to reach.
+Related meeting groups start collapsed, so the library reads as one timeline; the parent row shows how many related meetings it holds. Expanding a group shows at most four meetings, including the parent, and only related meetings from the past two months. A Show more control on the parent row reveals up to four additional meetings in that group, including older history once recent meetings are exhausted.
+
+When the library is ordered by time, upcoming meetings sit under one Upcoming heading and past meetings under one heading per local day, and the Started column shows only the time. Day boundaries follow the viewer's timezone, so the headings render in the browser. Search applies as the person types and filters apply when picked; there is no separate Search button. Manual collapse controls should preserve the user’s place. Keep page size and rendered length small enough that the next meeting and pagination remain easy to reach.
 
 Automatic groups require the same set of external organizations from attendee email domains. A conversation with A stays separate from an introduction involving A and B, even if the title or an attendee overlaps. Personal email addresses identify individual participants. Meetings without attendee evidence may match each other by title, but must not bridge groups with known participants.
 
@@ -212,7 +214,7 @@ Place My notes above the transcript or recovery panel in every meeting state. Al
 
 Question answers belong directly beneath their questions, marked From transcript with a quiet left rule and expandable sources. Put an icon-only Regenerate answer control immediately beside the source label. Render the answer as a directly editable, borderless textarea with automatic saving, an accessible label, and a visible focus treatment; do not require Edit, Done, or Cancel buttons. Preserve deliberately cleared answers. Preserve earlier pairs when writing continues. Use a 1.2 second pause after a question mark, respect IME composition, and never move focus when an answer arrives. Keep the previous answer visible during regeneration. Show changed question or transcript state explicitly; protect edited answers with confirmation before regeneration. Answer edits use the existing notes save status and draft recovery. Keep the answer read only while regeneration is running so incoming results cannot overwrite typing. Bound the notes document height so the transcript remains reachable. Source links and answer actions have at least 44 px touch targets.
 
-Lead with the editable title and compact, human readable metadata. Put transcript content in the main column. Put sharing, related meetings, and other supporting actions after the primary content in mobile reading order.
+Lead with the editable title and compact, human readable metadata, with Share, Export, Copy, and the overflow menu on the title row. The page is one centered reading column. Private notes and the AI followup come before the transcript, because they are the summary layer; the transcript follows. Related meetings sit behind a compact chip under the metadata rather than in a side column, and sharing opens in a dialog from the Share button.
 
 Show available participant names below the meeting metadata, including scheduled meetings without a recording or transcript. Omit the participant row when no names or emails are available to the viewer.
 
@@ -238,7 +240,7 @@ Keep public and shared pages quieter than the owner workspace, but retain enough
 
 ### Dashboard
 
-The meeting library and search are the dashboard's primary job. Full workspace users also see a compact greeting, last seven days activity, and calendar automation. Shared only users go directly to the transcripts granted to them.
+The meeting library and search are the dashboard's primary job. Full workspace users also see the page title, one sentence of this week's activity, and a one line calendar status with its sync action. Shared only users go directly to the transcripts granted to them.
 
 Scheduled meetings appear only within the next 48 hours. Apply this cutoff before grouping and pagination so distant invitations do not push recent meetings down the dashboard.
 

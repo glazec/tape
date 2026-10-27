@@ -152,7 +152,7 @@ describe("MeetingList", () => {
     expect(html).not.toContain("No meetings found");
   });
 
-  it("expands related meetings by default", () => {
+  it("keeps related meetings collapsed by default", () => {
     const html = renderToStaticMarkup(
       <MeetingList
         meetings={[
@@ -178,48 +178,14 @@ describe("MeetingList", () => {
     );
 
     expect(html).toContain("Nascent follow up");
-    expect(html).toContain("Nascent intro");
+    expect(html).not.toContain("Nascent intro");
     expect(html).not.toContain("Detected entity");
     expect(html).toContain("1 related");
-    expect(html).toContain('aria-expanded="true"');
-    expect(html).toContain('aria-label="Collapse Nascent follow up"');
+    expect(html).toContain('aria-expanded="false"');
+    expect(html).toContain('aria-label="Expand Nascent follow up"');
   });
 
-  it("shows a clear button to search older related meetings", () => {
-    const html = renderToStaticMarkup(
-      <MeetingList
-        meetings={[
-          {
-            id: "22222222-2222-4222-8222-222222222222",
-            title: "Nascent follow up",
-            platform: "google_meet",
-            primaryEntity: "nascent",
-            startedAt: "2026-06-27T12:00:00.000Z",
-            status: "ready",
-            hasMoreRelatedMeetings: true,
-            relatedHistoryHref: "/dashboard?relatedMonths=12",
-            relatedHistoryMonths: 6,
-            relatedMeetings: [
-              {
-                id: "11111111-1111-4111-8111-111111111111",
-                title: "Nascent intro",
-                platform: "google_meet",
-                startedAt: "2026-06-20T12:00:00.000Z",
-                status: "ready",
-              },
-            ],
-          },
-        ]}
-      />,
-    );
-
-    expect(html).toContain("1 related");
-    expect(html).toContain("Load more meetings");
-    expect(html).toContain("Search before last 6 months");
-    expect(html).toContain('href="/dashboard?relatedMonths=12"');
-  });
-
-  it("shows grouped row status and expanded related count", () => {
+  it("shows grouped row status and related count", () => {
     const html = renderToStaticMarkup(
       <MeetingList
         meetings={[
@@ -245,11 +211,8 @@ describe("MeetingList", () => {
 
     expect(html).toContain("Scheduled");
     expect(html).toContain("1 related");
-    expect(html).toContain("Ready");
-    expect(html).toContain('data-status="ready"');
     expect(html).toContain("David &lt;&gt; YP");
     expect(html).toContain("size-5 shrink-0");
-    expect(html).toContain("items-start gap-1 relative pl-8");
     expect(html).not.toContain("rounded-full bg-muted-foreground/40");
     expect(html).not.toContain("bg-muted/20");
     expect(html).not.toContain("has-aria-expanded:bg-muted/50");

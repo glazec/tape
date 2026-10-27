@@ -283,7 +283,7 @@ describe("DashboardWorkflowSummary", () => {
     expect(html).toContain("This week");
     expect(html).toContain("meetings");
     expect(html).toContain("in meetings");
-    expect(html).toContain("+100% vs last week");
+    expect(html).toContain("100% more than last week");
     expect(html).toContain("0h");
     expect(html).toContain("words");
     expect(html).not.toContain("talk share");

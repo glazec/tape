@@ -190,7 +190,7 @@ describe("meeting page", () => {
     expect(html).toContain("recovery panel");
     expect(html).toContain("Google Meet:Failed");
     expect(html).toContain("transcript:meeting_1");
-    expect(html).toContain("lg:grid-cols-[minmax(0,1fr)_15rem]");
+    expect(html).toContain("mx-auto flex w-full max-w-3xl");
     expect(html.indexOf("speaker summary")).toBeLessThan(
       html.indexOf("entity links"),
     );
@@ -312,7 +312,7 @@ describe("meeting page", () => {
     expect(html).toContain("Record this Teams meeting locally");
     expect(html).toContain("Open Tape for Mac");
     expect(html).toContain("recovery panel");
-    expect(html).toContain("lg:grid-cols-1");
+    expect(html).toContain("mx-auto flex w-full max-w-3xl");
   });
 
   it("offers uploads when a manageable meeting has no recording", async () => {
@@ -335,8 +335,7 @@ describe("meeting page", () => {
     expect(html).not.toContain("transcript:missed_meeting");
     expect(html).toContain("meeting actions:delete only");
     expect(html).not.toContain("share dialog");
-    expect(html).toContain("lg:grid-cols-1");
-    expect(html).not.toContain("lg:grid-cols-[minmax(0,1fr)_15rem]");
+    expect(html).toContain("mx-auto flex w-full max-w-3xl");
   });
 
   it("offers bot recovery and keeps existing content uploads available", async () => {
@@ -552,13 +551,14 @@ describe("meeting page", () => {
     expect(mocks.notFound).toHaveBeenCalled();
   });
 
-  it("renders followup after the transcript and replaces cached UI when a saved result changes", async () => {
+  it("renders followup before the transcript and replaces cached UI when a saved result changes", async () => {
     const source = { title: "Weekly meeting", startedAt: null, segments: [{ id: "seg", speaker: "Alice", startMs: 0, text: "I will send the deck." }] };
     const current = meeting({ ...source, status: "ready", transcriptJobStatus: "completed" });
     mocks.getMeeting.mockResolvedValue(current);
     const before = await MeetingPage({ params: Promise.resolve({ meetingId: "meeting_1" }) });
     const beforeHtml = renderToStaticMarkup(before);
-    expect(beforeHtml.indexOf("AI followup")).toBeGreaterThan(beforeHtml.indexOf("transcript lines"));
+    // The summary layer leads; the raw transcript follows it.
+    expect(beforeHtml.indexOf("AI followup")).toBeLessThan(beforeHtml.indexOf("transcript lines"));
     const result = { todos: [{ person: "Alice", text: "Alice will send the deck.", timing: null, evidence: [{ segmentId: "seg", quote: "I will send the deck." }] }], dynamics: [] };
     mocks.getMeeting.mockResolvedValue({ ...current, aiFollowup: { sourceHash: getFollowupSourceHash(source), result } });
     const after = await MeetingPage({ params: Promise.resolve({ meetingId: "meeting_1" }) });

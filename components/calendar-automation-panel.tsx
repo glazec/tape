@@ -28,70 +28,74 @@ export function CalendarAutomationPanel({
   return (
     <section
       aria-label="Calendar"
-      className="flex min-w-0 flex-1 flex-col gap-3 sm:flex-row sm:items-start sm:justify-end sm:gap-4"
+      className="flex min-w-0 flex-1 flex-col gap-3 sm:flex-row sm:items-center sm:justify-end sm:gap-4"
     >
-      <div className="min-w-0 text-sm sm:text-right">
-        <p className="flex flex-wrap items-center gap-x-2 gap-y-1 sm:justify-end">
-          <span
-            aria-hidden="true"
-            className={cn(
-              "size-1.5 rounded-full",
-              autoJoinActive ? "bg-emerald-500" : "bg-muted-foreground/40",
+      <p className="flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1 text-sm text-muted-foreground sm:justify-end">
+        <span
+          aria-hidden="true"
+          className={cn(
+            "mr-0.5 size-1.5 rounded-full",
+            autoJoinActive ? "bg-emerald-500" : "bg-muted-foreground/40",
+          )}
+        />
+        {connected ? (
+          <>
+            <span className="text-foreground">
+              {autoJoinActive
+                ? "Recording coverage on"
+                : "Recording coverage off"}
+            </span>
+            <span aria-hidden="true">·</span>
+            <span>
+              {autoJoinActive
+                ? nextJoinTitle
+                  ? `Next join: ${nextJoinTitle}`
+                  : "Meet and Zoom use bots; Teams uses Tape for Mac"
+                : "Sync calendar to enable recording"}
+            </span>
+            {accounts ? (
+              <>
+                <span aria-hidden="true">·</span>
+                <Link
+                  className="underline decoration-border underline-offset-4 hover:text-foreground hover:decoration-foreground"
+                  href="/settings/team#connected-accounts"
+                >
+                  <span className="sr-only">
+                    Calendar status: Connected.{" "}
+                  </span>
+                  {accounts.length === 1
+                    ? "1 calendar account"
+                    : `${accounts.length} calendar accounts`}
+                  <span className="sr-only">. Manage connected accounts</span>
+                </Link>
+              </>
+            ) : (
+              <>
+                <span aria-hidden="true">·</span>
+                <span className="whitespace-nowrap">
+                  <span className="sr-only">
+                    Calendar status: Connected,{" "}
+                    {status.accountEmail ?? accountLabel ?? "Connected account"}
+                    .{" "}
+                  </span>
+                  Last checked{" "}
+                  {formatLastSynced(status.recallCalendarLastSyncedAt)}
+                </span>
+              </>
             )}
-          />
-          {connected ? (
-            <>
-              <span>
-                {autoJoinActive
-                  ? "Recording coverage on"
-                  : "Recording coverage off"}
-              </span>
-              <span className="text-muted-foreground">
-                {autoJoinActive
-                  ? nextJoinTitle
-                    ? `Next join: ${nextJoinTitle}`
-                    : "Meet and Zoom use bots; Teams uses Tape for Mac"
-                  : "Sync calendar to enable recording"}
-              </span>
-            </>
-          ) : (
-            <span>Calendar not connected</span>
-          )}
-        </p>
-        <p className="mt-0.5 text-xs text-muted-foreground">
-          {accounts ? (
-            <>
-              Calendar <span className="sr-only">status: </span>
-              {connected ? "Connected" : "Not connected"}
-              {" · "}
-              {accounts.length === 1
-                ? "1 calendar account"
-                : `${accounts.length} calendar accounts`}
-              {" · "}
-              <Link
-                className="text-foreground underline decoration-border underline-offset-4 hover:decoration-foreground"
-                href="/settings/team#connected-accounts"
-              >
-                Manage connected accounts
-              </Link>
-            </>
-          ) : connected ? (
-            <>
-              Calendar <span className="sr-only">status: </span>Connected
-              {" · "}
-              {status.accountEmail ?? accountLabel ?? "Connected account"}
-              {" · Last checked "}
-              {formatLastSynced(status.recallCalendarLastSyncedAt)}
-            </>
-          ) : (
-            <>
-              <span className="sr-only">Calendar: Not connected. </span>
-              Connect Google Calendar to record and transcribe meetings
+          </>
+        ) : (
+          <>
+            <span className="text-foreground">
+              Calendar <span className="sr-only">status: </span>Not connected
+            </span>
+            <span className="sr-only">
+              . Connect Google Calendar to record and transcribe meetings
               automatically.
-            </>
-          )}
-        </p>
-      </div>
+            </span>
+          </>
+        )}
+      </p>
       {accounts ? null : (
         <CalendarSyncButton
           autoSync={autoSync}

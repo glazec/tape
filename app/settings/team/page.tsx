@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { CalendarCheck, CalendarX, TriangleAlert } from "lucide-react";
 
 import { AppShell } from "@/components/app-shell";
+import { BotAvatarPicker } from "@/components/bot-avatar-picker";
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -92,7 +93,7 @@ export default async function TeamSettingsPage({ searchParams }: {
       canCreateMeetings
       oneSignalExternalId={workspace.userId}
     >
-      <section className="flex max-w-4xl flex-col">
+      <section className="mx-auto flex w-full max-w-3xl flex-col">
         <div className="pb-8">
           <h1 className="text-2xl font-semibold tracking-[-0.015em]">
             Settings
@@ -144,7 +145,7 @@ export default async function TeamSettingsPage({ searchParams }: {
                   >
                     <div className="min-w-0">
                       <p className="break-all text-sm font-medium">
-                        {account.email ?? "Google account · reconnect to identify"}
+                        {account.email ?? "Google account"}
                       </p>
                       <p className="text-xs text-muted-foreground">
                         {account.teamName} ·{" "}
@@ -193,6 +194,7 @@ export default async function TeamSettingsPage({ searchParams }: {
                     Team name
                   </label>
                   <Input
+                    className="sm:max-w-sm"
                     defaultValue={teamConfiguration.name}
                     id="teamName"
                     maxLength={100}
@@ -235,6 +237,7 @@ export default async function TeamSettingsPage({ searchParams }: {
                     Sharing group name
                   </label>
                   <Input
+                    className="sm:max-w-sm"
                     defaultValue={teamConfiguration.shareAudience?.name ?? ""}
                     id="shareAudienceName"
                     maxLength={100}
@@ -339,6 +342,7 @@ export default async function TeamSettingsPage({ searchParams }: {
                     Team bot name
                   </label>
                   <Input
+                    className="sm:max-w-sm"
                     defaultValue={botProfile.botName}
                     id="botName"
                     maxLength={100}
@@ -347,48 +351,13 @@ export default async function TeamSettingsPage({ searchParams }: {
                   />
                 </div>
                 <div className="grid gap-2">
-                  <label
-                    className="text-sm leading-none font-medium"
-                    htmlFor="avatar"
-                  >
+                  <p className="text-sm leading-none font-medium">
                     Team meeting bot avatar
-                  </label>
-                  <Input
-                    accept="image/jpeg"
-                    className="h-auto cursor-pointer border-dashed py-2 text-muted-foreground file:mr-3 file:h-7 file:cursor-pointer file:rounded-md file:border file:border-input file:bg-background file:px-2.5 file:text-foreground"
-                    id="avatar"
-                    name="avatar"
-                    type="file"
+                  </p>
+                  <BotAvatarPicker
+                    currentAvatarJpegBase64={botAvatarJpegBase64}
+                    isCustom={Boolean(botProfile.avatarJpegBase64)}
                   />
-                </div>
-                <div className="flex flex-wrap items-center gap-3">
-                  <div
-                    aria-label="Current team meeting bot avatar"
-                    className="size-16 rounded-lg border bg-muted bg-cover bg-center"
-                    role="img"
-                    style={
-                      botAvatarJpegBase64
-                        ? {
-                            backgroundImage: `url(data:image/jpeg;base64,${botAvatarJpegBase64})`,
-                          }
-                        : undefined
-                    }
-                  />
-                  <div className="min-w-0">
-                    <p className="text-sm font-medium">
-                      {botProfile.avatarJpegBase64
-                        ? "Custom avatar saved"
-                        : "Default avatar"}
-                    </p>
-                    <label className="mt-2 flex items-center gap-2 text-xs font-normal text-muted-foreground">
-                      <input
-                        className="size-4"
-                        name="resetAvatar"
-                        type="checkbox"
-                      />
-                      Use default avatar
-                    </label>
-                  </div>
                 </div>
                 <Button className="self-start" type="submit" variant="outline">
                   Save team bot profile
@@ -449,13 +418,12 @@ export default async function TeamSettingsPage({ searchParams }: {
             {vocabularyTerms.length > 0 ? (
               <ul className="divide-y border-y">
                 {vocabularyTerms.map((term) => (
-                  <li className="py-2" key={term.id}>
-                    <p className="text-sm font-medium">{term.term}</p>
-                    {term.hint ? (
-                      <p className="mt-1 text-xs text-muted-foreground">
-                        {term.hint}
-                      </p>
-                    ) : null}
+                  <li
+                    className="grid gap-x-6 py-2 text-sm sm:grid-cols-[minmax(0,12rem)_minmax(0,1fr)]"
+                    key={term.id}
+                  >
+                    <p className="font-medium">{term.term}</p>
+                    <p className="text-muted-foreground">{term.hint ?? ""}</p>
                   </li>
                 ))}
               </ul>

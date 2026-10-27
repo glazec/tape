@@ -3,13 +3,15 @@
 import { useSyncExternalStore } from "react";
 
 type LocalDateTimeProps = {
+  /** Time only, for rows that already sit under a day heading. */
+  timeOnly?: boolean;
   value: string;
 };
 
-export function LocalDateTime({ value }: LocalDateTimeProps) {
+export function LocalDateTime({ timeOnly = false, value }: LocalDateTimeProps) {
   const label = useSyncExternalStore(
     subscribeToLocalTime,
-    () => formatLocalDateTime(value),
+    () => formatLocalDateTime(value, timeOnly),
     getServerSnapshot,
   );
 
@@ -24,10 +26,9 @@ function getServerSnapshot() {
   return "";
 }
 
-function formatLocalDateTime(value: string) {
+function formatLocalDateTime(value: string, timeOnly = false) {
   return new Intl.DateTimeFormat("en", {
-    month: "short",
-    day: "numeric",
+    ...(timeOnly ? {} : { month: "short", day: "numeric" }),
     hour: "numeric",
     minute: "2-digit",
   }).format(new Date(value));

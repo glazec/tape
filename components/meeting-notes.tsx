@@ -273,19 +273,20 @@ export function MeetingNotes({
   return (
     <section
       aria-labelledby={headingId}
-      className="mb-8 rounded-xl border border-border/80 bg-card p-4 transition-[border-color,box-shadow] has-[textarea:focus-visible]:border-ring/60 has-[textarea:focus-visible]:ring-2 has-[textarea:focus-visible]:ring-ring/15 motion-reduce:transition-none sm:p-5"
+      className="group/notes mb-10"
     >
-      <div className="mb-5 flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <h2 id={headingId} className="text-base font-semibold tracking-tight">
+      <div className="mb-2 flex items-center justify-between gap-3">
+        <div className="flex min-w-0 items-center gap-2">
+          <h2 id={headingId} className="text-xs font-medium text-muted-foreground">
             My notes
           </h2>
           <p
             id={privacyId}
-            className="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground"
+            className="flex items-center gap-1 text-xs text-muted-foreground/80"
+            title="Only visible to you"
           >
             <LockKeyhole aria-hidden="true" className="size-3 shrink-0" />
-            Only visible to you
+            <span className="sr-only">Only visible to you</span>
           </p>
         </div>
         <span
@@ -332,7 +333,7 @@ export function MeetingNotes({
               aria-label={index === 0 ? "My notes" : `Note ${index + 1}`}
               aria-describedby={`${privacyId} ${hintId}`}
               aria-busy={status === "loading"}
-              className={`block max-h-[min(24rem,60dvh)] w-full resize-none border-0 bg-transparent p-0 text-base leading-7 outline-none placeholder:text-muted-foreground disabled:text-muted-foreground ${blocks.length === 1 && !hasQuestions ? "min-h-36" : "min-h-7"}`}
+              className={`block max-h-[min(24rem,60dvh)] w-full resize-none border-0 bg-transparent p-0 text-base leading-7 outline-none placeholder:text-muted-foreground disabled:text-muted-foreground ${blocks.length === 1 && !hasQuestions ? "min-h-16 focus:min-h-36" : "min-h-7"}`}
               disabled={!loaded}
               maxLength={20_000 - content.length + block.text.length}
               onBlur={() => void save()}
@@ -444,7 +445,9 @@ export function MeetingNotes({
       <p
         id={hintId}
         className={
-          hasAnswer ? "sr-only" : "mt-3 text-xs leading-5 text-muted-foreground"
+          hasAnswer
+            ? "sr-only"
+            : "mt-2 text-xs leading-5 text-muted-foreground opacity-0 transition-opacity group-focus-within/notes:opacity-100 motion-reduce:transition-none"
         }
       >
         End a question with ? to find an answer in this transcript.

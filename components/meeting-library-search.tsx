@@ -1,6 +1,12 @@
 "use client";
 
-import { useTransition, type FormEvent, type ReactNode } from "react";
+import {
+  useEffect,
+  useRef,
+  useTransition,
+  type FormEvent,
+  type ReactNode,
+} from "react";
 import { LoaderCircle } from "lucide-react";
 import { useRouter } from "next/navigation";
 
@@ -15,6 +21,33 @@ export function MeetingLibrarySearch({
 }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
+  const typingTimerRef = useRef<number | null>(null);
+
+  useEffect(
+    () => () => {
+      if (typingTimerRef.current !== null) {
+        window.clearTimeout(typingTimerRef.current);
+      }
+    },
+    [],
+  );
+
+  // Search as the person types, after a short pause, instead of waiting for
+  // an explicit Search press.
+  function scheduleSearch(form: HTMLFormElement, target: EventTarget) {
+    if (!(target instanceof HTMLInputElement) || target.type !== "search") {
+      return;
+    }
+
+    if (typingTimerRef.current !== null) {
+      window.clearTimeout(typingTimerRef.current);
+    }
+
+    typingTimerRef.current = window.setTimeout(() => {
+      typingTimerRef.current = null;
+      form.requestSubmit();
+    }, 400);
+  }
 
   function searchMeetings(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -39,7 +72,12 @@ export function MeetingLibrarySearch({
 
   return (
     <>
-      <form onSubmit={searchMeetings}>{controls}</form>
+      <form
+        onInput={(event) => scheduleSearch(event.currentTarget, event.target)}
+        onSubmit={searchMeetings}
+      >
+        {controls}
+      </form>
       <div
         aria-busy={isPending}
         aria-label="Meeting results"

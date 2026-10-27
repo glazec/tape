@@ -15,6 +15,9 @@ it("shows four meetings per folder including the parent and loads four more only
     { ...meeting("Alpha"), relatedMeetings: Array.from({ length: 10 }, (_, i) => meeting(`Alpha ${i + 1}`)) },
     { ...meeting("Beta"), relatedMeetings: Array.from({ length: 6 }, (_, i) => meeting(`Beta ${i + 1}`)) },
   ]} />);
+  expect(screen.getAllByRole("link")).toHaveLength(2);
+  fireEvent.click(screen.getByRole("button", { name: "Expand Alpha" }));
+  fireEvent.click(screen.getByRole("button", { name: "Expand Beta" }));
   expect(screen.getAllByRole("link")).toHaveLength(8);
   expect(screen.queryByRole("link", { name: "Alpha 4" })).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "Load more meetings for Alpha" }));
@@ -34,10 +37,27 @@ describe("older meetings", () => {
       olderRelatedMeetings: [meeting("Older meeting")],
       hasMoreRelatedMeetings: true,
     }]} />);
+    expect(screen.getAllByRole("link")).toHaveLength(1);
+    fireEvent.click(screen.getByRole("button", { name: "Expand Alpha" }));
     expect(screen.getAllByRole("link")).toHaveLength(recentCount + 1);
     expect(screen.queryByRole("link", { name: "Older meeting" })).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Load more meetings for Alpha" }));
     expect(screen.getByRole("link", { name: "Older meeting" })).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Load more meetings for Alpha" })).toBeNull();
   });
+});
+
+it("offers older related history from an expanded series", () => {
+  render(<MeetingList meetings={[{
+    ...meeting("Alpha"),
+    hasMoreRelatedMeetings: true,
+    relatedHistoryHref: "/dashboard?relatedMonths=12",
+    relatedHistoryMonths: 6,
+    relatedMeetings: [meeting("Alpha intro")],
+  }]} />);
+  expect(screen.queryByRole("link", { name: /Load more meetings/ })).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Expand Alpha" }));
+  const history = screen.getByRole("link", { name: /Load more meetings/ });
+  expect(history.getAttribute("href")).toBe("/dashboard?relatedMonths=12");
+  expect(history.textContent).toContain("Search before last 6 months");
 });

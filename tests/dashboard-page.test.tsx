@@ -422,9 +422,9 @@ describe("DashboardPage", () => {
     expect(html).toContain("Load more meetings");
     expect(html).toContain("Meetings");
     expect(html).toContain(
-      '<h2 class="text-lg font-semibold tracking-[-0.01em]">Meetings</h2>',
+      '<h2 class="sr-only">Meetings</h2>',
     );
-    expect(html).toContain("Welcome back, member.");
+    expect(html).toContain("Signed in as member.");
     expect(html).toContain(">0 meetings<");
     expect(html).not.toContain("need your attention");
     expect(html).not.toContain("Everything is on track");
@@ -579,7 +579,7 @@ describe("DashboardPage", () => {
     );
 
     expect(html).toContain("Onboarding tutorial: connected");
-    expect(html).not.toContain("Welcome back");
+    expect(html).not.toContain("Signed in as");
     expect(html).not.toContain("Search meetings");
 
     getWorkspaceAccessSummary.mockResolvedValue({
@@ -608,7 +608,7 @@ describe("DashboardPage", () => {
     );
 
     expect(automaticallyCompletedHtml).not.toContain("Onboarding tutorial");
-    expect(automaticallyCompletedHtml).toContain("Welcome back");
+    expect(automaticallyCompletedHtml).toContain("Signed in as");
 
     cookies.mockResolvedValue({
       get: () => ({ value: "1" }),
@@ -620,7 +620,7 @@ describe("DashboardPage", () => {
     );
 
     expect(hiddenHtml).not.toContain("Onboarding tutorial");
-    expect(hiddenHtml).toContain("Welcome back");
+    expect(hiddenHtml).toContain("Signed in as");
 
     const reopenedHtml = await renderDashboard(
       await DashboardPage({

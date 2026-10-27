@@ -1,5 +1,6 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
+import { UserRound } from "lucide-react";
 
 import { AmplitudeIdentity } from "@/components/amplitude-identity";
 import { NewMeetingMenu } from "@/components/new-meeting-menu";
@@ -7,7 +8,6 @@ import { OneSignalLogin } from "@/components/onesignal-login";
 import { ProductLogo } from "@/components/product-logo";
 import { OrganizationSwitcher } from "@/components/organization-switcher";
 import { SignOutButton } from "@/components/sign-out-button";
-import { buttonVariants } from "@/components/ui/button";
 import { getOneSignalAllowedOrigins } from "@/lib/onesignal-web-sdk";
 import { cn } from "@/lib/utils";
 
@@ -75,23 +75,30 @@ export function AppShell({
             })}
           </nav>
           <div className="ml-auto flex items-center gap-1">
-            {canCreateMeetings ? (
-              <Link
-                className={cn(
-                  buttonVariants({ variant: "ghost", size: "sm" }),
-                  "hidden min-h-11 text-muted-foreground sm:inline-flex sm:min-h-8",
-                )}
-                href="/dashboard?setup=1"
-                data-telemetry-action="setup_guide_opened"
-              >
-                Setup guide
-              </Link>
-            ) : null}
             {oneSignalExternalId ? <OrganizationSwitcher /> : null}
-            <SignOutButton />
             {canCreateMeetings ? (
               <NewMeetingMenu active={newMeetingActive} />
             ) : null}
+            <details className="group relative ml-1">
+              <summary
+                aria-label="Account"
+                className="flex size-11 cursor-pointer list-none items-center justify-center rounded-full text-muted-foreground outline-none transition-colors hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring sm:size-8 [&::-webkit-details-marker]:hidden"
+              >
+                <UserRound aria-hidden="true" className="size-4" />
+              </summary>
+              <div className="absolute right-0 z-40 mt-2 flex w-48 flex-col rounded-lg border bg-popover p-1 text-sm shadow-lg [&_button]:w-full [&_button]:justify-start">
+                {canCreateMeetings ? (
+                  <Link
+                    className="rounded-md px-2.5 py-2 text-foreground hover:bg-muted"
+                    href="/dashboard?setup=1"
+                    data-telemetry-action="setup_guide_opened"
+                  >
+                    Setup guide
+                  </Link>
+                ) : null}
+                <SignOutButton />
+              </div>
+            </details>
           </div>
         </div>
       </header>

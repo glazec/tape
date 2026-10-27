@@ -3,14 +3,15 @@ import { cookies } from "next/headers";
 import { Suspense } from "react";
 import {
   AlertCircle,
-  ChevronDown,
   ChevronLeft,
   ChevronRight,
   Search,
+  SlidersHorizontal,
   Star,
 } from "lucide-react";
 
 import { AppShell } from "@/components/app-shell";
+import { AutoSubmitSelect } from "@/components/auto-submit-select";
 import { CalendarAutomationPanel } from "@/components/calendar-automation-panel";
 import {
   DashboardCalendarSkeleton,
@@ -31,13 +32,6 @@ import {
 import { buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { requireCurrentUser } from "@/lib/auth-guards";
 import { getCalendarConnectionSummaryForWorkspace } from "@/lib/calendar-connection-queries";
 import { getCachedDashboardSummaryForWorkspace } from "@/lib/dashboard-summary-cache";
@@ -549,17 +543,16 @@ async function DashboardMeetingLibrary({
   return (
     <section
       aria-label="Meeting library"
-      className="flex flex-col pt-4"
+      className="flex flex-col gap-4 pt-2"
     >
       <header className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
         {isSharedOnly ? (
-          <h1 className="text-lg font-semibold tracking-[-0.01em]">
+          <h1 className="text-2xl font-semibold tracking-[-0.015em]">
             Meetings
           </h1>
         ) : (
-          <h2 className="text-lg font-semibold tracking-[-0.01em]">
-            Meetings
-          </h2>
+          // The overview above already titles the page.
+          <h2 className="sr-only">Meetings</h2>
         )}
         {isSharedOnly ? (
           <p className="text-sm text-muted-foreground">
@@ -803,7 +796,7 @@ function MeetingLibraryControls({
   const syncCalendarValue = getSearchParamValue(syncCalendar);
 
   return (
-    <div className="grid gap-2 pt-4 pb-3 md:grid-cols-[minmax(12rem,1fr)_11rem_auto] md:items-center">
+    <div className="grid gap-2 pb-3 md:grid-cols-[minmax(12rem,1fr)_11rem_auto] md:items-center">
       {syncCalendarValue ? (
         <input name="syncCalendar" type="hidden" value={syncCalendarValue} />
       ) : null}
@@ -840,29 +833,35 @@ function MeetingLibraryControls({
           />
         </div>
       </div>
-      <SelectField
-        hideLabel
-        id="meeting-status"
-        label="Status"
-        name="status"
-        options={meetingLibraryStatusFilters.map((value) => ({
-          label: meetingLibraryStatusLabels[value],
-          value,
-        }))}
-        value={activeViewConfig.status}
-      />
-      <button
-        className={cn(buttonVariants({ variant: "outline" }), "h-11 sm:h-9")}
-        type="submit"
-      >
+      <div className="min-w-0">
+        <Label className="sr-only" htmlFor="meeting-status">
+          Status
+        </Label>
+        <AutoSubmitSelect
+          id="meeting-status"
+          name="status"
+          options={meetingLibraryStatusFilters.map((value) => ({
+            label: meetingLibraryStatusLabels[value],
+            value,
+          }))}
+          value={activeViewConfig.status}
+        />
+      </div>
+      {/* Typing and picking apply on their own; Enter still submits. */}
+      <button className="sr-only" type="submit">
         Search
       </button>
-      <details className="group md:col-span-3">
-        <summary className="flex min-h-11 w-fit cursor-pointer list-none items-center gap-1.5 rounded-md text-xs text-muted-foreground outline-none hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50 sm:min-h-6">
+      <details className="group relative">
+        <summary
+          className={cn(
+            buttonVariants({ variant: "ghost" }),
+            "h-11 cursor-pointer list-none gap-1.5 text-muted-foreground sm:h-9 [&::-webkit-details-marker]:hidden",
+          )}
+        >
+          <SlidersHorizontal aria-hidden="true" className="size-3.5" />
           More filters
-          <ChevronDown className="size-3.5 transition-transform group-open:rotate-180" />
         </summary>
-        <div className="mt-2 grid gap-3 rounded-lg bg-muted/40 p-3 md:grid-cols-2">
+        <div className="absolute right-0 z-20 mt-2 grid w-[min(36rem,calc(100vw-2rem))] gap-3 rounded-lg border bg-popover p-4 shadow-lg md:grid-cols-2">
           <SelectField
             id="meeting-search-scope"
             label="Search in"
@@ -899,14 +898,12 @@ function MeetingLibraryControls({
 }
 
 function SelectField({
-  hideLabel = false,
   id,
   label,
   name,
   options,
   value,
 }: {
-  hideLabel?: boolean;
   id: string;
   label: string;
   name: string;
@@ -915,31 +912,13 @@ function SelectField({
 }) {
   return (
     <div className="min-w-0 space-y-2">
-      <Label className={hideLabel ? "sr-only" : undefined} htmlFor={id}>
-        {label}
-      </Label>
-      <Select
-        defaultValue={value}
-        items={options}
+      <Label htmlFor={id}>{label}</Label>
+      <AutoSubmitSelect
+        id={id}
         name={name}
-      >
-        <SelectTrigger
-          className={cn(
-            "h-11 w-full min-w-0 bg-background",
-            hideLabel && "sm:h-9",
-          )}
-          id={id}
-        >
-          <SelectValue />
-        </SelectTrigger>
-        <SelectContent align="start">
-        {options.map((option) => (
-          <SelectItem key={option.value} value={option.value}>
-            {option.label}
-          </SelectItem>
-        ))}
-        </SelectContent>
-      </Select>
+        options={options}
+        value={value}
+      />
     </div>
   );
 }

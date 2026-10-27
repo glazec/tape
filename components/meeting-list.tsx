@@ -2,7 +2,14 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Fragment, useEffect, useRef, useState, type ReactNode } from "react";
+import {
+  Fragment,
+  useEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+  type ReactNode,
+} from "react";
 import {
   ArrowDown,
   ArrowUp,
@@ -108,9 +115,12 @@ export function MeetingList({
   sort = "smart",
   sortLinks,
 }: MeetingListProps) {
+  // Series start collapsed: the library reads as one timeline, and a
+  // series opens only when someone asks for its history.
   const [expandedMeetingIds, setExpandedMeetingIds] = useState<Set<string>>(
-    () => getDefaultExpandedMeetingIds(meetings),
+    () => new Set(),
   );
+  const dayLabels = useDayGroupLabels(meetings, sort);
 
   const [visibleRelatedCounts, setVisibleRelatedCounts] = useState<Record<string, number>>({});
 
@@ -169,16 +179,29 @@ export function MeetingList({
               </TableCell>
             </TableRow>
           ) : (
-            meetings.map((meeting) => {
+            meetings.map((meeting, index) => {
               const recentMeetings = meeting.relatedMeetings ?? [];
               const relatedMeetings = [...recentMeetings, ...(meeting.olderRelatedMeetings ?? [])];
               const visibleCount = visibleRelatedCounts[meeting.id] ?? Math.min(3, recentMeetings.length);
               const hasMore = visibleCount < relatedMeetings.length;
               const isExpanded = expandedMeetingIds.has(meeting.id);
+              const groupLabel = dayLabels?.[index] ?? null;
 
               return (
                 <Fragment key={meeting.id}>
+                  {groupLabel ? (
+                    <TableRow className="border-0 hover:bg-transparent">
+                      <TableCell
+                        className="pt-6 pb-1.5 pl-0 text-xs font-medium text-muted-foreground"
+                        colSpan={3}
+                        scope="rowgroup"
+                      >
+                        {groupLabel}
+                      </TableCell>
+                    </TableRow>
+                  ) : null}
                   <MeetingTableRow
+                    grouped={dayLabels !== null}
                     isExpanded={isExpanded}
                     meeting={meeting}
                     moreAction={
@@ -252,15 +275,8 @@ function RelatedHistoryLink({
   );
 }
 
-function getDefaultExpandedMeetingIds(meetings: MeetingListItem[]) {
-  return new Set(
-    meetings
-      .filter((meeting) => (meeting.relatedMeetings?.length ?? 0) + (meeting.olderRelatedMeetings?.length ?? 0) > 0 || meeting.hasMoreRelatedMeetings)
-      .map((meeting) => meeting.id),
-  );
-}
-
 function MeetingTableRow({
+  grouped = false,
   isChild = false,
   isExpanded = false,
   meeting,
@@ -268,6 +284,7 @@ function MeetingTableRow({
   onToggle,
   relatedCount = 0,
 }: {
+  grouped?: boolean;
   isChild?: boolean;
   isExpanded?: boolean;
   meeting: MeetingListBaseItem;
@@ -293,7 +310,7 @@ function MeetingTableRow({
           isChild ? "pt-2.5 text-muted-foreground/80" : "pt-3.5 text-muted-foreground",
         )}
       >
-        <LocalDateTime value={meeting.startedAt} />
+        <LocalDateTime timeOnly={grouped && !isChild} value={meeting.startedAt} />
       </TableCell>
       <TableCell className={cn("min-w-56", isChild ? "py-2" : "py-3")}>
         <MeetingTitleCell
@@ -545,7 +562,7 @@ function MeetingTitleCell({
             {meeting.title}
           </Link>
           {relatedCount > 0 ? (
-            <span className="text-xs text-muted-foreground">
+            <span className="text-xs tabular-nums text-muted-foreground">
               {relatedCount === 1
                 ? "1 related"
                 : `${relatedCount} related`}
@@ -651,8 +668,9 @@ function getMeetingCoverageNote({
   }
 
   if (displayStatus === "scheduled") {
+    // "Bot scheduled" would repeat the Scheduled status beside it.
     return hasRecallBot
-      ? "Bot scheduled"
+      ? null
       : platform === "microsoft_teams"
         ? "Local recording planned"
         : "No bot linked";
@@ -759,13 +777,12 @@ function MeetingStatusLabel({ status }: { status: MeetingDisplayStatus }) {
       className="inline-flex items-center gap-1.5 text-xs text-muted-foreground"
       data-status={status}
     >
-      <span
-        aria-hidden="true"
-        className={cn(
-          "size-1.5 rounded-full",
-          statusDotClassNames[status] ?? "bg-muted-foreground/40",
-        )}
-      />
+      {statusDotClassNames[status] ? (
+        <span
+          aria-hidden="true"
+          className={cn("size-1.5 rounded-full", statusDotClassNames[status])}
+        />
+      ) : null}
       {statusLabels[status]}
     </span>
   );
@@ -865,4 +882,66 @@ function formatDurationMs(durationMs: number) {
   }
 
   return `${minutes}m`;
+}
+
+const groupableSorts = new Set<MeetingLibrarySort>(["smart", "time_desc", "time_asc"]);
+
+/**
+ * Day headers for a time ordered library: upcoming meetings under one
+ * "Upcoming" header, then one header per local day. Computed only in the
+ * browser, because day boundaries depend on the viewer's timezone.
+ */
+function useDayGroupLabels(
+  meetings: MeetingListItem[],
+  sort: MeetingLibrarySort,
+) {
+  const isClient = useSyncExternalStore(
+    subscribeToNothing,
+    () => true,
+    () => false,
+  );
+
+  if (!isClient || !groupableSorts.has(sort)) {
+    return null;
+  }
+
+  const now = new Date();
+  const labels = meetings.map((meeting) => {
+    const startedAt = new Date(meeting.startedAt);
+
+    return meeting.status === "scheduled" &&
+      startedAt.getTime() > now.getTime()
+      ? "Upcoming"
+      : formatDayLabel(startedAt, now);
+  });
+
+  // Only the first meeting of each run carries the header.
+  return labels.map((label, index) =>
+    index > 0 && labels[index - 1] === label ? null : label,
+  );
+}
+
+function subscribeToNothing() {
+  return () => {};
+}
+
+function formatDayLabel(date: Date, now: Date) {
+  const startOfDay = (value: Date) =>
+    new Date(value.getFullYear(), value.getMonth(), value.getDate()).getTime();
+  const days = Math.round((startOfDay(now) - startOfDay(date)) / 86_400_000);
+
+  if (days === 0) {
+    return "Today";
+  }
+
+  if (days === 1) {
+    return "Yesterday";
+  }
+
+  return new Intl.DateTimeFormat("en", {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+    ...(date.getFullYear() === now.getFullYear() ? {} : { year: "numeric" }),
+  }).format(date);
 }
