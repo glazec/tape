@@ -1,19 +1,25 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { CalendarCheck, CalendarX, TriangleAlert } from "lucide-react";
+import {
+  CalendarCheck,
+  CalendarX,
+  ChevronDown,
+  TriangleAlert,
+} from "lucide-react";
 
 import { AppShell } from "@/components/app-shell";
 import { BotAvatarPicker } from "@/components/bot-avatar-picker";
-import { Badge } from "@/components/ui/badge";
-import { Button, buttonVariants } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { EmailChipsInput } from "@/components/email-chips-input";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+  AutosaveForm,
+  AutosaveSelect,
+  SettingsSaveStatus,
+  SettingsSaveStatusProvider,
+} from "@/components/settings-autosave";
+import { VocabularyEditor } from "@/components/vocabulary-editor";
+import { Badge } from "@/components/ui/badge";
+import { buttonVariants } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { requireCurrentUser } from "@/lib/auth-guards";
 import { CalendarSyncButton } from "@/components/calendar-sync-button";
 import { listConnectedCalendarAccounts } from "@/lib/connected-calendar-accounts";
@@ -93,46 +99,69 @@ export default async function TeamSettingsPage({ searchParams }: {
       canCreateMeetings
       oneSignalExternalId={workspace.userId}
     >
-      <section className="flex w-full flex-col">
-        <div className="pb-8">
+      <SettingsSaveStatusProvider>
+      <div className="flex w-full flex-col gap-8 md:flex-row md:gap-14">
+        <aside className="shrink-0 md:w-44">
+          <div className="flex flex-col gap-5 md:sticky md:top-24">
+            {organizations.length > 1 ? (
+              <details className="group relative">
+                <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-2 rounded-md border bg-background px-2.5 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring sm:min-h-9 [&::-webkit-details-marker]:hidden">
+                  <span className="truncate">{workspace.teamName ?? teamConfiguration.name}</span>
+                  <ChevronDown aria-hidden="true" className="size-3.5 shrink-0 text-muted-foreground" />
+                </summary>
+                <nav
+                  aria-label="Organizations"
+                  className="absolute inset-x-0 z-20 mt-1 flex flex-col rounded-lg border bg-popover p-1 shadow-lg"
+                >
+                  {organizations.map((organization) => {
+                    const isCurrent = organization.teamId === workspace.teamId;
+
+                    return (
+                      <Link
+                        key={organization.teamId}
+                        href={`/settings/team?teamId=${organization.teamId}`}
+                        aria-current={isCurrent ? "page" : undefined}
+                        className={cn(
+                          "rounded-md px-2.5 py-2 text-sm",
+                          isCurrent
+                            ? "bg-muted font-medium text-foreground"
+                            : "text-muted-foreground hover:bg-muted hover:text-foreground",
+                        )}
+                      >
+                        {organization.teamName}
+                      </Link>
+                    );
+                  })}
+                </nav>
+              </details>
+            ) : null}
+            <nav aria-label="Settings sections" className="flex flex-row flex-wrap gap-1 md:flex-col">
+              {settingsSections
+                .filter((section) => section.id !== "vocabulary" || canEditTeamSettings || vocabularyTerms.length > 0)
+                .map((section) => (
+                  <a
+                    className="rounded-md px-2.5 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                    href={`#${section.id}`}
+                    key={section.id}
+                  >
+                    {section.label}
+                  </a>
+                ))}
+            </nav>
+          </div>
+        </aside>
+      <section className="flex min-w-0 flex-1 flex-col">
+        <div className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1 pb-2">
           <h1 className="text-2xl font-semibold tracking-[-0.015em]">
             Settings
           </h1>
-          {organizations.length > 1 ? (
-            <nav
-              aria-label="Organizations"
-              className="mt-3 inline-flex flex-wrap gap-1 rounded-lg bg-muted/60 p-1"
-            >
-              {organizations.map((organization) => {
-                const isCurrent = organization.teamId === workspace.teamId;
-
-                return (
-                  <Link
-                    key={organization.teamId}
-                    href={`/settings/team?teamId=${organization.teamId}`}
-                    aria-current={isCurrent ? "page" : undefined}
-                    className={cn(
-                      "inline-flex min-h-11 items-center rounded-md px-3 text-sm transition-colors sm:min-h-7",
-                      isCurrent
-                        ? "bg-background font-medium text-foreground shadow-xs"
-                        : "text-muted-foreground hover:text-foreground",
-                    )}
-                  >
-                    {organization.teamName}
-                  </Link>
-                );
-              })}
-            </nav>
+          {canEditTeamSettings ? (
+            <SettingsSaveStatus />
           ) : (
-            <p className="mt-1 text-sm text-muted-foreground">
-              {teamConfiguration.name}
-            </p>
-          )}
-          {!canEditTeamSettings ? (
-            <p className="mt-3 text-sm text-muted-foreground">
+            <p className="text-sm text-muted-foreground">
               Only team administrators can edit these settings.
             </p>
-          ) : null}
+          )}
         </div>
         <SettingsSection id="connected-accounts" title="Connected accounts">
           <div className="flex flex-col gap-3">
@@ -177,95 +206,57 @@ export default async function TeamSettingsPage({ searchParams }: {
             </Link>
           </div>
         </SettingsSection>
-        <SettingsSection
-          title="Workspace defaults"
-        >
+        <SettingsSection id="workspace" title="Workspace">
             {canEditTeamSettings ? (
-              <form
+              <AutosaveForm
                 action={`/api/team/configuration?teamId=${workspace.teamId}`}
-                className="flex flex-col gap-4"
-                method="post"
+                className="flex flex-col"
               >
-                <div className="grid gap-2">
-                  <label
-                    className="text-sm leading-none font-medium"
-                    htmlFor="teamName"
-                  >
-                    Team name
-                  </label>
+                <FieldRow htmlFor="teamName" label="Team name">
                   <Input
-                    className="sm:max-w-sm"
+                    className="h-9"
                     defaultValue={teamConfiguration.name}
                     id="teamName"
                     maxLength={100}
                     name="teamName"
                     required
                   />
-                </div>
-                <div className="grid gap-2">
-                  <label
-                    className="text-sm leading-none font-medium"
-                    htmlFor="translationLanguage"
-                  >
-                    Translate transcripts to
-                  </label>
-                  <Select
+                </FieldRow>
+                <FieldRow htmlFor="translationLanguage" label="Translate transcripts to">
+                  <AutosaveSelect
                     defaultValue={teamConfiguration.translationLanguage}
-                    items={translationLanguageOptions}
+                    id="translationLanguage"
                     name="translationLanguage"
-                  >
-                    <SelectTrigger
-                      className="h-11 w-full bg-background sm:max-w-sm"
-                      id="translationLanguage"
-                    >
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent align="start">
-                      {translationLanguageOptions.map((option) => (
-                        <SelectItem key={option.value} value={option.value}>
-                          {option.label}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="grid gap-2">
-                  <label
-                    className="text-sm leading-none font-medium"
-                    htmlFor="shareAudienceName"
-                  >
-                    Sharing group name
-                  </label>
-                  <Input
-                    className="sm:max-w-sm"
-                    defaultValue={teamConfiguration.shareAudience?.name ?? ""}
-                    id="shareAudienceName"
-                    maxLength={100}
-                    name="shareAudienceName"
-                    placeholder="Investment committee"
+                    options={translationLanguageOptions}
                   />
-                </div>
-                <div className="grid gap-2">
-                  <label
-                    className="text-sm leading-none font-medium"
-                    htmlFor="shareAudienceEmails"
-                  >
-                    Sharing group member emails
-                  </label>
-                  <textarea
-                    className="border-input bg-background min-h-28 w-full rounded-md border px-3 py-2 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] sm:max-w-lg"
-                    defaultValue={
-                      teamConfiguration.shareAudience?.emails.join("\n") ?? ""
-                    }
-                    id="shareAudienceEmails"
-                    name="shareAudienceEmails"
-                    placeholder={"One email per line\nperson@example.com"}
-                  />
-                </div>
-                <Button className="self-start" type="submit" variant="outline">
-                  Save team settings
-                </Button>
-              </form>
+                </FieldRow>
+                <FieldRow
+                  description="Appears as one option in Share."
+                  htmlFor="shareAudienceName"
+                  label="Sharing group"
+                >
+                  <div className="flex flex-col gap-2">
+                    <Input
+                      aria-label="Sharing group name"
+                      className="h-9"
+                      defaultValue={teamConfiguration.shareAudience?.name ?? ""}
+                      id="shareAudienceName"
+                      maxLength={100}
+                      name="shareAudienceName"
+                      placeholder="Investment committee"
+                    />
+                    <EmailChipsInput
+                      ariaLabel="Add a sharing group member"
+                      defaultEmails={teamConfiguration.shareAudience?.emails ?? []}
+                      name="shareAudienceEmails"
+                      suggestions={teamMembers.map((member) => ({
+                        email: member.email,
+                        label: member.name || member.email,
+                      }))}
+                    />
+                  </div>
+                </FieldRow>
+              </AutosaveForm>
             ) : (
               <div className="flex flex-col gap-2 text-sm">
                 <p className="font-medium">{teamConfiguration.name}</p>
@@ -288,9 +279,7 @@ export default async function TeamSettingsPage({ searchParams }: {
               </div>
             )}
         </SettingsSection>
-        <SettingsSection
-          title="Meeting capture"
-        >
+        <SettingsSection id="meeting-bot" title="Meeting bot">
             {botSettings.domains.length > 1 ? (
               <nav
                 aria-label="Organization bot profiles"
@@ -318,48 +307,38 @@ export default async function TeamSettingsPage({ searchParams }: {
               </nav>
             ) : null}
             {canEditTeamSettings ? (
-              <form
-                key={`${workspace.teamId}:${botDomain ?? ""}`}
+              <AutosaveForm
                 action={`/api/team/bot-profile?teamId=${workspace.teamId}${botDomain ? `&organizationDomain=${encodeURIComponent(botDomain)}` : ""}`}
-                className="flex flex-col gap-4"
-                encType="multipart/form-data"
-                method="post"
+                className="flex flex-col"
+                key={`${workspace.teamId}:${botDomain ?? ""}`}
+                multipart
+                refreshAfterSave
               >
-                {botSettings.domains.length > 1 && botDomain ? (
-                  <label className="flex items-center gap-2 text-sm">
-                    <input type="checkbox" name="preferForSharedMeetings" className="size-4" defaultChecked={botSettings.preferredBotDomain === botDomain} />
-                    Use this bot when both organizations are invited
-                  </label>
-                ) : null}
-                <div className="grid gap-2">
-                  <label
-                    className="text-sm leading-none font-medium"
-                    htmlFor="botName"
-                  >
-                    Team bot name
-                  </label>
+                <FieldRow htmlFor="botName" label="Team bot name">
                   <Input
-                    className="sm:max-w-sm"
+                    className="h-9"
                     defaultValue={botProfile.botName}
                     id="botName"
                     maxLength={100}
                     name="botName"
                     required
                   />
-                </div>
-                <div className="grid gap-2">
-                  <p className="text-sm leading-none font-medium">
-                    Team meeting bot avatar
-                  </p>
+                </FieldRow>
+                <FieldRow label="Team meeting bot avatar">
                   <BotAvatarPicker
                     currentAvatarJpegBase64={botAvatarJpegBase64}
                     isCustom={Boolean(botProfile.avatarJpegBase64)}
                   />
-                </div>
-                <Button className="self-start" type="submit" variant="outline">
-                  Save team bot profile
-                </Button>
-              </form>
+                </FieldRow>
+                {botSettings.domains.length > 1 && botDomain ? (
+                  <FieldRow label="Shared meetings">
+                    <label className="flex items-center gap-2 text-sm">
+                      <input type="checkbox" name="preferForSharedMeetings" className="size-4" defaultChecked={botSettings.preferredBotDomain === botDomain} />
+                      Use this bot when both organizations are invited
+                    </label>
+                  </FieldRow>
+                ) : null}
+              </AutosaveForm>
             ) : (
               <div className="flex flex-col gap-3">
                 <p className="text-sm font-medium">{botProfile.botName}</p>
@@ -387,54 +366,27 @@ export default async function TeamSettingsPage({ searchParams }: {
             )}
         </SettingsSection>
         {canEditTeamSettings || vocabularyTerms.length > 0 ? (
-        <SettingsSection
-          title="Transcription vocabulary"
-        >
-          <div className="flex flex-col gap-4">
-            {canEditTeamSettings ? (
-              <form
-                action={`/api/team/vocabulary?teamId=${workspace.teamId}`}
-                className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]"
-                method="post"
-              >
-                <Input
-                  aria-label="Vocabulary term"
-                  name="term"
-                  placeholder="Term"
-                />
-                <Input
-                  aria-label="Vocabulary hint"
-                  name="hint"
-                  placeholder="Optional hint"
-                />
-                <Button type="submit" variant="outline">
-                  Add term
-                </Button>
-              </form>
-            ) : null}
-            {vocabularyTerms.length > 0 ? (
-              <ul className="divide-y border-y">
+        <SettingsSection id="vocabulary" title="Vocabulary">
+          {canEditTeamSettings ? (
+            <VocabularyEditor
+              endpoint={`/api/team/vocabulary?teamId=${workspace.teamId}`}
+              terms={vocabularyTerms}
+            />
+          ) : (
+            <table className="w-full border-collapse text-sm">
+              <tbody>
                 {vocabularyTerms.map((term) => (
-                  <li
-                    className="grid gap-x-6 py-2 text-sm sm:grid-cols-[minmax(0,12rem)_minmax(0,1fr)]"
-                    key={term.id}
-                  >
-                    <p className="font-medium">{term.term}</p>
-                    <p className="text-muted-foreground">{term.hint ?? ""}</p>
-                  </li>
+                  <tr className="border-b last:border-b-0" key={term.id}>
+                    <td className="w-48 py-2 pr-4 font-medium">{term.term}</td>
+                    <td className="py-2 text-muted-foreground">{term.hint ?? ""}</td>
+                  </tr>
                 ))}
-              </ul>
-            ) : (
-              <p className="text-sm text-muted-foreground">
-                No team vocabulary yet.
-              </p>
-            )}
-          </div>
+              </tbody>
+            </table>
+          )}
         </SettingsSection>
         ) : null}
-        <SettingsSection
-          title="Workspace members"
-        >
+        <SettingsSection id="members" title="Members">
         <details className="group">
           <summary className="flex min-h-11 cursor-pointer list-none items-center gap-2 text-sm outline-none focus-visible:ring-3 focus-visible:ring-ring/50 sm:min-h-8">
             <span className="font-medium">
@@ -518,7 +470,8 @@ export default async function TeamSettingsPage({ searchParams }: {
               View billing details
             </Link>
           }
-          title="Billing & credits"
+          id="billing"
+          title="Billing"
         >
           <dl className="grid max-w-sm grid-cols-[1fr_auto] gap-x-6 gap-y-1.5 text-sm">
             <dt className="text-muted-foreground">Workspace this month</dt>
@@ -544,13 +497,24 @@ export default async function TeamSettingsPage({ searchParams }: {
           ) : null}
         </SettingsSection>
       </section>
+      </div>
+      </SettingsSaveStatusProvider>
     </AppShell>
   );
 }
 
+const settingsSections = [
+  { id: "connected-accounts", label: "Connected accounts" },
+  { id: "workspace", label: "Workspace" },
+  { id: "meeting-bot", label: "Meeting bot" },
+  { id: "vocabulary", label: "Vocabulary" },
+  { id: "members", label: "Members" },
+  { id: "billing", label: "Billing" },
+] as const;
+
 /**
- * One settings group: its name on the left, the controls on the right, and
- * a hairline between groups. Whitespace separates them instead of cards.
+ * One settings group, reachable from the side rail. Groups are separated
+ * by space and a hairline rather than cards.
  */
 function SettingsSection({
   action,
@@ -565,16 +529,48 @@ function SettingsSection({
 }) {
   return (
     <section
-      className="scroll-mt-20 grid gap-x-12 gap-y-4 border-t py-8 md:grid-cols-[12rem_minmax(0,1fr)]"
+      aria-labelledby={id ? `${id}-title` : undefined}
+      className="scroll-mt-24 border-t pt-8 pb-10 first-of-type:border-t-0 first-of-type:pt-4"
       id={id}
     >
-      <div>
-        <h2 className="text-sm font-semibold">{title}</h2>
-      </div>
-      <div className="min-w-0">
+      <h2 className="text-base font-semibold" id={id ? `${id}-title` : undefined}>
+        {title}
+      </h2>
+      <div className="mt-4 min-w-0">
         {children}
         {action ? <div className="mt-3">{action}</div> : null}
       </div>
     </section>
+  );
+}
+
+/** A label column and one control column, the same widths in every group. */
+function FieldRow({
+  children,
+  description,
+  htmlFor,
+  label,
+}: {
+  children: React.ReactNode;
+  description?: string;
+  htmlFor?: string;
+  label: string;
+}) {
+  return (
+    <div className="grid gap-x-8 gap-y-2 border-b py-4 first:pt-0 last:border-b-0 md:grid-cols-[11rem_minmax(0,24rem)]">
+      <div>
+        {htmlFor ? (
+          <label className="text-sm" htmlFor={htmlFor}>
+            {label}
+          </label>
+        ) : (
+          <p className="text-sm">{label}</p>
+        )}
+        {description ? (
+          <p className="mt-1 text-xs text-muted-foreground">{description}</p>
+        ) : null}
+      </div>
+      <div className="min-w-0">{children}</div>
+    </div>
   );
 }

@@ -228,7 +228,7 @@ On meetings with content, keep Export and Copy secondary. Place Delete in an ove
 
 ### Settings
 
-Settings should reflect how colleagues think about the team, not the underlying services. Group by outcome, such as identity, access, meeting capture, and transcription quality. Show provider names only when they are necessary to make a decision.
+Settings should reflect how colleagues think about the team, not the underlying services. Settings is one page with a sticky side rail of its sections (Connected accounts, Workspace, Meeting bot, Vocabulary, Members, Billing) and an organization picker above it when there are several. Fields save on their own, with one Saved indicator by the page title and no Save buttons. Each field is a label column and a control column of the same widths in every section. Sharing group members are removable chips; vocabulary is a Term and Hint table where Enter adds a row and × removes one. Group by outcome, such as identity, access, meeting capture, and transcription quality. Show provider names only when they are necessary to make a decision.
 
 Admin only information must be clearly separated from team member information. Read only users should see the current result without disabled forms or repeated permission explanations.
 

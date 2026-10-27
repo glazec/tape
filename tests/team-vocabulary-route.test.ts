@@ -2,18 +2,20 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 const {
   canManageTeamSettings,
+  deleteTerms,
   getCurrentUser,
   getWorkspace,
   insert,
 } = vi.hoisted(() => ({
   canManageTeamSettings: vi.fn(),
+  deleteTerms: vi.fn(),
   getCurrentUser: vi.fn(),
   getWorkspace: vi.fn(),
   insert: vi.fn(),
 }));
 
 vi.mock("@/db/client", () => ({
-  db: { insert },
+  db: { delete: deleteTerms, insert },
 }));
 
 vi.mock("@/lib/auth", () => ({
@@ -102,5 +104,96 @@ describe("POST /api/team/vocabulary", () => {
       hint: "Trading card game",
       enabled: true,
     });
+  });
+});
+
+describe("DELETE /api/team/vocabulary", () => {
+  const termId = "33333333-3333-4333-8333-333333333333";
+
+  function signInAs({ admin }: { admin: boolean }) {
+    getCurrentUser.mockResolvedValue({
+      id: "auth_user_123",
+      email: "admin@iosg.vc",
+      name: "Admin",
+    });
+    getWorkspace.mockResolvedValue({
+      userId: "user_123",
+      teamId: "team_123",
+      domain: "iosg.vc",
+      canCreateMeetings: true,
+    });
+    canManageTeamSettings.mockResolvedValue(admin);
+  }
+
+  function mockDelete(rows: Array<{ id: string }>) {
+    const returning = vi.fn().mockResolvedValue(rows);
+    const where = vi.fn().mockReturnValue({ returning });
+    deleteTerms.mockReturnValue({ where });
+    return where;
+  }
+
+  afterEach(() => {
+    getCurrentUser.mockReset();
+    canManageTeamSettings.mockReset();
+    getWorkspace.mockReset();
+    deleteTerms.mockReset();
+    vi.resetModules();
+  });
+
+  it("removes a term from the admin's team", async () => {
+    signInAs({ admin: true });
+    const where = mockDelete([{ id: termId }]);
+    const { DELETE } = await import("@/app/api/team/vocabulary/route");
+
+    const response = await DELETE(
+      new Request(`https://tape.test/api/team/vocabulary?termId=${termId}`, {
+        method: "DELETE",
+      }),
+    );
+
+    expect(response.status).toBe(204);
+    expect(where).toHaveBeenCalledTimes(1);
+  });
+
+  it("reports a term that is not in the team", async () => {
+    signInAs({ admin: true });
+    mockDelete([]);
+    const { DELETE } = await import("@/app/api/team/vocabulary/route");
+
+    const response = await DELETE(
+      new Request(`https://tape.test/api/team/vocabulary?termId=${termId}`, {
+        method: "DELETE",
+      }),
+    );
+
+    expect(response.status).toBe(404);
+  });
+
+  it("rejects a missing or malformed term id", async () => {
+    signInAs({ admin: true });
+    const { DELETE } = await import("@/app/api/team/vocabulary/route");
+
+    const response = await DELETE(
+      new Request("https://tape.test/api/team/vocabulary?termId=not-a-uuid", {
+        method: "DELETE",
+      }),
+    );
+
+    expect(response.status).toBe(400);
+    expect(deleteTerms).not.toHaveBeenCalled();
+  });
+
+  it("blocks ordinary members", async () => {
+    signInAs({ admin: false });
+    const { DELETE } = await import("@/app/api/team/vocabulary/route");
+
+    const response = await DELETE(
+      new Request(`https://tape.test/api/team/vocabulary?termId=${termId}`, {
+        method: "DELETE",
+      }),
+    );
+
+    expect(response.status).toBe(403);
+    expect(deleteTerms).not.toHaveBeenCalled();
   });
 });

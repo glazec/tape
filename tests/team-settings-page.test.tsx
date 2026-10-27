@@ -35,6 +35,7 @@ const {
 
 vi.mock("next/navigation", () => ({
   redirect,
+  useRouter: () => ({ refresh: vi.fn() }),
 }));
 
 vi.mock("@/components/app-shell", () => ({
@@ -201,19 +202,19 @@ describe("TeamSettingsPage", () => {
       await import("@/app/settings/team/page");
     const html = renderToStaticMarkup(await TeamSettingsPage({}));
 
-    expect(html).toContain("Transcription vocabulary");
-    expect(html).toContain("Workspace defaults");
+    expect(html).toContain("Vocabulary");
+    expect(html).toContain("Workspace");
     expect(html).toContain("Example Capital");
     expect(html).toContain("Investment committee");
     expect(html).toContain("Translations");
     expect(html).toContain("English");
     expect(html).toContain("2 members");
     expect(html).toContain("TCG platform");
-    expect(html).toContain("Meeting capture");
+    expect(html).toContain("Meeting bot");
     expect(html).toContain("Team meeting bot avatar");
     expect(html).toContain("Deal Scribe");
     expect(html).toContain("Custom avatar saved");
-    expect(html).toContain("Workspace members");
+    expect(html).toContain("Members");
     expect(html).toContain("Member");
     expect(html).toContain("member@iosg.vc");
     expect(html).toContain("Alice");
@@ -230,7 +231,7 @@ describe("TeamSettingsPage", () => {
     expect(html).not.toContain("max-h-80");
     expect(html).not.toContain("overflow-y-auto");
     expect(html).toContain("Only team administrators can edit these settings");
-    expect(html).toContain("Billing &amp; credits");
+    expect(html).toContain("Billing");
     expect(html).toContain("Credit remaining");
     expect(html).toContain("$12.00");
     expect(html).toContain("$5.00");
