@@ -132,7 +132,7 @@ export function MeetingList({
     <div>
       <Table>
         <TableHeader>
-          <TableRow className="hover:bg-transparent">
+          <TableRow className="border-border/60 hover:bg-transparent">
             <TableHead
               aria-sort={getHeaderAriaSort("startedAt", sort)}
               className="hidden w-40 pl-0 text-xs font-normal text-muted-foreground md:table-cell"
@@ -283,7 +283,7 @@ function MeetingTableRow({
     <TableRow
       aria-expanded={relatedCount > 0 ? isExpanded : undefined}
       className={cn(
-        "group/meeting-row meeting-row",
+        "group/meeting-row meeting-row border-border/45",
         isChild && "border-b-0",
       )}
     >
@@ -504,7 +504,7 @@ function MeetingTitleCell({
       className={cn(
         "flex min-w-0 items-start gap-1",
         isChild &&
-          "relative pl-8 before:absolute before:bottom-1 before:left-3 before:top-1 before:w-px before:bg-border",
+          "relative pl-8 before:absolute before:bottom-1 before:left-3 before:top-1 before:w-px before:bg-border/70",
       )}
     >
       {relatedCount > 0 ? (

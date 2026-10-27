@@ -17,6 +17,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { cn } from "@/lib/utils";
 
 type SyncState =
   | "idle"
@@ -205,7 +206,12 @@ export function CalendarSyncButton({
           : "Sync calendar";
 
   return (
-    <div className="flex flex-col items-stretch gap-2">
+    <div
+      className={cn(
+        "flex flex-col gap-2",
+        size === "sm" ? "items-end" : "items-stretch",
+      )}
+    >
       <div className="flex items-center justify-end">
         {needsConnection ? (
           <Button
@@ -265,11 +271,11 @@ export function CalendarSyncButton({
       {message ? (
         <p
           role="status"
-          className={
-            state === "error"
-              ? "flex items-start gap-1.5 text-sm text-destructive"
-              : "flex items-start gap-1.5 text-sm text-muted-foreground"
-          }
+          className={cn(
+            "flex items-start gap-1.5",
+            size === "sm" ? "max-w-xs text-xs leading-5" : "text-sm",
+            state === "error" ? "text-destructive" : "text-muted-foreground",
+          )}
         >
           {state === "error" || needsConnection ? (
             <AlertCircle className="mt-0.5 size-3.5 shrink-0" />

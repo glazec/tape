@@ -33,7 +33,7 @@ export function DashboardOverviewSkeleton() {
     <div
       aria-busy="true"
       aria-label="Loading dashboard overview"
-      className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between lg:gap-10"
+      className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between lg:gap-10"
       role="status"
     >
       <DashboardStatsSkeleton />
@@ -69,7 +69,7 @@ export function MeetingLibrarySkeleton() {
     <section
       aria-busy="true"
       aria-label="Loading meetings"
-      className="flex flex-col border-t pt-6"
+      className="flex flex-col pt-4"
       role="status"
     >
       <Skeleton className="h-6 w-24" />
@@ -78,7 +78,7 @@ export function MeetingLibrarySkeleton() {
         <Skeleton className="h-9 w-full" />
         <Skeleton className="h-9 w-20" />
       </div>
-      <div aria-hidden="true" className="divide-y border-t">
+      <div aria-hidden="true" className="divide-y divide-border/50">
         {Array.from({ length: 6 }, (_, index) => (
           <div className="flex items-center gap-4 py-3.5 pl-8" key={index}>
             <div className="min-w-0 flex-1">

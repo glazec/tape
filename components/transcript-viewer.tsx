@@ -968,7 +968,7 @@ export function TranscriptViewer({
     return (
       <form className="flex w-full max-w-xl flex-col gap-2" onSubmit={saveSpeaker}>
         <div className="flex min-w-0 flex-wrap items-start gap-1.5">
-          <div className="min-w-[min(100%,18rem)] flex-1">
+          <div className="relative min-w-[min(100%,18rem)] flex-1">
             <Combobox<SpeakerSuggestion>
               filter={(suggestion, query) =>
                 matchesSpeakerSuggestion(
@@ -1011,7 +1011,7 @@ export function TranscriptViewer({
                 }}
                 placeholder="Speaker name"
               />
-              <div className="mt-1 max-h-44 overflow-y-auto rounded-lg bg-popover shadow-md ring-1 ring-foreground/10">
+              <div className="absolute inset-x-0 top-full z-30 mt-1 max-h-44 overflow-y-auto rounded-lg bg-popover shadow-md ring-1 ring-foreground/10 empty:hidden">
                 <ComboboxEmpty>
                   No matching participant. You can still use this name.
                 </ComboboxEmpty>

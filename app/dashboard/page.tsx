@@ -250,7 +250,7 @@ async function DashboardOverview({
             calendarStatusPromise={calendarStatusPromise}
           />
         </Suspense>
-        <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between lg:gap-10">
+        <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between lg:gap-10">
           <Suspense fallback={<DashboardStatsSkeleton />}>
             <DashboardStatsSection
               dashboardSummaryPromise={dashboardSummaryPromise}
@@ -334,7 +334,7 @@ async function DashboardOverview({
           forceCalendarSync={calendarErrorCode === "sync_failed"}
         />
       ) : (
-        <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between lg:gap-10">
+        <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between lg:gap-10">
           {dashboardSummary ? (
             <DashboardStats
               initialResult={dashboardSummary}
@@ -549,7 +549,7 @@ async function DashboardMeetingLibrary({
   return (
     <section
       aria-label="Meeting library"
-      className="flex flex-col border-t pt-6"
+      className="flex flex-col pt-4"
     >
       <header className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
         {isSharedOnly ? (
@@ -600,7 +600,7 @@ async function DashboardMeetingLibrary({
             })}
           />
           <MeetingLibraryPagination
-            className="border-t pt-4"
+            className="pt-5"
             hasNextPage={meetingLibraryPage.hasNextPage}
             hasOlderMeetings={meetingLibraryPage.hasOlderMeetings}
             hasPreviousPage={meetingLibraryPage.hasPreviousPage}

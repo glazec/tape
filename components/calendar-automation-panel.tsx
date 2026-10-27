@@ -22,10 +22,10 @@ export function CalendarAutomationPanel({
   return (
     <section
       aria-label="Calendar"
-      className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-center sm:gap-4"
+      className="flex min-w-0 flex-1 flex-col gap-3 sm:flex-row sm:items-start sm:justify-end sm:gap-4"
     >
       <div className="min-w-0 text-sm sm:text-right">
-        <p className="flex flex-wrap items-center gap-x-2 gap-y-1 sm:justify-end lg:flex-nowrap lg:whitespace-nowrap">
+        <p className="flex flex-wrap items-center gap-x-2 gap-y-1 sm:justify-end">
           <span
             aria-hidden="true"
             className={cn(
@@ -52,7 +52,7 @@ export function CalendarAutomationPanel({
             <span>Calendar not connected</span>
           )}
         </p>
-        <p className="mt-0.5 text-xs text-muted-foreground lg:whitespace-nowrap">
+        <p className="mt-0.5 text-xs text-muted-foreground">
           {connected ? (
             <>
               Calendar <span className="sr-only">status: </span>Connected
