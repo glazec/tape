@@ -16,6 +16,18 @@ const temporaryDirectories: string[] = [];
 const packageRoot = join(process.cwd(), "mac", "LocalRecorder");
 const bundlerPath = join(packageRoot, "script", "bundle_node_runtime.sh");
 
+/** The recorder app entry point plus its window view, which live in separate files. */
+function readRecorderViewSource() {
+  return ["MeetingNoteLocalRecorderApp.swift", "RecorderMenuView.swift"]
+    .map((file) =>
+      readFileSync(
+        join(packageRoot, "Sources", "MeetingNoteLocalRecorder", file),
+        "utf8",
+      ),
+    )
+    .join("\n");
+}
+
 describe("local recorder app packaging", () => {
   afterEach(() => {
     for (const directory of temporaryDirectories.splice(0)) {
@@ -182,22 +194,12 @@ describe("local recorder app packaging", () => {
     expect(buildScript).toContain("<key>NSAudioCaptureUsageDescription</key>");
   });
 
-  it("uses the Tape icon and name in the recorder header", () => {
-    const appSource = readFileSync(
-      join(
-        packageRoot,
-        "Sources",
-        "MeetingNoteLocalRecorder",
-        "MeetingNoteLocalRecorderApp.swift",
-      ),
-      "utf8",
-    );
+  it("names the recorder Tape in its window", () => {
+    const viewSource = readRecorderViewSource();
 
-    expect(appSource).toContain(
-      "Image(nsImage: NSApplication.shared.applicationIconImage)",
-    );
-    expect(appSource).toContain('Text("Tape")');
-    expect(appSource).not.toContain('Text("Meeting Note")');
+    expect(viewSource).toContain('eyebrow: "Tape for Mac"');
+    expect(viewSource).toContain('window.title = "Tape Desktop"');
+    expect(viewSource).not.toContain("Meeting Note");
   });
 
   it("documents the Tape Desktop build entrypoint", () => {
@@ -272,22 +274,14 @@ describe("local recorder app packaging", () => {
   });
 
   it("makes missing required permissions actionable without requiring start at login", () => {
-    const appSource = readFileSync(
-      join(
-        packageRoot,
-        "Sources",
-        "MeetingNoteLocalRecorder",
-        "MeetingNoteLocalRecorderApp.swift",
-      ),
-      "utf8",
-    );
+    const appSource = readRecorderViewSource();
 
     expect(appSource).toContain(
       "requestPermission: model.requestPermission",
     );
-    expect(appSource).toContain('Button("Enable", action: action)');
+    expect(appSource).toContain('Button("Allow", action: action)');
     expect(appSource).toMatch(
-      /title: "Start at login",\s+detail: "Optional",\s+grant: checklist\.startAtLogin,\s+toggle: Binding/,
+      /Text\("Open at login"\)[\s\S]+?get: \{ checklist\.startAtLogin == \.granted \}/,
     );
     expect(appSource).toContain(
       "setStartAtLoginEnabled: model.setStartAtLoginEnabled",
