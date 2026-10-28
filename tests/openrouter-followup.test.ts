@@ -68,7 +68,7 @@ describe("followup provider", () => {
     );
   });
 
-  it("retries invalid prose and rejects repeated pronouns instead of saving them", async () => {
+  it("retries invalid prose, then drops repeated pronoun items instead of saving them", async () => {
     const invalid = {
       ...output,
       todos: [
@@ -76,9 +76,10 @@ describe("followup provider", () => {
       ],
     };
     const fetch = setup().mockImplementation(() => completion(invalid));
-    await expect(generateMeetingFollowup(source)).rejects.toThrow(
-      "explicit names",
-    );
+    await expect(generateMeetingFollowup(source)).resolves.toEqual({
+      todos: [],
+      dynamics: [],
+    });
     expect(fetch).toHaveBeenCalledTimes(2);
     expect(
       JSON.parse(fetch.mock.calls[1][1].body).messages[0].content,
@@ -101,6 +102,25 @@ describe("followup provider", () => {
       .mockResolvedValueOnce(completion(output));
     expect(await generateMeetingFollowup(source)).toEqual(output);
     expect(fetch).toHaveBeenCalledTimes(2);
+  });
+
+  it("keeps grounded items when one item still fails after the retry", async () => {
+    const mixed = {
+      todos: [
+        output.todos[0],
+        { ...output.todos[0], text: "Alex will send the deck to them." },
+      ],
+      dynamics: [],
+    };
+    setup().mockImplementation(() => completion(mixed));
+    await expect(generateMeetingFollowup(source)).resolves.toEqual(output);
+  });
+
+  it("still fails when the provider never returns valid JSON", async () => {
+    setup().mockImplementation(() =>
+      Response.json({ choices: [{ finish_reason: "stop", message: { content: "not json" } }] }),
+    );
+    await expect(generateMeetingFollowup(source)).rejects.toThrow("explicit names");
   });
 
   it("never silently truncates long input", async () => {

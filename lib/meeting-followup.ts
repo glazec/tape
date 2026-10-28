@@ -44,9 +44,15 @@ Each item needs one or two short exact transcript quotations with the id of the 
 const personalPronouns =
   /\b(?:i|me|my|mine|myself|we|us|our|ours|ourselves|you|your|yours|yourself|yourselves|he|him|his|himself|she|her|hers|herself|they|them|their|theirs|themselves|it|its|itself)\b/gi;
 
+/**
+ * Validates a generated followup against its transcript. Strict mode rejects
+ * the whole followup on any ungrounded item; lenient mode drops just those
+ * items, so one bad sentence does not cost the reader the rest.
+ */
 export function parseMeetingFollowup(
   content: string,
   source: FollowupSource,
+  { lenient = false }: { lenient?: boolean } = {},
 ): MeetingFollowup {
   const result = meetingFollowupSchema.parse(JSON.parse(content));
   const people = new Set(
@@ -55,7 +61,7 @@ export function parseMeetingFollowup(
   const segments = new Map(
     source.segments.map((segment) => [segment.id, segment]),
   );
-  for (const item of [...result.todos, ...result.dynamics]) {
+  const assertGrounded = (item: MeetingFollowup["dynamics"][number] & { timing?: string | null }) => {
     if (
       !people.has(item.person) ||
       !item.text.startsWith(item.person) ||
@@ -84,12 +90,36 @@ export function parseMeetingFollowup(
       throw new Error("Followup must replace pronouns with explicit names");
     }
     for (const evidence of item.evidence) {
-      if (!segments.get(evidence.segmentId)?.text.includes(evidence.quote)) {
+      const segmentText = segments.get(evidence.segmentId)?.text;
+      if (!segmentText || !normalizeQuote(segmentText).includes(normalizeQuote(evidence.quote))) {
         throw new Error(
           "Followup evidence must quote the referenced transcript segment exactly",
         );
       }
     }
+  };
+
+  if (!lenient) {
+    for (const item of [...result.todos, ...result.dynamics]) assertGrounded(item);
+    return result;
   }
-  return result;
+
+  const isGrounded = (item: Parameters<typeof assertGrounded>[0]) => {
+    try {
+      assertGrounded(item);
+      return true;
+    } catch {
+      return false;
+    }
+  };
+
+  return {
+    todos: result.todos.filter(isGrounded),
+    dynamics: result.dynamics.filter(isGrounded),
+  };
+}
+
+// Models often straighten quotes or collapse spacing when copying a quote.
+function normalizeQuote(text: string) {
+  return text.replace(/[‘’]/g, "'").replace(/[“”]/g, '"').replace(/\s+/g, " ").trim();
 }

@@ -36,6 +36,31 @@ const result = {
 };
 
 describe("compact followup grounding", () => {
+  it("matches quotes despite curly apostrophes and spacing", () => {
+    const curly = {
+      ...source,
+      segments: [{ ...source.segments[0], text: "We’ll  discuss at IC tomorrow." }],
+    };
+    const item = {
+      ...result.todos[0],
+      evidence: [{ segmentId: "one", quote: "We'll discuss at IC tomorrow." }],
+    };
+    expect(
+      parseMeetingFollowup(JSON.stringify({ ...result, todos: [item] }), curly).todos,
+    ).toHaveLength(1);
+  });
+
+  it("drops only ungrounded items in lenient mode", () => {
+    const bad = { ...result.todos[0], person: "Someone Else", text: "Someone Else will follow up." };
+    expect(
+      parseMeetingFollowup(
+        JSON.stringify({ ...result, todos: [result.todos[0], bad] }),
+        source,
+        { lenient: true },
+      ),
+    ).toEqual(result);
+  });
+
   it("accepts named team ownership while preserving pronouns in source quotes", () => {
     expect(parseMeetingFollowup(JSON.stringify(result), source)).toEqual(
       result,

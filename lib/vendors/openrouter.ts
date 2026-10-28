@@ -162,10 +162,12 @@ export async function generateMeetingFollowup(
       },
       usageContext: { category: "assistant", meetingId },
     });
+    const finalAttempt = attempt === 1;
     try {
-      return parseMeetingFollowup(content, source);
+      return parseMeetingFollowup(content, source, { lenient: finalAttempt });
     } catch (error) {
       validationError = error instanceof Error ? error.message : "Invalid followup";
+      console.warn("meeting_followup_validation_failed", { attempt, meetingId, validationError });
     }
   }
   throw new Error("Could not generate a grounded followup with explicit names");
