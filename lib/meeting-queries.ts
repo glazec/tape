@@ -130,6 +130,7 @@ export type MeetingTranscript = {
   platform: MeetingListItem["platform"];
   meetingUrl: string | null;
   status: MeetingListItem["status"];
+  botState?: string | null;
   startedAt: string | null;
   endedAt: string | null;
   updatedAt: string;
@@ -332,6 +333,7 @@ export async function listMeetingLibraryPageForWorkspace(
       )`,
       calendarAttendeeEmails: getMeetingAttendeeEmailsSnapshot(),
       recallBotId: meetings.recallBotId,
+      botState: meetings.botState,
       meetingUrl: meetings.meetingUrl,
       startedAt: meetings.startedAt,
       endedAt: meetings.endedAt,
@@ -388,6 +390,7 @@ export async function listMeetingLibraryPageForWorkspace(
       }),
       platform: meeting.platform,
       status: meeting.status,
+      botState: meeting.botState,
       transcriptJobStatus: meeting.transcriptJobStatus,
       hasRecallBot: Boolean(meeting.recallBotId),
       startedAt: (meeting.startedAt ?? meeting.createdAt).toISOString(),
@@ -904,12 +907,14 @@ function matchesMeetingLibraryStatus(
   }
 
   const displayStatus = getMeetingDisplayStatus({
+    botState: meeting.botState,
     meetingStatus: meeting.status,
     transcriptJobStatus: meeting.transcriptJobStatus,
   });
 
   if (status === "in_progress") {
     return (
+      displayStatus === "waiting_room" ||
       displayStatus === "recording" ||
       displayStatus === "queued" ||
       displayStatus === "transcribing" ||
@@ -1198,6 +1203,7 @@ export async function getMeetingDashboardSummaryForWorkspace(
         id: meetings.id,
         title: meetings.title,
         status: meetings.status,
+        botState: meetings.botState,
         transcriptJobStatus: sql<TranscriptJobStatus | null>`(
           select ${transcriptJobs.status}
           from ${transcriptJobs}
@@ -1277,6 +1283,7 @@ export async function getMeetingDashboardSummaryForWorkspace(
     rows.map((meeting) => ({
       title: meeting.title,
       status: meeting.status,
+      botState: meeting.botState,
       transcriptJobStatus: meeting.transcriptJobStatus,
       hasRecallBot: Boolean(meeting.recallBotId),
       startedAt: (
@@ -1327,6 +1334,7 @@ export async function getMeetingTranscriptForWorkspace(
       platform: meetings.platform,
       meetingUrl: meetings.meetingUrl,
       status: meetings.status,
+      botState: meetings.botState,
       startedAt: meetings.startedAt,
       endedAt: meetings.endedAt,
       createdAt: meetings.createdAt,
@@ -1540,6 +1548,7 @@ export async function getMeetingTranscriptForWorkspace(
     platform: meeting.platform,
     meetingUrl: meeting.meetingUrl,
     status: meeting.status,
+    botState: meeting.botState,
     scheduledStartedAt: meeting.startedAt?.toISOString() ?? null,
     scheduledEndedAt: meeting.endedAt?.toISOString() ?? null,
     startedAt:

@@ -29,4 +29,28 @@ describe("getMeetingDisplayStatus", () => {
       }),
     ).toBe("ready");
   });
+
+  it("shows a bot held in the waiting room instead of recording", () => {
+    expect(
+      getMeetingDisplayStatus({
+        botState: "waiting_room",
+        meetingStatus: "recording",
+      }),
+    ).toBe("waiting_room");
+    expect(
+      getMeetingDisplayStatus({
+        botState: "waiting_room",
+        meetingStatus: "scheduled",
+      }),
+    ).toBe("waiting_room");
+  });
+
+  it("ignores a stale waiting room once the meeting has moved on", () => {
+    expect(
+      getMeetingDisplayStatus({
+        botState: "waiting_room",
+        meetingStatus: "missed",
+      }),
+    ).toBe("missed");
+  });
 });

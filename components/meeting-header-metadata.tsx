@@ -56,6 +56,7 @@ function getStatusDotClassName(status: string) {
       return "bg-rose-500";
     case "Failed":
       return "bg-destructive";
+    case "In waiting room":
     case "Processing":
     case "Queued":
     case "Transcribing":

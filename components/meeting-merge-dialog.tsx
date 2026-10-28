@@ -373,6 +373,7 @@ function statusLabel(status: string) {
     processing: "Transcript processing",
     recording: "Recording",
     joining: "Bot joining",
+    waiting_room: "In waiting room",
     scheduled: "Scheduled",
     failed: "Needs attention",
     missed: "No recording",

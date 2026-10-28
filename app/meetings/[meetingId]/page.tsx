@@ -78,6 +78,7 @@ export default async function MeetingPage({
       ])
     : [[], [], null];
   const primaryDisplayStatus = getMeetingDisplayStatus({
+    botState: meeting.botState,
     meetingStatus: meeting.status,
     transcriptJobStatus: meeting.transcriptJobStatus,
   });
@@ -388,6 +389,10 @@ function formatPlatform(platform: string) {
 function formatStatus(status: string) {
   if (status === "missed") {
     return "No recording";
+  }
+
+  if (status === "waiting_room") {
+    return "In waiting room";
   }
 
   return status.charAt(0).toUpperCase() + status.slice(1);

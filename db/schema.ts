@@ -340,6 +340,9 @@ export const meetings = pgTable(
     botOrganizationDomain: text("bot_organization_domain"),
     botDisplayName: text("bot_display_name"),
     recallRecordingId: text("recall_recording_id"),
+    // Where the bot is before it records, from Recall's status events.
+    // Only "waiting_room" today; cleared once the bot records or leaves.
+    botState: text("bot_state").$type<"waiting_room">(),
     translationStatus: jobStatus("translation_status"),
     translationErrorMessage: text("translation_error_message"),
     translationStartedAt: timestamp("translation_started_at", {

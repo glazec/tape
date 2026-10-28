@@ -93,7 +93,7 @@ Use the existing white and graphite system.
 
 Do not use coral for decoration when it would compete with the primary action. Prefer a border, tonal surface, or spacing before introducing another color.
 
-Meeting status badges use muted slate for Scheduled, green for Ready, amber for In progress, and rose for Recording. Apply the same colors to library rows and meeting details, retaining text labels and readable contrast in both themes.
+Meeting status badges use muted slate for Scheduled, green for Ready, amber for In progress and In waiting room, and rose for Recording. Only a bot that is actually recording shows Recording; a bot that is joining or held in the host's waiting room never does. Apply the same colors to library rows and meeting details, retaining text labels and readable contrast in both themes.
 
 The brand coral is `#EC4F44`. It drives the shadcn `--primary`, `--ring`, and `--sidebar-primary` tokens plus `--chart-1`, so application buttons, focus rings, sidebar accents, and default charts all follow the brand.
 

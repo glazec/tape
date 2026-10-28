@@ -305,6 +305,27 @@ describe("MeetingList", () => {
     expect(html).not.toContain("Failed");
   });
 
+  it("labels a bot held in the waiting room instead of recording", () => {
+    const html = renderToStaticMarkup(
+      <MeetingList
+        meetings={[
+          {
+            id: "66666666-6666-4666-8666-666666666666",
+            title: "Board sync",
+            platform: "zoom",
+            startedAt: "2026-06-27T12:00:00.000Z",
+            status: "recording",
+            botState: "waiting_room",
+          },
+        ]}
+      />,
+    );
+
+    expect(html).toContain('data-status="waiting_room"');
+    expect(html).toContain("In waiting room");
+    expect(html).not.toContain(">Recording<");
+  });
+
   it("dims failed meeting copy while preserving the error status", () => {
     const html = renderToStaticMarkup(
       <MeetingList

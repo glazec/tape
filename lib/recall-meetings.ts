@@ -35,6 +35,8 @@ type RecallMeetingUpdate =
       meetingId: string;
       recallBotId: string | null;
       recallRecordingId: string | null;
+      /** Undefined leaves the stored state alone; null clears it. */
+      botState?: "waiting_room" | null;
       status:
         | "scheduled"
         | "recording"
@@ -61,12 +63,20 @@ export function buildRecallMeetingUpdate(
     return { action: "skip", reason: "missing_meeting_id" };
   }
 
+  const status = mapRecallStatus(event);
+  const botState = isRecallWaitingRoom(event)
+    ? "waiting_room"
+    : status
+      ? null
+      : undefined;
+
   return {
     action: "update",
     meetingId,
     recallBotId: event.botId,
     recallRecordingId: event.recordingId,
-    status: mapRecallStatus(event),
+    ...(botState === undefined ? {} : { botState }),
+    status,
   };
 }
 
@@ -118,6 +128,7 @@ export async function applyRecallMeetingEvent(event: RecallWebhookEvent) {
     .set({
       recallBotId: update.recallBotId ?? undefined,
       recallRecordingId: update.recallRecordingId ?? undefined,
+      botState: update.botState,
       status: status ?? undefined,
       updatedAt: new Date(),
     })
@@ -461,11 +472,26 @@ function mapRecallStatus(event: RecallWebhookEvent) {
     return "processing";
   }
 
-  if (/recording|in_call|joining|joined/.test(statusText)) {
+  // A bot that is joining or held in the waiting room is not recording yet;
+  // the waiting room is tracked as bot state instead.
+  if (isRecallWaitingRoom(event) || /joining/.test(statusText)) {
+    return null;
+  }
+
+  if (/recording|in_call|joined/.test(statusText)) {
     return "recording";
   }
 
   return null;
+}
+
+function isRecallWaitingRoom(event: RecallWebhookEvent) {
+  const code = (event.code ?? event.statusCode ?? "").toLowerCase();
+
+  return (
+    code === "in_waiting_room" ||
+    event.eventType.toLowerCase() === "bot.in_waiting_room"
+  );
 }
 
 function isRecallMissedRecording(event: RecallWebhookEvent) {

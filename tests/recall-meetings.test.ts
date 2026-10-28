@@ -130,6 +130,7 @@ describe("buildRecallMeetingUpdate", () => {
       meetingId: "11111111-1111-4111-8111-111111111111",
       recallBotId: "bot_123",
       recallRecordingId: null,
+      botState: null,
       status: "processing",
     });
   });
@@ -154,6 +155,7 @@ describe("buildRecallMeetingUpdate", () => {
       meetingId: "11111111-1111-4111-8111-111111111111",
       recallBotId: "bot_123",
       recallRecordingId: null,
+      botState: null,
       status: "missed",
     });
   });
@@ -178,6 +180,7 @@ describe("buildRecallMeetingUpdate", () => {
       meetingId: "11111111-1111-4111-8111-111111111111",
       recallBotId: "bot_123",
       recallRecordingId: null,
+      botState: null,
       status: "missed",
     });
   });
@@ -202,8 +205,76 @@ describe("buildRecallMeetingUpdate", () => {
       meetingId: "11111111-1111-4111-8111-111111111111",
       recallBotId: "bot_123",
       recallRecordingId: null,
+      botState: null,
       status: "missed",
     });
+  });
+
+  it("flags a bot held in the waiting room without marking it recording", () => {
+    expect(
+      buildRecallMeetingUpdate({
+        eventType: "bot.in_waiting_room",
+        botId: "bot_123",
+        recordingId: null,
+        meetingUrl: null,
+        statusCode: "in_waiting_room",
+        code: "in_waiting_room",
+        subCode: null,
+        updatedAt: "2026-06-23T12:00:00Z",
+        metadata: {
+          meetingId: "11111111-1111-4111-8111-111111111111",
+        },
+      }),
+    ).toEqual({
+      action: "update",
+      meetingId: "11111111-1111-4111-8111-111111111111",
+      recallBotId: "bot_123",
+      recallRecordingId: null,
+      botState: "waiting_room",
+      status: null,
+    });
+  });
+
+  it("does not mark a joining bot as recording", () => {
+    expect(
+      buildRecallMeetingUpdate({
+        eventType: "bot.joining_call",
+        botId: "bot_123",
+        recordingId: null,
+        meetingUrl: null,
+        statusCode: "joining_call",
+        code: "joining_call",
+        subCode: null,
+        updatedAt: "2026-06-23T12:00:00Z",
+        metadata: {
+          meetingId: "11111111-1111-4111-8111-111111111111",
+        },
+      }),
+    ).toEqual({
+      action: "update",
+      meetingId: "11111111-1111-4111-8111-111111111111",
+      recallBotId: "bot_123",
+      recallRecordingId: null,
+      status: null,
+    });
+  });
+
+  it("clears the waiting room once the bot records", () => {
+    expect(
+      buildRecallMeetingUpdate({
+        eventType: "bot.in_call_recording",
+        botId: "bot_123",
+        recordingId: null,
+        meetingUrl: null,
+        statusCode: "in_call_recording",
+        code: "in_call_recording",
+        subCode: null,
+        updatedAt: "2026-06-23T12:00:00Z",
+        metadata: {
+          meetingId: "11111111-1111-4111-8111-111111111111",
+        },
+      }),
+    ).toMatchObject({ botState: null, status: "recording" });
   });
 
   it("skips Recall events without local meeting metadata", () => {

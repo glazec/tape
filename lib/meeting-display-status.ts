@@ -11,13 +11,23 @@ export type TranscriptJobStatus = "queued" | "running" | "completed" | "failed";
 
 export type MeetingDisplayStatus =
   | MeetingRecordStatus
+  | "waiting_room"
   | "queued"
   | "transcribing";
 
 export function getMeetingDisplayStatus(input: {
+  botState?: string | null;
   meetingStatus: MeetingRecordStatus;
   transcriptJobStatus?: TranscriptJobStatus | null;
 }): MeetingDisplayStatus {
+  // The bot is in the meeting but held by the host, so nothing is recorded.
+  if (
+    input.botState === "waiting_room" &&
+    (input.meetingStatus === "scheduled" || input.meetingStatus === "recording")
+  ) {
+    return "waiting_room";
+  }
+
   if (input.meetingStatus !== "processing") {
     return input.meetingStatus;
   }
@@ -48,6 +58,9 @@ export function getMeetingStatusClassName(status: string): string {
     case "transcribing":
     case "processing":
     case "in progress":
+      return "border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-200";
+    case "waiting_room":
+    case "in waiting room":
       return "border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-200";
     case "recording":
       return "border-rose-200 bg-rose-50 text-rose-800 dark:border-rose-800 dark:bg-rose-950 dark:text-rose-200";

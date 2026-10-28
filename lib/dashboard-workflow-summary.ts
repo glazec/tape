@@ -11,6 +11,7 @@ export type DashboardWorkflowMeeting = {
   startedAt: string;
   endedAt?: string | null;
   status: MeetingRecordStatus;
+  botState?: string | null;
   transcriptJobStatus?: TranscriptJobStatus | null;
   hasRecallBot?: boolean;
   segments?: DashboardWorkflowSegment[];
@@ -70,6 +71,7 @@ export type DashboardWorkflowSummaryOptions = {
 };
 
 const activeStatuses = new Set<MeetingDisplayStatus>([
+  "waiting_room",
   "recording",
   "queued",
   "transcribing",
@@ -103,6 +105,7 @@ export function getDashboardWorkflowSummary(
 
   for (const meeting of visibleMeetings) {
     const status = getMeetingDisplayStatus({
+      botState: meeting.botState,
       meetingStatus: meeting.status,
       transcriptJobStatus: meeting.transcriptJobStatus,
     });

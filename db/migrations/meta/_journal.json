@@ -428,6 +428,13 @@
       "when": 1793119406218,
       "tag": "0060_meeting_continuity",
       "breakpoints": true
+    },
+    {
+      "idx": 61,
+      "version": "7",
+      "when": 1793150867094,
+      "tag": "0061_meeting_bot_state",
+      "breakpoints": true
     }
   ]
 }

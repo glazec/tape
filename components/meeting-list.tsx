@@ -60,6 +60,7 @@ type MeetingListBaseItem = {
   participantCount?: number;
   participantNames?: string[];
   status: MeetingRecordStatus;
+  botState?: string | null;
   transcriptJobStatus?: TranscriptJobStatus | null;
   hasRecallBot?: boolean;
   canRecoverBot?: boolean;
@@ -97,6 +98,7 @@ const platformLabels: Record<MeetingListItem["platform"], string> = {
 
 const statusLabels: Record<MeetingDisplayStatus, string> = {
   scheduled: "Scheduled",
+  waiting_room: "In waiting room",
   recording: "Recording",
   queued: "In progress",
   transcribing: "In progress",
@@ -293,6 +295,7 @@ function MeetingTableRow({
   relatedCount?: number;
 }) {
   const displayStatus = getMeetingDisplayStatus({
+    botState: meeting.botState,
     meetingStatus: meeting.status,
     transcriptJobStatus: meeting.transcriptJobStatus,
   });
@@ -510,6 +513,7 @@ function MeetingTitleCell({
   relatedCount: number;
 }) {
   const displayStatus = getMeetingDisplayStatus({
+    botState: meeting.botState,
     meetingStatus: meeting.status,
     transcriptJobStatus: meeting.transcriptJobStatus,
   });
@@ -750,6 +754,7 @@ const statusDotClassNames: Partial<Record<MeetingDisplayStatus, string>> = {
   queued: "bg-amber-500",
   transcribing: "bg-amber-500",
   processing: "bg-amber-500",
+  waiting_room: "bg-amber-500",
   recording: "bg-rose-500",
 };
 
