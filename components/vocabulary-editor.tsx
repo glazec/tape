@@ -119,7 +119,7 @@ export function VocabularyEditor({
           </thead>
           <tbody>
             {visibleTerms.map((term) => (
-              <tr className="group border-b last:border-b-0" key={term.id}>
+              <tr className="group" key={term.id}>
                 <td className="w-48 py-2 pr-4 align-top font-medium">{term.term}</td>
                 <td className="py-2 pr-2 align-top text-muted-foreground">
                   {term.hint ?? ""}

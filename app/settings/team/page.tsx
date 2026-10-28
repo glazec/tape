@@ -92,6 +92,10 @@ export default async function TeamSettingsPage({ searchParams }: {
   const botAvatarJpegBase64 =
     botProfile.avatarJpegBase64 ?? getDefaultMeetingBotAvatarJpegBase64();
 
+  // Name the workspace only when accounts feed different ones.
+  const calendarAccountsSpanWorkspaces =
+    new Set(calendarAccounts.map((account) => account.teamId)).size > 1;
+
   return (
     <AppShell
       activeHref="/settings/team"
@@ -120,6 +124,7 @@ export default async function TeamSettingsPage({ searchParams }: {
                       <Link
                         key={organization.teamId}
                         href={`/settings/team?teamId=${organization.teamId}`}
+                        scroll={false}
                         aria-current={isCurrent ? "page" : undefined}
                         className={cn(
                           "rounded-md px-2.5 py-2 text-sm",
@@ -166,7 +171,7 @@ export default async function TeamSettingsPage({ searchParams }: {
         <SettingsSection id="connected-accounts" title="Connected accounts">
           <div className="flex flex-col gap-3">
             {calendarAccounts.length ? (
-              <ul className="divide-y border-b">
+              <ul>
                 {calendarAccounts.map((account) => (
                   <li
                     key={account.id}
@@ -174,10 +179,13 @@ export default async function TeamSettingsPage({ searchParams }: {
                   >
                     <div className="min-w-0">
                       <p className="break-all text-sm font-medium">
-                        {account.email ?? "Google account"}
+                        {/* Accounts linked at sign-in predate stored emails; they are the sign-in account. */}
+                        {account.email ?? user.email}
                       </p>
                       <p className="text-xs text-muted-foreground">
-                        {account.teamName} ·{" "}
+                        {calendarAccountsSpanWorkspaces
+                          ? `Meetings go to ${account.teamName} · `
+                          : null}
                         {account.connected
                           ? account.status === "disconnected"
                             ? "Needs attention"
@@ -292,6 +300,7 @@ export default async function TeamSettingsPage({ searchParams }: {
                     <Link
                       key={domain}
                       href={`/settings/team?teamId=${workspace.teamId}&organizationDomain=${encodeURIComponent(domain)}`}
+                      scroll={false}
                       aria-current={isCurrent ? "page" : undefined}
                       className={cn(
                         "relative -mb-px inline-flex min-h-11 items-center border-b-2 text-sm transition-colors sm:min-h-9",
@@ -328,6 +337,7 @@ export default async function TeamSettingsPage({ searchParams }: {
                   <BotAvatarPicker
                     currentAvatarJpegBase64={botAvatarJpegBase64}
                     isCustom={Boolean(botProfile.avatarJpegBase64)}
+                    logoEndpoint={`/api/team/bot-profile/logo?teamId=${workspace.teamId}`}
                   />
                 </FieldRow>
                 {botSettings.domains.length > 1 && botDomain ? (
@@ -376,7 +386,7 @@ export default async function TeamSettingsPage({ searchParams }: {
             <table className="w-full border-collapse text-sm">
               <tbody>
                 {vocabularyTerms.map((term) => (
-                  <tr className="border-b last:border-b-0" key={term.id}>
+                  <tr key={term.id}>
                     <td className="w-48 py-2 pr-4 font-medium">{term.term}</td>
                     <td className="py-2 text-muted-foreground">{term.hint ?? ""}</td>
                   </tr>
@@ -402,7 +412,7 @@ export default async function TeamSettingsPage({ searchParams }: {
           </summary>
           <div className="mt-3">
             {teamMembers.length > 0 ? (
-              <ul className="divide-y border-y">
+              <ul className="divide-y">
                 {teamMembers.map((member) => (
                   <li
                     className="flex flex-wrap items-center justify-between gap-3 py-2.5"
@@ -530,7 +540,7 @@ function SettingsSection({
   return (
     <section
       aria-labelledby={id ? `${id}-title` : undefined}
-      className="scroll-mt-24 border-t pt-8 pb-10 first-of-type:border-t-0 first-of-type:pt-4"
+      className="scroll-mt-24 pt-8 pb-10 first-of-type:pt-4"
       id={id}
     >
       <h2 className="text-base font-semibold" id={id ? `${id}-title` : undefined}>
@@ -557,7 +567,7 @@ function FieldRow({
   label: string;
 }) {
   return (
-    <div className="grid gap-x-8 gap-y-2 border-b py-4 first:pt-0 last:border-b-0 md:grid-cols-[11rem_minmax(0,24rem)]">
+    <div className="grid gap-x-8 gap-y-2 py-3.5 first:pt-0 last:pb-0 md:grid-cols-[11rem_minmax(0,24rem)]">
       <div>
         {htmlFor ? (
           <label className="text-sm" htmlFor={htmlFor}>
