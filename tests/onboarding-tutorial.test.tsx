@@ -81,6 +81,9 @@ describe("OnboardingTutorial", () => {
       "xattr -dr com.apple.quarantine &quot;/Applications/Tape Desktop.app&quot;",
     );
     expect(html).not.toContain("MeetingNoteLocalRecorder.app");
+    expect(html).toContain("Screen and system audio");
+    expect(html).toContain("Alerts");
+    expect(html).not.toContain("Screen Recording");
     expect(html.indexOf("Copy MCP server link")).toBeLessThan(
       html.indexOf("MCP server link</p>"),
     );
@@ -106,6 +109,39 @@ describe("OnboardingTutorial", () => {
 
     expect(html).toContain("Calendar connected");
     expect(html).not.toContain("Connect calendar");
+  });
+
+  it("marks the calendar step complete when one of several accounts is ready", () => {
+    const html = renderToStaticMarkup(
+      <OnboardingTutorial
+        autoSyncCalendar={false}
+        calendarStatus={{
+          connected: true,
+          autoJoinEnabled: false,
+          recallCalendarLastSyncedAt: null,
+          recallCalendarStatus: null,
+          accounts: [
+            {
+              connected: true,
+              autoJoinEnabled: true,
+              recallCalendarLastSyncedAt: null,
+              recallCalendarStatus: "connected",
+            },
+            {
+              connected: true,
+              autoJoinEnabled: true,
+              recallCalendarLastSyncedAt: null,
+              recallCalendarStatus: "connecting",
+            },
+          ],
+        }}
+        dismissalCookieName="tape_onboarding_hidden_user_team"
+        forceCalendarSync={false}
+      />,
+    );
+
+    expect(html).toContain("Calendar connected");
+    expect(html).not.toContain("Finish calendar sync");
   });
 
   it("offers recovery while the calendar connection is still syncing", () => {

@@ -17,6 +17,7 @@ import {
 import { buttonVariants } from "@/components/ui/button";
 import type { CalendarConnectionSummary } from "@/lib/calendar-connection-queries";
 import { DESKTOP_APP_DOWNLOAD_URL } from "@/lib/desktop-app";
+import { isCalendarReady } from "@/lib/onboarding";
 import { cn } from "@/lib/utils";
 
 const MCP_GUIDE_URL =
@@ -38,11 +39,7 @@ export function OnboardingTutorial({
   forceCalendarSync: boolean;
 }) {
   const [dismissed, setDismissed] = useState(false);
-  const calendarReady =
-    !forceCalendarSync &&
-    calendarStatus.connected &&
-    calendarStatus.autoJoinEnabled &&
-    calendarStatus.recallCalendarStatus === "connected";
+  const calendarReady = !forceCalendarSync && isCalendarReady(calendarStatus);
 
   if (dismissed) {
     return dismissedFallback;
@@ -147,7 +144,7 @@ function OnboardingStep({
         </p>
       </div>
       {action ? (
-        <div className="col-start-2 w-full sm:col-start-3 sm:row-start-1 sm:w-auto sm:justify-self-end">
+        <div className="col-start-2 w-full min-w-0 sm:col-start-3 sm:row-start-1 sm:w-auto sm:max-w-72 sm:justify-self-end">
           {action}
         </div>
       ) : null}
@@ -188,20 +185,29 @@ function DesktopSetupSteps() {
         <ChevronDown className="transition-transform group-open:rotate-180" />
       </summary>
       <ol className="mt-2 max-w-xl space-y-2 text-sm leading-6 text-muted-foreground">
-        <li>1. Download and unzip the app.</li>
+        <li>1. Download and unzip the app. It needs macOS 15 or newer.</li>
         <li>
           2. Move <code>Tape Desktop.app</code> to Applications.
         </li>
         <li>
-          3. Because the app is not notarized, remove quarantine from this app
-          in Terminal:
+          3. Because the app is not notarized by Apple, remove quarantine from
+          it in Terminal. If that reports a permission error, run it again
+          with <code>sudo</code>.
           <code className="mt-1 block overflow-x-auto rounded-md bg-muted px-2 py-1 text-xs text-foreground">
             {`xattr -dr com.apple.quarantine "/Applications/Tape Desktop.app"`}
           </code>
         </li>
         <li>
-          4. Open the app and grant Microphone, Screen Recording,
-          Accessibility, and Notifications access.
+          4. Open the app, select Sign in, and finish signing in with the same
+          Google account you use for Tape.
+        </li>
+        <li>
+          5. Select Enable for Microphone, Screen and system audio,
+          Accessibility, and Alerts. Recording starts once all four are on.
+        </li>
+        <li>
+          6. Turn on Open at login if you like. The app updates itself, so you
+          only install it once.
         </li>
       </ol>
     </details>

@@ -19,6 +19,24 @@ describe("onboarding completion", () => {
     ).toBe(true);
   });
 
+  it("counts a ready calendar among several connected accounts", () => {
+    expect(
+      isOnboardingAutomaticallyComplete({
+        calendarStatus: {
+          autoJoinEnabled: false,
+          connected: true,
+          recallCalendarStatus: null,
+          accounts: [
+            { ...connectedCalendar, recallCalendarStatus: "connecting" },
+            connectedCalendar,
+          ],
+        },
+        desktopAppConnected: true,
+        mcpUsed: true,
+      }),
+    ).toBe(true);
+  });
+
   it("requires every setup signal", () => {
     expect(
       isOnboardingAutomaticallyComplete({

@@ -58,6 +58,7 @@ import {
 } from "@/lib/meeting-queries";
 import {
   getOnboardingHiddenCookieName,
+  isCalendarReady,
   isOnboardingAutomaticallyComplete,
 } from "@/lib/onboarding";
 import { getOnboardingSetupActivityForWorkspace } from "@/lib/onboarding-queries";
@@ -654,11 +655,7 @@ function isCalendarOperational(
     ReturnType<typeof getCalendarConnectionSummaryForWorkspace>
   > | null,
 ) {
-  return Boolean(
-    status?.connected &&
-      status.autoJoinEnabled &&
-      status.recallCalendarStatus === "connected",
-  );
+  return isCalendarReady(status);
 }
 
 function hasMeetingLibraryRequest(
