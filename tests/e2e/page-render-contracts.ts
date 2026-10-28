@@ -14,7 +14,7 @@ export const authenticatedPageRenderHeadings = {
   [`/meetings/${authenticatedDashboardFixture.meetingId}/record`]:
     "Record this meeting",
   "/meetings/new": "Add a meeting",
-  "/settings/team": authenticatedDashboardFixture.teamName,
+  "/settings/team": "Settings",
   "/usage": "Billing & credits",
 } as const;
 

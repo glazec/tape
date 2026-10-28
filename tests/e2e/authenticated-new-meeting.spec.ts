@@ -21,7 +21,12 @@ test("new meeting source choices center their inputs on mobile", async ({ page }
       await expect(input).toBeVisible();
       await expect.poll(async () => {
         const bounds = await input.boundingBox();
-        return bounds ? Math.abs(bounds.y + bounds.height / 2 - 844 / 2) : Infinity;
+        if (!bounds) return Infinity;
+        const offset = bounds.y + bounds.height / 2 - 844 / 2;
+        // An input that already sits above the middle of an unscrolled page
+        // cannot be scrolled any lower; it only has to clear the sticky header.
+        const atTop = await page.evaluate(() => window.scrollY === 0);
+        return atTop && offset < 0 && bounds.y >= 56 ? 0 : Math.abs(offset);
       }).toBeLessThan(3);
       await expect(input).not.toBeFocused();
     }

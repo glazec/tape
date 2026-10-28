@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Bot, ChevronDown, FileText, UploadCloud } from "lucide-react";
+import { Bot, ChevronDown, FileText, Plus, UploadCloud } from "lucide-react";
 
 import { Button, buttonVariants } from "@/components/ui/button";
 import {
@@ -27,17 +27,19 @@ export function NewMeetingMenu({ active = false }: { active?: boolean }) {
   const router = useRouter();
 
   return (
-    <div className="ml-2 flex items-center">
+    <div className="flex items-center sm:ml-2">
       <Link
         href="/meetings/new"
         aria-current={active ? "page" : undefined}
         data-telemetry-action="nav_meetings_new"
         className={cn(
           buttonVariants({ variant: "default", size: "sm" }),
-          "min-h-11 rounded-r-none shadow-none sm:min-h-8",
+          "min-h-11 rounded-r-none px-3 shadow-none sm:min-h-8 sm:px-2.5",
         )}
       >
-        New meeting
+        {/* Phones keep the whole header on one line with an icon. */}
+        <Plus aria-hidden="true" className="sm:hidden" />
+        <span className="max-sm:sr-only">New meeting</span>
       </Link>
       <DropdownMenu>
         <DropdownMenuTrigger

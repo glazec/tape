@@ -56,7 +56,7 @@ describe("AppShell", () => {
       <AppShell activeHref="/dashboard">Dashboard body</AppShell>,
     );
     const newMeetingLink =
-      html.match(/<a[^>]+href="\/meetings\/new"[^>]*>New meeting<\/a>/)?.[0] ??
+      html.match(/<a[^>]+href="\/meetings\/new"[^>]*>.*?New meeting.*?<\/a>/)?.[0] ??
       "";
     const primaryNav = html.slice(
       html.indexOf("<nav"),
