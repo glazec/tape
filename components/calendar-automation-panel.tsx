@@ -96,15 +96,14 @@ export function CalendarAutomationPanel({
           </>
         )}
       </p>
-      {accounts ? null : (
-        <CalendarSyncButton
-          autoSync={autoSync}
-          connected={connected}
-          connectionId={status.connectionId}
-          size="sm"
-          teamId={status.teamId}
-        />
-      )}
+      <CalendarSyncButton
+        autoSync={autoSync}
+        connected={connected}
+        connectionId={accounts ? undefined : status.connectionId}
+        multipleAccounts={Boolean(accounts)}
+        size="sm"
+        teamId={status.teamId}
+      />
     </section>
   );
 }

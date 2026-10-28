@@ -652,6 +652,23 @@ async function findConnectionByRecallCalendarId(calendarId: string) {
     : null;
 }
 
+/** Every Google calendar account this person has connected in the workspace. */
+export async function listCalendarConnectionIdsForWorkspace(workspace: WorkspaceContext) {
+  const connections = await db
+    .select({ id: calendarConnections.id })
+    .from(calendarConnections)
+    .where(
+      and(
+        eq(calendarConnections.teamId, workspace.teamId),
+        eq(calendarConnections.userId, workspace.userId),
+        eq(calendarConnections.provider, "google"),
+      ),
+    )
+    .limit(10);
+
+  return connections.map((connection) => connection.id);
+}
+
 async function findConnectionByWorkspace(workspace: WorkspaceContext, connectionId?: string) {
   const connections = await db
     .select({

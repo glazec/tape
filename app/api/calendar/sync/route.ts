@@ -5,6 +5,7 @@ import { inngest } from "@/inngest/client";
 import { getCurrentUser } from "@/lib/auth";
 import { selectOrganizationWorkspace } from "@/lib/organization-workspaces";
 import {
+  listCalendarConnectionIdsForWorkspace,
   RecallCalendarConnectionError,
   syncRecallCalendarEventsForWorkspace,
 } from "@/lib/recall-calendar";
@@ -49,22 +50,56 @@ export async function POST(request: Request) {
     }
     await assertCanCreateMeetings(workspace);
 
-    const syncResult = await syncRecallCalendarEventsForWorkspace({
-      workspace,
-      autoJoinEnabled: result.data.autoJoinEnabled,
-      ...(result.data.connectionId ? { connectionId: result.data.connectionId } : {}),
-    });
+    // A sync that names no account covers every connected account.
+    const connectionIds = result.data.connectionId
+      ? [result.data.connectionId]
+      : await listCalendarConnectionIdsForWorkspace(workspace);
+    const targets = connectionIds.length > 1 ? connectionIds : [result.data.connectionId];
+    const syncResults: Awaited<ReturnType<typeof syncRecallCalendarEventsForWorkspace>>[] = [];
+    let firstError: unknown = null;
 
-    await inngest.send({
-      name: "calendar/history.repair",
-      data: {
-        connectionId: syncResult.connectionId,
-        teamId: workspace.teamId,
-        userId: workspace.userId,
-        requestedAt: new Date().toISOString(),
-      },
-    });
-    return Response.json({ ...syncResult, historyRepairQueued: true }, { status: 202 });
+    for (const connectionId of targets) {
+      try {
+        syncResults.push(
+          await syncRecallCalendarEventsForWorkspace({
+            workspace,
+            autoJoinEnabled: result.data.autoJoinEnabled,
+            ...(connectionId ? { connectionId } : {}),
+          }),
+        );
+      } catch (error) {
+        // One account failing should not hide events from the others.
+        if (targets.length === 1) throw error;
+        firstError ??= error;
+        console.error("calendar_sync_account_failed", { connectionId, error });
+      }
+    }
+
+    if (syncResults.length === 0) throw firstError;
+
+    const requestedAt = new Date().toISOString();
+    for (const syncResult of syncResults) {
+      await inngest.send({
+        name: "calendar/history.repair",
+        data: {
+          connectionId: syncResult.connectionId,
+          teamId: workspace.teamId,
+          userId: workspace.userId,
+          requestedAt,
+        },
+      });
+    }
+
+    const summary =
+      syncResults.length === 1
+        ? syncResults[0]
+        : {
+            connectionId: syncResults[0].connectionId,
+            failedEventCount: syncResults.reduce((sum, item) => sum + (item.failedEventCount ?? 0), 0),
+            syncedEventCount: syncResults.reduce((sum, item) => sum + (item.syncedEventCount ?? 0), 0),
+          };
+
+    return Response.json({ ...summary, historyRepairQueued: true }, { status: 202 });
   } catch (error) {
     if (error instanceof CalendarAccountSelectionError) {
       return Response.json({ error: error.message, code: "calendar_account_required" }, { status: 409 });

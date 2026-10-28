@@ -6,7 +6,9 @@ import {
   AlertCircle,
   CalendarCheck,
   ChevronDown,
+  Plus,
   RefreshCw,
+  Settings2,
   Unplug,
 } from "lucide-react";
 
@@ -36,6 +38,8 @@ type CalendarSyncButtonProps = {
   connected?: boolean;
   setupMode?: boolean;
   size?: "default" | "sm";
+  /** Several accounts: sync covers all of them and disconnect moves to settings. */
+  multipleAccounts?: boolean;
 };
 
 type CalendarSyncResponse = {
@@ -102,6 +106,7 @@ export function CalendarSyncButton({
   connected = true,
   setupMode = false,
   size = "default",
+  multipleAccounts = false,
 }: CalendarSyncButtonProps) {
   const router = useRouter();
   const autoSyncAttempted = useRef(false);
@@ -128,7 +133,7 @@ export function CalendarSyncButton({
           return;
         }
 
-        throw new Error("Calendar sync failed");
+        throw new Error(result.error ?? "Calendar sync failed");
       }
 
       setState(result.failedEventCount ? "partial" : "synced");
@@ -260,17 +265,30 @@ export function CalendarSyncButton({
               >
                 <ChevronDown />
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-52">
-                <DropdownMenuItem
-                  disabled={isBusy}
-                  onClick={() => void disconnectCalendar()}
-                  variant="destructive"
-                >
-                  <Unplug />
-                  {state === "disconnecting"
-                    ? "Disconnecting..."
-                    : "Disconnect calendar"}
+              <DropdownMenuContent align="end" className="w-60">
+                <DropdownMenuItem disabled={isBusy} onClick={connectCalendar}>
+                  <Plus />
+                  Connect another Google account
                 </DropdownMenuItem>
+                {multipleAccounts ? (
+                  <DropdownMenuItem
+                    onClick={() => router.push("/settings/team#connected-accounts")}
+                  >
+                    <Settings2 />
+                    Manage accounts
+                  </DropdownMenuItem>
+                ) : (
+                  <DropdownMenuItem
+                    disabled={isBusy}
+                    onClick={() => void disconnectCalendar()}
+                    variant="destructive"
+                  >
+                    <Unplug />
+                    {state === "disconnecting"
+                      ? "Disconnecting..."
+                      : "Disconnect calendar"}
+                  </DropdownMenuItem>
+                )}
               </DropdownMenuContent>
             </DropdownMenu>
           </div>

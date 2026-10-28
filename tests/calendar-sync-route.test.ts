@@ -5,6 +5,7 @@ const {
   assertCanCreateMeetings,
   getCurrentUser,
   getWorkspace,
+  listCalendarConnectionIdsForWorkspace,
   syncRecallCalendarEventsForWorkspace,
 } =
   vi.hoisted(() => ({
@@ -12,6 +13,7 @@ const {
     assertCanCreateMeetings: vi.fn(),
     getCurrentUser: vi.fn(),
     getWorkspace: vi.fn(),
+    listCalendarConnectionIdsForWorkspace: vi.fn(),
     syncRecallCalendarEventsForWorkspace: vi.fn(),
   }));
 
@@ -30,6 +32,7 @@ vi.mock("@/lib/workspace", () => ({
 
 vi.mock("@/lib/recall-calendar", () => ({
   RecallCalendarConnectionError,
+  listCalendarConnectionIdsForWorkspace,
   syncRecallCalendarEventsForWorkspace,
 }));
 
@@ -50,12 +53,16 @@ async function postCalendarSync(body: unknown = { autoJoinEnabled: true }) {
 vi.mock("@/lib/organization-workspaces", () => ({ selectOrganizationWorkspace: vi.fn() }));
 
 describe("POST /api/calendar/sync", () => {
+  listCalendarConnectionIdsForWorkspace.mockResolvedValue([]);
+
   afterEach(() => {
     send.mockReset();
     assertCanCreateMeetings.mockReset();
     getCurrentUser.mockReset();
     getWorkspace.mockReset();
     syncRecallCalendarEventsForWorkspace.mockReset();
+    listCalendarConnectionIdsForWorkspace.mockReset();
+    listCalendarConnectionIdsForWorkspace.mockResolvedValue([]);
     vi.resetModules();
   });
 
@@ -105,6 +112,36 @@ describe("POST /api/calendar/sync", () => {
       workspace,
       autoJoinEnabled: true,
     });
+  });
+
+  it("syncs every connected account when none is named", async () => {
+    const workspace = {
+      userId: "11111111-1111-4111-8111-111111111111",
+      teamId: "22222222-2222-4222-8222-222222222222",
+      domain: "example.com",
+    };
+    const first = "33333333-3333-4333-8333-333333333333";
+    const second = "44444444-4444-4444-8444-444444444444";
+
+    getCurrentUser.mockResolvedValue({ id: "auth_user_123", email: "alice@example.com", name: null });
+    getWorkspace.mockResolvedValue(workspace);
+    assertCanCreateMeetings.mockResolvedValue(undefined);
+    listCalendarConnectionIdsForWorkspace.mockResolvedValue([first, second]);
+    syncRecallCalendarEventsForWorkspace
+      .mockResolvedValueOnce({ connectionId: first, failedEventCount: 0, syncedEventCount: 5 })
+      .mockRejectedValueOnce(new Error("Recall unavailable"));
+
+    const response = await postCalendarSync({ autoJoinEnabled: true });
+
+    expect(response.status).toBe(202);
+    await expect(response.json()).resolves.toEqual({
+      connectionId: first,
+      failedEventCount: 0,
+      syncedEventCount: 5,
+      historyRepairQueued: true,
+    });
+    expect(syncRecallCalendarEventsForWorkspace).toHaveBeenCalledWith({ workspace, autoJoinEnabled: true, connectionId: second });
+    expect(send).toHaveBeenCalledTimes(1);
   });
 
   it("does not claim history is queued when the job dispatch fails", async () => {
