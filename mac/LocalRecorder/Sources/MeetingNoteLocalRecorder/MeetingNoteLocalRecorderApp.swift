@@ -68,10 +68,12 @@ private final class LocalRecorderAppDelegate: NSObject, NSApplicationDelegate {
     @MainActor
     private func showRecorderWindow() {
         if recorderWindow == nil {
-            let controller = NSHostingController(rootView: RecorderMenuView(model: recorderAppModel))
+            let controller = NSHostingController(rootView: RecorderMenuView(model: recorderAppModel, showsWindowChrome: true))
+            controller.safeAreaRegions = []
             let window = NSWindow(contentViewController: controller)
             window.title = "Tape Desktop"
             window.styleMask = [.titled, .closable, .miniaturizable]
+            RecorderWindowChrome.apply(to: window)
             window.isReleasedWhenClosed = false
             window.center()
             recorderWindow = window
@@ -170,6 +172,20 @@ enum RecorderPermissionStep {
 private let recorderAppModel = RecorderAppModel()
 
 @main
+enum MeetingNoteLocalRecorderEntry {
+    @MainActor
+    static func main() {
+        TapeType.register()
+        #if DEBUG
+        if let directory = ProcessInfo.processInfo.environment["TAPE_DESKTOP_SNAPSHOT_DIR"] {
+            LocalRecorderSnapshot.render(to: URL(fileURLWithPath: directory))
+            return
+        }
+        #endif
+        MeetingNoteLocalRecorderApp.main()
+    }
+}
+
 struct MeetingNoteLocalRecorderApp: App {
     @NSApplicationDelegateAdaptor(LocalRecorderAppDelegate.self) private var appDelegate
     @StateObject private var model = recorderAppModel
@@ -199,7 +215,12 @@ final class RecorderAppModel: NSObject, ObservableObject, UNUserNotificationCent
     @Published var statusText = "Sign in to start monitoring"
     @Published var serverURLText: String
     @Published var bearerToken: String
-    @Published var isRecording = false
+    @Published var isRecording = false {
+        didSet {
+            recordingStartedAt = isRecording ? (recordingStartedAt ?? Date()) : nil
+        }
+    }
+    @Published var recordingStartedAt: Date?
     @Published var isTestingLevels = false
     @Published var isRequestingPermissions = false
     @Published var availableMicrophones: [AudioInputDevice] = []
@@ -222,7 +243,7 @@ final class RecorderAppModel: NSObject, ObservableObject, UNUserNotificationCent
     private let recallSDKController = RecallDesktopSDKRecordingController()
     private let credentialStore: LocalRecorderKeychainCredentialStore
     private let deviceIdStore = DeviceIdStore()
-    private let notificationCenter = UNUserNotificationCenter.current()
+    private lazy var notificationCenter = UNUserNotificationCenter.current()
     private let uploadQueue: LocalRecordingUploadQueue
     private var activeClient: LocalRecorderAPIClient?
     private var activeFallbackIntentId: String?
@@ -240,6 +261,18 @@ final class RecorderAppModel: NSObject, ObservableObject, UNUserNotificationCent
     private var fallbackNotificationCountsByIntentId: [String: Int] = [:]
     private var fallbackNotificationNextDatesByIntentId: [String: Date] = [:]
     private var silencePromptTracker = SilencePromptTracker()
+
+    #if DEBUG
+    init(snapshotBearerToken: String) {
+        self.credentialStore = LocalRecorderKeychainCredentialStore(service: "snapshot", account: "snapshot")
+        self.uploadQueue = LocalRecordingUploadQueue(
+            directoryURL: FileManager.default.temporaryDirectory.appendingPathComponent("tape-snapshot-queue")
+        )
+        self.serverURLText = "https://tape.example"
+        self.bearerToken = snapshotBearerToken
+        super.init()
+    }
+    #endif
 
     override init() {
         let credentialStore = LocalRecorderKeychainCredentialStore()
@@ -1733,624 +1766,6 @@ final class RecorderAppModel: NSObject, ObservableObject, UNUserNotificationCent
             clientRecordingId: payload.clientRecordingId
         )
         statusText = "Upload stopped: \(message). Files kept locally."
-    }
-}
-
-struct RecorderMenuView: View {
-    @ObservedObject var model: RecorderAppModel
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            header
-            statusPanel
-
-            if model.isRecording {
-                RecordingWaveformView(
-                    samples: model.audioLevels,
-                    title: model.activeRecordingTitle ?? "Recording"
-                )
-            }
-
-            Button(action: performPrimaryAction) {
-                Label(primaryActionTitle, systemImage: primaryActionIcon)
-                    .frame(maxWidth: .infinity)
-            }
-            .buttonStyle(.borderedProminent)
-            .controlSize(.large)
-            .disabled(model.isFinishingRecording || model.isRequestingPermissions)
-
-            advancedSection
-        }
-        .frame(width: 360)
-        .padding(16)
-    }
-
-    private var header: some View {
-        HStack(alignment: .center, spacing: 10) {
-            Image(nsImage: NSApplication.shared.applicationIconImage)
-                .resizable()
-                .interpolation(.none)
-                .frame(width: 32, height: 32)
-                .accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: 2) {
-                Text("Tape")
-                    .font(.headline)
-                Text("Local recorder")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-            Spacer()
-            Circle()
-                .fill(statusColor)
-                .frame(width: 10, height: 10)
-                .accessibilityLabel(headlineStatus)
-        }
-    }
-
-    private var statusPanel: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 8) {
-                Text(headlineStatus)
-                    .font(.title3.weight(.semibold))
-                Spacer()
-                if isSignedIn, model.nextPermissionStep == nil {
-                    Button(action: model.checkNow) {
-                        if model.isRefreshingSchedule {
-                            ProgressView()
-                                .controlSize(.small)
-                                .frame(width: 18, height: 18)
-                        } else {
-                            Image(systemName: "arrow.clockwise")
-                                .frame(width: 18, height: 18)
-                        }
-                    }
-                    .buttonStyle(.plain)
-                    .disabled(!model.canMonitor || model.isRefreshingSchedule)
-                    .help("Refresh schedule")
-                }
-            }
-
-            if model.isRecording || model.isFinishingRecording {
-                ActiveRecordingStatusView(
-                    detail: supportingStatus,
-                    title: model.activeRecordingTitle ?? "Recording"
-                )
-            } else if let meeting = model.nextScheduleMeeting,
-               model.nextPermissionStep == nil,
-               isSignedIn {
-                MonitoringMeetingView(meeting: meeting)
-            } else {
-                Text(supportingStatus)
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(2)
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(12)
-        .background(.quaternary, in: RoundedRectangle(cornerRadius: 8))
-    }
-
-    private var advancedSection: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Button(action: { model.isAdvancedExpanded.toggle() }) {
-                HStack(spacing: 6) {
-                    Image(systemName: model.isAdvancedExpanded ? "chevron.down" : "chevron.right")
-                        .font(.caption)
-                        .frame(width: 12)
-                    Text("Advanced")
-                    Spacer()
-                }
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-
-            if model.isAdvancedExpanded {
-                advancedContent
-            }
-        }
-    }
-
-    private var advancedContent: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Button("Permissions", action: model.requestNextPermission)
-                .controlSize(.small)
-
-            PermissionList(
-                checklist: model.permissionChecklist,
-                requestPermission: model.requestPermission,
-                setStartAtLoginEnabled: model.setStartAtLoginEnabled
-            )
-
-            Divider()
-
-            audioCheckSection
-
-            Divider()
-
-            VStack(alignment: .leading, spacing: 12) {
-                TextField("Server", text: $model.serverURLText)
-                    .textFieldStyle(.roundedBorder)
-                SecureField("Token", text: $model.bearerToken)
-                    .textFieldStyle(.roundedBorder)
-                if isSignedIn {
-                    Button("Sign out", role: .destructive, action: model.signOut)
-                        .controlSize(.small)
-                }
-            }
-
-            Divider()
-
-            HStack(spacing: 8) {
-                Button("Check for Updates", action: model.checkForUpdates)
-                Button("Restart", action: model.restartApp)
-                Button("Exit", role: .destructive, action: model.exitApp)
-            }
-            .controlSize(.small)
-        }
-        .padding(.top, 2)
-    }
-
-    private var audioCheckSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Text("Audio check")
-                    .font(.subheadline)
-                Spacer()
-                if !model.isRecording {
-                    Button(
-                        model.isTestingLevels ? "Stop test" : "Test levels",
-                        action: model.toggleLevelTest
-                    )
-                    .controlSize(.small)
-                    .disabled(!model.hasAudioCapturePermissions || model.isFinishingRecording)
-                }
-            }
-
-            Picker(
-                "Mic input",
-                selection: Binding(
-                    get: { model.selectedMicrophoneUID },
-                    set: { model.selectMicrophone(uid: $0) }
-                )
-            ) {
-                Text("System default").tag(String?.none)
-                ForEach(model.availableMicrophones) { device in
-                    Text(device.name).tag(String?.some(device.uid))
-                }
-            }
-            .controlSize(.small)
-            .disabled(model.isRecording)
-            .onAppear(perform: model.refreshMicrophones)
-
-            AudioLevelMeterRow(title: "Microphone", level: model.microphoneLevel)
-            AudioLevelMeterRow(title: "Mac sound", level: model.systemAudioLevel)
-
-            if model.isTestingLevels {
-                Text("Speak and play any sound — both bars should move.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            } else if !model.isRecording {
-                Text("Levels are live while recording or testing.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-        }
-    }
-
-    private var primaryMeeting: MissedMeeting? {
-        model.pendingMeetings.first
-    }
-
-    private var isSignedIn: Bool {
-        !model.bearerToken.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-    }
-
-    private var headlineStatus: String {
-        if model.isRequestingPermissions {
-            return "Requesting access"
-        }
-        if model.isFinishingRecording {
-            return model.statusText.localizedCaseInsensitiveContains("upload")
-                ? "Uploading"
-                : "Saving recording"
-        }
-        if model.isRecording {
-            return "Recording"
-        }
-        if let nextPermissionStep = model.nextPermissionStep {
-            return nextPermissionStep.statusTitle
-        }
-        if !isSignedIn {
-            return "Signed out"
-        }
-        if primaryMeeting != nil {
-            return "Missed meeting"
-        }
-        if let meeting = model.nextScheduleMeeting {
-            return meeting.isOngoing(at: Date()) ? "Meeting in progress" : "Next meeting"
-        }
-        if model.canMonitor {
-            return "Monitoring"
-        }
-        if model.statusText.localizedCaseInsensitiveContains("upload") {
-            return model.statusText.localizedCaseInsensitiveContains("could not") ? "Upload issue" : "Uploading"
-        }
-        return "Monitoring"
-    }
-
-    private var supportingStatus: String {
-        if model.isRequestingPermissions {
-            return "Approve each macOS permission prompt"
-        }
-        if model.isFinishingRecording {
-            return model.statusText
-        }
-        if model.isRecording {
-            return "Audio capture is active"
-        }
-        if let nextPermissionStep = model.nextPermissionStep {
-            return nextPermissionStep.statusDetail
-        }
-        if !isSignedIn {
-            return "Connect your account"
-        }
-        if primaryMeeting != nil {
-            return "Missed meeting found"
-        }
-        if model.canMonitor {
-            return model.statusText
-        }
-        if model.statusText == "No upcoming meetings" {
-            return "No upcoming meetings"
-        }
-        return model.statusText
-    }
-
-    private var statusColor: Color {
-        if model.isFinishingRecording {
-            return .orange
-        }
-        if model.isRecording {
-            return .red
-        }
-        if model.nextPermissionStep != nil || !isSignedIn {
-            return .orange
-        }
-        if primaryMeeting != nil {
-            return .green
-        }
-        if model.canMonitor {
-            return .green
-        }
-        return .secondary
-    }
-
-    private var primaryActionTitle: String {
-        if model.isRequestingPermissions {
-            return "Requesting access"
-        }
-        if model.isFinishingRecording {
-            return model.statusText.localizedCaseInsensitiveContains("upload")
-                ? "Uploading"
-                : "Saving"
-        }
-        if model.isRecording {
-            return "End recording"
-        }
-        if let nextPermissionStep = model.nextPermissionStep {
-            if case .alerts = nextPermissionStep,
-               model.permissionChecklist.notifications == .denied {
-                return "Open Alerts Settings"
-            }
-            return nextPermissionStep.actionTitle
-        }
-        if !isSignedIn {
-            return "Sign in"
-        }
-        return "Record"
-    }
-
-    private var primaryActionIcon: String {
-        if model.isRequestingPermissions {
-            return "hourglass"
-        }
-        if model.isFinishingRecording {
-            return "hourglass"
-        }
-        if model.isRecording {
-            return "stop.fill"
-        }
-        if let nextPermissionStep = model.nextPermissionStep {
-            return nextPermissionStep.systemImage
-        }
-        if !isSignedIn {
-            return "person.crop.circle.badge.plus"
-        }
-        return "record.circle"
-    }
-
-    private func performPrimaryAction() {
-        if model.isFinishingRecording {
-            return
-        } else if model.isRecording {
-            model.stopRecording()
-        } else if model.nextPermissionStep != nil {
-            model.requestNextPermission()
-        } else if !isSignedIn {
-            model.signIn()
-        } else {
-            model.startRecording()
-        }
-    }
-}
-
-struct ActiveRecordingStatusView: View {
-    var detail: String
-    var title: String
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text(title)
-                .font(.subheadline.weight(.semibold))
-                .lineLimit(2)
-                .truncationMode(.tail)
-
-            Text(detail)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .lineLimit(2)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-    }
-}
-
-struct RecordingWaveformView: View {
-    var samples: [Float]
-    var title: String
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 8) {
-                Label("Recording", systemImage: "waveform")
-                    .font(.caption.weight(.medium))
-                    .foregroundStyle(.red)
-                Spacer()
-                Text(title)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-            }
-
-            HStack(alignment: .center, spacing: 3) {
-                ForEach(Array(samples.enumerated()), id: \.offset) { _, sample in
-                    RoundedRectangle(cornerRadius: 2)
-                        .fill(.red.opacity(0.75))
-                        .frame(
-                            width: 6,
-                            height: max(4, CGFloat(sample) * 44)
-                        )
-                }
-            }
-            .frame(maxWidth: .infinity, minHeight: 52, maxHeight: 52)
-            .padding(.horizontal, 8)
-            .background(.background, in: RoundedRectangle(cornerRadius: 8))
-            .overlay(
-                RoundedRectangle(cornerRadius: 8)
-                    .stroke(.quaternary)
-            )
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-    }
-}
-
-struct AudioLevelMeterRow: View {
-    var title: String
-    var level: Float
-
-    var body: some View {
-        HStack(spacing: 10) {
-            Text(title)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .frame(width: 84, alignment: .leading)
-
-            GeometryReader { proxy in
-                ZStack(alignment: .leading) {
-                    RoundedRectangle(cornerRadius: 3)
-                        .fill(.quaternary)
-                    RoundedRectangle(cornerRadius: 3)
-                        .fill(fillColor)
-                        .frame(width: max(0, proxy.size.width * CGFloat(min(1, level))))
-                }
-            }
-            .frame(height: 8)
-            .animation(.linear(duration: 0.1), value: level)
-        }
-    }
-
-    private var fillColor: Color {
-        level > 0.9 ? .orange : .green
-    }
-}
-
-struct MonitoringMeetingView: View {
-    var meeting: LocalRecorderMonitoringMeeting
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text(meeting.title)
-                .font(.subheadline.weight(.semibold))
-                .lineLimit(2)
-                .truncationMode(.tail)
-
-            HStack(spacing: 8) {
-                Label(timeText, systemImage: isOngoing ? "dot.radiowaves.left.and.right" : "clock")
-                    .font(.caption)
-                    .foregroundStyle(isOngoing ? AnyShapeStyle(.green) : AnyShapeStyle(.secondary))
-                    .lineLimit(1)
-                Spacer(minLength: 8)
-                Text(meeting.botStatusLabel)
-                    .font(.caption.weight(.medium))
-                    .foregroundStyle(statusColor)
-                    .lineLimit(1)
-                    .help(meeting.botStatusDetail)
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-    }
-
-    private var isOngoing: Bool {
-        meeting.isOngoing(at: Date())
-    }
-
-    private var statusColor: Color {
-        switch meeting.botStatus {
-        case "joined", "recording":
-            return .green
-        case "in_meeting_room":
-            return .blue
-        case "failed", "cancelled", "not_planned":
-            return .orange
-        default:
-            return .secondary
-        }
-    }
-
-    private var timeText: String {
-        let formatter = DateFormatter()
-        formatter.dateStyle = .none
-        formatter.timeStyle = .short
-
-        let startsAt = formatter.string(from: meeting.startsAt)
-        guard let endsAt = meeting.endsAt else {
-            return isOngoing ? "Now · started \(startsAt)" : startsAt
-        }
-
-        let range = "\(startsAt) to \(formatter.string(from: endsAt))"
-        return isOngoing ? "Now · \(range)" : range
-    }
-}
-
-struct PermissionList: View {
-    var checklist: PermissionChecklist
-    var requestPermission: (OperationalPermission) -> Void
-    var setStartAtLoginEnabled: @MainActor @Sendable (Bool) -> Void
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            PermissionRow(
-                title: "Microphone",
-                detail: "Required",
-                grant: checklist.microphone,
-                action: { requestPermission(.microphone) }
-            )
-            PermissionRow(
-                title: "Accessibility",
-                detail: "Required",
-                grant: checklist.accessibility,
-                action: { requestPermission(.accessibility) }
-            )
-            PermissionRow(
-                title: "Alerts",
-                detail: "Required",
-                grant: checklist.notifications,
-                action: { requestPermission(.notifications) }
-            )
-            PermissionRow(
-                title: "Screen and system audio",
-                detail: "Required",
-                grant: checklist.screenCapture,
-                action: { requestPermission(.screenCapture) }
-            )
-            PermissionRow(
-                title: "Start at login",
-                detail: "Optional",
-                grant: checklist.startAtLogin,
-                toggle: Binding(
-                    get: { checklist.startAtLogin == .granted },
-                    set: { isEnabled in
-                        Task { @MainActor in
-                            setStartAtLoginEnabled(isEnabled)
-                        }
-                    }
-                )
-            )
-        }
-    }
-}
-
-struct PermissionRow: View {
-    var title: String
-    var detail: String
-    var grant: PermissionGrant
-    var action: (() -> Void)? = nil
-    var deniedLabel = "Needed"
-    var toggle: Binding<Bool>? = nil
-
-    var body: some View {
-        HStack(spacing: 10) {
-            Image(systemName: iconName)
-                .foregroundStyle(iconColor)
-                .frame(width: 16)
-            VStack(alignment: .leading, spacing: 1) {
-                Text(title)
-                    .font(.subheadline)
-                Text(detail)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-            Spacer()
-            if let toggle {
-                Toggle("", isOn: toggle)
-                    .labelsHidden()
-                    .toggleStyle(.switch)
-                    .controlSize(.small)
-                    .accessibilityLabel("Start Tape Desktop at login")
-            } else if grant != .granted, let action {
-                Button("Enable", action: action)
-                    .buttonStyle(.link)
-                    .font(.caption)
-            } else {
-                Text(label)
-                    .font(.caption)
-                    .foregroundStyle(iconColor)
-            }
-        }
-    }
-
-    private var iconName: String {
-        switch grant {
-        case .unknown:
-            return "circle"
-        case .granted:
-            return "checkmark.circle.fill"
-        case .denied:
-            return "exclamationmark.circle.fill"
-        }
-    }
-
-    private var iconColor: Color {
-        switch grant {
-        case .unknown:
-            return .secondary
-        case .granted:
-            return .green
-        case .denied:
-            return .orange
-        }
-    }
-
-    private var label: String {
-        switch grant {
-        case .unknown:
-            return "Not checked"
-        case .granted:
-            return "Ready"
-        case .denied:
-            return deniedLabel
-        }
     }
 }
 

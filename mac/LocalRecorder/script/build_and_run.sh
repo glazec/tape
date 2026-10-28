@@ -51,6 +51,9 @@ install_name_tool -add_rpath "@executable_path/../Frameworks" "$APP_BINARY"
 if [[ -f "$APP_ICON_SOURCE" ]]; then
   cp "$APP_ICON_SOURCE" "$APP_RESOURCES/AppIcon.icns"
 fi
+if [[ -d "$ROOT_DIR/Resources/Fonts" ]]; then
+  cp -R "$ROOT_DIR/Resources/Fonts" "$APP_RESOURCES/Fonts"
+fi
 if [[ -f "$SIDECAR_SOURCE/package.json" ]]; then
   npm install --prefix "$SIDECAR_SOURCE" --omit=dev
   rm -rf "$SIDECAR_DEST"
