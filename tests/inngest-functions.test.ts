@@ -214,6 +214,10 @@ describe("Inngest functions", () => {
         triggers: [{ event: "meeting/enrich.transcript" }],
       },
       {
+        id: "share-meeting-with-participants",
+        triggers: [{ event: "meeting/enrich.transcript" }],
+      },
+      {
         id: "send-location-reminder",
         triggers: [{ event: "meeting/send.location-reminder" }],
       },

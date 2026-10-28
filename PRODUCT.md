@@ -36,7 +36,7 @@ Calendar resync keeps recent event capture in the foreground and checks Google C
 6. Query the archive or upload a local audio meeting at a chosen time from an outside assistant over the MCP server, scoped to the caller's access and meeting creation rights.
 7. Review synchronized audio, transcript, speakers, translation, and captured screen share images.
 8. Export transcript text, audio, and meeting images.
-9. Share a transcript with workspace members or named external colleagues, optionally including past and future meetings in the same related series.
+9. Share a transcript with workspace members or named external colleagues, optionally including past and future meetings in the same related series. When a transcript finishes, the meeting is also shared automatically with the workspace members the bot heard speak, recognized by the email the meeting platform reports or by a name that matches exactly one member or remembered speaker. This covers instant meetings that have no calendar invitees; external participants are never shared automatically.
 10. Review remaining workspace credit and personal or organization provider consumption across useful time periods from Team settings.
 11. Start a personal workspace with any Google account and use up to $5 of included provider credit.
 
