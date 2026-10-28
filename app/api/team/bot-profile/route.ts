@@ -37,6 +37,11 @@ export async function POST(request: Request) {
     });
   } catch (error) {
     if (error instanceof MeetingBotProfileInputError) {
+      console.warn("bot_profile_rejected", {
+        avatarSize: avatar instanceof File ? avatar.size : null,
+        avatarType: avatar instanceof File ? avatar.type : null,
+        reason: error.message,
+      });
       return Response.json({ error: error.message }, { status: 400 });
     }
 

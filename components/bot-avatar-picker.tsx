@@ -1,18 +1,29 @@
 "use client";
 
-import { useEffect, useId, useRef, useState, type KeyboardEvent } from "react";
+import {
+  useEffect,
+  useId,
+  useRef,
+  useState,
+  type ChangeEvent,
+  type KeyboardEvent,
+} from "react";
 import { Globe, LoaderCircle } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
 const AVATAR_SIZE = 512;
+// Matches the server's avatar limit; larger JPGs are re-encoded to fit.
+const MAX_AVATAR_BYTES = 1_000_000;
+const AVATAR_ACCEPT = "image/jpeg,image/png,image/svg+xml,.jpg,.jpeg,.png,.svg";
 
 /**
  * The bot avatar shown as itself, with Replace and Reset beside it, instead
  * of a bare file input. The chosen file previews before the form is saved.
  * A website address finds that site's logo, which is shown for confirmation
- * before it replaces the avatar.
+ * before it replaces the avatar. PNG and SVG uploads, and JPGs over the size
+ * limit, become a small JPG here, since meeting bots only take JPG avatars.
  */
 export function BotAvatarPicker({
   currentAvatarJpegBase64,
@@ -32,6 +43,7 @@ export function BotAvatarPicker({
   const [logo, setLogo] = useState<{ file: File; url: string; host: string } | null>(null);
   const [isFinding, setIsFinding] = useState(false);
   const [logoError, setLogoError] = useState<string | null>(null);
+  const [uploadError, setUploadError] = useState<string | null>(null);
 
   useEffect(
     () => () => {
@@ -72,7 +84,7 @@ export function BotAvatarPicker({
       }
 
       const source = response.headers.get("x-logo-source");
-      const file = await toAvatarJpeg(await response.blob());
+      const file = await toAvatarJpeg(await response.blob(), "website-logo.jpg", 0.72);
       setLogo({
         file,
         url: URL.createObjectURL(file),
@@ -85,17 +97,45 @@ export function BotAvatarPicker({
     }
   }
 
-  function applyLogo() {
+  function setAvatarFile(file: File) {
     const input = fileInputRef.current;
-    if (!logo || !input) return;
+    if (!input) return;
 
     const transfer = new DataTransfer();
-    transfer.items.add(logo.file);
+    transfer.items.add(file);
     input.files = transfer.files;
     // Reaches both this input's handler and the form's save-on-change.
     input.dispatchEvent(new Event("change", { bubbles: true }));
+  }
+
+  function applyLogo() {
+    if (!logo) return;
+
+    setAvatarFile(logo.file);
     setLogo(null);
     setWebsite("");
+  }
+
+  async function handleFileChange(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.currentTarget.files?.[0] ?? null;
+    setUploadError(null);
+
+    if (file && (!isJpegFile(file) || file.size > MAX_AVATAR_BYTES)) {
+      // Hold the save until the JPG copy replaces this file.
+      event.stopPropagation();
+      try {
+        const jpegName = `${file.name.replace(/\.[^.]+$/, "") || "avatar"}.jpg`;
+        setAvatarFile(await toAvatarJpeg(file, jpegName, 1));
+      } catch (error) {
+        event.target.value = "";
+        setUploadError(error instanceof Error ? error.message : "That image could not be read");
+      }
+      return;
+    }
+
+    setFileName(file?.name ?? null);
+    setReset(false);
+    setPreviewUrl(file ? URL.createObjectURL(file) : null);
   }
 
   function handleWebsiteKeyDown(event: KeyboardEvent<HTMLInputElement>) {
@@ -121,18 +161,13 @@ export function BotAvatarPicker({
               className="cursor-pointer font-medium underline decoration-border underline-offset-4 hover:decoration-foreground has-focus-visible:ring-2 has-focus-visible:ring-ring"
               htmlFor={inputId}
             >
-              {isCustom || previewUrl ? "Replace" : "Upload JPG"}
+              {isCustom || previewUrl ? "Replace" : "Upload image"}
               <input
-                accept="image/jpeg"
+                accept={AVATAR_ACCEPT}
                 className="sr-only"
                 id={inputId}
                 name="avatar"
-                onChange={(event) => {
-                  const file = event.currentTarget.files?.[0] ?? null;
-                  setFileName(file?.name ?? null);
-                  setReset(false);
-                  setPreviewUrl(file ? URL.createObjectURL(file) : null);
-                }}
+                onChange={(event) => void handleFileChange(event)}
                 ref={fileInputRef}
                 type="file"
               />
@@ -157,6 +192,11 @@ export function BotAvatarPicker({
                 ? "Custom avatar"
                 : "Default avatar"}
           </p>
+          {uploadError ? (
+            <p className="mt-1 text-xs text-destructive" role="alert">
+              {uploadError}
+            </p>
+          ) : null}
         </div>
       </div>
       {logoEndpoint ? (
@@ -224,15 +264,22 @@ export function BotAvatarPicker({
   );
 }
 
-/** Centers any logo image on a white square and encodes it as the JPG bots need. */
-async function toAvatarJpeg(blob: Blob) {
+function isJpegFile(file: File) {
+  return file.type === "image/jpeg" || /\.jpe?g$/i.test(file.name.trim());
+}
+
+/**
+ * Centers any image on a white square and encodes it as the JPG bots need.
+ * `fill` is the share of the square the image may take up.
+ */
+async function toAvatarJpeg(blob: Blob, fileName: string, fill: number) {
   const objectUrl = URL.createObjectURL(blob);
 
   try {
     const image = await new Promise<HTMLImageElement>((resolve, reject) => {
       const element = new Image();
       element.onload = () => resolve(element);
-      element.onerror = () => reject(new Error("That logo could not be read"));
+      element.onerror = () => reject(new Error("That image could not be read"));
       element.src = objectUrl;
     });
 
@@ -240,14 +287,14 @@ async function toAvatarJpeg(blob: Blob) {
     canvas.width = AVATAR_SIZE;
     canvas.height = AVATAR_SIZE;
     const context = canvas.getContext("2d");
-    if (!context) throw new Error("That logo could not be read");
+    if (!context) throw new Error("That image could not be read");
 
     context.fillStyle = "#ffffff";
     context.fillRect(0, 0, AVATAR_SIZE, AVATAR_SIZE);
 
     const width = image.naturalWidth || AVATAR_SIZE;
     const height = image.naturalHeight || AVATAR_SIZE;
-    const box = AVATAR_SIZE * 0.72;
+    const box = AVATAR_SIZE * fill;
     const scale = Math.min(box / width, box / height);
     context.imageSmoothingQuality = "high";
     context.drawImage(
@@ -261,9 +308,9 @@ async function toAvatarJpeg(blob: Blob) {
     const jpeg = await new Promise<Blob | null>((resolve) =>
       canvas.toBlob(resolve, "image/jpeg", 0.9),
     );
-    if (!jpeg) throw new Error("That logo could not be read");
+    if (!jpeg) throw new Error("That image could not be read");
 
-    return new File([jpeg], "website-logo.jpg", { type: "image/jpeg" });
+    return new File([jpeg], fileName, { type: "image/jpeg" });
   } finally {
     URL.revokeObjectURL(objectUrl);
   }
