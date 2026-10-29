@@ -5,6 +5,7 @@ import { z } from "zod";
 import { db } from "@/db/client";
 import { mediaAssets, meetings, recordings } from "@/db/schema";
 import { getCurrentUser } from "@/lib/auth";
+import { generateAudioWaveform } from "@/lib/audio-waveform-server";
 import { getReadableMeetingsCondition } from "@/lib/meeting-access-policy";
 import { createReadUrl } from "@/lib/r2";
 import {
@@ -34,6 +35,7 @@ export async function GET(
   const searchParams = new URL(request.url).searchParams;
   const requestedRecordingId = searchParams.get("recording");
   const shouldDownload = searchParams.get("download") === "1";
+  const shouldGenerateWaveform = searchParams.get("waveform") === "1";
   const shouldProxy = searchParams.get("proxy") === "1" || shouldDownload;
 
   if (!parsedMeetingId.success) {
@@ -130,6 +132,8 @@ export async function GET(
   if (objectKey) {
     const audioUrl = await createReadUrl({ key: objectKey });
 
+    if (shouldGenerateWaveform) return waveformResponse(audioUrl, `object:${objectKey}`);
+
     return shouldProxy
       ? proxyAudio(request, audioUrl, downloadFilename)
       : Response.redirect(audioUrl);
@@ -141,12 +145,25 @@ export async function GET(
   });
 
   if (recallAudioUrl) {
+    if (shouldGenerateWaveform) {
+      return waveformResponse(recallAudioUrl, `recall:${meeting.recallBotId}:${meeting.recallRecordingId}:${new URL(recallAudioUrl).pathname}`);
+    }
     return shouldProxy
       ? proxyAudio(request, recallAudioUrl, downloadFilename)
       : Response.redirect(recallAudioUrl);
   }
 
   return Response.json({ error: "Audio not found" }, { status: 404 });
+}
+
+async function waveformResponse(audioUrl: string, sourceKey: string) {
+  const headers = { "cache-control": "private, no-store" };
+  try {
+    const peaks = await generateAudioWaveform(audioUrl, sourceKey);
+    return Response.json({ peaks }, { headers });
+  } catch {
+    return Response.json({ error: "Audio waveform unavailable" }, { status: 503, headers });
+  }
 }
 
 async function resolveRecallAudioUrl(input: {

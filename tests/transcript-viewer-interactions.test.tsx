@@ -464,6 +464,37 @@ describe("TranscriptViewer interactions", () => {
     expect(close).toHaveBeenCalled();
   });
 
+  it("uses actual audio levels for a long meeting without decoding audio in the browser", async () => {
+    Object.defineProperty(window, "requestIdleCallback", { configurable: true, value: (callback: () => void) => { callback(); return 1; } });
+    Object.defineProperty(window, "cancelIdleCallback", { configurable: true, value: vi.fn() });
+    const peaks = [0, 0.02, 0.2, 0.5].flatMap((level) => Array(300).fill(level));
+    vi.mocked(fetch).mockResolvedValueOnce(new Response(JSON.stringify({ peaks })));
+    render(<TranscriptViewer audioUrl="/api/meetings/meeting/audio?recording=part" segments={[
+      { id: "long", speaker: "Speaker 1", startMs: 0, endMs: 3_600_000, text: "steady speech" },
+    ]} />);
+    await waitFor(() => expect(fetch).toHaveBeenCalledWith(
+      "/api/meetings/meeting/audio?recording=part&waveform=1",
+      expect.objectContaining({ credentials: "include" }),
+    ));
+    const waveform = screen.getByRole("button", { name: /Audio waveform/ });
+    await waitFor(() => expect(waveform.querySelector(".animate-pulse")).toBeNull());
+    const heights = [...waveform.querySelectorAll<HTMLElement>(".flex-1")].map((bar) => parseInt(bar.style.height, 10));
+    expect(heights[0]).toBe(2);
+    expect(heights[35]).toBeLessThan(5);
+    expect(heights[65]).toBeGreaterThan(5);
+    expect(heights[119]).toBe(29);
+  });
+
+  it("keeps playback available when server waveform generation fails", async () => {
+    Object.defineProperty(window, "requestIdleCallback", { configurable: true, value: (callback: () => void) => { callback(); return 1; } });
+    Object.defineProperty(window, "cancelIdleCallback", { configurable: true, value: vi.fn() });
+    vi.mocked(fetch).mockResolvedValueOnce(new Response(null, { status: 503 }));
+    render(<TranscriptViewer audioUrl="/api/meetings/meeting/audio" segments={segments} />);
+    await waitFor(() => expect(fetch).toHaveBeenCalled());
+    await waitFor(() => expect(screen.getByRole("button", { name: /Transcript activity waveform/ }).querySelector(".animate-pulse")).toBeNull());
+    expect((screen.getByRole("button", { name: "Play audio" }) as HTMLButtonElement).disabled).toBe(false);
+  });
+
   it("shows transcript activity changes in the long recording waveform", () => {
     const bucketDurationMs = 30_000;
     const activeSegments = Array.from({ length: 120 }, (_, index) => {

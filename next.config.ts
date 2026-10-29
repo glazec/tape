@@ -19,6 +19,7 @@ const nextConfig: NextConfig = {
   },
   outputFileTracingIncludes: {
     "/api/inngest": ["./node_modules/ffmpeg-static/ffmpeg"],
+    "/api/meetings/*/audio": ["./node_modules/ffmpeg-static/ffmpeg"],
   },
 };
 

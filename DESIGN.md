@@ -226,6 +226,8 @@ Completed meetings expose Replace audio in the same overflow menu as Delete meet
 
 On meetings with content, keep Export and Copy secondary. Place Delete in an overflow or a dedicated destructive flow rather than beside frequent actions as a full emphasis button.
 
+For single recording playback, waveform height reflects measured audio amplitude, including meetings longer than 45 minutes. Quiet passages and silence stay close to the baseline; short sound peaks remain visible. The browser receives compact audio levels from the authenticated audio route. Transcript activity is a fallback while levels load or are unavailable, and for combined recordings. Preserve playback and seeking when waveform generation fails.
+
 ### Settings
 
 Settings should reflect how colleagues think about the team, not the underlying services. Settings is one page with a sticky side rail of its sections (Connected accounts, Workspace, Meeting bot, Vocabulary, Members, Billing) and an organization picker above it when there are several. Fields save on their own, with one Saved indicator by the page title and no Save buttons. Each field is a label column and a control column of the same widths in every section. Sharing group members are removable chips; vocabulary is a Term and Hint table where Enter adds a row and × removes one. Group by outcome, such as identity, access, meeting capture, and transcription quality. Show provider names only when they are necessary to make a decision.
