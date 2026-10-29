@@ -24,6 +24,7 @@ const result = {
       ],
     },
   ],
+  research: [],
   dynamics: [
     {
       person: "Kezhen Chen",
@@ -36,11 +37,19 @@ const props = {
   canGenerate: true,
   initialResult: null,
   meetingId: "meeting-one",
+  meetingTitle: "AI Investment Discussion",
+  meetingStartedAt: "2026-10-29T01:30:00Z",
   sourceHash: "a".repeat(64),
   segments: [
-    { id: "one", startMs: 120000 },
-    { id: "two", startMs: 186000 },
+    { id: "one", startMs: 120000, speaker: "Momir Amidzic" },
+    { id: "two", startMs: 186000, speaker: "Kezhen Chen" },
   ],
+};
+const research = {
+  question: "What evidence supports the savings claim?",
+  context: "Momir requested benchmark evidence before the investment discussion.",
+  evidenceToCollect: "Compare cost and success rate on representative tasks.",
+  evidence: [{ segmentId: "one", quote: "We will discuss at IC tomorrow." }],
 };
 // The followup is always open now; keep the helper so each test still reads
 // as "open the followup, then act".
@@ -54,6 +63,52 @@ afterEach(() => {
 });
 
 describe("meeting followup interaction", () => {
+  it("copies a complete research prompt for a shared reader and confirms only after success", async () => {
+    let resolve!: () => void;
+    const writeText = vi.fn().mockImplementation(() => new Promise<void>((done) => { resolve = done; }));
+    vi.stubGlobal("navigator", { clipboard: { writeText } });
+    render(<MeetingFollowup {...props} canGenerate={false} initialResult={{ ...result, research: [research] }} />);
+    const copyButton = screen.getByRole("button", { name: `Copy research prompt: ${research.question}` });
+    expect(document.getElementById(copyButton.getAttribute("aria-describedby")!)?.textContent).toBe(research.evidenceToCollect);
+    const liveRegions = screen.getAllByRole("status");
+    fireEvent.click(screen.getByRole("button", { name: `Copy research prompt: ${research.question}` }));
+    expect(screen.queryByText("Research prompt copied")).toBeNull();
+    const copied = writeText.mock.calls[0][0];
+    for (const text of [research.question, research.context, research.evidenceToCollect, props.meetingTitle, props.meetingStartedAt, "/meetings/meeting-one", "Momir Amidzic at 2:00", research.evidence[0].quote, "primary sources", "unverified"]) {
+      expect(copied).toContain(text);
+    }
+    expect(copied).not.toContain("We are raising.");
+    await act(async () => resolve());
+    const status = screen.getByText("Research prompt copied").closest('[role="status"]');
+    expect(liveRegions).toContain(status);
+    expect(status?.getAttribute("aria-atomic")).toBe("true");
+    expect(screen.queryByRole("button", { name: "Regenerate" })).toBeNull();
+  });
+
+  it("reports clipboard failure without claiming success and allows retry", async () => {
+    const writeText = vi.fn().mockRejectedValueOnce(new Error("denied")).mockResolvedValue(undefined);
+    vi.stubGlobal("navigator", { clipboard: { writeText } });
+    render(<MeetingFollowup {...props} initialResult={{ ...result, research: [research] }} />);
+    const button = screen.getByRole("button", { name: `Copy research prompt: ${research.question}` });
+    fireEvent.click(button);
+    expect((await screen.findByRole("alert")).textContent).toContain("Could not copy");
+    expect(screen.queryByText("Research prompt copied")).toBeNull();
+    fireEvent.click(button);
+    await screen.findByText("Research prompt copied");
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("keeps source controls separate from copying and hides research when empty", async () => {
+    const writeText = vi.fn();
+    vi.stubGlobal("navigator", { clipboard: { writeText } });
+    const { rerender } = render(<MeetingFollowup {...props} initialResult={{ todos: [], dynamics: [], research: [research] }} />);
+    fireEvent.click(screen.getByRole("button", { name: "View source at 2:00" }));
+    await screen.findByRole("dialog");
+    expect(writeText).not.toHaveBeenCalled();
+    rerender(<MeetingFollowup {...props} key="empty" initialResult={result} />);
+    expect(screen.queryByText("Potential research")).toBeNull();
+  });
+
   it("generates on demand, displays explicit names and links to transcript evidence", async () => {
     const fetch = vi.fn().mockResolvedValue(Response.json({ result }));
     vi.stubGlobal("fetch", fetch);
@@ -74,7 +129,7 @@ describe("meeting followup interaction", () => {
     expect(JSON.parse(fetch.mock.calls[0][1].body)).toEqual({
       sourceHash: props.sourceHash,
     });
-    expect(screen.getByRole("status").textContent).toBe("Followup ready.");
+    expect(screen.getAllByRole("status").some((status) => status.textContent === "Followup ready.")).toBe(true);
   });
 
   it("shows the exact source on hover and dismisses with Escape", async () => {

@@ -26,16 +26,20 @@ export function getFollowupSource(meeting: FollowupMeeting): FollowupSource {
 }
 
 export function getFollowupSourceHash(meeting: FollowupMeeting) {
+  return hashSource(meeting, FOLLOWUP_PROMPT_VERSION);
+}
+
+function hashSource(meeting: FollowupMeeting, version: number) {
   return createHash("sha256")
     .update(
-      JSON.stringify([FOLLOWUP_PROMPT_VERSION, getFollowupSource(meeting)]),
+      JSON.stringify([version, getFollowupSource(meeting)]),
     )
     .digest("hex");
 }
 
 const storedFollowupSchema = z.strictObject({
   sourceHash: z.string(),
-  result: meetingFollowupSchema,
+  result: z.union([meetingFollowupSchema, meetingFollowupSchema.omit({ research: true })]),
 });
 
 export function getCurrentMeetingFollowup(
@@ -47,14 +51,15 @@ export function getCurrentMeetingFollowup(
 ) {
   if (!isFollowupReady(meeting)) return null;
   const saved = storedFollowupSchema.safeParse(meeting.aiFollowup);
-  if (
-    !saved.success ||
-    saved.data.sourceHash !== getFollowupSourceHash(meeting)
-  )
+  if (!saved.success) return null;
+  // Keep existing summaries visible until a manager chooses to regenerate.
+  const legacy = !("research" in saved.data.result);
+  if (saved.data.sourceHash !== hashSource(meeting, legacy ? 1 : FOLLOWUP_PROMPT_VERSION)) {
     return null;
+  }
   try {
     return parseMeetingFollowup(
-      JSON.stringify(saved.data.result),
+      JSON.stringify({ research: [], ...saved.data.result }),
       getFollowupSource(meeting),
     );
   } catch {

@@ -26,7 +26,7 @@ Every meeting includes My notes, a private writing area for each signed in reade
 
 Questions ending in `?` or `？` receive an answer beneath them after a short pause, using only the available meeting transcript. Factual answers include supporting transcript sources. You can revise the question, use the regenerate icon beside the source label, or type directly in the answer. Answer edits save automatically; manually edited answers are protected from automatic replacement.
 
-Completed meetings include an AI followup disclosure after the transcript. Meeting managers can generate a compact To do list and Dynamic section with explicit names and transcript evidence links. Saved followups are visible to meeting readers and hidden when the source changes.
+Completed meetings include AI followup above the transcript, generated automatically after transcription. To do list and Dynamic contain named actions, offers and needs with transcript evidence. Potential research suggests up to five unresolved questions. Click a research paragraph to copy a standalone AI research prompt with meeting context, attributed excerpts and evidence requests; a toast confirms successful copying. Meeting managers can generate or regenerate, and readers can view and copy saved results. Older summaries remain visible until regenerated; source changes still invalidate them.
 
 Each meeting brings together its status, synchronized audio, transcript, speaker corrections, workspace configured translation, detected entities, captured screen share images, related meetings, and access controls. Missing or failed content leads to the relevant recovery source instead of an empty transcript.
 

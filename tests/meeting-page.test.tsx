@@ -559,7 +559,7 @@ describe("meeting page", () => {
     const beforeHtml = renderToStaticMarkup(before);
     // The summary layer leads; the raw transcript follows it.
     expect(beforeHtml.indexOf("AI followup")).toBeLessThan(beforeHtml.indexOf("transcript lines"));
-    const result = { todos: [{ person: "Alice", text: "Alice will send the deck.", timing: null, evidence: [{ segmentId: "seg", quote: "I will send the deck." }] }], dynamics: [] };
+    const result = { todos: [{ person: "Alice", text: "Alice will send the deck.", timing: null, evidence: [{ segmentId: "seg", quote: "I will send the deck." }] }], dynamics: [], research: [] };
     mocks.getMeeting.mockResolvedValue({ ...current, aiFollowup: { sourceHash: getFollowupSourceHash(source), result } });
     const after = await MeetingPage({ params: Promise.resolve({ meetingId: "meeting_1" }) });
     expect(followupKey(after)).not.toBe(followupKey(before));

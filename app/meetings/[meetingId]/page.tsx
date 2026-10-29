@@ -22,6 +22,7 @@ import { requireCurrentUser } from "@/lib/auth-guards";
 import {
   getCurrentMeetingFollowup,
   getFollowupSourceHash,
+  getFollowupSource,
   isFollowupReady,
 } from "@/lib/meeting-followup-source";
 import { getMeetingDisplayStatus } from "@/lib/meeting-display-status";
@@ -67,6 +68,7 @@ export default async function MeetingPage({
   const canManage = meeting.canManage;
   const participants = [...new Map(parts.flatMap(part => part.speakerSuggestions)
     .map(person => [person.email.trim().toLowerCase(), person])).values()];
+  const followupSource = getFollowupSource(followupMeeting);
   const followupResult = getCurrentMeetingFollowup(followupMeeting);
   const followupSourceHash = getFollowupSourceHash(followupMeeting);
   const canShare = parts.some(part => part.segments.length > 0);
@@ -260,7 +262,9 @@ export default async function MeetingPage({
                 initialResult={followupResult}
                 key={`${workspace.userId}:${meetingId}:${followupSourceHash}:${canManage}:${JSON.stringify(followupResult)}`}
                 meetingId={meetingId}
-                segments={followupMeeting.segments.map(({ id, startMs }) => ({ id, startMs }))}
+                meetingTitle={followupMeeting.title}
+                meetingStartedAt={followupSource.startedAt}
+                segments={followupSource.segments.map(({ id, startMs, speaker }) => ({ id, startMs, speaker }))}
                 sourceHash={followupSourceHash}
               />
             ) : null}

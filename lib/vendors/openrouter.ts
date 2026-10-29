@@ -149,7 +149,7 @@ export async function generateMeetingFollowup(
         },
         { role: "user", content: transcript },
       ],
-      maxTokens: 5000,
+      maxTokens: 8000,
       temperature: 0.2,
       provider: { require_parameters: true },
       responseFormat: {

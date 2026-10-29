@@ -22,7 +22,7 @@ const output = {
       evidence: [{ segmentId: "one", quote: "I will send the deck." }],
     },
   ],
-  dynamics: [],
+  dynamics: [], research: [],
 };
 const completion = (result: unknown) =>
   Response.json({
@@ -56,6 +56,10 @@ describe("followup provider", () => {
     expect(request.model).toBe("google/gemini-3.8-flash");
     expect(request.reasoning).toEqual({ effort: "low" });
     expect(request.response_format.json_schema.strict).toBe(true);
+    expect(request.response_format.json_schema.schema.required).toContain("research");
+    expect(request.response_format.json_schema.schema.properties.research.items.required).toEqual(
+      expect.arrayContaining(["question", "context", "evidenceToCollect", "evidence"]),
+    );
     expect(request.messages[0].content).toContain(
       "Replace ALL personal and possessive pronouns",
     );
@@ -78,7 +82,7 @@ describe("followup provider", () => {
     const fetch = setup().mockImplementation(() => completion(invalid));
     await expect(generateMeetingFollowup(source)).resolves.toEqual({
       todos: [],
-      dynamics: [],
+      dynamics: [], research: [],
     });
     expect(fetch).toHaveBeenCalledTimes(2);
     expect(
@@ -110,7 +114,7 @@ describe("followup provider", () => {
         output.todos[0],
         { ...output.todos[0], text: "Alex will send the deck to them." },
       ],
-      dynamics: [],
+      dynamics: [], research: [],
     };
     setup().mockImplementation(() => completion(mixed));
     await expect(generateMeetingFollowup(source)).resolves.toEqual(output);

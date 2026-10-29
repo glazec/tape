@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { createHash } from "node:crypto";
 
 import {
   parseMeetingFollowup,
@@ -32,10 +33,50 @@ const result = {
       ],
     },
   ],
-  dynamics: [],
+  dynamics: [], research: [],
 };
 
 describe("compact followup grounding", () => {
+  const research = {
+    question: "Does the optimization reduce cost per successful task?",
+    context: "Momir requested evidence of actual customer savings.",
+    evidenceToCollect: "Obtain task benchmarks with costs, quality and retries.",
+    evidence: [{ segmentId: "research", quote: "We need evidence of actual customer savings." }],
+  };
+  const researchSource = {
+    ...source,
+    segments: [...source.segments, { id: "research", speaker: "Momir Amidzic", startMs: 180000, text: research.evidence[0].quote }],
+  };
+
+  it("accepts research questions without assigning a speaker as an owner", () => {
+    const output = { ...result, research: [research] };
+    expect(parseMeetingFollowup(JSON.stringify(output), researchSource)).toEqual(output);
+  });
+
+  it("rejects invented research quotes and drops only bad research in lenient mode", () => {
+    const bad = { ...research, evidence: [{ segmentId: "research", quote: "Costs fell by 48%." }] };
+    const output = { ...result, research: [research, bad] };
+    expect(() => parseMeetingFollowup(JSON.stringify(output), researchSource)).toThrow("exactly");
+    expect(parseMeetingFollowup(JSON.stringify(output), researchSource, { lenient: true })).toEqual({ ...result, research: [research] });
+  });
+
+  it("rejects missing research context and too many research questions", () => {
+    for (const items of [[{ ...research, context: "" }], Array(6).fill(research)]) {
+      expect(() => parseMeetingFollowup(JSON.stringify({ ...result, research: items }), researchSource)).toThrow();
+    }
+  });
+
+  it("preserves legacy summaries without fabricating research and still invalidates changed sources", () => {
+    const legacy = { todos: result.todos, dynamics: result.dynamics };
+    const meeting = {
+      ...source, status: "ready", transcriptJobStatus: "completed",
+      aiFollowup: { sourceHash: createHash("sha256").update(JSON.stringify([1, source])).digest("hex"), result: legacy },
+    };
+    expect(getCurrentMeetingFollowup(meeting)).toEqual({ ...legacy, research: [] });
+    expect(getCurrentMeetingFollowup({ ...meeting, title: "Changed" })).toBeNull();
+    expect(getCurrentMeetingFollowup({ ...meeting, aiFollowup: { ...meeting.aiFollowup, result: { ...legacy, research: [research] } } })).toBeNull();
+  });
+
   it("matches quotes despite curly apostrophes and spacing", () => {
     const curly = {
       ...source,
@@ -86,7 +127,7 @@ describe("compact followup grounding", () => {
     };
     expect(() =>
       parseMeetingFollowup(
-        JSON.stringify({ todos: [item], dynamics: [] }),
+        JSON.stringify({ todos: [item], dynamics: [], research: [] }),
         source,
       ),
     ).toThrow("pronouns");
@@ -116,7 +157,7 @@ describe("compact followup grounding", () => {
     };
     expect(
       parseMeetingFollowup(
-        JSON.stringify({ todos: [item], dynamics: [] }),
+        JSON.stringify({ todos: [item], dynamics: [], research: [] }),
         named,
       ).todos,
     ).toHaveLength(1);
@@ -129,7 +170,7 @@ describe("compact followup grounding", () => {
     };
     expect(
       parseMeetingFollowup(
-        JSON.stringify({ todos: [item], dynamics: [] }),
+        JSON.stringify({ todos: [item], dynamics: [], research: [] }),
         source,
       ).todos,
     ).toHaveLength(1);
@@ -159,9 +200,9 @@ describe("compact followup grounding", () => {
   });
 
   it("allows no commitments without manufacturing tasks", () => {
-    expect(parseMeetingFollowup('{"todos":[],"dynamics":[]}', source)).toEqual({
+    expect(parseMeetingFollowup('{"todos":[],"dynamics":[],"research":[]}', source)).toEqual({
       todos: [],
-      dynamics: [],
+      dynamics: [], research: [],
     });
   });
 
