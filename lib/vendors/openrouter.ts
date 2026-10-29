@@ -338,7 +338,7 @@ async function createMeetingChatCompletion(input: {
         messages: input.messages,
         temperature: 0.3,
         max_tokens: MEETING_CHAT_MAX_TOKENS * attempt,
-        reasoning: { effort: "none" },
+        reasoning: { effort: env.OPENROUTER_MODEL.startsWith("z-ai/glm-5.3") ? "low" : "none" },
         ...(input.searchToolChoice
           ? {
               tools: [searchWebTool],
@@ -690,7 +690,7 @@ async function createOpenRouterChatCompletion(input: {
             messages: input.messages,
             temperature: input.temperature,
             max_tokens: input.maxTokens,
-            reasoning: { effort: model === TRANSCRIPT_MODEL ? "low" : "none" },
+            reasoning: { effort: model === TRANSCRIPT_MODEL || model.startsWith("z-ai/glm-5.3") ? "low" : "none" },
             response_format: input.responseFormat ?? { type: "json_object" },
             ...(input.plugins ? { plugins: input.plugins } : {}),
             ...(input.provider ? { provider: input.provider } : {}),

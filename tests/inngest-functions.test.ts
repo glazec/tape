@@ -1,5 +1,11 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+const recallRecovery = vi.hoisted(() => ({ list: vi.fn(), reconcile: vi.fn() }));
+vi.mock("@/lib/recall-meeting-reconciliation", () => ({
+  listRecallMeetingsToReconcile: recallRecovery.list,
+  reconcileRecallMeeting: recallRecovery.reconcile,
+}));
+
 const {
   listMissingCalendarHistory,
   repairCalendarHistoryEvent,
@@ -244,7 +250,22 @@ describe("Inngest functions", () => {
         id: "reconcile-stale-meeting-jobs",
         triggers: [{ cron: "*/15 * * * *" }],
       },
+      {
+        id: "reconcile-recall-meetings",
+        triggers: [{ cron: "*/5 * * * *" }, { event: "meeting/reconcile.recall" }],
+      },
     ]);
+  });
+
+  it("checks other Recall meetings after one fails and leaves the run retryable", async () => {
+    recallRecovery.list.mockResolvedValue([{ id: "a", recall_bot_id: "bot-a" }, { id: "b", recall_bot_id: "bot-b" }]);
+    recallRecovery.reconcile.mockRejectedValueOnce(new Error("temporary provider failure")).mockResolvedValueOnce({ action: "update" });
+    const { reconcileRecallMeetings } = await import("@/inngest/functions");
+    const run = vi.fn(async (_name, callback) => callback());
+    const worker = reconcileRecallMeetings as unknown as RunnableInngestFunction;
+    await expect(worker.fn({ event: { data: {} }, step: { run } })).rejects.toThrow("1 meetings");
+    expect(recallRecovery.reconcile).toHaveBeenCalledTimes(2);
+    expect(run.mock.calls.map(([name]) => name)).toEqual(["find-recall-meetings", "reconcile-a", "reconcile-b"]);
   });
 
   it("repairs history through durable per-event steps with connection-level concurrency", async () => {

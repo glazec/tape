@@ -48,6 +48,9 @@ export function getDeploymentEnvironmentIssues(
   }
 
   const appUrl = source.NEXT_PUBLIC_APP_URL?.trim();
+  if (source.OPENROUTER_MODEL?.trim().endsWith(":batch")) {
+    issues.push("OPENROUTER_MODEL must support chat/completions, not a :batch model");
+  }
   const parsedAppUrl = appUrl ? parseHttpUrl(appUrl) : null;
   const recallRealtimeWebhookUrl =
     source.RECALL_REALTIME_WEBHOOK_URL?.trim();

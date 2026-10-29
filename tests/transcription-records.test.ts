@@ -192,6 +192,17 @@ describe("createRecallRecordingTranscription", () => {
     );
   });
 
+  it("redispatches a queued Recall job after an interrupted event send", async () => {
+    select
+      .mockReturnValueOnce(buildSelectResult([{ id: "recording" }]))
+      .mockReturnValueOnce(buildSelectResult([{ id: "job", status: "queued", providerJobId: null }]));
+    const { createRecallRecordingTranscription } = await import("@/lib/transcription-records");
+    await expect(createRecallRecordingTranscription({
+      externalRecordingId: "external", meetingId: "meeting",
+    })).resolves.toMatchObject({ shouldQueue: true, transcriptJobId: "job" });
+    expect(insert).not.toHaveBeenCalled();
+  });
+
   it("does not queue the same Recall recording twice", async () => {
     select
       .mockReturnValueOnce(

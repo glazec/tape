@@ -45,6 +45,8 @@ vi.mock("@/lib/vendor-webhook-events", () => ({
   releaseVendorWebhookEventClaim,
 }));
 
+vi.mock("@/lib/recall-meetings", () => ({ applyRecallMeetingEvent: vi.fn() }));
+
 const recallWebhookSecret = "whsec_cmVjYWxsLXdlYmhvb2stc2VjcmV0";
 
 function signRecallWebhook(rawBody: string) {
@@ -105,6 +107,17 @@ describe("POST /api/recall/calendar/webhook", () => {
     releaseVendorWebhookEventClaim.mockReset();
     vi.unstubAllEnvs();
     vi.resetModules();
+  });
+
+  it("accepts calendar events through the common Recall endpoint", async () => {
+    vi.stubEnv("RECALL_WEBHOOK_SECRET", recallWebhookSecret);
+    const { POST } = await import("@/app/api/recall/webhook/route");
+    const body = JSON.stringify({ event: "calendar.sync_events", data: { calendar_id: "calendar" } });
+    const response = await POST(new Request("https://app.example.com/api/recall/webhook", {
+      method: "POST", body, headers: signRecallWebhook(body),
+    }));
+    expect(response.status).toBe(200);
+    expect(processRecallCalendarWebhook).toHaveBeenCalledOnce();
   });
 
   it("processes signed Recall calendar sync webhooks once", async () => {

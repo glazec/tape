@@ -509,7 +509,7 @@ export function buildMeetingLibraryPage(
   );
   const eligibleMeetingsForLibrary = activeMeetingsForLibrary.filter(
     (meeting) =>
-      shouldShowMeetingInLibrary(meeting, scheduledBotMeetingIds) &&
+      shouldShowMeetingInLibrary(meeting, scheduledBotMeetingIds, nowTime) &&
       matchesMeetingLibraryStatus(meeting, status),
   );
   const visibleMeetingsForLibrary = eligibleMeetingsForLibrary.filter(
@@ -520,11 +520,11 @@ export function buildMeetingLibraryPage(
   );
   const relatedMeetingsByRoot = getRelatedMeetingsByRoot(
     relatedMeetingsForLibrary,
-    { includeTitleKeys: sort === "smart" },
+    { includeTitleKeys: sort === "smart", nowTime },
   );
   const allRelatedMeetingsByRoot = getRelatedMeetingsByRoot(
     eligibleMeetingsForLibrary,
-    { includeTitleKeys: sort === "smart" },
+    { includeTitleKeys: sort === "smart", nowTime },
   );
   const hasMoreRelatedMeetingByRoot = new Map(
     Array.from(allRelatedMeetingsByRoot, ([meetingId, relatedMeetings]) => [
@@ -570,6 +570,7 @@ export function buildMeetingLibraryPage(
           meeting.id,
           getMeetingAudienceKey(meeting.externalParticipantKeys),
         ])),
+        nowTime,
       )
     : sortedMeetings;
   const page = normalizePage(options.page);
@@ -597,9 +598,13 @@ export function buildMeetingLibraryPage(
 
 function getRelatedMeetingsByRoot(
   meetingsForLibrary: MeetingListItem[],
-  options: { includeTitleKeys: boolean },
+  options: { includeTitleKeys: boolean; nowTime: number },
 ) {
-  const grouped = groupRelatedMeetings(meetingsForLibrary, options);
+  const unresolved = meetingsForLibrary.filter(meeting => isUnresolvedMeeting(meeting, options.nowTime));
+  const grouped = [
+    ...unresolved.map(meeting => ({ ...meeting, relatedMeetings: [] })),
+    ...groupRelatedMeetings(meetingsForLibrary.filter(meeting => !isUnresolvedMeeting(meeting, options.nowTime)), options),
+  ];
   const itemById = new Map(
     meetingsForLibrary.map((meeting) => [meeting.id, meeting]),
   );
@@ -619,11 +624,16 @@ function getRelatedMeetingsByRoot(
 function foldSimilarMeetings(
   meetingsForLibrary: MeetingListItem[],
   audienceByMeetingId: Map<string, string>,
+  nowTime: number,
 ) {
   const roots: MeetingListItem[] = [];
   const rootByTitle = new Map<string, MeetingListItem>();
 
   for (const meeting of meetingsForLibrary) {
+    if (isUnresolvedMeeting(meeting, nowTime)) {
+      roots.push(meeting);
+      continue;
+    }
     const title = getSimilarMeetingTitleKey(meeting.title);
     const titleKey = title
       ? JSON.stringify([audienceByMeetingId.get(meeting.id), title])
@@ -663,13 +673,20 @@ function foldSimilarMeetings(
   return roots;
 }
 
+function isUnresolvedMeeting(meeting: MeetingListItem, nowTime: number) {
+  return ["recording", "processing", "failed"].includes(meeting.status) ||
+    (meeting.status === "scheduled" && new Date(meeting.startedAt).getTime() <= nowTime);
+}
+
 function shouldShowMeetingInLibrary(
   meeting: MeetingListItem,
   scheduledBotMeetingIds: Set<string>,
+  nowTime: number,
 ) {
   return (
     meeting.status !== "scheduled" ||
     meeting.platform === "in_person" ||
+    new Date(meeting.startedAt).getTime() <= nowTime ||
     scheduledBotMeetingIds.has(meeting.id)
   );
 }

@@ -101,3 +101,7 @@ Merge meetings adds an existing meeting even while transcription is pending. Up 
 Combined transcript sections remain useful while another source is processing. Note questions and exports include available readable parts; combined followups wait for all visible sources to finish. Sharing the destination alone does not share the sources. Replace audio is available on individual recordings, including original source pages.
 
 Remembering a speaker name is an explicit option during an all matching lines correction. It stores the complete verified email within the workspace. Names alone, generic speaker labels, and single line corrections do not train future identity matching.
+
+## Recording reliability
+
+Started meetings remain visible while recording or processing is unresolved, including when provider notifications are delayed. A background check reconciles Recall bot state every five minutes for the past 30 days and repairs missing transcription dispatches. Already running, completed, or failed transcription jobs are not automatically submitted again.

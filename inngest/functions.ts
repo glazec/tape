@@ -1,3 +1,4 @@
+import { listRecallMeetingsToReconcile, reconcileRecallMeeting } from "@/lib/recall-meeting-reconciliation";
 import { z } from "zod";
 import { and, asc, eq, inArray, sql } from "drizzle-orm";
 
@@ -795,6 +796,28 @@ export const enforceProviderCredit = inngest.createFunction(
   async () => stopBotsForExhaustedWorkspaces(),
 );
 
+export const reconcileRecallMeetings = inngest.createFunction(
+  {
+    id: "reconcile-recall-meetings",
+    retries: 3,
+    concurrency: { limit: 1 },
+    triggers: [{ cron: "*/5 * * * *" }, { event: "meeting/reconcile.recall" }],
+  },
+  async ({ step }) => {
+    const meetings = await step.run("find-recall-meetings", listRecallMeetingsToReconcile);
+    let failed = 0;
+    for (const meeting of meetings) {
+      try {
+        await step.run(`reconcile-${meeting.id}`, () => reconcileRecallMeeting(meeting));
+      } catch {
+        failed += 1;
+      }
+    }
+    if (failed) throw new Error(`Recall reconciliation failed for ${failed} meetings`);
+    return { checked: meetings.length };
+  },
+);
+
 const reconcileStaleJobs = inngest.createFunction(
   {
     id: "reconcile-stale-meeting-jobs",
@@ -826,6 +849,7 @@ export const functions = [
   repairCalendarHistory,
   enforceProviderCredit,
   reconcileStaleJobs,
+  reconcileRecallMeetings,
 ];
 
 function buildTranscriptMetadata(

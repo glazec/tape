@@ -9,6 +9,19 @@ vi.mock("@/lib/provider-usage", () => ({
 }));
 
 describe("OpenRouter meeting chat", () => {
+  it("keeps mandatory reasoning enabled for GLM 5.3 realtime requests", async () => {
+    vi.stubEnv("OPENROUTER_API_KEY", "openrouter-key");
+    vi.stubEnv("OPENROUTER_MODEL", "z-ai/glm-5.3-flash");
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      choices: [{ finish_reason: "stop", message: { content: "OK" } }],
+    }), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+    const { generateOpenRouterChatReply } = await import("@/lib/vendors/openrouter");
+    await expect(generateOpenRouterChatReply({
+      meetingId: "11111111-1111-4111-8111-111111111111", question: "Reply OK",
+    })).resolves.toBe("OK");
+    expect(JSON.parse(String(fetchMock.mock.calls[0][1]?.body)).reasoning).toEqual({ effort: "low" });
+  });
   afterEach(() => {
     recordOpenRouterCompletionUsage.mockReset();
     vi.restoreAllMocks();

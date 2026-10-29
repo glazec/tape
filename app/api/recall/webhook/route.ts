@@ -35,6 +35,14 @@ export async function POST(request: Request) {
     return webhookVerificationResponse(error);
   }
 
+  if (body && typeof body === "object" && "event" in body &&
+      typeof body.event === "string" && body.event.startsWith("calendar.")) {
+    const { handleRecallCalendarWebhook } = await import("@/lib/recall-calendar-webhook-handler");
+    return handleRecallCalendarWebhook(new Request(request.url, {
+      method: "POST", headers: request.headers, body: rawBody,
+    }));
+  }
+
   let event: ReturnType<typeof normalizeRecallWebhook>;
 
   try {

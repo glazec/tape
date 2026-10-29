@@ -52,6 +52,8 @@ Fill these values in `.env.local` for the complete application:
 | Recall.ai | `RECALL_API_KEY`, `RECALL_API_BASE_URL`, `RECALL_WEBHOOK_SECRET`, `RECALL_REALTIME_WEBHOOK_URL` |
 | ElevenLabs | `ELEVENLABS_API_KEY`, `ELEVENLABS_WEBHOOK_SECRET` |
 | OpenRouter | `OPENROUTER_API_KEY`, `OPENROUTER_MODEL` |
+
+`OPENROUTER_MODEL` must support the realtime chat/completions endpoint; deployment validation rejects `:batch` models. GLM 5.3 models use low reasoning because the provider requires reasoning to remain enabled.
 | Inngest | `INNGEST_EVENT_KEY`, `INNGEST_SIGNING_KEY` |
 | Application | `NEXT_PUBLIC_APP_URL`, `MCP_BACKEND_SHARED_SECRET` |
 
@@ -511,3 +513,9 @@ Apply migration `0059_meeting_bot_organization` before deploying the organizatio
 Apply `0060_meeting_continuity` before deploying the continuity routes. It adds `meetings.bot_display_name`, the access controlled `meeting_parts` relation, merge validation, and the atomic continuation claim function. No new environment variables are required. The one hour window uses `recordings.ended_at`. A definite provider refusal can be retried; an uncertain network outcome keeps its claim so a second bot is not dispatched. Signed provider callbacks can confirm that claim.
 
 This is the cloud bot continuation flow. Existing native recorder uploads and replacement audio processing keep their original source records. Production verification still requires migration success, deployment, and authenticated capture through the provider. Local fixtures do not establish a successful live join.
+
+## Recall notification recovery
+
+Configure the Recall dashboard endpoint against the current production `NEXT_PUBLIC_APP_URL` at `/api/recall/webhook`. Do not leave it on an obsolete hosting provider domain. This endpoint accepts both bot/recording events and signed Calendar V2 events; the dedicated calendar route remains supported. After changing the endpoint, verify a real delivery returns 200 and reaches `vendor_webhook_events`.
+
+Register `reconcile-recall-meetings` with Inngest after deployment. It runs every five minutes and accepts `meeting/reconcile.recall` for an immediate recovery pass. It checks up to 100 oldest-updated unresolved bot meetings from the past 30 days, verifies recording readiness, and reuses the recording and transcription job. Inngest event IDs deduplicate interrupted queued dispatches. Per-meeting durable steps isolate failures; failed steps retry and surface a failed run rather than silently reporting success.

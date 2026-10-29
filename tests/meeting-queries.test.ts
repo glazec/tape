@@ -2185,6 +2185,16 @@ describe("buildMeetingLibraryPage", () => {
     });
   });
 
+  it("retains started bot meetings when their status notification is missing", async () => {
+    const { buildMeetingLibraryPage } = await import("@/lib/meeting-queries");
+    const page = buildMeetingLibraryPage([
+      { ...libraryMeeting({ id: "late", title: "Hanwei", platform: "zoom", startedAt: "2026-06-28T10:00:00Z" }), status: "scheduled", hasRecallBot: true },
+      { ...libraryMeeting({ id: "future", title: "Hanwei", platform: "zoom", startedAt: "2026-06-29T10:00:00Z" }), status: "scheduled", hasRecallBot: true },
+    ], { now: new Date("2026-06-28T12:00:00Z") });
+    expect(page.meetings.map(m => m.id)).toContain("late");
+    expect(page.meetings.find(m => m.id === "future")?.relatedMeetings).toEqual([]);
+  });
+
   it("folds duplicate meeting titles into one tree in smart order", async () => {
     const { buildMeetingLibraryPage } = await import("@/lib/meeting-queries");
 
