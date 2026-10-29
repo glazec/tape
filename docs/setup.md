@@ -52,10 +52,10 @@ Fill these values in `.env.local` for the complete application:
 | Recall.ai | `RECALL_API_KEY`, `RECALL_API_BASE_URL`, `RECALL_WEBHOOK_SECRET`, `RECALL_REALTIME_WEBHOOK_URL` |
 | ElevenLabs | `ELEVENLABS_API_KEY`, `ELEVENLABS_WEBHOOK_SECRET` |
 | OpenRouter | `OPENROUTER_API_KEY`, `OPENROUTER_MODEL` |
-
-`OPENROUTER_MODEL` must support the realtime chat/completions endpoint; deployment validation rejects `:batch` models. GLM 5.3 models use low reasoning because the provider requires reasoning to remain enabled.
 | Inngest | `INNGEST_EVENT_KEY`, `INNGEST_SIGNING_KEY` |
 | Application | `NEXT_PUBLIC_APP_URL`, `MCP_BACKEND_SHARED_SECRET` |
+
+`OPENROUTER_MODEL` must support the realtime chat/completions endpoint; deployment validation rejects `:batch` models. GLM 5.3 models use low reasoning because the provider requires reasoning to remain enabled.
 
 Transcript translation and original language polishing use `google/gemini-3.8-flash` through OpenRouter. Polishing actively rewrites awkward speech into concise sentences while preserving substantive details, uncertainty, corrections, language, and segment boundaries. It requests strict structured output and accepts short edits instead of requiring short lines to remain verbatim. Unusable output falls back to the original segment. Existing saved polish is skipped by enrichment; deploying a prompt change does not regenerate past meetings. `OPENROUTER_MODEL` selects the assistant and meeting notes model independently.
 
