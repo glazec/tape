@@ -3,6 +3,7 @@ import { PgDialect } from "drizzle-orm/pg-core";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 const {
+  generateAudioWaveform,
   createReadUrl,
   findRecallRecordingMediaUrl,
   getCurrentUser,
@@ -12,6 +13,7 @@ const {
   retrieveRecallRecording,
   where,
 } = vi.hoisted(() => ({
+  generateAudioWaveform: vi.fn(),
   createReadUrl: vi.fn(),
   findRecallRecordingMediaUrl: vi.fn(),
   getCurrentUser: vi.fn(),
@@ -33,6 +35,8 @@ const dialect = new PgDialect();
 function toQuery(condition: SQL) {
   return dialect.sqlToQuery(condition);
 }
+
+vi.mock("@/lib/audio-waveform-server", () => ({ generateAudioWaveform }));
 
 vi.mock("@/lib/auth", () => ({
   getCurrentUser,
@@ -84,6 +88,7 @@ async function getMeetingAudio(
 
 describe("GET /api/meetings/[meetingId]/audio", () => {
   afterEach(() => {
+    generateAudioWaveform.mockReset();
     createReadUrl.mockReset();
     findRecallRecordingMediaUrl.mockReset();
     getCurrentUser.mockReset();
@@ -109,6 +114,46 @@ describe("GET /api/meetings/[meetingId]/audio", () => {
     expect(response.status).toBe(401);
     await expect(response.json()).resolves.toEqual({ error: "Unauthorized" });
     expect(createReadUrl).not.toHaveBeenCalled();
+  });
+
+  it("requires authentication before generating waveform data", async () => {
+    getCurrentUser.mockResolvedValue(null);
+    const response = await getMeetingAudio("https://app.example.com/api/meetings/11111111-1111-4111-8111-111111111111/audio?waveform=1");
+    expect(response.status).toBe(401);
+    expect(generateAudioWaveform).not.toHaveBeenCalled();
+  });
+
+  it("does not generate a waveform for an inaccessible meeting", async () => {
+    getCurrentUser.mockResolvedValue({ id: "user_123", email: "user@example.com" });
+    getWorkspace.mockResolvedValue({ teamId: "team_123" });
+    limit.mockResolvedValue([]);
+    const response = await getMeetingAudio("https://app.example.com/api/meetings/11111111-1111-4111-8111-111111111111/audio?waveform=1");
+    expect(response.status).toBe(404);
+    expect(generateAudioWaveform).not.toHaveBeenCalled();
+  });
+
+  it("returns private audio peaks for the authorized current asset", async () => {
+    getCurrentUser.mockResolvedValue({ id: "user_123", email: "user@example.com" });
+    getWorkspace.mockResolvedValue({ teamId: "team_123" });
+    limit.mockResolvedValue([{ objectKey: "replacement.mp3" }]);
+    createReadUrl.mockResolvedValue("https://r2.example.com/replacement.mp3");
+    generateAudioWaveform.mockResolvedValue([0, 0.1, 0.8]);
+    const response = await getMeetingAudio("https://app.example.com/api/meetings/11111111-1111-4111-8111-111111111111/audio?waveform=1");
+    expect(response.status).toBe(200);
+    expect(response.headers.get("cache-control")).toBe("private, no-store");
+    expect(await response.json()).toEqual({ peaks: [0, 0.1, 0.8] });
+    expect(generateAudioWaveform).toHaveBeenCalledWith("https://r2.example.com/replacement.mp3", "object:replacement.mp3");
+  });
+
+  it("returns a recoverable response when waveform generation fails", async () => {
+    getCurrentUser.mockResolvedValue({ id: "user_123", email: "user@example.com" });
+    getWorkspace.mockResolvedValue({ teamId: "team_123" });
+    limit.mockResolvedValue([{ objectKey: "audio.mp3" }]);
+    createReadUrl.mockResolvedValue("https://r2.example.com/audio.mp3");
+    generateAudioWaveform.mockRejectedValue(new Error("decoder failure with private URL"));
+    const response = await getMeetingAudio("https://app.example.com/api/meetings/11111111-1111-4111-8111-111111111111/audio?waveform=1");
+    expect(response.status).toBe(503);
+    expect(await response.json()).toEqual({ error: "Audio waveform unavailable" });
   });
 
   it("redirects authenticated workspace users to a signed audio URL", async () => {

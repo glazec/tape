@@ -30,6 +30,7 @@ import {
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { normalizeAudioPeaks, resampleAudioPeaks } from "@/lib/audio-waveform";
 import {
   getAudioPlaylistDurationSeconds,
   getAudioPlaylistPartOffsetSeconds,
@@ -2283,7 +2284,6 @@ function TranscriptAudioPlayer({
 }) {
   const [audioWaveform, setAudioWaveform] = useState<{
     audioUrl: string;
-    barCount: number;
     peaks: number[];
   } | null>(null);
   const [failedWaveformAudioUrl, setFailedWaveformAudioUrl] = useState<
@@ -2301,20 +2301,23 @@ function TranscriptAudioPlayer({
   ]);
   const timelineDuration = safeDuration || segmentDuration;
   const progressValue = safeDuration ? currentTime : 0;
+  const serverWaveformUrl =
+    allowAudioWaveform && /^\/api\/meetings\/[^/]+\/audio(?:\?|$)/.test(audioUrl)
+      ? `${audioUrl}${audioUrl.includes("?") ? "&" : "?"}waveform=1`
+      : null;
   const audioWaveformPeaks =
     allowAudioWaveform &&
-    shouldDecodeAudioWaveform({
+    (serverWaveformUrl || shouldDecodeAudioWaveform({
       duration: safeDuration,
       timelineDuration,
-    }) &&
-    audioWaveform?.audioUrl === audioUrl &&
-    audioWaveform.barCount === waveformBarCount
+    })) &&
+    audioWaveform?.audioUrl === audioUrl
       ? audioWaveform.peaks
       : null;
   const hasAudioWaveform = Boolean(audioWaveformPeaks?.length);
   const waveformValues = useMemo(() => {
     if (audioWaveformPeaks?.length) {
-      return audioWaveformPeaks;
+      return normalizeAudioPeaks(resampleAudioPeaks(audioWaveformPeaks, waveformBarCount));
     }
 
     return buildFallbackWaveform(segments, waveformBarCount);
@@ -2362,11 +2365,15 @@ function TranscriptAudioPlayer({
   const progressPercent = timelineDuration
     ? clamp((currentTime / timelineDuration) * 100, 0, 100)
     : 0;
-  const shouldLoadAudioWaveform = shouldDecodeAudioWaveform({
-      duration: safeDuration,
-      timelineDuration,
-    }) && allowAudioWaveform;
-  const waveformAccessibleName = shouldLoadAudioWaveform
+  const shouldLoadAudioWaveform =
+    Boolean(
+      serverWaveformUrl ||
+      shouldDecodeAudioWaveform({
+        duration: safeDuration,
+        timelineDuration,
+      }),
+    ) && allowAudioWaveform;
+  const waveformAccessibleName = shouldLoadAudioWaveform && failedWaveformAudioUrl !== audioUrl
     ? "Audio waveform"
     : "Transcript activity waveform";
   const isResolvingAudioWaveform =
@@ -2393,7 +2400,7 @@ function TranscriptAudioPlayer({
 
     async function loadWaveform() {
       try {
-        const response = await fetch(getWaveformAudioUrl(audioUrl), {
+        const response = await fetch(serverWaveformUrl ?? getWaveformAudioUrl(audioUrl), {
           credentials: "include",
           signal: controller.signal,
         });
@@ -2402,6 +2409,27 @@ function TranscriptAudioPlayer({
           throw new Error("Audio waveform request failed");
         }
 
+        if (serverWaveformUrl) {
+          const data = (await response.json()) as { peaks?: unknown };
+          if (
+            !Array.isArray(data.peaks) ||
+            !data.peaks.length ||
+            data.peaks.some(
+              (peak) =>
+                typeof peak !== "number" ||
+                !Number.isFinite(peak) ||
+                peak < 0 ||
+                peak > 1,
+            )
+          ) {
+            throw new Error("Audio waveform response is invalid");
+          }
+          if (!isCancelled) {
+            setFailedWaveformAudioUrl(null);
+            setAudioWaveform({ audioUrl, peaks: data.peaks });
+          }
+          return;
+        }
         const arrayBuffer = await response.arrayBuffer();
         const AudioContextConstructor =
           window.AudioContext ??
@@ -2417,11 +2445,11 @@ function TranscriptAudioPlayer({
 
         try {
           const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
-          const peaks = buildAudioPeaks(audioBuffer, waveformBarCount);
+          const peaks = buildAudioPeaks(audioBuffer, 1200);
 
           if (!isCancelled) {
             setFailedWaveformAudioUrl(null);
-            setAudioWaveform({ audioUrl, barCount: waveformBarCount, peaks });
+            setAudioWaveform({ audioUrl, peaks });
           }
         } finally {
           void audioContext.close();
@@ -2458,7 +2486,7 @@ function TranscriptAudioPlayer({
         window.clearTimeout(timeoutHandle);
       }
     };
-  }, [audioUrl, shouldLoadAudioWaveform, waveformBarCount]);
+  }, [audioUrl, serverWaveformUrl, shouldLoadAudioWaveform]);
 
   function seek(event: ChangeEvent<HTMLInputElement>) {
     const nextTime = Number(event.currentTarget.value);
@@ -2562,6 +2590,7 @@ function TranscriptAudioPlayer({
         <div className="order-1 min-w-0 flex-1 sm:order-none">
         <button
           aria-busy={false}
+          title={hasAudioWaveform ? "Audio volume" : isResolvingAudioWaveform ? "Loading audio levels" : "Transcript activity, not audio volume"}
           aria-label={
             activeWaveformLabel
               ? `${waveformAccessibleName}, ${activeWaveformLabel}`
@@ -2633,7 +2662,7 @@ function TranscriptAudioPlayer({
                   )}
                   key={index}
                   style={{
-                    height: `${Math.round(3 + peak * 26)}px`,
+                    height: `${Math.round(2 + peak * 27)}px`,
                   }}
                 />
               );
@@ -2837,10 +2866,11 @@ export function shouldDecodeAudioWaveform(input: {
 
 function buildAudioPeaks(audioBuffer: AudioBuffer, count: number) {
   const channelCount = Math.min(audioBuffer.numberOfChannels, 2);
-  const samplesPerPeak = Math.max(1, Math.floor(audioBuffer.length / count));
+  const samplesPerPeak = Math.max(1, Math.round((audioBuffer.sampleRate || 44100) * 0.1));
+  const windowCount = Math.ceil(audioBuffer.length / samplesPerPeak);
   const peaks: number[] = [];
 
-  for (let peakIndex = 0; peakIndex < count; peakIndex += 1) {
+  for (let peakIndex = 0; peakIndex < windowCount; peakIndex += 1) {
     const start = peakIndex * samplesPerPeak;
     const end = Math.min(start + samplesPerPeak, audioBuffer.length);
     let sum = 0;
@@ -2858,7 +2888,7 @@ function buildAudioPeaks(audioBuffer: AudioBuffer, count: number) {
     peaks.push(Math.sqrt(sum / Math.max(1, sampleCount)));
   }
 
-  return normalizePeaks(peaks);
+  return resampleAudioPeaks(peaks, count);
 }
 
 function buildFallbackWaveform(segments: TranscriptSegment[], count: number) {
@@ -2955,17 +2985,6 @@ function normalizeTranscriptActivity(activity: number[]) {
   return activity.map((value) =>
     clamp(0.12 + clamp((value - lowerBound) / spread, 0, 1) * 0.88, 0.08, 1),
   );
-}
-
-function normalizePeaks(peaks: number[]) {
-  const maxPeak = Math.max(...peaks, 0.01);
-
-  return peaks.map((peak) => {
-    const normalizedPeak = clamp(peak / maxPeak, 0, 1);
-    const shapedPeak = normalizedPeak ** 1.45;
-
-    return clamp(0.08 + shapedPeak * 0.92, 0.08, 1);
-  });
 }
 
 function buildWaveformSections(
