@@ -10,7 +10,7 @@ import {
   BatchSpanProcessor,
   type SpanProcessor,
 } from "@opentelemetry/sdk-trace-base";
-import * as SentryModule from "@sentry/nextjs";
+import { Sentry } from "@/lib/sentry/server-sdk";
 import {
   OTLPHttpJsonTraceExporter,
   registerOTel,
@@ -28,12 +28,6 @@ import {
 
 type ConsoleLevel = "debug" | "error" | "info" | "log" | "warn";
 
-// Next bundles named exports; the standalone Node worker loads the CommonJS
-// re-export through its default namespace.
-const Sentry: typeof SentryModule = typeof SentryModule.isEnabled === "function"
-  ? SentryModule
-  : Reflect.get(SentryModule, "default");
-
 type TelemetrySeverity = "DEBUG" | "ERROR" | "INFO" | "WARN";
 
 type TelemetryState = {
@@ -45,6 +39,8 @@ type TelemetryState = {
 
 type TapeTelemetryGlobal = typeof globalThis & {
   __tapeTelemetryFailures?: Set<string>;
+  __tapeConsoleInstrumented?: boolean;
+  __tapeConsoleEmitting?: boolean;
   __tapeTelemetryState?: TelemetryState;
   __tapeTelemetryTraceProcessor?: SpanProcessor;
 };
@@ -62,6 +58,10 @@ export function registerServerTelemetry(options?: {
   defaultServiceName?: string;
   tracingOwner?: "sentry" | "standalone";
 }) {
+  if (Sentry.isEnabled()) {
+    instrumentConsole();
+  }
+
   if (telemetryGlobal.__tapeTelemetryState) {
     return true;
   }
@@ -72,7 +72,7 @@ export function registerServerTelemetry(options?: {
   );
 
   if (!config) {
-    return false;
+    return Sentry.isEnabled();
   }
 
   try {
@@ -209,6 +209,29 @@ export function emitTelemetryLog(input: {
     }
   } else if (input.error !== undefined) {
     attributes["exception.message"] = sanitizeTelemetryText(input.error);
+  }
+
+  // Next already captures request errors through captureRequestError.
+  // Other ERROR logs (including final background job failures) need an issue.
+  try {
+    if (severity === "ERROR" && input.eventName !== "nextjs.request.error" && Sentry.isEnabled()) {
+      const tags = {
+        "error.event": input.eventName,
+        "error.handled": attributes["error.handled"] !== false,
+        "error.source": String(attributes["telemetry.source"] ?? "server"),
+        "operation.name": String(attributes["operation.name"] ?? input.eventName),
+      };
+      const fingerprint = typeof attributes["error.fingerprint"] === "string"
+        ? [attributes["error.fingerprint"]]
+        : ["{{ default }}", input.eventName];
+      if (input.error instanceof Error) {
+        Sentry.captureException(input.error, { tags, fingerprint, level: "error" });
+      } else {
+        Sentry.captureMessage(input.eventName, { tags, fingerprint, level: "error" });
+      }
+    }
+  } catch {
+    // Reporting must not change the application outcome.
   }
 
   const sentryEmitted = emitSentryLog(
@@ -385,6 +408,10 @@ function emitSentryLog(
 }
 
 function instrumentConsole() {
+  if (telemetryGlobal.__tapeConsoleInstrumented) {
+    return;
+  }
+  telemetryGlobal.__tapeConsoleInstrumented = true;
   const originalConsole = {
     debug: console.debug.bind(console),
     error: console.error.bind(console),
@@ -396,6 +423,10 @@ function instrumentConsole() {
   for (const level of Object.keys(originalConsole) as ConsoleLevel[]) {
     console[level] = (...args: unknown[]) => {
       originalConsole[level](...args);
+      if (telemetryGlobal.__tapeConsoleEmitting) {
+        return;
+      }
+      telemetryGlobal.__tapeConsoleEmitting = true;
 
       try {
         const firstArgument = args[0];
@@ -420,7 +451,7 @@ function instrumentConsole() {
                   ),
                 }
               : undefined,
-          error: metadata.find((argument) => argument instanceof Error),
+          error: args.find((argument) => argument instanceof Error),
           eventName,
           severity: consoleSeverity(level),
         });
@@ -430,6 +461,8 @@ function instrumentConsole() {
         }
       } catch {
         // Keep the original console behavior if serialization fails.
+      } finally {
+        telemetryGlobal.__tapeConsoleEmitting = false;
       }
     };
   }

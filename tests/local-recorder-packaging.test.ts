@@ -35,6 +35,13 @@ describe("local recorder app packaging", () => {
     }
   });
 
+  it.each(["", "   ", "not-a-dsn"])("rejects release packaging without a valid Sentry DSN: %j", (dsn) => {
+    expect(() => execFileSync("bash", [join(packageRoot, "script", "build_and_run.sh"), "--package"], {
+      env: { ...process.env, BUILD_CONFIGURATION: "release", SENTRY_DSN: dsn, NEXT_PUBLIC_SENTRY_DSN: "" },
+      stdio: "pipe",
+    })).toThrow("Release builds require a valid HTTPS SENTRY_DSN");
+  });
+
   it("bundles a checksum verified official Node runtime", () => {
     const root = makeTemporaryDirectory();
     const version = "v24.18.0";

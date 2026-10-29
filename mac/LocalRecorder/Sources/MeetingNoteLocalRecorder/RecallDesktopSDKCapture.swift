@@ -266,6 +266,10 @@ final class RecallDesktopSDKRecordingController {
             return
         }
 
+        LocalRecorderTelemetry.capture(
+            NSError(domain: "RecallDesktopSDK", code: Int(process.terminationStatus)),
+            operation: .sdkTermination
+        )
         activeSession = nil
         onUnexpectedTermination?()
     }

@@ -26,7 +26,7 @@ export default defineConfig({
         statements: 74,
       },
     },
-    exclude: ["tests/e2e/**", "node_modules/**", ".worktrees/**"],
+    exclude: ["tests/e2e/**", "node_modules/**", ".worktrees/**", "**/.build/**"],
     environment: "node",
     globals: true,
   },

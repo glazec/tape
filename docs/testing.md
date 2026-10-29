@@ -110,7 +110,7 @@ For telemetry changes, run the deterministic signal, redaction, browser intake,
 and server exporter tests:
 
 ```bash
-npx vitest run tests/telemetry-config.test.ts tests/telemetry-client.test.ts tests/telemetry-route.test.ts tests/telemetry-server.test.ts
+npx vitest run tests/telemetry-config.test.ts tests/telemetry-client.test.ts tests/telemetry-route.test.ts tests/telemetry-server.test.ts tests/sentry-handled-errors.test.ts tests/image-worker-runtime.test.ts
 ```
 
 For MCP meeting upload changes, verify request signatures, completion token binding, web route authorization, exact object validation, idempotent completion, and the Python tool contract:
@@ -152,6 +152,40 @@ filter logs by resource attribute `service.name = tape-web`, then confirm
 `frontend.page_view` and the test error are present. Confirm a Next.js request
 trace for the same service separately. A healthy dashboard alone does not prove
 that the OTLP collector received either signal.
+
+## Sentry delivery verification
+
+With `NEXT_PUBLIC_SENTRY_DSN` configured locally, run:
+
+```bash
+npm run verify:sentry -- server
+npm run verify:sentry -- worker
+```
+
+These commands send synthetic handled, console, and final job errors through
+the real reporting code, without calling the database. They use the
+`coverage-verification` environment and print event IDs. Receipts are written to
+`/tmp/tape-sentry-server-verification.json` and
+`/tmp/tape-sentry-worker-verification.json`.
+
+For native delivery, set `TAPE_SENTRY_VERIFY_DSN` to the public project DSN and
+`TAPE_SENTRY_VERIFY_ID` to a new UUID, then run:
+
+```bash
+swift test --package-path mac/LocalRecorder --filter recorderSentryDeliveryVerification
+```
+
+The opt in test initializes the SDK on the main actor and invokes the same
+reporter used by desktop failure catches. It writes the event ID to
+`/tmp/tape-desktop-sentry-event.json`. Ordinary tests send no events.
+
+Read each event back through the authenticated Sentry project event API. Check
+its environment, operation, release where applicable, and absence of the private
+test marker. An event ID or successful flush alone is not proof of receipt.
+Local sender verification does not prove that production has deployed the code,
+that users have installed the new desktop version, or that a real audio capture
+succeeded. Swift dependency checkouts under `.build` are excluded from JavaScript
+test discovery and linting.
 
 ## Coverage Contract
 

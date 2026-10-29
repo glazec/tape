@@ -16,6 +16,13 @@ The repository requires three Actions secrets:
 2. `MACOS_RELEASE_CERTIFICATE` contains the base64 encoded PKCS12 certificate named `Tape Desktop Release`.
 3. `MACOS_RELEASE_CERTIFICATE_PASSWORD` contains the PKCS12 password.
 
+Set the Actions repository variable `SENTRY_DSN` to the public DSN for the
+`iosg/tape` Sentry project. The build embeds it in `Info.plist` and release builds
+fail if it is missing. Never use `SENTRY_AUTH_TOKEN` as this variable. Native
+crashes and handled recording failures use the native SDK; error descriptions,
+meeting data, file paths, and credentials are excluded from handled reports.
+See `docs/testing.md` for opt in delivery verification.
+
 The private release certificate is not an Apple certificate. Do not replace it for routine releases. Replacing it changes the app identity and invalidates existing macOS permission grants.
 
 No Apple Developer or App Store Connect secrets are required for this release mode.

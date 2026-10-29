@@ -10,9 +10,10 @@ let package = Package(
     ],
     dependencies: [
         .package(url: "https://github.com/sparkle-project/Sparkle", exact: "2.9.2"),
+        .package(url: "https://github.com/getsentry/sentry-cocoa", exact: "9.31.0"),
     ],
     targets: [
-        .target(name: "LocalRecorderCore"),
+        .target(name: "LocalRecorderCore", dependencies: [.product(name: "Sentry", package: "sentry-cocoa")]),
         .executableTarget(
             name: "MeetingNoteLocalRecorder",
             dependencies: [

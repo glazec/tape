@@ -172,18 +172,33 @@ terminal failures can be separated without parsing log messages.
 ## Sentry monitoring
 
 Tape sends uncaught browser, server, edge, React render, and Next.js request
-errors to the `tape` project in the `iosg` Sentry organization. It also forwards
-the existing sanitized structured application logs to Sentry Logs. Set
-`NEXT_PUBLIC_SENTRY_DSN` on the Railway web service. For readable production
+errors to the `tape` project in the `iosg` Sentry organization. Handled server
+ERROR logs and final background job failures also create Sentry issues, while
+retaining the sanitized structured logs. Console capture works with Sentry alone;
+it does not require an OTLP collector. Next.js request errors are not captured
+a second time by the log bridge. Set `NEXT_PUBLIC_SENTRY_DSN` on both the Railway
+web service and image worker. The worker initializes its own Sentry client. For readable production
 stack traces, also set `SENTRY_AUTH_TOKEN` with the `org:ci` scope so the build
 can upload source maps. Never expose that token to the browser or commit it.
 
-Production captures every error and samples ten percent of traces. Development
-captures every trace when a DSN is configured. Session replay remains disabled.
+Configured SDKs capture every error. Production browser and edge traces are
+sampled at ten percent; the web server captures every trace. The image worker
+keeps its existing OTLP tracing provider and sends errors and logs to Sentry.
+Development browser and edge tracing captures every trace when a DSN is configured. Session replay remains disabled.
 The SDK excludes user identity, cookies, headers, request and response bodies,
 query parameters, database values, GraphQL documents and variables, AI inputs
 and outputs, stack variables, console breadcrumbs, and UI interaction
 breadcrumbs. Client source maps are removed after upload.
+
+Desktop builds use the native Sentry SDK for crashes and handled recording,
+audio metering, capture stream, file write, SDK termination, and upload failures.
+Set `SENTRY_DSN` when packaging the app; `NEXT_PUBLIC_SENTRY_DSN` is also accepted.
+Release builds reject a missing DSN. The release workflow reads the public DSN
+from the repository Actions variable `SENTRY_DSN` and sets the environment to
+`production`. Local packages default to `development`; verification uses
+`coverage-verification`. Reports include operation, error type, code, and app
+version, without raw error descriptions, meeting content, tokens, or user identity.
+Native startup runs on the main actor before the recorder model starts.
 
 ## Database
 

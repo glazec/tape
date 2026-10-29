@@ -32,6 +32,7 @@
     "test:mcp": "cd mcp/meeting-note && DISABLE_AUTH=true MCP_ALLOW_DEV_AUTH=true MCP_HOST=127.0.0.1 MCP_DEV_USER_EMAIL=tester@example.com uv run python -m unittest",
     "test:sidecar": "npm --prefix mac/LocalRecorder/Sidecar test",
     "test:swift": "swift test --package-path mac/LocalRecorder && swift build --package-path mac/LocalRecorder --target MeetingNoteLocalRecorder",
+    "verify:sentry": "esbuild scripts/verify-sentry-coverage.ts --bundle --platform=node --target=node24 --format=esm --packages=external --outfile=dist/verify-sentry-coverage.mjs && node --env-file-if-exists=.env.local dist/verify-sentry-coverage.mjs",
     "verify": "npm run lint && npm run test:coverage && npm run build && npm run test:sidecar && npm run test:mcp",
     "verify:all": "npm run verify && npm run test:swift && npm run test:e2e"
   },
@@ -53,6 +54,7 @@
     "@react-three/fiber": "^9.6.1",
     "@sanity/image-url": "^2.1.1",
     "@sentry/nextjs": "^10.69.0",
+    "@sentry/node": "^10.69.0",
     "@types/three": "^0.185.0",
     "@vercel/otel": "^2.1.3",
     "class-variance-authority": "^0.7.1",

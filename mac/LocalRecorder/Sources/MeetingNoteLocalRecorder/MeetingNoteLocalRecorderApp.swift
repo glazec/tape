@@ -182,6 +182,11 @@ enum MeetingNoteLocalRecorderEntry {
             return
         }
         #endif
+        LocalRecorderTelemetry.start(
+            dsn: Bundle.main.object(forInfoDictionaryKey: "SentryDSN") as? String,
+            environment: Bundle.main.object(forInfoDictionaryKey: "SentryEnvironment") as? String ?? "development",
+            release: "tape-desktop@\(LocalRecorderAppVersion.current)"
+        )
         MeetingNoteLocalRecorderApp.main()
     }
 }
@@ -877,6 +882,7 @@ final class RecorderAppModel: NSObject, ObservableObject, UNUserNotificationCent
                 title: claim.meetingTitle ?? title
             )
         } catch {
+            LocalRecorderTelemetry.capture(error, operation: .recordingClaim)
             statusText = "Could not start recording"
         }
     }
@@ -902,6 +908,7 @@ final class RecorderAppModel: NSObject, ObservableObject, UNUserNotificationCent
                 title: intent.meetingTitle ?? "Manual recording"
             )
         } catch {
+            LocalRecorderTelemetry.capture(error, operation: .recordingCreate)
             statusText = "Could not start recording"
         }
     }
@@ -927,6 +934,7 @@ final class RecorderAppModel: NSObject, ObservableObject, UNUserNotificationCent
                 try await startLocalCapture(fallbackIntentId: fallbackIntentId)
                 activeRecordingBackend = .localUpload
             } catch {
+                LocalRecorderTelemetry.capture(error, operation: .recordingStart)
                 try? await client.failIntent(
                     fallbackIntentId: fallbackIntentId,
                     errorMessage: error.localizedDescription
@@ -986,6 +994,7 @@ final class RecorderAppModel: NSObject, ObservableObject, UNUserNotificationCent
             do {
                 try await session.start()
             } catch {
+                LocalRecorderTelemetry.capture(error, operation: .audioMeterStart)
                 // Metering is best-effort; the SDK keeps recording without it.
                 return
             }
@@ -1033,6 +1042,7 @@ final class RecorderAppModel: NSObject, ObservableObject, UNUserNotificationCent
             )
             return true
         } catch {
+            LocalRecorderTelemetry.capture(error, operation: .sdkStart)
             try? await client.markRecallSDKFallback(
                 fallbackIntentId: fallbackIntentId
             )
@@ -1077,6 +1087,7 @@ final class RecorderAppModel: NSObject, ObservableObject, UNUserNotificationCent
             activeRecordingBackend = .localUpload
             statusText = "Recording locally"
         } catch {
+            LocalRecorderTelemetry.capture(error, operation: .fallbackStart)
             try? await client.failIntent(
                 fallbackIntentId: fallbackIntentId,
                 errorMessage: error.localizedDescription
@@ -1197,6 +1208,7 @@ final class RecorderAppModel: NSObject, ObservableObject, UNUserNotificationCent
                     self?.stopLevelTest()
                 }
             } catch {
+                LocalRecorderTelemetry.capture(error, operation: .audioTestStart)
                 statusText = "Could not test audio: \(error.localizedDescription)"
                 await refreshPermissions()
             }
@@ -1323,6 +1335,9 @@ final class RecorderAppModel: NSObject, ObservableObject, UNUserNotificationCent
                     statusText = "Recording uploaded"
                 }
             } catch {
+                if stoppedUploadPayload == nil {
+                    LocalRecorderTelemetry.capture(error, operation: .recordingStop)
+                }
                 await stopRecallSDKLevelMetering()
                 let failedBackend = activeRecordingBackend
                 if let payload = stoppedUploadPayload,
@@ -1740,6 +1755,7 @@ final class RecorderAppModel: NSObject, ObservableObject, UNUserNotificationCent
         payload: LocalRecordingUploadPayload,
         error: Error
     ) async {
+        LocalRecorderTelemetry.capture(error, operation: .recordingUpload)
         if requireSignInIfExpired(error) { return }
         if case let .wait(retryAfterSeconds) = localRecorderUploadRetryDecision(
             error: error,

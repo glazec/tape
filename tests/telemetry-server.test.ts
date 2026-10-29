@@ -112,6 +112,8 @@ describe("server telemetry", () => {
   afterEach(() => {
     process.env = { ...originalEnvironment };
     Object.assign(console, originalConsole);
+    Reflect.deleteProperty(globalThis, "__tapeConsoleInstrumented");
+    Reflect.deleteProperty(globalThis, "__tapeConsoleEmitting");
     delete (
       globalThis as typeof globalThis & {
         __tapeTelemetryFailures?: unknown;

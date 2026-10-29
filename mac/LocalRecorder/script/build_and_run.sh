@@ -9,6 +9,16 @@ MIN_SYSTEM_VERSION="15.0"
 APP_VERSION="${APP_VERSION:-0.2.0}"
 BUILD_VERSION="${BUILD_VERSION:-$(date -u +%Y%m%d%H%M%S)}"
 BUILD_CONFIGURATION="${BUILD_CONFIGURATION:-debug}"
+SENTRY_DSN="${SENTRY_DSN:-${NEXT_PUBLIC_SENTRY_DSN:-}}"
+if [[ "$BUILD_CONFIGURATION" == "release" ]]; then
+  SENTRY_ENVIRONMENT="${SENTRY_ENVIRONMENT:-production}"
+  if [[ ! "$SENTRY_DSN" =~ ^https://[^[:space:]]+@[^[:space:]]+/[0-9]+$ ]]; then
+    echo "Release builds require a valid HTTPS SENTRY_DSN for desktop error reporting." >&2
+    exit 1
+  fi
+else
+  SENTRY_ENVIRONMENT="${SENTRY_ENVIRONMENT:-development}"
+fi
 SPARKLE_FEED_URL="https://github.com/glazec/tape/releases/download/macos-appcast/appcast.xml"
 SPARKLE_PUBLIC_KEY="C+6MwGr+m9w8H9o0A6dX6epFkSNcf5OOdT70ir8SVFA="
 
@@ -118,6 +128,8 @@ cat >"$INFO_PLIST" <<PLIST
 </dict>
 </plist>
 PLIST
+/usr/libexec/PlistBuddy -c "Add :SentryDSN string $SENTRY_DSN" "$INFO_PLIST"
+/usr/libexec/PlistBuddy -c "Add :SentryEnvironment string $SENTRY_ENVIRONMENT" "$INFO_PLIST"
 
 # Prefer a stable signing certificate: TCC pins grants to the certificate,
 # so microphone and screen capture stay granted across rebuilds. Create one

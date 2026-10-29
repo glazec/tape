@@ -1,4 +1,4 @@
-import * as Sentry from "@sentry/nextjs";
+import { Sentry } from "@/lib/sentry/server-sdk";
 
 import { getSentryInitOptions } from "@/lib/sentry/config";
 import { createServerTraceProcessor } from "@/lib/telemetry/server";

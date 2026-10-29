@@ -1,3 +1,4 @@
+import "@/lib/sentry/worker";
 import { createServer, type Server } from "node:http";
 import { pathToFileURL } from "node:url";
 import { serve } from "inngest/node";

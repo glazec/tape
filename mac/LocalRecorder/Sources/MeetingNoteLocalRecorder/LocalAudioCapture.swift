@@ -755,13 +755,18 @@ final class PCM16WavWriter: @unchecked Sendable {
             try writePCM(converted)
         } catch {
             self.error = error
+            LocalRecorderTelemetry.capture(error, operation: .audioWrite)
         }
     }
 
     func record(_ error: Error) {
         lock.lock()
+        let firstFailure = self.error == nil
         self.error = error
         lock.unlock()
+        if firstFailure {
+            LocalRecorderTelemetry.capture(error, operation: .audioStream)
+        }
     }
 
     func close() {

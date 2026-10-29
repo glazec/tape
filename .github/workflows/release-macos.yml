@@ -130,6 +130,8 @@ jobs:
         shell: bash
         env:
           BUILD_CONFIGURATION: release
+          SENTRY_DSN: ${{ vars.SENTRY_DSN }}
+          SENTRY_ENVIRONMENT: production
         run: |
           set -euo pipefail
           npm ci --prefix Sidecar
