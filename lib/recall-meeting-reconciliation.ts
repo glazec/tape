@@ -3,7 +3,7 @@ import { z } from "zod";
 
 import { db } from "@/db/client";
 import { applyRecallMeetingEvent } from "@/lib/recall-meetings";
-import { normalizeRecallWebhook, retrieveRecallBot } from "@/lib/vendors/recall";
+import { normalizeRecallWebhook, RecallBotRetrievalError, retrieveRecallBot } from "@/lib/vendors/recall";
 
 // Poll the provider independently of webhook delivery, including jobs persisted
 // before an Inngest send failed. Never re-submit running/completed/failed jobs.
@@ -37,7 +37,25 @@ const botSchema = z.object({
 });
 
 export async function reconcileRecallMeeting(input: { id: string; recall_bot_id: string }) {
-  const bot = botSchema.parse(await retrieveRecallBot(input.recall_bot_id));
+  let response: unknown;
+  try {
+    response = await retrieveRecallBot(input.recall_bot_id);
+  } catch (error) {
+    if (!(error instanceof RecallBotRetrievalError) || error.status !== 404) throw error;
+    // A deleted provider bot cannot be recovered by retrying this step. Keep
+    // its identity for diagnosis, and do not strand other meetings behind it.
+    await db.execute(sql`
+      update meetings set status = 'failed', updated_at = now()
+      where id = ${input.id} and recall_bot_id = ${input.recall_bot_id}
+        and status in ('scheduled', 'recording', 'processing', 'failed')
+        and not exists (
+          select 1 from transcript_jobs j where j.meeting_id = ${input.id}
+            and j.status in ('running', 'completed')
+        )
+    `);
+    return { action: "unavailable" as const };
+  }
+  const bot = botSchema.parse(response);
   if (bot.id !== input.recall_bot_id) throw new Error("Recall bot identity mismatch");
   const recording = bot.recordings.at(-1);
   const lastStatus = bot.status_changes.at(-1);
