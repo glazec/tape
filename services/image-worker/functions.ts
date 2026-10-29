@@ -60,6 +60,14 @@ export const transcribeMeetingInChunks = imageWorkerInngest.createFunction(
     concurrency: 1,
     id: "transcribe-meeting-in-chunks",
     retries: CHUNKED_TRANSCRIPTION_RETRIES,
+    onFailure: async ({ event, error }) => {
+      const data = chunkedTranscriptionDataSchema.parse(event.data.event.data);
+      await markChunkedTranscriptJobFailed({
+        error,
+        meetingId: data.meetingId,
+        transcriptJobId: data.transcriptJobId,
+      });
+    },
     triggers: [{ event: "meeting/transcribe.audio-in-chunks" }],
   },
   async ({ event, step, attempt = 0 }) => {

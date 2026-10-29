@@ -120,6 +120,23 @@ describe("image worker", () => {
     });
   });
 
+  it("marks terminal durable step failures even when the handler attempt is zero", async () => {
+    const { transcribeMeetingInChunks } = await import("@/services/image-worker/functions");
+    const data = {
+      audioUrl: "https://audio.example.com/recording.mp3",
+      meetingId: "11111111-1111-4111-8111-111111111111",
+      transcriptJobId: "22222222-2222-4222-8222-222222222222",
+      keyterms: [],
+    };
+    const error = new Error("quota_exceeded");
+    await transcribeMeetingInChunks.opts.onFailure!({
+      event: { data: { event: { data } } }, error,
+    } as never);
+    expect(markChunkedTranscriptJobFailed).toHaveBeenCalledWith({
+      error, meetingId: data.meetingId, transcriptJobId: data.transcriptJobId,
+    });
+  });
+
   it("validates the event and delegates extraction", async () => {
     const result = { duplicateCount: 3, frameCount: 14, intervalCount: 2 };
     persistRecallMeetingVideoFrames.mockResolvedValue(result);
