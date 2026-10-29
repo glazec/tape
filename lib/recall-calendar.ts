@@ -258,6 +258,7 @@ export async function processRecallCalendarWebhook(
     await autoJoinCalendarEvent({
       connection,
       event: syncedEvent,
+      repairMode: true,
     });
     count += 1;
   }
