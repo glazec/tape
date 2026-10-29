@@ -157,7 +157,7 @@ const recallCalendarDeleteInputSchema = z.object({
 
 const recallCalendarEventListInputSchema = z.object({
   calendarId: z.string().trim().min(1),
-  updatedAtGte: z.iso.datetime().optional(),
+  updatedAtGte: z.iso.datetime({ offset: true }).optional(),
   startTimeGte: z.iso.datetime().optional(),
   isDeleted: z.boolean().optional(),
 });
