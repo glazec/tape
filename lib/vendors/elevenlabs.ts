@@ -44,6 +44,13 @@ const elevenLabsWebhookSchema = z.object({
   }),
 });
 
+const elevenLabsWebhookErrorSchema = z.object({
+  type: z.literal("webhook_error"),
+  request_id: z.string().min(1),
+  error_message: z.string().min(1),
+  webhook_metadata: z.record(z.string(), z.unknown()).nullish(),
+});
+
 const elevenLabsTranscriptInputSchema = z.object({
   audioUrl: z.url(),
   webhookUrl: z.url(),
@@ -57,6 +64,19 @@ const elevenLabsApiEnvSchema = z.object({
 const ELEVENLABS_TRANSCRIPTION_TIMEOUT_MS = 2 * 60 * 60 * 1_000;
 
 export function normalizeElevenLabsWebhook(payload: unknown) {
+  const failure = elevenLabsWebhookErrorSchema.safeParse(payload);
+  if (failure.success) {
+    return {
+      eventType: failure.data.type,
+      type: failure.data.type,
+      requestId: failure.data.request_id,
+      transcriptId: null,
+      status: "failed",
+      errorMessage: failure.data.error_message,
+      transcriptionText: null,
+      metadata: failure.data.webhook_metadata ?? {},
+    };
+  }
   const realPayload = elevenLabsWebhookSchema.safeParse(payload);
 
   if (realPayload.success) {

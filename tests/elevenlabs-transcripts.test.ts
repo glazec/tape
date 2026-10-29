@@ -1,12 +1,24 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { buildElevenLabsTranscriptPersistence } from "@/lib/elevenlabs-transcripts";
+import { normalizeElevenLabsWebhook } from "@/lib/vendors/elevenlabs";
 
 vi.mock("@/db/client", () => ({
   db: {},
 }));
 
 describe("buildElevenLabsTranscriptPersistence", () => {
+  it("persists asynchronous provider errors instead of leaving accepted jobs running", () => {
+    const event = normalizeElevenLabsWebhook({
+      type: "webhook_error", request_id: "request",
+      error_message: "quota_exceeded: insufficient credits",
+      webhook_metadata: { meetingId: "meeting", transcriptJobId: "job" },
+    });
+    expect(buildElevenLabsTranscriptPersistence(event)).toEqual({
+      action: "fail", providerJobId: "request", transcriptJobId: "job",
+      errorMessage: "quota_exceeded: insufficient credits",
+    });
+  });
   it("builds a completion update from transcript metadata and text", () => {
     expect(
       buildElevenLabsTranscriptPersistence({

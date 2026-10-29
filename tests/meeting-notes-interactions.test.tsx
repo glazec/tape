@@ -198,8 +198,10 @@ describe("meeting notes editor", () => {
     expect(
       await screen.findByText(/Could not copy automatically/),
     ).toBeTruthy();
-    expect(editor().selectionStart).toBe(0);
-    expect(editor().selectionEnd).toBe("My draft".length);
+    await waitFor(() => {
+      expect(editor().selectionStart).toBe(0);
+      expect(editor().selectionEnd).toBe("My draft".length);
+    });
     expect(screen.queryByRole("button", { name: "Copied" })).toBeNull();
   });
 
