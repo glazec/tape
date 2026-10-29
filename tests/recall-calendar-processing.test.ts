@@ -101,6 +101,20 @@ describe("processRecallCalendarWebhook", () => {
     });
   });
 
+  it("accepts Recall sync timestamps with a timezone offset", async () => {
+    const { normalizeRecallCalendarWebhook } = await import("@/lib/recall-calendar");
+    const lastUpdatedTs = "2026-10-29T04:24:04.227809+00:00";
+
+    expect(normalizeRecallCalendarWebhook({
+      event: "calendar.sync_events",
+      data: { calendar_id: "calendar_1", last_updated_ts: lastUpdatedTs },
+    })).toEqual({
+      eventType: "calendar.sync_events",
+      calendarId: "calendar_1",
+      lastUpdatedTs,
+    });
+  });
+
   it("syncs changed Recall calendar events into the existing auto join worker", async () => {
     select.mockReturnValue({
       from: () => ({
