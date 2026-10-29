@@ -1,4 +1,7 @@
 import { existsSync } from "node:fs";
+import { mkdtemp, open, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import {
   createProcessRunner,
   type ProcessRunner,
@@ -7,8 +10,12 @@ import { resampleAudioPeaks } from "@/lib/audio-waveform";
 
 export const AUDIO_WAVEFORM_FILTER =
   "aresample=16000,asetnsamples=n=1600:p=0,astats=metadata=1:reset=1,ametadata=mode=print:key=lavfi.astats.Overall.RMS_level:file=-";
+const MAX_AUDIO_BYTES = 256 * 1024 * 1024;
 
-export function createAudioWaveformGenerator(runProcess: ProcessRunner) {
+export function createAudioWaveformGenerator(
+  runProcess: ProcessRunner,
+  fetchAudio: typeof fetch = fetch,
+) {
   const cache = new Map<
     string,
     { expires: number; result: Promise<number[]> }
@@ -34,7 +41,11 @@ export function createAudioWaveformGenerator(runProcess: ProcessRunner) {
       (existsSync(bundledPath) ? bundledPath : "ffmpeg");
     running += 1;
     const result = (async () => {
+      let directory: string | undefined;
       try {
+        directory = await mkdtemp(join(tmpdir(), "tape-waveform-"));
+        const path = join(directory, "audio");
+        await downloadAudio(audioUrl, path, fetchAudio);
         const output = await runProcess(
           binary,
           [
@@ -45,15 +56,11 @@ export function createAudioWaveformGenerator(runProcess: ProcessRunner) {
             "-threads",
             "1",
             "-protocol_whitelist",
-            "https,tls,tcp",
-            "-rw_timeout",
-            "15000000",
-            "-tls_verify",
-            "1",
-            "-verifyhost",
-            source.hostname,
+            "file,pipe",
+            "-format_whitelist",
+            "aac,aiff,amr,asf,au,flac,matroska,webm,mov,mp3,ogg,wav",
             "-i",
-            audioUrl,
+            path,
             "-map",
             "0:a:0",
             "-vn",
@@ -79,17 +86,53 @@ export function createAudioWaveformGenerator(runProcess: ProcessRunner) {
         });
         if (!levels.length) throw new Error("Audio waveform is empty");
         return resampleAudioPeaks(levels, 1200);
-      } catch (error) {
-        cache.delete(sourceKey);
-        throw error;
       } finally {
         running -= 1;
+        if (directory) await rm(directory, { recursive: true, force: true });
       }
-    })();
+    })().catch((error) => {
+      cache.delete(sourceKey);
+      throw error;
+    });
     if (cache.size >= 32) cache.delete(cache.keys().next().value!);
     cache.set(sourceKey, { expires: Date.now() + 10 * 60_000, result });
     return result;
   };
+}
+
+async function downloadAudio(
+  audioUrl: string,
+  path: string,
+  fetchAudio: typeof fetch,
+) {
+  const response = await fetchAudio(audioUrl, {
+    redirect: "error",
+    signal: AbortSignal.timeout(60_000),
+  });
+  if (
+    !response.ok ||
+    !response.body ||
+    Number(response.headers.get("content-length")) > MAX_AUDIO_BYTES
+  ) {
+    await response.body?.cancel();
+    throw new Error("Audio download unavailable or too large");
+  }
+  const file = await open(path, "wx", 0o600);
+  const reader = response.body.getReader();
+  let size = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      size += value.byteLength;
+      if (size > MAX_AUDIO_BYTES)
+        throw new Error("Audio download is too large");
+      await file.writeFile(value);
+    }
+  } finally {
+    await reader.cancel().catch(() => undefined);
+    await file.close();
+  }
 }
 
 export const generateAudioWaveform = createAudioWaveformGenerator(
