@@ -19,7 +19,10 @@ import {
   localRecordings,
   mediaAssets,
   meetings,
+  teamMemberships,
+  teams,
   transcriptJobs,
+  users,
 } from "@/db/schema";
 import { inngest } from "@/inngest/client";
 import {
@@ -72,6 +75,23 @@ type LocalRecorderMonitoringMeeting = {
   startsAt: string;
   title: string;
 };
+
+export async function getLocalRecorderAccount(workspace: WorkspaceContext) {
+  const [account] = await db
+    .select({ email: users.email, workspaceName: teams.name })
+    .from(teamMemberships)
+    .innerJoin(users, eq(users.id, teamMemberships.userId))
+    .innerJoin(teams, eq(teams.id, teamMemberships.teamId))
+    .where(
+      and(
+        eq(teamMemberships.userId, workspace.userId),
+        eq(teamMemberships.teamId, workspace.teamId),
+      ),
+    )
+    .limit(1);
+
+  return account ?? null;
+}
 
 export type LocalRecorderMonitoringStatus = {
   missedMeetings: LocalRecorderMeetingItem[];

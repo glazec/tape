@@ -1,3 +1,4 @@
+import type { SQL } from "drizzle-orm";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 const {
@@ -66,6 +67,7 @@ import {
   createRecallDesktopSdkUploadForLocalRecorder,
   failLocalRecorderIntent,
   getLocalRecorderMonitoringStatus,
+  getLocalRecorderAccount,
   isRecallDesktopSdkFallbackIntent,
   isLocalRecorderCandidateVisibleInLookup,
   isLocalRecorderMonitoringMeetingCurrent,
@@ -83,7 +85,7 @@ function selectRows(rows: unknown[]) {
     leftJoin: vi.fn(() => chain),
     limit: vi.fn().mockResolvedValue(rows),
     orderBy: vi.fn(() => chain),
-    where: vi.fn(() => chain),
+    where: vi.fn<(condition: SQL) => unknown>(() => chain),
   };
 
   return chain;
@@ -102,6 +104,23 @@ describe("local recorder records", () => {
     inngestSend.mockReset();
     retrieveRecallBot.mockReset();
     reconcileMeetingSharingForMeeting.mockReset();
+  });
+
+  it("returns the identity of the paired workspace membership", async () => {
+    const account = { email: "alex@example.com", workspaceName: "Design" };
+    const query = selectRows([account]);
+    db.select.mockReturnValueOnce(query);
+    await expect(getLocalRecorderAccount({ domain: "", teamId: "paired-team", userId: "paired-user" })).resolves.toEqual(account);
+    const { PgDialect } = await import("drizzle-orm/pg-core");
+    const predicate = new PgDialect().sqlToQuery(query.where.mock.calls[0][0]);
+    expect(predicate.params).toEqual(["paired-user", "paired-team"]);
+    expect(predicate.sql).toContain('"team_memberships"."user_id"');
+    expect(predicate.sql).toContain('"team_memberships"."team_id"');
+  });
+
+  it("returns no account when the paired membership is missing", async () => {
+    db.select.mockReturnValueOnce(selectRows([]));
+    await expect(getLocalRecorderAccount({ domain: "", teamId: "missing", userId: "user" })).resolves.toBeNull();
   });
 
   it("creates a Recall Desktop SDK upload for a valid local recorder intent", async () => {

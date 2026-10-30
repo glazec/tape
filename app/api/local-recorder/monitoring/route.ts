@@ -1,5 +1,8 @@
 import { getLocalRecorderDeviceRequestContext } from "@/lib/local-recorder-auth";
-import { getLocalRecorderMonitoringStatus } from "@/lib/local-recorder-records";
+import {
+  getLocalRecorderAccount,
+  getLocalRecorderMonitoringStatus,
+} from "@/lib/local-recorder-records";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -22,5 +25,6 @@ export async function GET(request: Request) {
     workspace: deviceContext.workspace,
   });
 
-  return Response.json(status);
+  const account = await getLocalRecorderAccount(deviceContext.workspace);
+  return Response.json({ ...status, account });
 }

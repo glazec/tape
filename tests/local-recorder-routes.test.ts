@@ -14,6 +14,7 @@ const getLocalRecorderDeviceRequestContext = vi.fn();
 const listMissedLocalRecorderMeetings = vi.fn();
 const createManualLocalRecorderIntent = vi.fn();
 const getLocalRecorderMonitoringStatus = vi.fn();
+const getLocalRecorderAccount = vi.fn();
 const claimLocalRecorderIntent = vi.fn();
 const authorizeLocalRecorderNotification = vi.fn();
 const failLocalRecorderIntent = vi.fn();
@@ -37,6 +38,7 @@ vi.mock("@/lib/local-recorder-records", () => ({
   createManualLocalRecorderIntent,
   failLocalRecorderIntent,
   getLocalRecorderMonitoringStatus,
+  getLocalRecorderAccount,
   listMissedLocalRecorderMeetings,
   markRecallDesktopSdkFallback,
   markLocalRecorderNotificationDelivered,
@@ -72,6 +74,7 @@ describe("local recorder API routes", () => {
     listMissedLocalRecorderMeetings.mockReset();
     createManualLocalRecorderIntent.mockReset();
     getLocalRecorderMonitoringStatus.mockReset();
+    getLocalRecorderAccount.mockReset();
     claimLocalRecorderIntent.mockReset();
     authorizeLocalRecorderNotification.mockReset();
     failLocalRecorderIntent.mockReset();
@@ -137,8 +140,17 @@ describe("local recorder API routes", () => {
     });
   });
 
+  it("does not disclose an account for an invalid device session", async () => {
+    getLocalRecorderDeviceRequestContext.mockResolvedValue({ ok: false, status: 401, error: "Unauthorized" });
+    const { GET } = await import("@/app/api/local-recorder/monitoring/route");
+    const response = await GET(new Request("https://app.example.com/api/local-recorder/monitoring"));
+    expect(response.status).toBe(401);
+    expect(getLocalRecorderAccount).not.toHaveBeenCalled();
+  });
+
   it("returns monitoring status for a signed in Mac device", async () => {
     mockSignedInDevice();
+    getLocalRecorderAccount.mockResolvedValue({ email: "alex@example.com", workspaceName: "Paired workspace" });
     getLocalRecorderMonitoringStatus.mockResolvedValue({
       missedMeetings: [],
       nextMeeting: {
@@ -161,6 +173,7 @@ describe("local recorder API routes", () => {
 
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toEqual({
+      account: { email: "alex@example.com", workspaceName: "Paired workspace" },
       missedMeetings: [],
       nextMeeting: {
         botStatus: "planned",
@@ -172,6 +185,7 @@ describe("local recorder API routes", () => {
         title: "Weekly sync",
       },
     });
+    expect(getLocalRecorderAccount).toHaveBeenCalledWith({ teamId: "team_123", userId: "user_123" });
     expect(getLocalRecorderMonitoringStatus).toHaveBeenCalledWith({
       appVersion: "0.2.0+abc123",
       deviceId: "mac_123",
