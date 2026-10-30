@@ -265,12 +265,6 @@ struct RecorderMenuView: View {
             .fixedSize()
             .padding(.top, 16)
             }
-            if !model.isRecording, model.canMonitor, !model.isStartingRecording,
-               model.recordingStartFailure == nil, model.nextScheduleMeeting?.botStatus != "recording" {
-                Text("After starting, choose a recent meeting from the title to continue its recording.")
-                    .font(TapeType.sans(11)).foregroundStyle(TapePalette.muted)
-                    .fixedSize(horizontal: false, vertical: true).padding(.top, 6)
-            }
         }
         .onChange(of: model.isMeetingPickerPresented) { _, expanded in
             if !expanded { isTitleFocused = true }
