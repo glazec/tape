@@ -1,6 +1,6 @@
 import AppKit
 import LocalRecorderCore
-import UserNotifications
+@preconcurrency import UserNotifications
 
 struct RecorderEndPrompt: Identifiable {
     enum Reason { case silence, meetingClosed, captureEnded }
