@@ -89,6 +89,7 @@ describe.skipIf(!dsn)("recording target PostgreSQL transactions", () => {
     });
   });
   beforeEach(async () => {
+    db.select.mockReset();
     await sql(`truncate transcript_jobs, recordings, local_recordings, media_assets, local_recording_attempts, meetings, team_memberships;
       insert into team_memberships values ('${team}', '${user}', 'member');
       insert into meetings(id, team_id, owner_user_id, title, platform, status, started_at) values
@@ -187,7 +188,7 @@ describe.skipIf(!dsn)("recording target PostgreSQL transactions", () => {
     };
     db.select.mockReturnValueOnce(rows([{
       id, meetingId: first, attemptState: "started", activeTranscriptJob: false,
-      expiresAt: new Date(input.now.getTime() + 60_000), startedAt: new Date(input.now.getTime() - 60_000), endedAt: null,
+      expiresAt: new Date(input.now.getTime() + 60_000), startedAt: new Date(input.now.getTime() - 5 * 60_000), endedAt: null,
       meetingUrl: "https://meet.google.com/abc-defg-hij", recallAudioAsset: false, recallRecordingId: null, status: "scheduled", title: "First",
     }])).mockReturnValueOnce(rows([]));
     await expect(claimLocalRecorderIntent({ ...input, fallbackIntentId: started.fallbackIntentId })).resolves.toEqual({ claimed: false, reason: "expired_or_missing" });
