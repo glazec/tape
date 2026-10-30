@@ -27,6 +27,22 @@ describe("database migrations", () => {
     }
   });
 
+  it("backfills only unambiguous legacy Google calendar accounts", () => {
+    const sql = readFileSync(
+      "db/migrations/0062_backfill_legacy_calendar_accounts.sql",
+      "utf8",
+    ).replace(/\s+/g, " ");
+
+    expect(sql).toContain('"connection"."account_email" IS NULL');
+    expect(sql).toContain('lower(trim("owner"."email"))');
+    expect(sql).toContain('"legacy"."legacy_connection_count" = 1');
+    expect(sql).toContain("AND NOT EXISTS");
+    expect(sql).toContain(
+      'lower("existing"."account_email") = "legacy"."account_email"',
+    );
+    expect(sql).toContain('SET "account_email" = "legacy"."account_email"');
+  });
+
   it("keeps every schema table and column in the latest migration snapshot", () => {
     const journal = JSON.parse(
       readFileSync("db/migrations/meta/_journal.json", "utf8"),

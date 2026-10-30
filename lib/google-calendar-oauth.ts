@@ -134,6 +134,7 @@ export async function storeGoogleCalendarTokens(input: {
       const updateResult = await db
         .update(calendarConnections)
         .set({
+          accountEmail: input.accountEmail,
           autoJoinEnabled: true,
           oauthAccessToken: encryptedAccessToken,
           oauthRefreshToken: encryptedRefreshToken,
@@ -433,7 +434,11 @@ async function findGoogleCalendarConnection(workspace: WorkspaceContext, account
     )
     .limit(1);
 
-  return connection ?? null;
+  if (connection || !accountEmail) {
+    return connection ?? null;
+  }
+
+  return findGoogleCalendarConnection(workspace);
 }
 
 async function findGoogleCalendarConnectionById(

@@ -62,8 +62,66 @@ describe("Google Calendar OAuth storage", () => {
     expect(values).toHaveBeenCalledWith(expect.objectContaining({ accountEmail: "second@example.com" }));
     expect(updateRecallCalendar).toHaveBeenCalledWith(expect.objectContaining({ calendarId: "recall-first" }));
     expect(predicates[0]).toContain("second@example.com");
-    expect(predicates[1]).toContain("first@example.com");
+    expect(predicates.some((params) => params.includes("first@example.com"))).toBe(true);
   });
+
+  it("adopts a legacy connection without creating a second Recall calendar", async () => {
+    vi.stubEnv("GOOGLE_CALENDAR_CLIENT_ID", "google-client-id");
+    vi.stubEnv("GOOGLE_CALENDAR_CLIENT_SECRET", "google-client-secret");
+    const legacy = {
+      id: "legacy",
+      oauthRefreshToken: "legacy-refresh-token",
+      recallCalendarId: "recall-legacy",
+      recallCalendarStatus: "connected",
+    };
+    const exactLimit = vi.fn().mockResolvedValue([]);
+    const legacyLimit = vi.fn().mockResolvedValue([legacy]);
+    select
+      .mockReturnValueOnce({
+        from: () => ({ where: () => ({ limit: exactLimit }) }),
+      })
+      .mockReturnValueOnce({
+        from: () => ({ where: () => ({ limit: legacyLimit }) }),
+      });
+    updateRecallCalendar.mockResolvedValue({
+      id: "recall-legacy",
+      status: "connected",
+    });
+    const updateSet = vi.fn().mockReturnValue({
+      where: vi.fn().mockResolvedValue({ rowCount: 1 }),
+    });
+    update.mockReturnValue({ set: updateSet });
+
+    const { storeGoogleCalendarTokens } = await import(
+      "@/lib/google-calendar-oauth"
+    );
+
+    await expect(
+      storeGoogleCalendarTokens({
+        workspace: {
+          userId: "person",
+          teamId: "company",
+          domain: "example.com",
+        },
+        accountEmail: "alice@example.com",
+        accessToken: "access",
+        accessTokenExpiresAt: new Date("2026-10-28T12:00:00.000Z"),
+        refreshToken: "refresh",
+      }),
+    ).resolves.toBe("legacy");
+
+    expect(exactLimit).toHaveBeenCalledOnce();
+    expect(legacyLimit).toHaveBeenCalledOnce();
+    expect(createRecallCalendar).not.toHaveBeenCalled();
+    expect(insert).not.toHaveBeenCalled();
+    expect(updateRecallCalendar).toHaveBeenCalledWith(
+      expect.objectContaining({ calendarId: "recall-legacy" }),
+    );
+    expect(updateSet).toHaveBeenCalledWith(
+      expect.objectContaining({ accountEmail: "alice@example.com" }),
+    );
+  });
+
   it("accepts only verified Google account emails", async () => {
     const { getVerifiedGoogleCalendarEmail } = await import("@/lib/google-calendar-oauth");
     vi.stubGlobal("fetch", vi.fn().mockResolvedValueOnce(new Response(JSON.stringify({
