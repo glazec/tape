@@ -1071,6 +1071,7 @@ describe("applyRecallMeetingEvent", () => {
     );
     expect(createRecallRecordingTranscription).not.toHaveBeenCalled();
     expect(send).not.toHaveBeenCalled();
+    expect(markLocalRecorderSdkIntentTerminal).toHaveBeenCalledWith("intent_123", "failed");
   });
 
   it("does not guess which bot recording failed when the webhook omits its id", async () => {

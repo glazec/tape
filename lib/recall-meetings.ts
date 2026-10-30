@@ -150,7 +150,9 @@ export async function applyRecallMeetingEvent(event: RecallWebhookEvent) {
       videoFrameReadiness: getVideoFrameReadiness(event),
     });
     const token = getMetadataString(event.metadata, "fallbackIntentId", "fallback_intent_id");
-    if (isLocalSdk && queued && token) await markLocalRecorderSdkIntentTerminal(token, "completed");
+    if (isLocalSdk && queued !== undefined && token) {
+      await markLocalRecorderSdkIntentTerminal(token, queued ? "completed" : "failed");
+    }
   }
   if (isLocalSdk && status === "failed") {
     const token = getMetadataString(event.metadata, "fallbackIntentId", "fallback_intent_id");
@@ -257,7 +259,15 @@ async function queueRecallRecordingProcessing(
           status: "failed",
           updatedAt: new Date(),
         })
-        .where(eq(meetings.id, update.meetingId));
+        .where(and(
+          eq(meetings.id, update.meetingId),
+          ...(getMetadataString(metadata, "source") === "local_recorder_sdk" ? [
+            notInArray(meetings.status, ["ready", "cancelled"]),
+            sql`not exists (select 1 from local_recording_attempts active where active.meeting_id = ${meetings.id} and active.attempt_state = 'started')`,
+            sql`not exists (select 1 from recordings saved where saved.meeting_id = ${meetings.id})`,
+          ] : []),
+        ));
+      return false;
     }
 
     return;
