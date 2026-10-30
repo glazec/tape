@@ -36,6 +36,8 @@ Visible tools:
 
 Interactive MCP callers authenticate with Google OAuth through FastMCP's OAuth proxy. Direct bearer clients can still send a Neon Auth JWT in the `Authorization: Bearer ...` header. The server verifies Neon JWTs against `NEON_AUTH_JWKS_URL`, `NEON_AUTH_ISSUER`, and `NEON_AUTH_AUDIENCE` when configured. It resolves Neon JWTs by `users.auth_user_id`; Google OAuth users are resolved by the verified email already registered in Tape.
 
+MCP refresh sessions have no local calendar expiry. Access tokens still expire normally, and every refresh must succeed with Google. Keep the signing key and encrypted storage persistent. Google revocation or upstream authorization expiry can still require login. Valid existing sessions transition on their next refresh; already expired sessions need one new login. Neon Auth and Calendar token lifetimes are unchanged.
+
 MCP data access mirrors the app read policy:
 
 1. Workspace owners and admins can read non cancelled meetings in their workspace team.

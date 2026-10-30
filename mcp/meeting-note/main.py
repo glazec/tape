@@ -30,7 +30,7 @@ import jwt
 import sqlglot
 from fastmcp import FastMCP
 from fastmcp.server.auth import AccessToken, AuthProvider, MultiAuth, TokenVerifier
-from fastmcp.server.auth.providers.google import GoogleProvider
+from persistent_google_oauth import PersistentGoogleProvider as GoogleProvider
 from fastmcp.server.dependencies import get_access_token
 from fastmcp.server.middleware import CallNext, Middleware, MiddlewareContext
 from jwt import PyJWKClient, PyJWTError

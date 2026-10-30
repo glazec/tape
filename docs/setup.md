@@ -67,6 +67,8 @@ openssl rand -base64 32
 
 Generate a separate MCP backend secret with the same command. Set that value as `MCP_BACKEND_SHARED_SECRET` on both `tape-web` and the Tape MCP service. It signs short lived identity bound upload requests and must not reuse the OAuth JWT signing key.
 
+MCP Google OAuth refresh sessions have no local calendar expiry. Keep `FASTMCP_JWT_SIGNING_KEY` stable and `OAUTH_STORAGE_PATH` on the service's persistent volume. Access tokens remain short lived; Google revocation or upstream authorization expiry still requires login. Existing valid MCP sessions adopt this behavior on their next refresh. Already expired sessions require reconnecting once. This does not change Calendar authorization or browser sessions.
+
 `RECALL_API_BASE_URL` must match the region of the Recall.ai API key. `RECALL_WEBHOOK_SECRET` must begin with `whsec_`. `RECALL_REALTIME_WEBHOOK_URL` must be the durable HTTPS route that receives cloud bot events, such as `https://tape.example.com/api/recall/realtime/webhook`. Keep it pointed at the hosted application even when `NEXT_PUBLIC_APP_URL` uses localhost or a temporary development tunnel. This prevents local calendar syncs from replacing Zoom and Google Meet bot callbacks with an unavailable local route.
 
 For local browser access, use `NEXT_PUBLIC_APP_URL=http://localhost:3000` until other webhook testing requires a public origin.
