@@ -12,6 +12,8 @@ import {
   sql,
 } from "drizzle-orm";
 
+import { PgDialect } from "drizzle-orm/pg-core";
+import { recordingTimelineRebaseQuery } from "@/lib/recording-timeline";
 import { databaseSql, db } from "@/db/client";
 import {
   localRecorderDevices,
@@ -32,6 +34,7 @@ import {
   isWithinLocalRecorderAutoClaimWindow,
   type LocalRecorderCandidate,
 } from "@/lib/local-recorder-policy";
+import { getMeetingManagerCondition } from "@/lib/meeting-write-policy";
 import { reconcileMeetingSharingForMeeting } from "@/lib/meeting-share-rules";
 import {
   buildMeetingObjectKey,
@@ -151,6 +154,7 @@ export async function createRecallDesktopSdkUploadForLocalRecorder(input: {
     webhookUrl: input.requestUrl,
     metadata: {
       clientRecordingId: input.clientRecordingId,
+      ...(attempt.claimedAt ? { localRecordingStartedAt: attempt.claimedAt.toISOString() } : {}),
       fallbackIntentId: input.fallbackIntentId,
       meetingId: attempt.meetingId,
       source: "local_recorder_sdk",
@@ -235,7 +239,7 @@ export function isLocalRecorderMonitoringMeetingCurrent(input: {
   return Boolean(
     input.startedAt &&
       input.startedAt <= input.now &&
-      (!input.endedAt || input.endedAt >= input.now),
+      (input.endedAt ? input.endedAt >= input.now : input.startedAt.getTime() >= input.now.getTime() - scheduleLookbackMs),
   );
 }
 
@@ -298,6 +302,7 @@ export async function listMissedLocalRecorderMeetings(input: {
     .where(
       and(
         eq(meetings.teamId, input.workspace.teamId),
+        getMeetingManagerCondition(input.workspace),
         isNotNull(meetings.meetingUrl),
         isNotNull(meetings.startedAt),
         lte(meetings.startedAt, input.now),
@@ -376,6 +381,19 @@ export async function listMissedLocalRecorderMeetings(input: {
   return items;
 }
 
+export function getLocalRecorderMonitoringWindowCondition(now: Date) {
+  return or(
+    gte(meetings.startedAt, now),
+    and(
+      lte(meetings.startedAt, now),
+      or(
+        gte(meetings.endedAt, now),
+        and(isNull(meetings.endedAt), gte(meetings.startedAt, new Date(now.getTime() - scheduleLookbackMs))),
+      ),
+    ),
+  );
+}
+
 export async function getLocalRecorderMonitoringStatus(input: {
   appVersion?: string | null;
   deviceId: string;
@@ -398,21 +416,15 @@ export async function getLocalRecorderMonitoringStatus(input: {
     .where(
       and(
         eq(meetings.teamId, input.workspace.teamId),
+        getMeetingManagerCondition(input.workspace),
         isNotNull(meetings.startedAt),
         inArray(meetings.status, ["scheduled", "recording"]),
-        or(
-          eq(meetings.status, "recording"),
-          gte(meetings.startedAt, new Date(input.now.getTime() - scheduleLookbackMs)),
-          and(
-            lte(meetings.startedAt, input.now),
-            or(isNull(meetings.endedAt), gte(meetings.endedAt, input.now)),
-          ),
-        ),
+        getLocalRecorderMonitoringWindowCondition(input.now),
       ),
     )
     .orderBy(
       desc(sql`case when ${meetings.status} = 'recording' then 1 else 0 end`),
-      desc(sql`case when ${meetings.startedAt} <= ${input.now} and (${meetings.endedAt} is null or ${meetings.endedAt} >= ${input.now}) then 1 else 0 end`),
+      desc(sql`case when ${meetings.startedAt} <= ${input.now} and (${meetings.endedAt} >= ${input.now} or (${meetings.endedAt} is null and ${meetings.startedAt} >= ${new Date(input.now.getTime() - scheduleLookbackMs)})) then 1 else 0 end`),
       asc(meetings.startedAt),
     )
     .limit(1);
@@ -677,6 +689,7 @@ export async function claimLocalRecorderIntent(input: {
   );
   const [attempt] = await db
     .select({
+      attemptState: localRecordingAttempts.attemptState,
       activeTranscriptJob: sql<boolean>`exists (
         select 1 from ${transcriptJobs}
         where ${transcriptJobs.meetingId} = ${meetings.id}
@@ -702,6 +715,8 @@ export async function claimLocalRecorderIntent(input: {
     .innerJoin(meetings, eq(meetings.id, localRecordingAttempts.meetingId))
     .where(
       and(
+        eq(meetings.teamId, input.workspace.teamId),
+        getMeetingManagerCondition(input.workspace),
         eq(localRecordingAttempts.userId, input.workspace.userId),
         eq(localRecordingAttempts.deviceIdHash, deviceIdHash),
         eq(localRecordingAttempts.fallbackIntentIdHash, fallbackIntentIdHash),
@@ -709,7 +724,7 @@ export async function claimLocalRecorderIntent(input: {
     )
     .limit(1);
 
-  if (!attempt || attempt.expiresAt < input.now) {
+  if (!attempt || attempt.expiresAt < input.now || !["notified", "started"].includes(attempt.attemptState)) {
     return { claimed: false, reason: "expired_or_missing" as const };
   }
 
@@ -765,14 +780,18 @@ export async function claimLocalRecorderIntent(input: {
   }
 
   try {
-    await db
-      .update(localRecordingAttempts)
-      .set({
-        attemptState: "started",
-        claimedAt: input.now,
-        updatedAt: input.now,
-      })
-      .where(eq(localRecordingAttempts.id, attempt.id));
+    const claimed = await databaseSql`
+      update local_recording_attempts
+      set attempt_state = 'started', claimed_at = ${input.now}, updated_at = ${input.now}
+      where id = ${attempt.id}::uuid
+        and meeting_id = ${attempt.meetingId}::uuid
+        and attempt_state in ('notified', 'started')
+        and expires_at >= ${input.now}
+      returning id
+    `;
+    if (!claimed.length) {
+      return { claimed: false, reason: "expired_or_missing" as const };
+    }
   } catch (error) {
     if (isLocalRecorderPrimaryClaimConflict(error)) {
       return { claimed: false, reason: "already_recording" as const };
@@ -781,7 +800,11 @@ export async function claimLocalRecorderIntent(input: {
     throw error;
   }
 
-  return { claimed: true, meetingTitle: attempt.title };
+  return {
+    claimed: true, meetingTitle: attempt.title, meetingId: attempt.meetingId,
+    startsAt: attempt.startedAt?.toISOString() ?? null,
+    endsAt: attempt.endedAt?.toISOString() ?? null,
+  };
 }
 
 export function isLocalRecorderPrimaryClaimConflict(error: unknown) {
@@ -940,7 +963,7 @@ export async function failLocalRecorderIntent(input: {
         eq(localRecordingAttempts.userId, input.workspace.userId),
         eq(localRecordingAttempts.deviceIdHash, deviceIdHash),
         eq(localRecordingAttempts.fallbackIntentIdHash, fallbackIntentIdHash),
-        inArray(localRecordingAttempts.attemptState, ["started", "uploading"]),
+        inArray(localRecordingAttempts.attemptState, ["started", "sealed", "uploading"]),
       ),
     )
     .limit(1);
@@ -967,6 +990,8 @@ export async function failLocalRecorderIntent(input: {
       and(
         eq(meetings.id, attempt.meetingId),
         inArray(meetings.status, ["recording", "processing"]),
+        sql`not exists (select 1 from local_recording_attempts other where other.meeting_id = ${meetings.id} and other.id <> ${attempt.id}::uuid and other.attempt_state in ('started', 'sealed', 'uploading', 'uploaded', 'completed'))`,
+        sql`not exists (select 1 from recordings saved where saved.meeting_id = ${meetings.id})`,
       ),
     );
 
@@ -996,10 +1021,18 @@ export async function prepareLocalRecorderRecordingUpload(input: {
 
   await options.authorizeUpload?.();
 
-  await db
+  const [frozenAttempt] = await db
     .update(localRecordingAttempts)
-    .set({ attemptState: "uploading", updatedAt: now })
-    .where(eq(localRecordingAttempts.id, attempt.id));
+    .set({ attemptState: "sealed", updatedAt: now })
+    .where(and(
+      eq(localRecordingAttempts.id, attempt.id),
+      eq(localRecordingAttempts.meetingId, attempt.meetingId),
+      inArray(localRecordingAttempts.attemptState, ["started", "sealed", "uploading"]),
+    ))
+    .returning({ id: localRecordingAttempts.id });
+  if (!frozenAttempt) {
+    throw new LocalRecorderUploadError("Recording target changed or capture already stopped; retry upload");
+  }
   await db
     .update(meetings)
     .set({ status: "processing", updatedAt: now })
@@ -1115,12 +1148,16 @@ export async function completeLocalRecorderRecordingUpload(input: {
   const transcriptJobId = crypto.randomUUID();
   const durationMs =
     input.recordingStoppedAt.getTime() - input.recordingStartedAt.getTime();
-  const rows = await databaseSql`
+  const timelineRebase = new PgDialect().sqlToQuery(recordingTimelineRebaseQuery(attempt.meetingId));
+  const [, rows] = await databaseSql.transaction((tx) => [
+    tx`select pg_advisory_xact_lock(hashtextextended(${`recording-timeline:${attempt.meetingId}`}, 0))`,
+    tx`
     with valid_attempt as (
       update local_recording_attempts
-      set attempt_state = 'uploaded', updated_at = ${now}
+      set attempt_state = 'completed', updated_at = ${now}
       where id = ${attempt.id}::uuid
-        and attempt_state in ('started', 'uploading')
+        and meeting_id = ${attempt.meetingId}::uuid
+        and attempt_state in ('started', 'sealed', 'uploading')
       returning meeting_id
     ), inserted_assets as (
       insert into media_assets (
@@ -1198,7 +1235,7 @@ export async function completeLocalRecorderRecordingUpload(input: {
         ${input.assets.synthesizedAudioAssetId}::uuid,
         ${JSON.stringify(input.manifest)}::jsonb,
         'completed',
-        true
+        not exists (select 1 from local_recordings previous where previous.meeting_id = valid_attempt.meeting_id and previous.is_primary)
       from valid_attempt
       on conflict (owner_user_id, client_recording_id) do update
       set updated_at = ${now}
@@ -1239,7 +1276,8 @@ export async function completeLocalRecorderRecordingUpload(input: {
         recording_id,
         media_asset_id,
         provider,
-        status
+        status,
+        mode
       )
       select
         ${transcriptJobId}::uuid,
@@ -1247,7 +1285,9 @@ export async function completeLocalRecorderRecordingUpload(input: {
         local_recording.id,
         local_recording.synthesized_audio_asset_id,
         'elevenlabs',
-        'queued'
+        'queued',
+        (case when exists (select 1 from transcript_jobs prior where prior.meeting_id = local_recording.meeting_id)
+          then 'append' else 'replace' end)::transcript_mode
       from local_recording
       on conflict (recording_id) where recording_id is not null do update
       set updated_at = ${now}
@@ -1260,7 +1300,9 @@ export async function completeLocalRecorderRecordingUpload(input: {
       transcript_job.media_asset_id
     from local_recording
     join transcript_job on transcript_job.recording_id = local_recording.id
-  `;
+  `,
+    tx.query(timelineRebase.sql, timelineRebase.params),
+  ]);
   const [completed] = rows as Array<{
     local_recording_id: string;
     media_asset_id: string;
@@ -1344,6 +1386,8 @@ async function getOrCreateLocalRecorderTranscriptionEventInput(input: {
     .values({
       mediaAssetId: recording.mediaAssetId,
       meetingId: recording.meetingId,
+      recordingId: recording.recordingId,
+      mode: "append",
       provider: "elevenlabs",
       status: "queued",
     })
@@ -1414,7 +1458,7 @@ async function getUploadableLocalRecorderAttempt(input: {
     })
   ) {
     if (
-      ["started", "uploading"].includes(attempt.attemptState) &&
+      ["started", "sealed", "uploading"].includes(attempt.attemptState) &&
       input.recordingStartedAt > attempt.expiresAt
     ) {
       const now = new Date();
@@ -1435,6 +1479,8 @@ async function getUploadableLocalRecorderAttempt(input: {
           and(
             eq(meetings.id, attempt.meetingId),
             inArray(meetings.status, ["recording", "processing"]),
+        sql`not exists (select 1 from local_recording_attempts other where other.meeting_id = ${meetings.id} and other.id <> ${attempt.id}::uuid and other.attempt_state in ('started', 'sealed', 'uploading', 'uploaded', 'completed'))`,
+        sql`not exists (select 1 from recordings saved where saved.meeting_id = ${meetings.id})`,
           ),
         );
       throw new LocalRecorderUploadError(errorMessage);
@@ -1476,7 +1522,7 @@ async function getRetryableLocalRecorderAttempt(input: {
 
   if (
     !attempt ||
-    !["started", "uploading", "uploaded"].includes(attempt.attemptState) ||
+    !["started", "sealed", "uploading", "uploaded", "completed"].includes(attempt.attemptState) ||
     !isLocalRecorderUploadMatch({
       intentExpiresAt: attempt.expiresAt,
       intentMeetingId: attempt.meetingId,
@@ -1502,6 +1548,7 @@ async function getStartedLocalRecorderAttempt(input: {
   const [attempt] = await db
     .select({
       attemptState: localRecordingAttempts.attemptState,
+      claimedAt: localRecordingAttempts.claimedAt,
       expiresAt: localRecordingAttempts.expiresAt,
       id: localRecordingAttempts.id,
       meetingId: localRecordingAttempts.meetingId,
@@ -1659,4 +1706,34 @@ function getSdkUploadToken(value: unknown) {
   }
 
   return uploadToken.trim();
+}
+
+// Metadata records the meeting at SDK upload creation time. The attempt is the
+// authoritative destination and is frozen before any completed artifact writes.
+export async function resolveLocalRecorderSdkMeeting(fallbackIntentId: string) {
+  const tokenHash = await hashLocalRecorderValue(fallbackIntentId);
+  const [attempt] = await databaseSql`
+    update local_recording_attempts
+    set attempt_state = case when attempt_state in ('started', 'uploading') then 'sealed' else attempt_state end,
+      updated_at = now()
+    where fallback_intent_id_hash = ${tokenHash}
+      and attempt_state in ('started', 'sealed', 'uploading', 'uploaded', 'completed')
+      and notification_state <> 'recall_sdk_fallback'
+    returning meeting_id
+  ` as Array<{ meeting_id: string }>;
+  return attempt?.meeting_id ?? null;
+}
+
+export async function markLocalRecorderSdkIntentTerminal(
+  fallbackIntentId: string,
+  state: "completed" | "failed",
+) {
+  const tokenHash = await hashLocalRecorderValue(fallbackIntentId);
+  await databaseSql`
+    update local_recording_attempts
+    set attempt_state = ${state}, updated_at = now()
+    where fallback_intent_id_hash = ${tokenHash}
+      and attempt_state in ('sealed', 'uploading', 'uploaded')
+      and notification_state <> 'recall_sdk_fallback'
+  `;
 }

@@ -74,10 +74,58 @@ enum LocalRecorderSnapshot {
         recording.microphoneLevel = 0.55
         recording.systemAudioLevel = 0.32
 
+        let picker = RecorderAppModel(snapshotBearerToken: "token")
+        picker.permissionChecklist = granted
+        picker.isRecording = true
+        picker.recordingStartedAt = recording.recordingStartedAt
+        picker.activeRecordingTitle = "Design sync with Northwind"
+        picker.statusText = "Recording"
+        picker.audioLevels = recording.audioLevels
+        picker.isMeetingPickerPresented = true
+        picker.activeTarget = RecordingTarget(fallbackIntentId: "snapshot", meetingId: "current", meetingTitle: "Design sync with Northwind")
+        let choices = """
+        [{"meetingId":"current","title":"Design sync with Northwind","status":"recording","startsAt":"\(iso.string(from: Date()))"},
+        {"meetingId":"previous","title":"Design sync with Northwind","status":"completed","startsAt":"\(iso.string(from: Date().addingTimeInterval(-86_400)))"},
+        {"meetingId":"research","title":"Manual recording","status":"processing","createdAt":"\(iso.string(from: Date().addingTimeInterval(-100_000)))"},
+        {"meetingId":"busy","title":"Customer research","status":"recording","startsAt":"\(iso.string(from: Date()))","unavailableReason":"Meeting bot is recording"}]
+        """
+        picker.meetingChoices = (try? decoder.decode([RecordingMeeting].self, from: Data(choices.utf8))) ?? []
+        picker.meetingChoicesHaveMore = true
+
+        let prompt = RecorderAppModel(snapshotBearerToken: "token")
+        prompt.permissionChecklist = granted
+        prompt.isRecording = true
+        prompt.recordingStartedAt = recording.recordingStartedAt
+        prompt.activeRecordingTitle = "Design sync with Northwind"
+        prompt.statusText = "Recording"
+        prompt.captureSessionID = "snapshot-prompt"
+        prompt.endPrompt = RecorderEndPrompt(id: "snapshot", sessionID: "snapshot-prompt", reason: .silence)
+
         let uploadIssue = RecorderAppModel(snapshotBearerToken: "token")
         uploadIssue.permissionChecklist = granted
         uploadIssue.nextScheduleMeeting = upcoming.nextScheduleMeeting
         uploadIssue.statusText = "Could not upload recording. Files kept locally."
+
+        let receipt = RecorderAppModel(snapshotBearerToken: "token")
+        receipt.permissionChecklist = granted
+        receipt.nextScheduleMeeting = upcoming.nextScheduleMeeting
+        receipt.statusText = "Capture stopped"
+        receipt.pendingUploadCount = 1
+        receipt.updateUploadReceipt(intentID: "stopped", target: RecordingTarget(fallbackIntentId: "stopped", meetingId: "previous", meetingTitle: "Design sync with Northwind"), message: "Saved on this Mac. Uploading…", serverURL: URL(string: "https://tape.example"))
+
+        let conflict = RecorderAppModel(snapshotBearerToken: "token")
+        conflict.permissionChecklist = granted
+        conflict.nextScheduleMeeting = upcoming.nextScheduleMeeting
+        conflict.nextScheduleMeeting?.botStatus = "recording"
+        conflict.nextScheduleMeeting?.startsAt = Date().addingTimeInterval(-300)
+        conflict.statusText = "Watching your calendar"
+
+        let serverUnavailable = RecorderAppModel(snapshotBearerToken: "token")
+        serverUnavailable.permissionChecklist = granted
+        serverUnavailable.nextScheduleMeeting = upcoming.nextScheduleMeeting
+        serverUnavailable.recordingStartFailure = .serviceUnavailable
+        // A successful background refresh must not hide the failed Record action.
+        serverUnavailable.statusText = "Watching your calendar"
 
         let settings = RecorderAppModel(snapshotBearerToken: "token")
         settings.permissionChecklist = granted
@@ -92,6 +140,9 @@ enum LocalRecorderSnapshot {
         return [
             ("signed-out", signedOut), ("upcoming", upcoming), ("recording", recording),
             ("upload-issue", uploadIssue), ("settings", settings), ("permissions", permissions),
+            ("meeting-picker", picker), ("end-prompt", prompt),
+            ("upload-receipt", receipt), ("recording-conflict", conflict),
+            ("recording-unavailable", serverUnavailable),
         ]
     }
 

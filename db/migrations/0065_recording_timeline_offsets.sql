@@ -1,0 +1,1 @@
+ALTER TABLE "transcript_jobs" ADD COLUMN "recording_offset_ms" integer;

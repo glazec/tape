@@ -80,7 +80,7 @@ describe("local recorder auth", () => {
       requestUrl: "https://app.example.com/api/local-recorder/device-login",
     });
     expect("redirectUrl" in result).toBe(true);
-    if (!("redirectUrl" in result)) throw new Error("Missing device callback");
+    if (!("redirectUrl" in result) || !result.redirectUrl) throw new Error("Missing device callback");
     const callback = new URL(result.redirectUrl);
     const token = callback.searchParams.get("token")!;
     expect(token).toBeTruthy();

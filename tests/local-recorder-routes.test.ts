@@ -23,6 +23,12 @@ const prepareLocalRecorderRecordingUpload = vi.fn();
 const createRecallDesktopSdkUploadForLocalRecorder = vi.fn();
 const markRecallDesktopSdkFallback = vi.fn();
 const markLocalRecorderNotificationDelivered = vi.fn();
+const listLocalRecorderRecordingMeetings = vi.fn();
+const setLocalRecorderRecordingTarget = vi.fn();
+const finishLocalRecorderRecordingTarget = vi.fn();
+const getLocalRecorderRecordingTargetStatus = vi.fn();
+const LocalRecorderTargetError = vi.hoisted(() => class LocalRecorderTargetError extends Error { constructor(message: string, public status = 409) { super(message); } });
+vi.mock("@/lib/local-recorder-targets", () => ({ listLocalRecorderRecordingMeetings, setLocalRecorderRecordingTarget, finishLocalRecorderRecordingTarget, getLocalRecorderRecordingTargetStatus, LocalRecorderTargetError }));
 const LocalRecorderUploadError = vi.hoisted(() => class LocalRecorderUploadError extends Error {});
 
 vi.mock("@/lib/local-recorder-auth", () => ({
@@ -84,6 +90,66 @@ describe("local recorder API routes", () => {
     markRecallDesktopSdkFallback.mockReset();
     markLocalRecorderNotificationDelivered.mockReset();
     vi.resetModules();
+  });
+
+  it("searches all writable recording meetings with pagination", async () => {
+    mockSignedInDevice();
+    listLocalRecorderRecordingMeetings.mockResolvedValue({ meetings: [], hasMore: false });
+    const { GET } = await import("@/app/api/local-recorder/recording-meetings/route");
+    const response = await GET(new Request("https://app.example.com/api/local-recorder/recording-meetings?q=Old&offset=100"));
+    expect(response.status).toBe(200);
+    expect(listLocalRecorderRecordingMeetings).toHaveBeenCalledWith({ workspace: { teamId: "team_123", userId: "user_123" }, query: "Old", offset: 100 });
+    expect(response.headers.get("cache-control")).toBe("no-store");
+    expect((await GET(new Request("https://app.example.com/route?offset=-1"))).status).toBe(400);
+  });
+
+  it("returns upload state only to the paired authenticated device", async () => {
+    mockSignedInDevice();
+    getLocalRecorderRecordingTargetStatus.mockResolvedValue({ state: "completed" });
+    const { POST } = await import("@/app/api/local-recorder/recording-target/status/route");
+    const request = () => new Request("https://app.example.com/route", { method: "POST", body: JSON.stringify({ fallbackIntentId: "stable" }) });
+    const response = await POST(request());
+    await expect(response.json()).resolves.toEqual({ state: "completed" });
+    expect(response.headers.get("cache-control")).toBe("no-store");
+    expect(getLocalRecorderRecordingTargetStatus).toHaveBeenCalledWith({ fallbackIntentId: "stable", deviceId: "mac_123", workspace: { teamId: "team_123", userId: "user_123" } });
+    getLocalRecorderDeviceRequestContext.mockResolvedValue({ ok: false, error: "Unauthorized", status: 401 });
+    expect((await POST(request())).status).toBe(401);
+  });
+
+  it("allows active target reassignment without credit while new captures still require credit", async () => {
+    mockSignedInDevice();
+    const credit = await import("@/lib/provider-credit");
+    const assertCredit = vi.mocked(credit.assertWorkspaceHasProviderCredit);
+    assertCredit.mockReset();
+    assertCredit.mockRejectedValue(new credit.ProviderCreditExhaustedError());
+    setLocalRecorderRecordingTarget.mockResolvedValue({ fallbackIntentId: "active", meetingId: "11111111-1111-4111-8111-111111111111", meetingTitle: "Review", startsAt: null, endsAt: null });
+    const { POST } = await import("@/app/api/local-recorder/recording-target/route");
+    const request = (body: unknown) => new Request("https://app.example.com/route", { method: "POST", body: JSON.stringify(body) });
+    expect((await POST(request({ fallbackIntentId: "active", meetingId: "11111111-1111-4111-8111-111111111111" }))).status).toBe(200);
+    expect(assertCredit).not.toHaveBeenCalled();
+    expect((await POST(request({ title: "New recording" }))).status).toBe(402);
+    expect(assertCredit).toHaveBeenCalledOnce();
+    assertCredit.mockReset();
+  });
+
+  it("selects and freezes a target using the paired device identity", async () => {
+    mockSignedInDevice();
+    const target = { fallbackIntentId: "stable", meetingId: "11111111-1111-4111-8111-111111111111", meetingTitle: "Review", startsAt: null, endsAt: null };
+    setLocalRecorderRecordingTarget.mockResolvedValue(target);
+    finishLocalRecorderRecordingTarget.mockResolvedValue(target);
+    const { POST } = await import("@/app/api/local-recorder/recording-target/route");
+    const { POST: finish } = await import("@/app/api/local-recorder/recording-target/finish/route");
+    const request = (body: unknown) => new Request("https://app.example.com/route", { method: "POST", body: JSON.stringify(body) });
+    await expect((await POST(request({ meetingId: target.meetingId, fallbackIntentId: "stable" }))).json()).resolves.toEqual(target);
+    await expect((await finish(request({ fallbackIntentId: "stable" }))).json()).resolves.toEqual(target);
+    expect(finishLocalRecorderRecordingTarget).toHaveBeenCalledWith({ fallbackIntentId: "stable", deviceId: "mac_123", workspace: { teamId: "team_123", userId: "user_123" } });
+    expect((await POST(request({ meetingId: target.meetingId, title: "Ambiguous" }))).status).toBe(400);
+    expect((await finish(request({}))).status).toBe(400);
+    setLocalRecorderRecordingTarget.mockRejectedValueOnce(new LocalRecorderTargetError("Capture stopped"));
+    expect((await POST(request({ title: "New" }))).status).toBe(409);
+    getLocalRecorderDeviceRequestContext.mockResolvedValue({ ok: false, error: "Unauthorized", status: 401 });
+    expect((await POST(request({}))).status).toBe(401);
+    expect((await finish(request({ fallbackIntentId: "stable" }))).status).toBe(401);
   });
 
   it("returns eligible missed meetings for a signed in Mac device", async () => {

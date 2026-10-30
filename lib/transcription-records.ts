@@ -1,6 +1,8 @@
-import { and, eq } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 
-import { db } from "@/db/client";
+import { databaseSql, db } from "@/db/client";
+import { PgDialect } from "drizzle-orm/pg-core";
+import { recordingTimelineRebaseQuery } from "@/lib/recording-timeline";
 import { mediaAssets, meetings, recordings, transcriptJobs } from "@/db/schema";
 import type { SessionUser } from "@/lib/auth";
 import { reconcileMeetingSharingForMeeting } from "@/lib/meeting-share-rules";
@@ -230,103 +232,43 @@ export async function createRecallRecordingTranscription(input: {
   mode?: "append" | "replace";
   startedAt?: Date;
 }) {
-  const [existingRecording] = await db
-    .select({ id: recordings.id })
-    .from(recordings)
-    .where(
-      and(
-        eq(recordings.meetingId, input.meetingId),
-        eq(recordings.source, "recall"),
-        eq(recordings.externalId, input.externalRecordingId),
-      ),
-    )
-    .limit(1);
-  let recording = existingRecording;
-
-  if (!recording) {
-    [recording] = await db
-      .insert(recordings)
-      .values({
-        durationMs: input.durationMs,
-        endedAt: input.endedAt,
-        externalBotId: input.externalBotId,
-        externalId: input.externalRecordingId,
-        meetingId: input.meetingId,
-        source: "recall",
-        startedAt: input.startedAt,
-      })
-      .onConflictDoNothing()
-      .returning({ id: recordings.id });
-  }
-
-  if (!recording) {
-    [recording] = await db
-      .select({ id: recordings.id })
-      .from(recordings)
-      .where(
-        and(
-          eq(recordings.meetingId, input.meetingId),
-          eq(recordings.source, "recall"),
-          eq(recordings.externalId, input.externalRecordingId),
-        ),
+  const timelineRebase = new PgDialect().sqlToQuery(recordingTimelineRebaseQuery(input.meetingId));
+  const [, rows] = await databaseSql.transaction((tx) => [
+    tx`select pg_advisory_xact_lock(hashtextextended(${`recording-timeline:${input.meetingId}`}, 0))`,
+    tx`
+      with recording as (
+        insert into recordings (meeting_id, source, external_id, external_bot_id, started_at, ended_at, duration_ms)
+        values (${input.meetingId}::uuid, 'recall', ${input.externalRecordingId}, ${input.externalBotId ?? null},
+          ${input.startedAt ?? null}, ${input.endedAt ?? null}, ${input.durationMs ?? null})
+        on conflict (source, external_id) where external_id is not null do update
+        set started_at = coalesce(recordings.started_at, excluded.started_at),
+          ended_at = coalesce(recordings.ended_at, excluded.ended_at),
+          duration_ms = coalesce(recordings.duration_ms, excluded.duration_ms)
+        where recordings.meeting_id = excluded.meeting_id
+        returning id
+      ), job as (
+        insert into transcript_jobs (meeting_id, recording_id, mode, provider, status)
+        select ${input.meetingId}::uuid, recording.id,
+          (case when exists (select 1 from transcript_jobs prior where prior.meeting_id = ${input.meetingId}::uuid)
+            then 'append' else 'replace' end)::transcript_mode,
+          'elevenlabs', 'queued'
+        from recording
+        on conflict (recording_id) where recording_id is not null do update
+        set recording_id = excluded.recording_id
+        returning id, recording_id, status, provider_job_id
       )
-      .limit(1);
-  }
-
-  if (!recording) {
-    throw new Error("Recall recording could not be created");
-  }
-
-  await recordRecallRecordingUsage({
-    durationMs: input.durationMs,
-    meetingId: input.meetingId,
-    recordingId: recording.id,
-  });
-
-  const [existingJob] = await db
-    .select({ id: transcriptJobs.id, status: transcriptJobs.status, providerJobId: transcriptJobs.providerJobId })
-    .from(transcriptJobs)
-    .where(eq(transcriptJobs.recordingId, recording.id))
-    .limit(1);
-
-  if (existingJob) {
-    return {
-      meetingId: input.meetingId,
-      recordingId: recording.id,
-      shouldQueue: existingJob.status === "queued" && !existingJob.providerJobId,
-      transcriptJobId: existingJob.id,
-    };
-  }
-
-  let [job] = await db
-    .insert(transcriptJobs)
-    .values({
-      meetingId: input.meetingId,
-      mode: input.mode ?? "replace",
-      provider: "elevenlabs",
-      recordingId: recording.id,
-      status: "queued",
-    })
-    .onConflictDoNothing()
-    .returning({ id: transcriptJobs.id });
-  const shouldQueue = Boolean(job);
-
-  if (!job) {
-    [job] = await db
-      .select({ id: transcriptJobs.id, status: transcriptJobs.status, providerJobId: transcriptJobs.providerJobId })
-      .from(transcriptJobs)
-      .where(eq(transcriptJobs.recordingId, recording.id))
-      .limit(1);
-  }
-
-  if (!job) {
-    throw new Error("Recall transcript job could not be created");
-  }
-
+      select id as transcript_job_id, recording_id,
+        (status = 'queued' and provider_job_id is null) as should_queue from job
+    `,
+    tx.query(timelineRebase.sql, timelineRebase.params),
+  ]);
+  const [job] = rows as Array<{ transcript_job_id: string; recording_id: string; should_queue: boolean }>;
+  if (!job) throw new Error("Recall recording could not be created");
+  await recordRecallRecordingUsage({ durationMs: input.durationMs, meetingId: input.meetingId, recordingId: job.recording_id });
   return {
     meetingId: input.meetingId,
-    recordingId: recording.id,
-    shouldQueue,
-    transcriptJobId: job.id,
+    recordingId: job.recording_id,
+    shouldQueue: job.should_queue,
+    transcriptJobId: job.transcript_job_id,
   };
 }

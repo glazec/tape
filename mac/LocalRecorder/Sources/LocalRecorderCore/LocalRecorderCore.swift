@@ -674,7 +674,7 @@ public struct LocalRecorderAPIClient: Sendable {
         )
     }
 
-    private func applyRecorderHeaders(to request: inout URLRequest) {
+    func applyRecorderHeaders(to request: inout URLRequest) {
         request.setValue("Bearer \(bearerToken)", forHTTPHeaderField: "Authorization")
         request.setValue(deviceId, forHTTPHeaderField: "x-local-recorder-device-id")
         if let appVersion, !appVersion.isEmpty {
@@ -690,7 +690,7 @@ public struct LocalRecorderAPIClient: Sendable {
         }
     }
 
-    private func validateHTTPResponse(data: Data, response: URLResponse) throws {
+    func validateHTTPResponse(data: Data, response: URLResponse) throws {
         guard let httpResponse = response as? HTTPURLResponse else {
             throw LocalRecorderAPIError.invalidResponse
         }
@@ -718,6 +718,7 @@ public struct LocalRecorderAPIClient: Sendable {
 
 public enum LocalRecorderAPIError: Error, Equatable {
     case invalidResponse
+    case recordingWorkflowUnavailable
     case httpStatus(
         Int,
         message: String? = nil,
@@ -737,6 +738,13 @@ func localRecorderHTTPError(
     data: Data,
     response: HTTPURLResponse
 ) -> LocalRecorderAPIError {
+    // A missing route returns the web app's HTML 404 page. A missing meeting
+    // returns JSON from the recording API. They need different recovery actions.
+    if response.statusCode == 404,
+       response.url?.path.hasPrefix("/api/local-recorder/recording-") == true,
+       response.value(forHTTPHeaderField: "Content-Type")?.lowercased().contains("application/json") != true {
+        return .recordingWorkflowUnavailable
+    }
     let message = try? JSONDecoder().decode(
         LocalRecorderAPIErrorResponse.self,
         from: data
@@ -1046,7 +1054,7 @@ public struct LocalRecorderMonitoringMeeting: Codable, Identifiable, Equatable, 
 public enum LocalRecorderMonitoringPollSchedule {
     public static let fallbackGraceDuration: TimeInterval = 70
     public static let activeMeetingInterval: TimeInterval = 60
-    public static let idleInterval: TimeInterval = 60 * 60
+    public static let idleInterval: TimeInterval = 60
 
     public static func nextDelay(
         now: Date,
@@ -1066,7 +1074,7 @@ public enum LocalRecorderMonitoringPollSchedule {
         )
 
         if now < fallbackCheckAt {
-            return max(1, fallbackCheckAt.timeIntervalSince(now))
+            return min(idleInterval, max(1, fallbackCheckAt.timeIntervalSince(now)))
         }
 
         guard let endsAt = nextMeeting.endsAt else {
@@ -1214,6 +1222,9 @@ public enum LocalRecorderAutoClaimPolicy {
 
 public struct ClaimIntentResponse: Codable, Equatable, Sendable {
     public var claimed: Bool
+    public var meetingId: String?
+    public var startsAt: Date?
+    public var endsAt: Date?
     public var meetingTitle: String?
     public var reason: String?
 }

@@ -258,22 +258,25 @@ describe("applyElevenLabsTranscriptEvent", () => {
     });
 
     expect(transaction).toHaveBeenCalledOnce();
-    expect(txn).toHaveBeenCalledTimes(5);
-    expect(txn.query).toHaveBeenCalledOnce();
+    expect(txn).toHaveBeenCalledTimes(6);
+    expect(txn.mock.calls[0][0].join(" ")).toContain("pg_advisory_xact_lock");
+    expect(txn.query).toHaveBeenCalledTimes(2);
+    expect(txn.query.mock.calls[1][0]).toContain("recording_offset_ms");
+    expect(txn.query.mock.calls[1][0]).toContain("coalesce(started_at, created_at)");
     const [entitySql, entityParams] = txn.query.mock.calls[0];
     expect(entitySql).toContain("with latest_replace as");
     expect(entitySql).toContain("insert into meeting_entities");
     expect(entityParams.every((value: unknown) => typeof value === "string")).toBe(true);
-    expect(txn.mock.calls[1]?.[0].join(" ")).toContain(
+    expect(txn.mock.calls[2]?.[0].join(" ")).toContain(
       "delete from transcript_segments",
     );
-    expect(txn.mock.calls[2]?.[0].join(" ")).toContain(
+    expect(txn.mock.calls[3]?.[0].join(" ")).toContain(
       "insert into transcript_segments",
     );
-    expect(txn.mock.calls[4]?.[0].join(" ")).toContain(
+    expect(txn.mock.calls[5]?.[0].join(" ")).toContain(
       "update transcript_jobs",
     );
-    expect(txn.mock.calls[4]?.[0].join(" ")).toContain(
+    expect(txn.mock.calls[5]?.[0].join(" ")).toContain(
       "error_message = null",
     );
   });

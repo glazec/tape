@@ -1,4 +1,4 @@
-import { and, eq, inArray, notInArray } from "drizzle-orm";
+import { and, eq, inArray, notInArray, sql } from "drizzle-orm";
 
 import { db } from "@/db/client";
 import { meetings } from "@/db/schema";
@@ -6,7 +6,7 @@ import { inngest } from "@/inngest/client";
 import { fetchAndPersistRecallParticipantTimeline } from "@/lib/meeting-participant-timeline";
 import { isRecallBotAccepted } from "@/lib/meeting-bot-lineage";
 import { getRecallRecordingReadiness } from "@/lib/recall-recording-readiness";
-import { isRecallDesktopSdkFallbackIntent } from "@/lib/local-recorder-records";
+import { isRecallDesktopSdkFallbackIntent, resolveLocalRecorderSdkMeeting, markLocalRecorderSdkIntentTerminal } from "@/lib/local-recorder-records";
 import { createRecallRecordingTranscription } from "@/lib/transcription-records";
 import type { normalizeRecallWebhook } from "@/lib/vendors/recall";
 import {
@@ -81,6 +81,19 @@ export function buildRecallMeetingUpdate(
 }
 
 export async function applyRecallMeetingEvent(event: RecallWebhookEvent) {
+  const isLocalSdk = getMetadataString(event.metadata, "source") === "local_recorder_sdk";
+  if (isLocalSdk) {
+    const token = getMetadataString(event.metadata, "fallbackIntentId", "fallback_intent_id");
+    if (token && await isRecallDesktopSdkFallbackIntent(token)) {
+      return { action: "skip" as const, reason: "local_fallback_active" as const };
+    }
+    if (!["sdk_upload.complete", "sdk_upload.failed"].includes(event.eventType.toLowerCase())) {
+      return { action: "skip" as const, reason: "awaiting_sdk_completion" as const };
+    }
+    const meetingId = token ? await resolveLocalRecorderSdkMeeting(token) : null;
+    if (!meetingId) return { action: "skip" as const, reason: "missing_recording_attempt" as const };
+    event = { ...event, metadata: { ...event.metadata, meetingId } };
+  }
   const update = buildRecallMeetingUpdate(event);
 
   if (update.action === "skip") {
@@ -102,26 +115,6 @@ export async function applyRecallMeetingEvent(event: RecallWebhookEvent) {
       ? null
       : update.status;
 
-  if (
-    event.eventType.toLowerCase().startsWith("sdk_upload.") &&
-    getMetadataString(event.metadata, "source") === "local_recorder_sdk"
-  ) {
-    const fallbackIntentId = getMetadataString(
-      event.metadata,
-      "fallbackIntentId",
-      "fallback_intent_id",
-    );
-
-    if (
-      fallbackIntentId &&
-      (await isRecallDesktopSdkFallbackIntent(fallbackIntentId))
-    ) {
-      return {
-        action: "skip" as const,
-        reason: "local_fallback_active" as const,
-      };
-    }
-  }
 
   await db
     .update(meetings)
@@ -137,6 +130,10 @@ export async function applyRecallMeetingEvent(event: RecallWebhookEvent) {
       notInArray(meetings.status, ["ready", "cancelled"]),
       ...(status === "scheduled" ? [eq(meetings.status, "scheduled")] : []),
       ...(status === "recording" ? [inArray(meetings.status, ["scheduled", "recording"])] : []),
+      ...(isLocalSdk && status === "failed" ? [
+        sql`not exists (select 1 from local_recording_attempts active where active.meeting_id = ${meetings.id} and active.attempt_state = 'started')`,
+        sql`not exists (select 1 from recordings saved where saved.meeting_id = ${meetings.id})`,
+      ] : []),
     ));
 
   const shouldQueueTranscription =
@@ -147,11 +144,19 @@ export async function applyRecallMeetingEvent(event: RecallWebhookEvent) {
     update.recallRecordingId &&
     (shouldQueueTranscription || shouldQueueVideoFrames)
   ) {
-    await queueRecallRecordingProcessing(update, event.metadata, {
+    const queued = await queueRecallRecordingProcessing(update, event.metadata, {
       shouldQueueTranscription,
       shouldQueueVideoFrames,
       videoFrameReadiness: getVideoFrameReadiness(event),
     });
+    const token = getMetadataString(event.metadata, "fallbackIntentId", "fallback_intent_id");
+    if (isLocalSdk && queued !== undefined && token) {
+      await markLocalRecorderSdkIntentTerminal(token, queued ? "completed" : "failed");
+    }
+  }
+  if (isLocalSdk && status === "failed") {
+    const token = getMetadataString(event.metadata, "fallbackIntentId", "fallback_intent_id");
+    if (token) await markLocalRecorderSdkIntentTerminal(token, "failed");
   }
 
   return update;
@@ -254,9 +259,20 @@ async function queueRecallRecordingProcessing(
           status: "failed",
           updatedAt: new Date(),
         })
-        .where(eq(meetings.id, update.meetingId));
+        .where(and(
+          eq(meetings.id, update.meetingId),
+          ...(getMetadataString(metadata, "source") === "local_recorder_sdk" ? [
+            notInArray(meetings.status, ["ready", "cancelled"]),
+            sql`not exists (select 1 from local_recording_attempts active where active.meeting_id = ${meetings.id} and active.attempt_state = 'started')`,
+            sql`not exists (select 1 from recordings saved where saved.meeting_id = ${meetings.id})`,
+          ] : []),
+        ));
+      return false;
     }
 
+    if (getMetadataString(metadata, "source") === "local_recorder_sdk") {
+      throw new Error("Recall SDK recording media is not ready");
+    }
     return;
   }
 
@@ -304,18 +320,18 @@ async function queueRecallRecordingProcessing(
           startedAt: readiness.startedAt,
         }
       : findRecallRecordingTiming(recallArtifact, update.recallRecordingId);
+  const localStartedAtValue = getMetadataString(metadata, "localRecordingStartedAt");
+  const localStartedAt = localStartedAtValue ? new Date(localStartedAtValue) : null;
   const transcription = await createRecallRecordingTranscription({
+    ...(localStartedAt && Number.isFinite(localStartedAt.getTime()) ? { startedAt: localStartedAt } : {}),
     ...(recordingTiming ?? {}),
     externalBotId: update.recallBotId ?? undefined,
     externalRecordingId: update.recallRecordingId,
     meetingId: update.meetingId,
-    mode: getMetadataBoolean(metadata, "resumeRecording", "resume_recording")
-      ? "append"
-      : "replace",
   });
 
   if (transcription.shouldQueue === false) {
-    return;
+    return true;
   }
 
   await inngest.send({
@@ -326,6 +342,7 @@ async function queueRecallRecordingProcessing(
       ...transcription,
     },
   });
+  return true;
 }
 
 function hasTerminalRecallMediaFailure(
@@ -423,17 +440,6 @@ async function hasRecordingEvidence(meetingId: string) {
   // recallRecordingId. A late or out-of-order bot.done (no recording id) must
   // not revert such a meeting to "missed".
   return row.status === "processing" || row.status === "ready";
-}
-
-function getMetadataBoolean(
-  metadata: Record<string, unknown>,
-  ...keys: string[]
-) {
-  return keys.some((key) => {
-    const value = metadata[key];
-
-    return value === true || value === "true";
-  });
 }
 
 function getMetadataString(

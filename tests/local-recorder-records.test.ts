@@ -1,5 +1,5 @@
 import type { SQL } from "drizzle-orm";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const {
   createRecallDesktopSdkUpload,
@@ -13,7 +13,7 @@ const {
 } = vi.hoisted(() => ({
     createRecallDesktopSdkUpload: vi.fn(),
     createUploadUrl: vi.fn(),
-    databaseSql: vi.fn(),
+    databaseSql: Object.assign(vi.fn(), { transaction: vi.fn(), query: vi.fn() }),
     db: {
       insert: vi.fn(),
       select: vi.fn(),
@@ -85,25 +85,38 @@ function selectRows(rows: unknown[]) {
     leftJoin: vi.fn(() => chain),
     limit: vi.fn().mockResolvedValue(rows),
     orderBy: vi.fn(() => chain),
-    where: vi.fn<(condition: SQL) => unknown>(() => chain),
+    where: vi.fn<(condition: SQL) => unknown>(),
   };
 
+  chain.where.mockImplementation(() => chain);
   return chain;
 }
 
 describe("local recorder records", () => {
+  beforeEach(() => {
+    databaseSql.transaction.mockImplementation(async (build) => {
+      const queries = build(databaseSql);
+      return Promise.all(queries);
+    });
+  });
   afterEach(() => {
     db.insert.mockReset();
     db.select.mockReset();
     db.transaction.mockReset();
     db.update.mockReset();
     databaseSql.mockReset();
+    databaseSql.transaction.mockReset();
+    databaseSql.query.mockReset();
     createRecallDesktopSdkUpload.mockReset();
     createUploadUrl.mockReset();
     getObjectMetadata.mockReset();
     inngestSend.mockReset();
     retrieveRecallBot.mockReset();
     reconcileMeetingSharingForMeeting.mockReset();
+  });
+
+  it("does not keep an old scheduled meeting with no end current forever", () => {
+    expect(isLocalRecorderMonitoringMeetingCurrent({ startedAt: new Date("2026-10-01T10:00:00Z"), endedAt: null, now: new Date("2026-10-30T10:00:00Z") })).toBe(false);
   });
 
   it("returns the identity of the paired workspace membership", async () => {
@@ -128,6 +141,7 @@ describe("local recorder records", () => {
       selectRows([
         {
           attemptState: "started",
+          claimedAt: new Date("2026-10-30T12:00:00.000Z"),
           expiresAt: new Date(Date.now() + 60_000),
           id: "44444444-4444-4444-8444-444444444444",
           meetingId: "22222222-2222-4222-8222-222222222222",
@@ -162,6 +176,7 @@ describe("local recorder records", () => {
     expect(createRecallDesktopSdkUpload).toHaveBeenCalledWith({
       metadata: {
         clientRecordingId: "client_recording_123",
+        localRecordingStartedAt: "2026-10-30T12:00:00.000Z",
         fallbackIntentId: "intent_123",
         meetingId: "22222222-2222-4222-8222-222222222222",
         source: "local_recorder_sdk",
@@ -296,11 +311,15 @@ describe("local recorder records", () => {
     expect(db.transaction).not.toHaveBeenCalled();
     expect(db.insert).not.toHaveBeenCalled();
     expect(db.update).not.toHaveBeenCalled();
-    expect(databaseSql).toHaveBeenCalledOnce();
-    const completionSql = databaseSql.mock.calls[0]?.[0].join(" ") ?? "";
+    expect(databaseSql.transaction).toHaveBeenCalledOnce();
+    expect(databaseSql.query.mock.calls[0][0]).toContain("recording_offset_ms");
+    const completionSql = databaseSql.mock.calls[1]?.[0].join(" ") ?? "";
     expect(completionSql).toContain("with valid_attempt as");
     expect(completionSql).toContain("insert into local_recordings");
     expect(completionSql).toContain("insert into transcript_jobs");
+    expect(completionSql).toContain("'append'");
+    expect(completionSql).toContain("not exists (select 1 from local_recordings");
+    expect(completionSql).toContain("attempt_state = 'completed'");
     expect(completionSql).toContain("set status = 'processing'");
     expect(inngestSend).toHaveBeenCalledOnce();
   });
@@ -367,7 +386,8 @@ describe("local recorder records", () => {
       queued: true,
     });
 
-    expect(databaseSql).toHaveBeenCalledOnce();
+    expect(databaseSql.transaction).toHaveBeenCalledOnce();
+    expect(databaseSql.query.mock.calls[0][0]).toContain("recording_offset_ms");
     expect(inngestSend).toHaveBeenCalledTimes(2);
   });
 
@@ -408,7 +428,7 @@ describe("local recorder records", () => {
       isLocalRecorderMonitoringMeetingCurrent({
         endedAt: null,
         now,
-        startedAt: new Date("2026-07-01T12:00:00.000Z"),
+        startedAt: new Date("2026-07-01T13:45:00.000Z"),
       }),
     ).toBe(true);
     expect(
@@ -839,10 +859,24 @@ describe("local recorder records", () => {
     ]);
   });
 
+  it.each(["sealed", "uploading", "uploaded", "completed", "failed"])("does not reopen a %s attempt through a notification replay", async (attemptState) => {
+    db.select.mockReturnValueOnce(selectRows([{ ...eligibleAttempt(), attemptState }]));
+    await expect(claimLocalRecorderIntent({ deviceId: "mac_1", fallbackIntentId: "intent_1", now: new Date("2026-07-20T12:00:00.000Z"), workspace: workspace() })).resolves.toEqual({ claimed: false, reason: "expired_or_missing" });
+    expect(db.update).not.toHaveBeenCalled();
+    expect(databaseSql).not.toHaveBeenCalled();
+  });
+
+  it("does not report a claim when finish wins after the eligibility read", async () => {
+    db.select.mockReturnValueOnce(selectRows([{ ...eligibleAttempt(), attemptState: "started" }])).mockReturnValueOnce(selectRows([]));
+    databaseSql.mockResolvedValue([]);
+    await expect(claimLocalRecorderIntent({ deviceId: "mac_1", fallbackIntentId: "intent_1", now: new Date("2026-07-20T12:00:00.000Z"), workspace: workspace() })).resolves.toEqual({ claimed: false, reason: "expired_or_missing" });
+  });
+
   it("claims an eligible recorder intent", async () => {
     const now = new Date("2026-07-20T12:00:00.000Z");
     db.select
       .mockReturnValueOnce(selectRows([{
+        attemptState: "notified",
         activeTranscriptJob: false,
         endedAt: new Date("2026-07-20T12:30:00.000Z"),
         expiresAt: new Date("2026-07-20T13:00:00.000Z"),
@@ -856,16 +890,14 @@ describe("local recorder records", () => {
         title: "Weekly sync",
       }]))
       .mockReturnValueOnce(selectRows([]));
-    db.update.mockReturnValue({
-      set: vi.fn(() => ({ where: vi.fn().mockResolvedValue(undefined) })),
-    });
+    databaseSql.mockResolvedValue([{ id: "attempt_1" }]);
 
     await expect(claimLocalRecorderIntent({
       deviceId: "mac_1",
       fallbackIntentId: "intent_1",
       now,
       workspace: workspace(),
-    })).resolves.toEqual({ claimed: true, meetingTitle: "Weekly sync" });
+    })).resolves.toMatchObject({ claimed: true, meetingTitle: "Weekly sync", meetingId: "meeting_1" });
   });
 
   it("rejects missing and competing recorder claims", async () => {
@@ -879,6 +911,7 @@ describe("local recorder records", () => {
 
     db.select
       .mockReturnValueOnce(selectRows([{
+        attemptState: "notified",
         activeTranscriptJob: false,
         endedAt: null,
         expiresAt: new Date("2026-07-20T13:00:00.000Z"),
@@ -902,7 +935,8 @@ describe("local recorder records", () => {
 
   it("recommends an ad hoc recording for an automatic claim outside the meeting window", async () => {
     db.select.mockReturnValueOnce(selectRows([{
-      activeTranscriptJob: false,
+      attemptState: "notified",
+        activeTranscriptJob: false,
       endedAt: null,
       expiresAt: new Date("2026-07-20T13:00:00.000Z"),
       id: "attempt_1",
@@ -929,14 +963,7 @@ describe("local recorder records", () => {
     db.select
       .mockReturnValueOnce(selectRows([eligibleAttempt()]))
       .mockReturnValueOnce(selectRows([]));
-    db.update.mockReturnValue({
-      set: vi.fn(() => ({
-        where: vi.fn().mockRejectedValue({
-          code: "23505",
-          constraint: "local_recording_attempts_primary_active_unique",
-        }),
-      })),
-    });
+    databaseSql.mockRejectedValue({ code: "23505", constraint: "local_recording_attempts_primary_active_unique" });
 
     await expect(claimLocalRecorderIntent({
       deviceId: "mac_1",
@@ -969,7 +996,7 @@ describe("local recorder records", () => {
       }]))
       .mockReturnValueOnce(selectRows([]));
     const updateSet = vi.fn(() => ({
-      where: vi.fn().mockResolvedValue(undefined),
+      where: vi.fn(() => ({ returning: vi.fn().mockResolvedValue([{ id: "attempt_1" }]) })),
     }));
     db.update.mockReturnValue({ set: updateSet });
     const authorizeUpload = vi.fn().mockResolvedValue(undefined);
@@ -998,7 +1025,7 @@ describe("local recorder records", () => {
     expect(db.update).toHaveBeenCalledTimes(2);
     expect(updateSet).toHaveBeenNthCalledWith(
       1,
-      expect.objectContaining({ attemptState: "uploading" }),
+      expect.objectContaining({ attemptState: "sealed" }),
     );
     expect(updateSet).toHaveBeenNthCalledWith(
       2,
@@ -1194,6 +1221,7 @@ function workspace() {
 
 function eligibleAttempt() {
   return {
+    attemptState: "notified",
     activeTranscriptJob: false,
     endedAt: new Date("2026-07-20T12:30:00.000Z"),
     expiresAt: new Date("2026-07-20T13:00:00.000Z"),

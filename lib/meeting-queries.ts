@@ -1518,6 +1518,14 @@ export async function getMeetingTranscriptForWorkspace(
         ),
       )
       .orderBy(
+        sql`coalesce(${recordings.startedAt}, (
+          select recording_job.created_at
+          from ${transcriptJobs} recording_job
+          where recording_job.recording_id = ${recordings.id}
+            and recording_job.id in ${activeTranscriptJobIdsSubquery(meeting.id)}
+          order by recording_job.created_at, recording_job.id
+          limit 1
+        ))`,
         sql`(
           select recording_job.created_at
           from ${transcriptJobs} recording_job
