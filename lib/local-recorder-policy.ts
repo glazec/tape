@@ -134,7 +134,7 @@ export function canUploadLocalRecorderAttempt(input: {
   meetingId: string;
   recordingStartedAt: Date;
 }) {
-  if (input.attemptState !== "started" && input.attemptState !== "uploading") {
+  if (!["started", "sealed", "uploading"].includes(input.attemptState)) {
     return false;
   }
 

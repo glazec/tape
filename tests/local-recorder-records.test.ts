@@ -1,5 +1,5 @@
 import type { SQL } from "drizzle-orm";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const {
   createRecallDesktopSdkUpload,
@@ -13,7 +13,7 @@ const {
 } = vi.hoisted(() => ({
     createRecallDesktopSdkUpload: vi.fn(),
     createUploadUrl: vi.fn(),
-    databaseSql: vi.fn(),
+    databaseSql: Object.assign(vi.fn(), { transaction: vi.fn() }),
     db: {
       insert: vi.fn(),
       select: vi.fn(),
@@ -85,25 +85,37 @@ function selectRows(rows: unknown[]) {
     leftJoin: vi.fn(() => chain),
     limit: vi.fn().mockResolvedValue(rows),
     orderBy: vi.fn(() => chain),
-    where: vi.fn<(condition: SQL) => unknown>(() => chain),
+    where: vi.fn<(condition: SQL) => unknown>(),
   };
 
+  chain.where.mockImplementation(() => chain);
   return chain;
 }
 
 describe("local recorder records", () => {
+  beforeEach(() => {
+    databaseSql.transaction.mockImplementation(async (build) => {
+      const queries = build(databaseSql);
+      return Promise.all(queries);
+    });
+  });
   afterEach(() => {
     db.insert.mockReset();
     db.select.mockReset();
     db.transaction.mockReset();
     db.update.mockReset();
     databaseSql.mockReset();
+    databaseSql.transaction.mockReset();
     createRecallDesktopSdkUpload.mockReset();
     createUploadUrl.mockReset();
     getObjectMetadata.mockReset();
     inngestSend.mockReset();
     retrieveRecallBot.mockReset();
     reconcileMeetingSharingForMeeting.mockReset();
+  });
+
+  it("does not keep an old scheduled meeting with no end current forever", () => {
+    expect(isLocalRecorderMonitoringMeetingCurrent({ startedAt: new Date("2026-10-01T10:00:00Z"), endedAt: null, now: new Date("2026-10-30T10:00:00Z") })).toBe(false);
   });
 
   it("returns the identity of the paired workspace membership", async () => {
@@ -296,11 +308,14 @@ describe("local recorder records", () => {
     expect(db.transaction).not.toHaveBeenCalled();
     expect(db.insert).not.toHaveBeenCalled();
     expect(db.update).not.toHaveBeenCalled();
-    expect(databaseSql).toHaveBeenCalledOnce();
-    const completionSql = databaseSql.mock.calls[0]?.[0].join(" ") ?? "";
+    expect(databaseSql.transaction).toHaveBeenCalledOnce();
+    const completionSql = databaseSql.mock.calls[1]?.[0].join(" ") ?? "";
     expect(completionSql).toContain("with valid_attempt as");
     expect(completionSql).toContain("insert into local_recordings");
     expect(completionSql).toContain("insert into transcript_jobs");
+    expect(completionSql).toContain("'append'");
+    expect(completionSql).toContain("not exists (select 1 from local_recordings");
+    expect(completionSql).toContain("attempt_state = 'completed'");
     expect(completionSql).toContain("set status = 'processing'");
     expect(inngestSend).toHaveBeenCalledOnce();
   });
@@ -367,7 +382,7 @@ describe("local recorder records", () => {
       queued: true,
     });
 
-    expect(databaseSql).toHaveBeenCalledOnce();
+    expect(databaseSql.transaction).toHaveBeenCalledOnce();
     expect(inngestSend).toHaveBeenCalledTimes(2);
   });
 
@@ -408,7 +423,7 @@ describe("local recorder records", () => {
       isLocalRecorderMonitoringMeetingCurrent({
         endedAt: null,
         now,
-        startedAt: new Date("2026-07-01T12:00:00.000Z"),
+        startedAt: new Date("2026-07-01T13:45:00.000Z"),
       }),
     ).toBe(true);
     expect(
@@ -865,7 +880,7 @@ describe("local recorder records", () => {
       fallbackIntentId: "intent_1",
       now,
       workspace: workspace(),
-    })).resolves.toEqual({ claimed: true, meetingTitle: "Weekly sync" });
+    })).resolves.toMatchObject({ claimed: true, meetingTitle: "Weekly sync", meetingId: "meeting_1" });
   });
 
   it("rejects missing and competing recorder claims", async () => {
@@ -969,7 +984,7 @@ describe("local recorder records", () => {
       }]))
       .mockReturnValueOnce(selectRows([]));
     const updateSet = vi.fn(() => ({
-      where: vi.fn().mockResolvedValue(undefined),
+      where: vi.fn(() => ({ returning: vi.fn().mockResolvedValue([{ id: "attempt_1" }]) })),
     }));
     db.update.mockReturnValue({ set: updateSet });
     const authorizeUpload = vi.fn().mockResolvedValue(undefined);
@@ -998,7 +1013,7 @@ describe("local recorder records", () => {
     expect(db.update).toHaveBeenCalledTimes(2);
     expect(updateSet).toHaveBeenNthCalledWith(
       1,
-      expect.objectContaining({ attemptState: "uploading" }),
+      expect.objectContaining({ attemptState: "sealed" }),
     );
     expect(updateSet).toHaveBeenNthCalledWith(
       2,

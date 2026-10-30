@@ -1,12 +1,12 @@
-import { and, eq, inArray, notInArray } from "drizzle-orm";
+import { and, eq, inArray, notInArray, sql } from "drizzle-orm";
 
 import { db } from "@/db/client";
-import { meetings } from "@/db/schema";
+import { meetings, recordings } from "@/db/schema";
 import { inngest } from "@/inngest/client";
 import { fetchAndPersistRecallParticipantTimeline } from "@/lib/meeting-participant-timeline";
 import { isRecallBotAccepted } from "@/lib/meeting-bot-lineage";
 import { getRecallRecordingReadiness } from "@/lib/recall-recording-readiness";
-import { isRecallDesktopSdkFallbackIntent } from "@/lib/local-recorder-records";
+import { isRecallDesktopSdkFallbackIntent, resolveLocalRecorderSdkMeeting } from "@/lib/local-recorder-records";
 import { createRecallRecordingTranscription } from "@/lib/transcription-records";
 import type { normalizeRecallWebhook } from "@/lib/vendors/recall";
 import {
@@ -81,6 +81,19 @@ export function buildRecallMeetingUpdate(
 }
 
 export async function applyRecallMeetingEvent(event: RecallWebhookEvent) {
+  const isLocalSdk = getMetadataString(event.metadata, "source") === "local_recorder_sdk";
+  if (isLocalSdk) {
+    const token = getMetadataString(event.metadata, "fallbackIntentId", "fallback_intent_id");
+    if (token && await isRecallDesktopSdkFallbackIntent(token)) {
+      return { action: "skip" as const, reason: "local_fallback_active" as const };
+    }
+    if (!["sdk_upload.complete", "sdk_upload.failed"].includes(event.eventType.toLowerCase())) {
+      return { action: "skip" as const, reason: "awaiting_sdk_completion" as const };
+    }
+    const meetingId = token ? await resolveLocalRecorderSdkMeeting(token) : null;
+    if (!meetingId) return { action: "skip" as const, reason: "missing_recording_attempt" as const };
+    event = { ...event, metadata: { ...event.metadata, meetingId } };
+  }
   const update = buildRecallMeetingUpdate(event);
 
   if (update.action === "skip") {
@@ -102,26 +115,6 @@ export async function applyRecallMeetingEvent(event: RecallWebhookEvent) {
       ? null
       : update.status;
 
-  if (
-    event.eventType.toLowerCase().startsWith("sdk_upload.") &&
-    getMetadataString(event.metadata, "source") === "local_recorder_sdk"
-  ) {
-    const fallbackIntentId = getMetadataString(
-      event.metadata,
-      "fallbackIntentId",
-      "fallback_intent_id",
-    );
-
-    if (
-      fallbackIntentId &&
-      (await isRecallDesktopSdkFallbackIntent(fallbackIntentId))
-    ) {
-      return {
-        action: "skip" as const,
-        reason: "local_fallback_active" as const,
-      };
-    }
-  }
 
   await db
     .update(meetings)
@@ -137,6 +130,10 @@ export async function applyRecallMeetingEvent(event: RecallWebhookEvent) {
       notInArray(meetings.status, ["ready", "cancelled"]),
       ...(status === "scheduled" ? [eq(meetings.status, "scheduled")] : []),
       ...(status === "recording" ? [inArray(meetings.status, ["scheduled", "recording"])] : []),
+      ...(isLocalSdk && status === "failed" ? [
+        sql`not exists (select 1 from local_recording_attempts active where active.meeting_id = ${meetings.id} and active.attempt_state = 'started')`,
+        sql`not exists (select 1 from recordings saved where saved.meeting_id = ${meetings.id})`,
+      ] : []),
     ));
 
   const shouldQueueTranscription =
@@ -304,12 +301,18 @@ async function queueRecallRecordingProcessing(
           startedAt: readiness.startedAt,
         }
       : findRecallRecordingTiming(recallArtifact, update.recallRecordingId);
+  // A later bot capture must not replace an earlier desktop segment.
+  const [priorCapture] = await db.select({ id: recordings.id }).from(recordings)
+    .where(and(
+      eq(recordings.meetingId, update.meetingId),
+      sql`${recordings.externalId} is distinct from ${update.recallRecordingId}`,
+    )).limit(1);
   const transcription = await createRecallRecordingTranscription({
     ...(recordingTiming ?? {}),
     externalBotId: update.recallBotId ?? undefined,
     externalRecordingId: update.recallRecordingId,
     meetingId: update.meetingId,
-    mode: getMetadataBoolean(metadata, "resumeRecording", "resume_recording")
+    mode: Boolean(priorCapture) || getMetadataString(metadata, "source") === "local_recorder_sdk" || getMetadataBoolean(metadata, "resumeRecording", "resume_recording")
       ? "append"
       : "replace",
   });
