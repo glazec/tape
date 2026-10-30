@@ -11,7 +11,8 @@ export const runtime = "nodejs";
 
 export async function POST(request: Request) {
   const origin = request.headers.get("origin");
-  if (origin && origin !== new URL(request.url).origin) {
+  const appOrigin = new URL(process.env.NEXT_PUBLIC_APP_URL || request.url).origin;
+  if (origin && origin !== appOrigin) {
     return new Response(null, { status: 403 });
   }
   const response = await auth.api.signOut({ headers: request.headers, asResponse: true });

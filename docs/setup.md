@@ -54,7 +54,6 @@ Fill these values in `.env.local` for the complete application:
 | --- | --- |
 | Database | `DATABASE_URL`, `DATABASE_AUTHENTICATED_URL` |
 | Web authentication | `WEB_AUTH_GOOGLE_CLIENT_ID`, `WEB_AUTH_GOOGLE_CLIENT_SECRET`, `NEON_AUTH_COOKIE_SECRET` |
-| Legacy authentication and MCP JWT validation | `NEON_AUTH_JWKS_URL`, `NEON_AUTH_ISSUER` |
 | R2 storage | `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET` |
 | Recall.ai | `RECALL_API_KEY`, `RECALL_API_BASE_URL`, `RECALL_WEBHOOK_SECRET`, `RECALL_REALTIME_WEBHOOK_URL` |
 | ElevenLabs | `ELEVENLABS_API_KEY`, `ELEVENLABS_WEBHOOK_SECRET` |
@@ -104,7 +103,8 @@ REST API key are configured.
 | --- | --- |
 | Google Calendar OAuth | `GOOGLE_CALENDAR_CLIENT_ID`, `GOOGLE_CALENDAR_CLIENT_SECRET` |
 | Tape MCP shared API keys | `APIKEY_DATABASE_URL` |
-| Explicit Neon Auth base URL | `NEON_AUTH_BASE_URL` |
+| Legacy browser migration | `NEON_AUTH_BASE_URL` or `NEON_AUTH_JWKS_URL` |
+| MCP legacy JWT validation | `NEON_AUTH_JWKS_URL`, `NEON_AUTH_ISSUER` |
 | Public R2 media URL | `R2_PUBLIC_BASE_URL` |
 | Admin access | `APP_ADMIN_EMAILS`, `APP_SELF_HOSTED` |
 | Exa web search for live answers | `EXA_API_KEY` |
