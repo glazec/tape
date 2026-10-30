@@ -76,9 +76,9 @@ describe.skipIf(!dsn)("recording target PostgreSQL transactions", () => {
       const lines = await sql(query);
       if (query.includes("returning status")) return lines.map((status) => ({ status }));
       if (query.includes("attempt_state as state")) return lines.map((state) => ({ state }));
-      if (query.includes('m.status\n')) return lines.map((line) => {
-        const [meetingId, title, startsAt, endsAt, status] = line.split("|");
-        return { meetingId, title, startsAt: startsAt || null, endsAt: endsAt || null, status };
+      if (query.includes('select m.id as "meetingId", m.title')) return lines.map((line) => {
+        const [meetingId, title, startsAt, endsAt, status, createdAt, unavailableReason] = line.split("|");
+        return { meetingId, title, startsAt: startsAt || null, endsAt: endsAt || null, status, createdAt, unavailableReason: unavailableReason || null };
       });
       if (query.includes("local_recording_id,")) return lines.map((line) => {
         const [local_recording_id, transcript_job_id, meeting_id, media_asset_id] = line.split("|");
@@ -298,6 +298,20 @@ describe.skipIf(!dsn)("recording target PostgreSQL transactions", () => {
     await expect(claimLocalRecorderIntent({ ...input, fallbackIntentId: started.fallbackIntentId })).resolves.toEqual({ claimed: false, reason: "expired_or_missing" });
     expect(await sql("select attempt_state from local_recording_attempts")).toEqual([state]);
     await expect(setLocalRecorderRecordingTarget({ ...input, fallbackIntentId: started.fallbackIntentId, meetingId: second })).rejects.toThrow("unavailable");
+  });
+
+  it("identifies undated records and explains recording conflicts in the picker", async () => {
+    await sql(`update meetings set started_at = null, created_at = '2026-10-29T14:30:00Z' where id = '${first}';
+      update meetings set status = 'recording', recall_bot_id = 'bot' where id = '${second}'`);
+    const started = await setLocalRecorderRecordingTarget(input);
+    let inventory = await listLocalRecorderRecordingMeetings({ workspace });
+    expect(inventory.meetings.find((item) => item.meetingId === first)).toMatchObject({
+      startsAt: null, createdAt: expect.stringContaining("2026-10-29"), unavailableReason: "Another recording is using this meeting",
+    });
+    expect(inventory.meetings.find((item) => item.meetingId === second)?.unavailableReason).toBe("Meeting bot is recording");
+    await finishLocalRecorderRecordingTarget({ ...input, fallbackIntentId: started.fallbackIntentId });
+    inventory = await listLocalRecorderRecordingMeetings({ workspace });
+    expect(inventory.meetings.find((item) => item.meetingId === first)?.unavailableReason).toBeNull();
   });
 
   it("does not grant write access to another member and rejects foreign device, cancelled and completed attempts", async () => {

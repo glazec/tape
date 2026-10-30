@@ -272,6 +272,7 @@ final class RecorderAppModel: NSObject, ObservableObject, UNUserNotificationCent
     private var fallbackNotificationNextDatesByIntentId: [String: Date] = [:]
     var endPromptPolicy = RecorderEndPromptPolicy(scheduledEnd: nil)
     @Published var isStartingRecording = false
+    @Published var startingRecordingTitle = "New meeting"
     @Published var isSwitchingMeeting = false
     @Published var destinationUnconfirmed = false
     @Published var isMeetingPickerPresented = false
@@ -280,9 +281,12 @@ final class RecorderAppModel: NSObject, ObservableObject, UNUserNotificationCent
     @Published var meetingChoicesHaveMore = false
     @Published var isLoadingMeetingChoices = false
     @Published var meetingPickerError: String?
+    @Published var meetingPickerLoadFailed = false
+    @Published var startTargetRejected = false
     @Published var endPrompt: RecorderEndPrompt?
     @Published var pendingUploadCount = 0
     @Published var uploadStatusText: String?
+    @Published var uploadReceipts: [RecordingUploadReceipt] = []
     var activeTarget: RecordingTarget?
     var captureSessionID: String?
     var captureNaturallyEnded = false
@@ -411,6 +415,7 @@ final class RecorderAppModel: NSObject, ObservableObject, UNUserNotificationCent
                 )
             )
             account = nil
+            clearRecordingDisplayState()
             serverURLText = callback.serverURL.absoluteString
             bearerToken = callback.token
             activationLogger.notice("Sign in saved")
@@ -486,7 +491,11 @@ final class RecorderAppModel: NSObject, ObservableObject, UNUserNotificationCent
         for payload in queuedPayloads {
             let client = makeClient() ?? client
             do {
+                if let confirmed = try? await client.finishRecordingTarget(fallbackIntentId: payload.fallbackIntentId) {
+                    updateUploadReceipt(intentID: payload.fallbackIntentId, target: confirmed, message: "Saved on this Mac. Uploading…", serverURL: client.serverURL, client: client)
+                }
                 try await uploadWithRetry(client: client, payload: payload)
+                updateUploadReceipt(intentID: payload.fallbackIntentId, message: "Uploaded. Open meeting for transcript.", terminal: true, client: client)
                 try uploadQueue.remove(clientRecordingId: payload.clientRecordingId)
                 cleanupRecordingFiles(for: payload)
             } catch {
@@ -649,6 +658,7 @@ final class RecorderAppModel: NSObject, ObservableObject, UNUserNotificationCent
                     permissionReadiness: permissionReadinessReport
                 )
                 let monitoringStatus = try await client.fetchMonitoringStatus()
+                guard client.bearerToken == bearerToken else { return }
                 account = monitoringStatus.account
                 activationLogger.info("Device connected; permissions ready: \(self.canMonitor)")
                 guard canMonitor else {
@@ -659,6 +669,9 @@ final class RecorderAppModel: NSObject, ObservableObject, UNUserNotificationCent
                 try? await sealRecoveredCaptures(client: client)
                 Task { await uploadQueuedRecordings(client: client) }
                 let now = Date()
+                if nextScheduleMeeting?.meetingId != monitoringStatus.nextMeeting?.meetingId {
+                    startTargetRejected = false
+                }
                 nextScheduleMeeting = monitoringStatus.nextMeeting
                 pendingMeetings = LocalRecorderPendingMeetingQueue.merge(
                     existing: pendingMeetings,
@@ -697,6 +710,7 @@ final class RecorderAppModel: NSObject, ObservableObject, UNUserNotificationCent
     @discardableResult
     private func requireSignInIfExpired(_ error: Error) -> Bool {
         guard localRecorderRequiresSignIn(error) else { return false }
+        clearRecordingDisplayState()
         account = nil
         bearerToken = ""
         try? credentialStore.delete()
@@ -1240,6 +1254,7 @@ final class RecorderAppModel: NSObject, ObservableObject, UNUserNotificationCent
             return
         }
 
+        clearRecordingDisplayState()
         stopLevelTest()
         monitoringTimer?.invalidate()
         monitoringTimer = nil
@@ -1619,6 +1634,7 @@ final class RecorderAppModel: NSObject, ObservableObject, UNUserNotificationCent
         LocalRecorderTelemetry.capture(error, operation: .recordingUpload)
         if localRecorderRequiresSignIn(error) {
             uploadStatusText = "Upload needs sign in. Reconnect to continue."
+            updateUploadReceipt(intentID: payload.fallbackIntentId, message: "Sign in again to upload. Files kept on this Mac.")
             return
         }
         if case let .wait(retryAfterSeconds) = localRecorderUploadRetryDecision(
@@ -1629,11 +1645,13 @@ final class RecorderAppModel: NSObject, ObservableObject, UNUserNotificationCent
                 TimeInterval(retryAfterSeconds)
             )
             uploadStatusText = "Upload paused. Retrying later."
+            updateUploadReceipt(intentID: payload.fallbackIntentId, message: "Upload paused. Retrying later.")
             return
         }
 
         guard isPermanentLocalRecorderUploadError(error) else {
             uploadStatusText = "Could not upload recording. Files kept locally."
+            updateUploadReceipt(intentID: payload.fallbackIntentId, message: "Could not upload. Files kept on this Mac.")
             return
         }
 
@@ -1646,6 +1664,7 @@ final class RecorderAppModel: NSObject, ObservableObject, UNUserNotificationCent
             clientRecordingId: payload.clientRecordingId
         )
         uploadStatusText = "Upload stopped: \(message). Files kept locally."
+        updateUploadReceipt(intentID: payload.fallbackIntentId, message: "Upload failed: \(message). Files kept on this Mac.", terminal: true, failed: true, client: client)
     }
 }
 

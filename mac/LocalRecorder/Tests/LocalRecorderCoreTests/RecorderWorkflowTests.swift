@@ -2,6 +2,35 @@ import Foundation
 import Testing
 @testable import LocalRecorderCore
 
+@Test func meetingPickerDistinguishesUndatedRecordAndUnavailableCapture() throws {
+    let json = """
+    {"meetingId":"manual","title":"Manual recording","status":"processing","createdAt":"2026-10-29T14:30:00Z","unavailableReason":"Meeting bot is recording"}
+    """
+    let decoder = JSONDecoder()
+    decoder.dateDecodingStrategy = .iso8601
+    let meeting = try decoder.decode(RecordingMeeting.self, from: Data(json.utf8))
+    #expect(meeting.displayDate != nil)
+    #expect(meeting.dateIsCreationDate)
+    #expect(meeting.statusLabel == "Processing transcript")
+    #expect(meeting.unavailableReason == "Meeting bot is recording")
+}
+
+@Test func targetRejectionIsDifferentFromUnknownNetworkOutcome() {
+    #expect(localRecorderTargetWasRejected(LocalRecorderAPIError.httpStatus(409, message: nil, retryAfterSeconds: nil)))
+    #expect(!localRecorderTargetWasRejected(LocalRecorderAPIError.httpStatus(503, message: nil, retryAfterSeconds: nil)))
+    #expect(!localRecorderTargetWasRejected(URLError(.timedOut)))
+}
+
+@Test func lateMeetingConfirmationPreservesCompletedUploadReceipt() {
+    var receipt = RecordingUploadReceipt(id: "intent", message: "Confirming meeting")
+    receipt.update(target: nil, message: "Uploaded", serverURL: nil, terminal: true)
+    let target = RecordingTarget(fallbackIntentId: "intent", meetingId: "confirmed", meetingTitle: "Yesterday's review")
+    receipt.update(target: target, message: "Uploading", serverURL: URL(string: "https://example.com"), terminal: false)
+    #expect(receipt.message == "Uploaded")
+    #expect(receipt.target?.meetingTitle == "Yesterday's review")
+    #expect(receipt.meetingURL?.absoluteString == "https://example.com/meetings/confirmed")
+}
+
 @Test func recordingTargetRequestPreservesExactDestinationAndRetryID() throws {
     let client = LocalRecorderAPIClient(serverURL: URL(string: "https://example.com")!, bearerToken: "secret", deviceId: "device")
     let request = try client.recordingTargetRequest(RecordingTargetRequest(clientRequestId: "retry", meetingId: "displayed"))

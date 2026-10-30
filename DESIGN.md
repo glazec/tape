@@ -20,6 +20,8 @@ The desktop permission panel uses one continuous surface. Keep audio checks coll
 
 The desktop settings control always uses a gear and toggles the settings below; starting capture collapses them. Idle shows the current or next eligible calendar event. Record starts for that displayed event without an intervening chooser. During capture the title opens a searchable meeting selector with a new meeting action. Show the confirmed destination and keep Stop available while a destination change is pending. Recent meetings use this same selector to resume recording.
 
+Inside the selector, explain that the entire current recording moves and earlier recordings stay unchanged. Show a date and transcript state for each meeting; label a creation date as Created when no event time exists. Unavailable rows explain their recording conflict. Focus search on opening, support arrow navigation and Return, and let Escape close the selector and restore title focus. The selected row stays readable. Put the optional new meeting title behind Create a new meeting. After Stop, retain a compact receipt with the confirmed meeting title, truthful upload status, and Open meeting. Keep unresolved receipts reachable and hide account content after sign out.
+
 End prompts stay inside the recorder and also use actionable system notifications. Offer End recording and Keep recording without blocking the controls or stopping on silence. A prompt from an earlier capture must never affect a newer one. Distinguish capture stopped, upload pending, and transcript processing; closing capture controls does not imply upload completion.
 
 Every visible element must help the user do one of four things:

@@ -16,6 +16,8 @@ export type RecordingMeeting = {
   startsAt: string | null;
   endsAt: string | null;
   status: string;
+  createdAt: string;
+  unavailableReason: string | null;
 };
 
 type RecordingTarget = {
@@ -36,7 +38,15 @@ export async function listLocalRecorderRecordingMeetings(input: {
   const search = (input.query ?? "").trim();
   const rows = await databaseSql`
     select m.id as "meetingId", m.title, m.started_at as "startsAt",
-      m.ended_at as "endsAt", m.status
+      m.ended_at as "endsAt", m.status, m.created_at as "createdAt",
+      case when m.status = 'recording' and m.recall_bot_id is not null then 'Meeting bot is recording'
+        when exists (select 1 from local_recording_attempts a where a.meeting_id = m.id
+          and (a.attempt_state = 'started' and a.expires_at > now()
+            or a.attempt_state = 'uploading'
+            or a.attempt_state = 'uploaded' and not exists (
+              select 1 from local_recordings r where r.local_recording_attempt_id = a.id
+            ))) then 'Another recording is using this meeting'
+        else null end as "unavailableReason"
     from meetings m
     where m.team_id = ${input.workspace.teamId}::uuid
       and m.status <> 'cancelled'

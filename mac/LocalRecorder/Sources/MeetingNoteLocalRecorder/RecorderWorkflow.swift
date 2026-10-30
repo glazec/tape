@@ -37,6 +37,34 @@ struct RecorderCaptureRecovery: Codable {
 }
 
 extension RecorderAppModel {
+    func clearRecordingDisplayState() {
+        uploadReceipts = []
+        uploadStatusText = nil
+        meetingChoices = []
+        meetingSearch = ""
+        meetingSearchGeneration += 1
+        isMeetingPickerPresented = false
+        isLoadingMeetingChoices = false
+        meetingPickerError = nil
+        meetingPickerLoadFailed = false
+        startTargetRejected = false
+    }
+
+    var visibleUploadReceipts: [RecordingUploadReceipt] {
+        uploadReceipts.filter { !$0.isTerminal || $0.needsAttention }
+        + uploadReceipts.filter { $0.isTerminal && !$0.needsAttention }.suffix(1)
+    }
+
+    func updateUploadReceipt(intentID: String, target: RecordingTarget? = nil, message: String, serverURL: URL? = nil, terminal: Bool = false, failed: Bool = false, client: LocalRecorderAPIClient? = nil) {
+        guard !bearerToken.isEmpty else { return }
+        if let client, client.bearerToken != bearerToken || client.serverURL.absoluteString != serverURLText { return }
+        if !uploadReceipts.contains(where: { $0.id == intentID }) {
+            uploadReceipts.append(RecordingUploadReceipt(id: intentID, message: message))
+        }
+        guard let index = uploadReceipts.firstIndex(where: { $0.id == intentID }) else { return }
+        uploadReceipts[index].update(target: target, message: message, serverURL: serverURL, terminal: terminal, failed: failed)
+    }
+
     private var recoveryURL: URL {
         LocalRecorderFileLocations.uploadQueueDirectoryURL().deletingLastPathComponent().appendingPathComponent("capture-recovery.json")
     }
@@ -90,7 +118,11 @@ extension RecorderAppModel {
     func beginRecording(meetingId: String? = nil, title: String? = nil, legacyIntent: String? = nil, nativeOnly: Bool = false) {
         guard !isStartingRecording, !isRecording, !isFinishingRecording else { return }
         guard canMonitor, let client = makeClient() else { statusText = "Login and permissions are needed first"; return }
+        startingRecordingTitle = meetingId.flatMap { id in
+            id == nextScheduleMeeting?.meetingId ? nextScheduleMeeting?.title : meetingChoices.first(where: { $0.meetingId == id })?.title
+        } ?? title ?? "New meeting"
         isStartingRecording = true
+        startTargetRejected = false
         isAdvancedExpanded = false
         isMeetingPickerPresented = false
         statusText = "Starting recording"
@@ -123,6 +155,7 @@ extension RecorderAppModel {
                 recoveryState.pendingLegacyIntent = nil
                 try persistCaptureRecovery()
                 activeTarget = target
+                startingRecordingTitle = target.meetingTitle
                 captureSessionID = UUID().uuidString
                 captureNaturallyEnded = false
                 endPrompt = nil
@@ -139,11 +172,18 @@ extension RecorderAppModel {
                 }
             } catch {
                 if !isRecording { activeTarget = nil; captureSessionID = nil }
-                if case LocalRecorderAPIError.httpStatus(let status, _, _) = error, (400..<500).contains(status), status != 408, status != 429 {
+                if localRecorderTargetWasRejected(error) {
                     recoveryState.pendingStart = nil
                     try? persistCaptureRecovery()
+                    if case LocalRecorderAPIError.httpStatus(let status, _, _) = error, status == 409 || status == 404 {
+                        startTargetRejected = true
+                        statusText = "This meeting is unavailable for recording. Choose a separate meeting."
+                    } else {
+                        statusText = localRecorderRequiresSignIn(error) ? "Sign in again to start recording." : "Could not start recording. Check workspace access and credit."
+                    }
+                } else {
+                    statusText = "Could not start recording. Retry to recover the same meeting."
                 }
-                statusText = "Could not start recording. Retry to recover the same meeting."
             }
             refreshPendingUploadCount()
         }
@@ -196,6 +236,7 @@ extension RecorderAppModel {
         let offset = reset ? 0 : meetingChoices.count
         if reset { meetingChoices = []; meetingChoicesHaveMore = false }
         isLoadingMeetingChoices = true
+        meetingPickerLoadFailed = false
         meetingPickerError = nil
         Task {
             do {
@@ -206,6 +247,7 @@ extension RecorderAppModel {
             } catch {
                 guard generation == meetingSearchGeneration else { return }
                 meetingPickerError = "Could not load meetings. Try again."
+                meetingPickerLoadFailed = true
             }
             if generation == meetingSearchGeneration { isLoadingMeetingChoices = false }
         }
@@ -215,6 +257,7 @@ extension RecorderAppModel {
         guard isRecording, !isFinishingRecording, !isSwitchingMeeting,
               let client = activeClient, let target = activeTarget, let sessionID = captureSessionID else { return }
         isSwitchingMeeting = true
+        meetingPickerLoadFailed = false
         meetingPickerError = nil
         Task {
             defer { if captureSessionID == sessionID { isSwitchingMeeting = false } }
@@ -231,12 +274,20 @@ extension RecorderAppModel {
                 endPrompt = nil
                 statusText = "Recording \(updated.meetingTitle)"
                 isMeetingPickerPresented = false
+                NSAccessibility.post(element: NSApp as Any, notification: .announcementRequested, userInfo: [
+                    .announcement: "Recording will be added to \(updated.meetingTitle)",
+                    .priority: NSAccessibilityPriorityLevel.medium.rawValue,
+                ])
             } catch {
                 guard captureSessionID == sessionID, !isFinishingRecording else { return }
                 // The response may have been lost after a committed move. Keep
                 // the selector open and do not claim a destination was confirmed.
-                destinationUnconfirmed = true
-                meetingPickerError = "Could not confirm the destination. Choose it again to retry."
+                if localRecorderTargetWasRejected(error) {
+                    meetingPickerError = "That meeting is unavailable. Choose another meeting. Recording continues."
+                } else {
+                    destinationUnconfirmed = true
+                    meetingPickerError = "Could not confirm the destination. Choose it again to retry. Recording continues."
+                }
             }
         }
     }
@@ -302,6 +353,7 @@ extension RecorderAppModel {
             return
         }
         guard captureSessionID == sessionID else { return }
+        updateUploadReceipt(intentID: target.fallbackIntentId, message: "Recording stopped. Confirming meeting…")
         isRecording = false
         captureSessionID = nil
         activeClient = nil
@@ -331,10 +383,12 @@ extension RecorderAppModel {
         var finalTarget = target
         do {
             finalTarget = try await client.finishRecordingTarget(fallbackIntentId: target.fallbackIntentId)
+            updateUploadReceipt(intentID: target.fallbackIntentId, target: finalTarget, message: "Recording stopped. Uploading…", serverURL: client.serverURL, client: client)
             recoveryState.targets.removeAll { $0.fallbackIntentId == target.fallbackIntentId }
             try persistCaptureRecovery()
         } catch {
             uploadStatusText = "Capture stopped. Waiting to confirm its destination."
+            updateUploadReceipt(intentID: target.fallbackIntentId, message: "Recording stopped. Waiting to confirm its meeting.", client: client)
         }
         if stoppedLocally { Task { await uploadQueuedRecordings(client: client) } }
         if continueNatively, !isRecording, !isStartingRecording {
@@ -353,6 +407,10 @@ extension RecorderAppModel {
             while !Task.isCancelled {
                 do {
                     let currentClient = makeClient() ?? client
+                    if uploadReceipts.first(where: { $0.id == target.fallbackIntentId })?.target == nil,
+                       let confirmed = try? await currentClient.finishRecordingTarget(fallbackIntentId: target.fallbackIntentId) {
+                        updateUploadReceipt(intentID: target.fallbackIntentId, target: confirmed, message: "Uploading. Keep Tape open.", serverURL: currentClient.serverURL, client: currentClient)
+                    }
                     var status = try await currentClient.recordingTargetStatus(fallbackIntentId: target.fallbackIntentId)
                     if !status.isTerminal, recoveryState.sdkDrains.first(where: { $0.recordingID == recordingID })?.needsFailure == true {
                         try await currentClient.failIntent(fallbackIntentId: target.fallbackIntentId, errorMessage: "Desktop capture was cancelled before it started")
@@ -365,11 +423,14 @@ extension RecorderAppModel {
                         sdkDrainTasks.removeValue(forKey: recordingID)
                         refreshPendingUploadCount()
                         uploadStatusText = status.state == "completed" ? "Recording received. Transcript processing continues." : "Recording upload failed. Keep your saved recording files."
+                        updateUploadReceipt(intentID: target.fallbackIntentId, message: status.state == "completed" ? "Uploaded. Open meeting for transcript." : "Upload failed. Recording has not been confirmed.", terminal: true, failed: status.state == "failed", client: currentClient)
                         return
                     }
                     uploadStatusText = "Uploading recording. Keep Tape open."
+                    updateUploadReceipt(intentID: target.fallbackIntentId, message: "Uploading. Keep Tape open.")
                 } catch {
                     uploadStatusText = "Waiting for upload confirmation. Keep Tape open and reconnect."
+                    updateUploadReceipt(intentID: target.fallbackIntentId, message: "Waiting for upload confirmation. Keep Tape open.")
                 }
                 try? await Task.sleep(for: .seconds(5))
             }

@@ -84,9 +84,10 @@ enum LocalRecorderSnapshot {
         picker.isMeetingPickerPresented = true
         picker.activeTarget = RecordingTarget(fallbackIntentId: "snapshot", meetingId: "current", meetingTitle: "Design sync with Northwind")
         let choices = """
-        [{"meetingId":"current","title":"Design sync with Northwind","status":"recording"},
-        {"meetingId":"previous","title":"Weekly product review","status":"completed"},
-        {"meetingId":"research","title":"Customer research catch up","status":"completed"}]
+        [{"meetingId":"current","title":"Design sync with Northwind","status":"recording","startsAt":"\(iso.string(from: Date()))"},
+        {"meetingId":"previous","title":"Design sync with Northwind","status":"completed","startsAt":"\(iso.string(from: Date().addingTimeInterval(-86_400)))"},
+        {"meetingId":"research","title":"Manual recording","status":"processing","createdAt":"\(iso.string(from: Date().addingTimeInterval(-100_000)))"},
+        {"meetingId":"busy","title":"Customer research","status":"recording","startsAt":"\(iso.string(from: Date()))","unavailableReason":"Meeting bot is recording"}]
         """
         picker.meetingChoices = (try? decoder.decode([RecordingMeeting].self, from: Data(choices.utf8))) ?? []
         picker.meetingChoicesHaveMore = true
@@ -105,6 +106,20 @@ enum LocalRecorderSnapshot {
         uploadIssue.nextScheduleMeeting = upcoming.nextScheduleMeeting
         uploadIssue.statusText = "Could not upload recording. Files kept locally."
 
+        let receipt = RecorderAppModel(snapshotBearerToken: "token")
+        receipt.permissionChecklist = granted
+        receipt.nextScheduleMeeting = upcoming.nextScheduleMeeting
+        receipt.statusText = "Capture stopped"
+        receipt.pendingUploadCount = 1
+        receipt.updateUploadReceipt(intentID: "stopped", target: RecordingTarget(fallbackIntentId: "stopped", meetingId: "previous", meetingTitle: "Design sync with Northwind"), message: "Saved on this Mac. Uploading…", serverURL: URL(string: "https://tape.example"))
+
+        let conflict = RecorderAppModel(snapshotBearerToken: "token")
+        conflict.permissionChecklist = granted
+        conflict.nextScheduleMeeting = upcoming.nextScheduleMeeting
+        conflict.nextScheduleMeeting?.botStatus = "recording"
+        conflict.nextScheduleMeeting?.startsAt = Date().addingTimeInterval(-300)
+        conflict.statusText = "Watching your calendar"
+
         let settings = RecorderAppModel(snapshotBearerToken: "token")
         settings.permissionChecklist = granted
         settings.statusText = "Watching your calendar"
@@ -119,6 +134,7 @@ enum LocalRecorderSnapshot {
             ("signed-out", signedOut), ("upcoming", upcoming), ("recording", recording),
             ("upload-issue", uploadIssue), ("settings", settings), ("permissions", permissions),
             ("meeting-picker", picker), ("end-prompt", prompt),
+            ("upload-receipt", receipt), ("recording-conflict", conflict),
         ]
     }
 

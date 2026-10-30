@@ -48,6 +48,8 @@ Desktop settings show the signed in account and paired workspace. “Record on t
 
 The companion recorder shows the current or next eligible calendar event. Record starts capture for that event immediately; during capture, click the title to select another writable meeting or create a new one. Selecting a recent meeting adds another recording segment while preserving its earlier audio and transcript. Settings stay behind the gear and collapse when recording starts.
 
+The meeting selector shows dates, transcript state, and recording conflicts. Changing the selection moves the entire current recording; earlier recordings stay unchanged. After Stop, named upload receipts retain an Open meeting link and keep unresolved recordings visible. If the current meeting is already being recorded by its bot, Record a separate meeting offers an explicit alternative.
+
 When a linked meeting starts without its bot recording, an actionable notification offers local capture. The recorder asks whether to finish when the captured meeting window closes, after one minute of silence beyond a scheduled end, or after five minutes of silence for an ad hoc meeting. Silence never stops capture automatically. Uploads continue after Stop, with pending work visible in the recorder.
 
 <p align="center">

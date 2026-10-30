@@ -100,6 +100,7 @@ enum RecorderWindowChrome {
 
 struct RecorderMenuView: View {
     @ObservedObject var model: RecorderAppModel
+    @FocusState private var isTitleFocused: Bool
     /// The setup window shares its titlebar row with the settings control;
     /// the menu bar panel has no titlebar and keeps the control beside the status line.
     var showsWindowChrome = false
@@ -166,6 +167,9 @@ struct RecorderMenuView: View {
                         .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
+                    .focused($isTitleFocused)
+                    .accessibilityLabel("Change recording meeting")
+                    .accessibilityValue("\(state.title), \(model.isMeetingPickerPresented ? "Expanded" : "Collapsed")")
                     .help("Choose where this recording is saved")
                 } else {
                     Text(state.title).lineLimit(2)
@@ -202,7 +206,31 @@ struct RecorderMenuView: View {
                 RecorderEndPromptView(model: model, prompt: prompt).padding(.top, 12)
             }
 
-            if model.pendingUploadCount > 0 || model.uploadStatusText != nil {
+            if isSignedIn, !model.visibleUploadReceipts.isEmpty {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 10) {
+                        ForEach(model.visibleUploadReceipts) { receipt in
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text(receipt.target?.meetingTitle ?? "Stopped recording")
+                                    .font(TapeType.sans(11, .medium)).lineLimit(2)
+                                Text(receipt.message)
+                                    .font(TapeType.sans(11)).foregroundStyle(receipt.needsAttention ? TapePalette.coralInk : TapePalette.muted)
+                                    .fixedSize(horizontal: false, vertical: true)
+                                if let url = receipt.meetingURL {
+                                    Link("Open meeting", destination: url).font(TapeType.sans(11, .medium))
+                                }
+                            }.frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                    }
+                }
+                .frame(height: min(CGFloat(model.visibleUploadReceipts.count) * 74, 180))
+                .padding(.top, 10)
+            }
+            if isSignedIn, model.pendingUploadCount > 1 {
+                Text("\(model.pendingUploadCount) recordings still saving")
+                    .font(TapeType.sans(11)).foregroundStyle(TapePalette.muted).padding(.top, 6)
+            }
+            if isSignedIn, model.uploadReceipts.isEmpty && (model.pendingUploadCount > 0 || model.uploadStatusText != nil) {
                 Text(model.uploadStatusText ?? "Uploading recording. Keep Tape open.")
                     .font(TapeType.sans(11))
                     .foregroundStyle(TapePalette.muted)
@@ -238,6 +266,15 @@ struct RecorderMenuView: View {
             .fixedSize()
             .padding(.top, 16)
             }
+            if !model.isRecording, model.canMonitor, !model.isStartingRecording,
+               !model.startTargetRejected, model.nextScheduleMeeting?.botStatus != "recording" {
+                Text("After starting, choose a recent meeting from the title to continue its recording.")
+                    .font(TapeType.sans(11)).foregroundStyle(TapePalette.muted)
+                    .fixedSize(horizontal: false, vertical: true).padding(.top, 6)
+            }
+        }
+        .onChange(of: model.isMeetingPickerPresented) { _, expanded in
+            if !expanded { isTitleFocused = true }
         }
         .overlay(alignment: .topTrailing) {
             if !showsWindowChrome {
@@ -326,7 +363,7 @@ struct RecorderMenuView: View {
             )
         }
         if model.isStartingRecording {
-            return RecorderSummaryState(eyebrow: "Starting", tone: TapePalette.amber, title: model.nextScheduleMeeting?.title ?? "New meeting", detail: "Preparing audio capture", actionTitle: "Starting", actionKind: .quiet, isActionDisabled: true)
+            return RecorderSummaryState(eyebrow: "Starting", tone: TapePalette.amber, title: model.startingRecordingTitle, detail: "Preparing audio capture", actionTitle: "Starting", actionKind: .quiet, isActionDisabled: true)
         }
         if model.isFinishingRecording {
             let isUploading = model.statusText.localizedCaseInsensitiveContains("upload")
@@ -384,7 +421,7 @@ struct RecorderMenuView: View {
                     ? "\(meeting.endsAt.map { "Until " + timeText($0) } ?? "Started at " + timeText(meeting.startsAt)) · \(notetakerText(meeting))"
                     : "\(rangeText(meeting)) · \(notetakerText(meeting))",
                 detailHelp: meeting.botStatusDetail,
-                actionTitle: "Record on this Mac",
+                actionTitle: model.startTargetRejected || meeting.botStatus == "recording" ? "Record a separate meeting" : "Record on this Mac",
                 actionKind: .primary,
                 isActionDisabled: false
             )
@@ -410,7 +447,11 @@ struct RecorderMenuView: View {
         } else if model.nextPermissionStep != nil {
             model.requestNextPermission()
         } else {
-            model.startRecording()
+            if model.startTargetRejected || model.nextScheduleMeeting?.botStatus == "recording" {
+                model.beginRecording()
+            } else {
+                model.startRecording()
+            }
         }
     }
 
@@ -444,7 +485,9 @@ struct RecorderMenuView: View {
         switch meeting.botStatus {
         case "scheduled":
             return "Tape will join automatically"
-        case "joined", "recording":
+        case "recording":
+            return "Meeting bot is recording"
+        case "joined":
             return "Tape is in the call"
         case "joining", "joining_call":
             return "Bot joining"

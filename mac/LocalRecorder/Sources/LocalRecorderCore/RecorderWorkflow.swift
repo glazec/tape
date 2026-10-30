@@ -6,7 +6,26 @@ public struct RecordingMeeting: Codable, Equatable, Identifiable, Sendable {
     public var startsAt: Date?
     public var endsAt: Date?
     public var status: String
+    public var createdAt: Date?
+    public var unavailableReason: String?
     public var id: String { meetingId }
+    public var displayDate: Date? { startsAt ?? createdAt }
+    public var dateIsCreationDate: Bool { startsAt == nil }
+    public var statusLabel: String {
+        switch status {
+        case "ready", "completed": "Transcript ready"
+        case "processing": "Processing transcript"
+        case "recording": "Recording"
+        case "failed": "Needs attention"
+        case "missed": "Not recorded"
+        default: "Scheduled"
+        }
+    }
+}
+
+public func localRecorderTargetWasRejected(_ error: Error) -> Bool {
+    guard case LocalRecorderAPIError.httpStatus(let status, _, _) = error else { return false }
+    return (400..<500).contains(status) && status != 408 && status != 429
 }
 
 public struct RecordingMeetingsResponse: Codable, Sendable {
@@ -45,6 +64,29 @@ public struct RecordingTarget: Codable, Equatable, Sendable {
 public struct RecordingTargetStatus: Codable, Sendable {
     public var state: String
     public var isTerminal: Bool { state == "completed" || state == "failed" }
+}
+
+public struct RecordingUploadReceipt: Identifiable {
+    public let id: String
+    public var target: RecordingTarget?
+    public var message: String
+    public var meetingURL: URL?
+    public var isTerminal = false
+    public var needsAttention = false
+
+    public init(id: String, message: String) { self.id = id; self.message = message }
+
+    public mutating func update(target: RecordingTarget?, message: String, serverURL: URL?, terminal: Bool, failed: Bool = false) {
+        // A late destination confirmation must not turn an uploaded receipt back
+        // into Uploading. Metadata can still arrive after the upload completes.
+        if !isTerminal || terminal { self.message = message }
+        isTerminal = isTerminal || terminal
+        if terminal { needsAttention = failed }
+        if let target, let serverURL {
+            self.target = target
+            meetingURL = serverURL.appending(path: "meetings/\(target.meetingId)")
+        }
+    }
 }
 
 extension LocalRecorderAPIClient {
