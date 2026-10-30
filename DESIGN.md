@@ -16,6 +16,8 @@ Calendar sync feedback distinguishes completed recent sync from a queued scan of
 
 Hide unnecessary information. Make the next useful action obvious. Keep every screen intuitive and clean.
 
+The desktop permission panel uses one continuous surface. Keep audio checks collapsed and omit meters until capture permissions are ready. Accessibility recovery belongs in a disclosure beside the permission list. Restart failures stay visible. Settings show the paired account and workspace, with no editable credentials in release builds. Meeting titles allow two lines, local capture says “Record on this Mac”, and live meters expose their percentage values to accessibility. Secondary text meets 4.5:1 contrast in both appearances.
+
 Every visible element must help the user do one of four things:
 
 1. Understand the current state

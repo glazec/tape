@@ -487,9 +487,13 @@ swift test
 
 The build script creates and opens `dist/Tape Desktop.app`. The signing certificate step is needed once for stable microphone and screen recording permissions. Without it, the build script uses ad hoc signing and macOS may ask for permissions again after rebuilding.
 
-Tape Desktop initially connects to `https://tape.inevitable.tech`. Select `Sign in` to finish device login in the browser. For local development, expand `Advanced` and replace the server URL with the local Tape origin before signing in.
+Tape Desktop initially connects to `https://tape.inevitable.tech`. Select `Sign in` to finish device login in the browser. In debug builds, open settings and expand `Development server` before signing in to use a local Tape origin. Release builds use browser pairing without editable server or token fields.
 
-After device login, the recorder shows Microphone, Accessibility, Notifications, and Screen and System Audio as required setup items. Select `Enable` for each permission. Start at login is optional and uses a separate switch. Monitoring and recording begin after the four required permissions are granted.
+The recorder settings show Microphone, Accessibility, Alerts, and Screen and System Audio as required setup items. Select `Allow` for each permission; these settings also work before sign in. Open at login is optional and uses a separate switch. Monitoring and recording require sign in and the four required permissions.
+
+If Accessibility is enabled in System Settings but the app still reports it missing, an older development build may own the saved grant. In recorder settings, expand `Accessibility still blocked?` and select `Reset access…`. After confirmation, the app removes only its Accessibility entry and requests access again. Enable the current copy in System Settings. `Show this app` reveals the exact app to add if macOS does not list it. If the reset fails, remove the existing entry manually under Privacy & Security → Accessibility, add the current `Tape Desktop.app` from `/Applications`, and enable it. Toggling an entry for a different signing certificate does not grant access to the current app. Keep the published release certificate unchanged; local development certificates are separate identities even if their display names match.
+
+Audio checks appear after capture permissions are ready. Settings show the signed in email and the workspace paired with this Mac. Changing the browser workspace does not move the device session; sign out and pair again to select another workspace. Restart waits for a replacement app instance before quitting; if opening fails, the current app stays open and reports the failure.
 
 ## Verification
 

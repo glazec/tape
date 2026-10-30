@@ -31,7 +31,7 @@
     "test:e2e:seed": "node --import=tsx scripts/seed-authenticated-dashboard-e2e.ts",
     "test:mcp": "cd mcp/meeting-note && DISABLE_AUTH=true MCP_ALLOW_DEV_AUTH=true MCP_HOST=127.0.0.1 MCP_DEV_USER_EMAIL=tester@example.com uv run python -m unittest",
     "test:sidecar": "npm --prefix mac/LocalRecorder/Sidecar test",
-    "test:swift": "swift test --package-path mac/LocalRecorder && swift build --package-path mac/LocalRecorder --target MeetingNoteLocalRecorder",
+    "test:swift": "swift test --package-path mac/LocalRecorder && swift build --package-path mac/LocalRecorder --target MeetingNoteLocalRecorder && node --test mac/LocalRecorder/script/test_permissions.mjs",
     "verify:sentry": "esbuild scripts/verify-sentry-coverage.ts --bundle --platform=node --target=node24 --format=esm --packages=external --outfile=dist/verify-sentry-coverage.mjs && node --env-file-if-exists=.env.local dist/verify-sentry-coverage.mjs",
     "verify": "npm run lint && npm run test:coverage && npm run build && npm run test:sidecar && npm run test:mcp",
     "verify:all": "npm run verify && npm run test:swift && npm run test:e2e"

@@ -16,9 +16,9 @@ const temporaryDirectories: string[] = [];
 const packageRoot = join(process.cwd(), "mac", "LocalRecorder");
 const bundlerPath = join(packageRoot, "script", "bundle_node_runtime.sh");
 
-/** The recorder app entry point plus its window view, which live in separate files. */
+/** The recorder entry point and its window and permission views. */
 function readRecorderViewSource() {
-  return ["MeetingNoteLocalRecorderApp.swift", "RecorderMenuView.swift"]
+  return ["MeetingNoteLocalRecorderApp.swift", "RecorderMenuView.swift", "RecorderPermissionSettings.swift"]
     .map((file) =>
       readFileSync(
         join(packageRoot, "Sources", "MeetingNoteLocalRecorder", file),

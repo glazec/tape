@@ -1221,3 +1221,12 @@ private func makeMissedMeeting(
     #expect(!localRecorderRequiresSignIn(LocalRecorderAPIError.httpStatus(503)))
     #expect(!localRecorderRequiresSignIn(URLError(.notConnectedToInternet)))
 }
+
+@Test func decodesPairedAccountAndOlderMonitoringResponses() throws {
+    let current = Data(#"{"account":{"email":"alex@example.com","workspaceName":"Design"},"missedMeetings":[],"nextMeeting":null}"#.utf8)
+    let response = try JSONDecoder.localRecorder.decode(LocalRecorderMonitoringResponse.self, from: current)
+    #expect(response.account?.email == "alex@example.com")
+    #expect(response.account?.workspaceName == "Design")
+    let older = Data(#"{"missedMeetings":[],"nextMeeting":null}"#.utf8)
+    #expect(try JSONDecoder.localRecorder.decode(LocalRecorderMonitoringResponse.self, from: older).account == nil)
+}

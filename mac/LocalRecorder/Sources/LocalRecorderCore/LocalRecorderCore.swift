@@ -1003,7 +1003,18 @@ public struct MissedMeetingsResponse: Codable, Equatable, Sendable {
     public var meetings: [MissedMeeting]
 }
 
+public struct LocalRecorderAccount: Codable, Equatable, Sendable {
+    public var email: String
+    public var workspaceName: String
+
+    public init(email: String, workspaceName: String) {
+        self.email = email
+        self.workspaceName = workspaceName
+    }
+}
+
 public struct LocalRecorderMonitoringResponse: Codable, Equatable, Sendable {
+    public var account: LocalRecorderAccount?
     public var nextMeeting: LocalRecorderMonitoringMeeting?
     public var missedMeetings: [MissedMeeting]
 }

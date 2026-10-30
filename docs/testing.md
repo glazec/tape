@@ -30,7 +30,7 @@ CI sets `PLAYWRIGHT_CHANNEL=chrome` to use the GitHub runner's installed Chrome.
 | Vitest | Domain rules, access policy, database queries, API routes, Inngest functions, services, and React rendering | `npm run test:coverage` |
 | Playwright | Public navigation, sign in, protected redirects, authenticated page rendering, RLS isolation, and desktop and mobile browser flows | `npm run test:e2e` |
 | Node test runner | Recall desktop SDK sidecar lifecycle and capture fallback | `npm run test:sidecar` |
-| Swift Testing and build | macOS recorder state, permission failures, API requests, scheduling, capture, upload behavior, and executable compilation | `npm run test:swift` |
+| Swift Testing and build | macOS recorder state, permission failures, API requests, scheduling, capture, upload behavior, executable compilation, permission callback and audio waveform probes | `npm run test:swift` |
 | Python unittest | MCP authentication, caller scope, SQL safety, media tools, signed upload handoff, and read only database boundaries | `npm run test:mcp` |
 | Live calendar probe | Stored production connection, Google token refresh, Calendar read access, Recall connectivity, and recent sync state | `CALENDAR_LIVE_TEST_EMAIL=user@example.com npm run test:calendar-live` |
 
@@ -270,3 +270,5 @@ Verify a real recording longer than 45 minutes on desktop and mobile. Its audio 
 `tests/recall-meeting-reconciliation.test.ts` covers lost completion notifications, waiting rooms, provider errors, and selection of interrupted queued jobs. Calendar route tests verify that the common signed Recall endpoint also accepts Calendar V2 events. Transcription record tests cover reusing a queued job after a failed dispatch. Library tests keep started meetings visible even beside a future meeting with the same title. Production closure requires provider delivery readback, a completed Inngest recovery run, and persisted transcript segments on each recovered meeting.
 
 Chunked transcription registers a terminal Inngest failure callback so exhausted step retries mark the job failed even when the replayed handler attempt remains zero. `tests/image-worker.test.ts` covers that failure callback.
+
+Desktop UX verification: run `mac/LocalRecorder/script/snapshot.sh /tmp/tape-desktop-snapshots` for long meeting titles and account settings in the compact 340 point window. Check light and dark appearances. Native source meters expose percentage values to accessibility, and the waveform follows both microphone and Mac sound. Account decoding accepts older servers without the optional identity field; route tests bind the displayed email and workspace to the authenticated device membership.

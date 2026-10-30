@@ -55,7 +55,7 @@ enum LocalRecorderSnapshot {
         let json = """
         {"botStatus":"scheduled","botStatusDetail":"Bot will join at start","botStatusLabel":"Bot scheduled",\
         "endsAt":"\(iso.string(from: start.addingTimeInterval(45 * 60)))","meetingId":"snapshot",\
-        "startsAt":"\(iso.string(from: start))","title":"Weekly product review"}
+        "startsAt":"\(iso.string(from: start))","title":"Weekly product review with the Northwind design team"}
         """
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
@@ -83,10 +83,15 @@ enum LocalRecorderSnapshot {
         settings.permissionChecklist = granted
         settings.statusText = "Watching your calendar"
         settings.isAdvancedExpanded = true
+        settings.account = LocalRecorderAccount(email: "alex@example.com", workspaceName: "Northwind Design")
+
+        let permissions = RecorderAppModel(snapshotBearerToken: "token")
+        permissions.isAdvancedExpanded = true
+        permissions.statusText = "Finish access setup"
 
         return [
             ("signed-out", signedOut), ("upcoming", upcoming), ("recording", recording),
-            ("upload-issue", uploadIssue), ("settings", settings),
+            ("upload-issue", uploadIssue), ("settings", settings), ("permissions", permissions),
         ]
     }
 
@@ -125,6 +130,17 @@ enum LocalRecorderSnapshot {
         )!
         rep.size = bounds.size
         frameView.cacheDisplay(in: bounds, to: rep)
+        if model.isAdvancedExpanded {
+            let expandedHeight = window.frame.height
+            model.isAdvancedExpanded = false
+            let resizeDeadline = Date().addingTimeInterval(0.4)
+            while Date() < resizeDeadline {
+                if let event = NSApp.nextEvent(matching: .any, until: Date().addingTimeInterval(0.05), inMode: .default, dequeue: true) {
+                    NSApp.sendEvent(event)
+                }
+            }
+            print("Settings window height: \(expandedHeight) expanded, \(window.frame.height) collapsed")
+        }
         window.orderOut(nil)
         let image = NSImage(size: bounds.size)
         image.addRepresentation(rep)

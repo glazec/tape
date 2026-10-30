@@ -11,7 +11,7 @@ enum TapePalette {
     static let ink = dynamic(light: 0x1D1918, dark: 0xF3EFEC)
     static let charcoal = dynamic(light: 0x2B2826, dark: 0xEDE8E5)
     static let graphite = dynamic(light: 0x5A4F4A, dark: 0xB3A8A3)
-    static let ash = dynamic(light: 0x8C817C, dark: 0x847A75)
+    static let ash = dynamic(light: 0x746963, dark: 0xA69B95)
     static let muted = dynamic(light: 0x786D68, dark: 0x9C918C)
     static let hairline = dynamic(light: 0xE9E4E1, dark: 0x34302E)
     static let border = dynamic(light: 0xE4E0DC, dark: 0x403B39)
@@ -118,7 +118,7 @@ struct RecorderMenuView: View {
             summary
                 .padding(.horizontal, 20)
                 .padding(.top, showsWindowChrome ? 8 : 18)
-                .padding(.bottom, 18)
+                .padding(.bottom, model.isAdvancedExpanded ? 14 : 18)
 
             if model.isAdvancedExpanded {
                 RecorderSettingsView(model: model, isSignedIn: isSignedIn)
@@ -156,7 +156,8 @@ struct RecorderMenuView: View {
             Text(state.title)
                 .font(TapeType.serif(22))
                 .tracking(-0.3)
-                .lineLimit(1)
+                .lineLimit(2)
+                .fixedSize(horizontal: false, vertical: true)
                 .truncationMode(.tail)
                 .padding(.top, 6)
                 .padding(.trailing, showsWindowChrome ? 0 : 24)
@@ -339,7 +340,7 @@ struct RecorderMenuView: View {
                 tone: TapePalette.coral,
                 title: missed.title,
                 detail: "Started \(timeText(missed.displayTimeWindow.startsAt))",
-                actionTitle: "Record this meeting",
+                actionTitle: "Record on this Mac",
                 actionKind: .primary,
                 isActionDisabled: false
             )
@@ -354,7 +355,7 @@ struct RecorderMenuView: View {
                     ? "Until \(meeting.endsAt.map(timeText) ?? "the end") · \(notetakerText(meeting))"
                     : "\(rangeText(meeting)) · \(notetakerText(meeting))",
                 detailHelp: meeting.botStatusDetail,
-                actionTitle: "Record",
+                actionTitle: "Record on this Mac",
                 actionKind: .primary,
                 isActionDisabled: false
             )
@@ -364,7 +365,7 @@ struct RecorderMenuView: View {
             tone: nil,
             title: "Nothing scheduled",
             detail: "Tape will pick up your next meeting",
-            actionTitle: "Record",
+            actionTitle: "Record on this Mac",
             actionKind: .primary,
             isActionDisabled: false
         )
@@ -555,7 +556,7 @@ struct RollingWaveform: View {
             .frame(width: proxy.size.width, height: proxy.size.height, alignment: .leading)
         }
         .animation(.linear(duration: 0.1), value: samples)
-        .accessibilityLabel("Recording waveform")
+        .accessibilityHidden(true)
     }
 }
 
@@ -568,20 +569,30 @@ struct SourceLevel: View {
             Text(title)
                 .font(TapeType.sans(11.5))
                 .foregroundStyle(TapePalette.muted)
-            GeometryReader { proxy in
-                ZStack(alignment: .leading) {
-                    Capsule().fill(TapePalette.hairline)
-                    Capsule()
-                        .fill(level > 0.9 ? TapePalette.amber : TapePalette.ink.opacity(0.65))
-                        .frame(width: proxy.size.width * CGFloat(min(1, max(0, level))))
-                }
-            }
-            .frame(width: 54, height: 4)
-            .animation(.linear(duration: 0.1), value: level)
+            AudioLevelBar(level: level, inkOpacity: 0.65)
+                .frame(width: 54)
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("\(title) level")
         .accessibilityValue("\(Int(min(1, max(0, level)) * 100)) percent")
+    }
+}
+
+struct AudioLevelBar: View {
+    var level: Float
+    var inkOpacity: Double
+
+    var body: some View {
+        GeometryReader { proxy in
+            ZStack(alignment: .leading) {
+                Capsule().fill(TapePalette.hairline)
+                Capsule()
+                    .fill(level > 0.9 ? TapePalette.amber : TapePalette.ink.opacity(inkOpacity))
+                    .frame(width: proxy.size.width * CGFloat(min(1, max(0, level))))
+            }
+        }
+        .frame(height: 4)
+        .animation(.linear(duration: 0.1), value: level)
     }
 }
 
@@ -616,47 +627,74 @@ struct StatusDot: View {
 struct RecorderSettingsView: View {
     @ObservedObject var model: RecorderAppModel
     var isSignedIn: Bool
+    @State private var showsAudioCheck = false
+#if DEBUG
+    @State private var showsDevelopmentServer = false
+#endif
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
+        VStack(alignment: .leading, spacing: 14) {
             section("Permissions") {
                 PermissionList(
                     checklist: model.permissionChecklist,
                     requestPermission: model.requestPermission,
-                    setStartAtLoginEnabled: model.setStartAtLoginEnabled
+                    setStartAtLoginEnabled: model.setStartAtLoginEnabled,
+                    repairAccessibility: model.repairAccessibility,
+                    showAppInFinder: model.showAppInFinder,
+                    isBusy: model.isRequestingPermissions || model.isRestarting || model.isRecording || model.isFinishingRecording
                 )
             }
 
-            section("Audio check") {
-                audioCheck
+            if model.hasAudioCapturePermissions {
+                DisclosureGroup("Audio check", isExpanded: $showsAudioCheck) {
+                    audioCheck.padding(.top, 8)
+                }
             }
 
-            section("Account") {
-                VStack(alignment: .leading, spacing: 8) {
+            if isSignedIn {
+                section("Account") {
+                    if let account = model.account {
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(account.email)
+                            Text(account.workspaceName)
+                                .foregroundStyle(TapePalette.muted)
+                        }
+                        .textSelection(.enabled)
+                        .fixedSize(horizontal: false, vertical: true)
+                    } else {
+                        Text("Account details unavailable. Check your connection.")
+                            .foregroundStyle(TapePalette.muted)
+                    }
+                }
+            }
+
+#if DEBUG
+            if !isSignedIn {
+                DisclosureGroup("Development server", isExpanded: $showsDevelopmentServer) {
                     TextField("Server", text: $model.serverURLText)
                         .textFieldStyle(.roundedBorder)
-                    SecureField("Token", text: $model.bearerToken)
-                        .textFieldStyle(.roundedBorder)
+                        .controlSize(.small)
+                        .padding(.top, 8)
                 }
-                .controlSize(.small)
             }
+#endif
 
             HStack(spacing: 14) {
                 if isSignedIn {
                     textButton("Sign out", isDestructive: true, action: model.signOut)
                 }
                 textButton("Updates", action: model.checkForUpdates)
-                textButton("Restart", action: model.restartApp)
+                textButton(model.isRestarting ? "Restarting…" : "Restart", action: model.restartApp)
+                    .disabled(model.isRestarting || model.isRequestingPermissions)
                 Spacer()
                 textButton("Quit", isDestructive: true, action: model.exitApp)
             }
         }
-        .padding(16)
+        .font(TapeType.sans(12))
+        .tint(TapePalette.graphite)
+        .padding(.horizontal, 20)
+        .padding(.bottom, 16)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(TapePalette.mist)
-        .overlay(alignment: .top) {
-            Rectangle().fill(TapePalette.hairline).frame(height: 1)
-        }
         .transition(.opacity)
     }
 
@@ -726,86 +764,10 @@ struct AudioLevelMeterRow: View {
                 .foregroundStyle(TapePalette.graphite)
                 .frame(width: 76, alignment: .leading)
 
-            GeometryReader { proxy in
-                ZStack(alignment: .leading) {
-                    Capsule()
-                        .fill(TapePalette.hairline)
-                    Capsule()
-                        .fill(level > 0.9 ? TapePalette.amber : TapePalette.ink.opacity(0.7))
-                        .frame(width: max(0, proxy.size.width * CGFloat(min(1, level))))
-                }
-            }
-            .frame(height: 4)
-            .animation(.linear(duration: 0.1), value: level)
+            AudioLevelBar(level: level, inkOpacity: 0.7)
         }
-    }
-}
-
-struct PermissionList: View {
-    var checklist: PermissionChecklist
-    var requestPermission: (OperationalPermission) -> Void
-    var setStartAtLoginEnabled: @MainActor @Sendable (Bool) -> Void
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            PermissionRow(title: "Microphone", grant: checklist.microphone) {
-                requestPermission(.microphone)
-            }
-            PermissionRow(title: "Screen and system audio", grant: checklist.screenCapture) {
-                requestPermission(.screenCapture)
-            }
-            PermissionRow(title: "Accessibility", grant: checklist.accessibility) {
-                requestPermission(.accessibility)
-            }
-            PermissionRow(title: "Alerts", grant: checklist.notifications) {
-                requestPermission(.notifications)
-            }
-            HStack {
-                Text("Open at login")
-                    .font(TapeType.sans(12))
-                Spacer()
-                Toggle(
-                    "",
-                    isOn: Binding(
-                        get: { checklist.startAtLogin == .granted },
-                        set: { isEnabled in
-                            Task { @MainActor in
-                                setStartAtLoginEnabled(isEnabled)
-                            }
-                        }
-                    )
-                )
-                .labelsHidden()
-                .toggleStyle(.switch)
-                .controlSize(.mini)
-                .accessibilityLabel("Start Tape Desktop at login")
-            }
-        }
-    }
-}
-
-struct PermissionRow: View {
-    var title: String
-    var grant: PermissionGrant
-    var action: () -> Void
-
-    var body: some View {
-        HStack {
-            Text(title)
-                .font(TapeType.sans(12))
-            Spacer()
-            if grant == .granted {
-                Image(systemName: "checkmark")
-                    .font(TapeType.sans(10, .semibold))
-                    .foregroundStyle(TapePalette.green)
-                    .accessibilityLabel("Allowed")
-            } else {
-                Button("Allow", action: action)
-                    .buttonStyle(.plain)
-                    .font(TapeType.sans(12, .semibold))
-                    .foregroundStyle(TapePalette.coralInk)
-            }
-        }
-        .frame(height: 18)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(title) level")
+        .accessibilityValue("\(Int(min(1, max(0, level)) * 100)) percent")
     }
 }

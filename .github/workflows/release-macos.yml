@@ -137,6 +137,7 @@ jobs:
           npm ci --prefix Sidecar
           npm test --prefix Sidecar
           swift test
+          node --test script/test_permissions.mjs
           script/build_and_run.sh --package
 
           APP_PATH="$PWD/dist/Tape Desktop.app"

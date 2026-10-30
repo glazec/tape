@@ -65,7 +65,11 @@ After the workflow succeeds, verify both the versioned release and the `macos-ap
 
 The workflow refuses malformed tags, tags outside `main`, missing release secrets, ad hoc or inconsistent signatures, and missing Sparkle metadata.
 
+The native permission regression probe (`node --test script/test_permissions.mjs`, from this directory) compiles the actual app methods and substitutes system decisions. It checks microphone approval and denial from a background queue, existing authorization states, Accessibility requests before sign in, restart success, failure, and recording protection, and waveform updates from either audio source. It does not change macOS grants or capture audio. Both `npm run test:swift` and the release workflow run it. Real system prompts and recording still require separate validation.
+
 The 0.3 release series migrates from the changing ad hoc identity used by 0.2.0 to the stable release identity. Existing users must grant Microphone, Screen Recording, Accessibility, and Notifications once after that update. Later updates retain the stable identity.
+
+Development builds can leave a grant for a different certificate under the same bundle identifier. If Accessibility appears enabled but the release still reports it missing, follow the recovery steps in [the setup guide](../../docs/setup.md#macos-local-recorder). Compare certificate fingerprints, not just the displayed certificate name, before treating a local build as the published release identity.
 
 ## Install the package without Apple Developer ID signing
 
