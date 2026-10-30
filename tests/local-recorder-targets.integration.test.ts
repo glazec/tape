@@ -12,7 +12,7 @@ vi.mock("@/lib/r2", () => ({
   createUploadUrl: vi.fn(), getObjectMetadata: vi.fn(async () => ({ contentLength: 100, contentType: "audio/wav" })), parseR2Env: () => ({ R2_BUCKET: "test" }),
 }));
 vi.mock("@/lib/vendors/recall", () => ({ createRecallDesktopSdkUpload: vi.fn(), getRecallApiBaseUrl: vi.fn(), retrieveRecallBot: vi.fn() }));
-import { completeLocalRecorderRecordingUpload, resolveLocalRecorderSdkMeeting } from "@/lib/local-recorder-records";
+import { claimLocalRecorderIntent, completeLocalRecorderRecordingUpload, resolveLocalRecorderSdkMeeting } from "@/lib/local-recorder-records";
 import { finishLocalRecorderRecordingTarget, listLocalRecorderRecordingMeetings, setLocalRecorderRecordingTarget } from "@/lib/local-recorder-targets";
 
 const dsn = process.env.TAPE_RECORDER_TEST_DATABASE;
@@ -174,6 +174,25 @@ describe.skipIf(!dsn)("recording target PostgreSQL transactions", () => {
     expect(await resolveLocalRecorderSdkMeeting(started.fallbackIntentId)).toBe(second);
     await expect(setLocalRecorderRecordingTarget({ ...input, fallbackIntentId: started.fallbackIntentId })).rejects.toThrow("unavailable");
     expect(await sql("select attempt_state from local_recording_attempts")).toEqual(["sealed"]);
+  });
+
+  it.each(["sealed", "completed"])("cannot reopen %s through a claim that read the old active state", async (state) => {
+    const started = await setLocalRecorderRecordingTarget(input);
+    const [id] = await sql("select id from local_recording_attempts");
+    await finishLocalRecorderRecordingTarget({ ...input, fallbackIntentId: started.fallbackIntentId });
+    if (state === "completed") await sql("update local_recording_attempts set attempt_state = 'completed'");
+    const rows = (data: unknown[]) => {
+      const chain = { from: () => chain, innerJoin: () => chain, where: () => chain, limit: async () => data };
+      return chain;
+    };
+    db.select.mockReturnValueOnce(rows([{
+      id, meetingId: first, attemptState: "started", activeTranscriptJob: false,
+      expiresAt: new Date(input.now.getTime() + 60_000), startedAt: new Date(input.now.getTime() - 60_000), endedAt: null,
+      meetingUrl: "https://meet.google.com/abc-defg-hij", recallAudioAsset: false, recallRecordingId: null, status: "scheduled", title: "First",
+    }])).mockReturnValueOnce(rows([]));
+    await expect(claimLocalRecorderIntent({ ...input, fallbackIntentId: started.fallbackIntentId })).resolves.toEqual({ claimed: false, reason: "expired_or_missing" });
+    expect(await sql("select attempt_state from local_recording_attempts")).toEqual([state]);
+    await expect(setLocalRecorderRecordingTarget({ ...input, fallbackIntentId: started.fallbackIntentId, meetingId: second })).rejects.toThrow("unavailable");
   });
 
   it("does not grant write access to another member and rejects foreign device, cancelled and completed attempts", async () => {

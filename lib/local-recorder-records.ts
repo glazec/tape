@@ -679,6 +679,7 @@ export async function claimLocalRecorderIntent(input: {
   );
   const [attempt] = await db
     .select({
+      attemptState: localRecordingAttempts.attemptState,
       activeTranscriptJob: sql<boolean>`exists (
         select 1 from ${transcriptJobs}
         where ${transcriptJobs.meetingId} = ${meetings.id}
@@ -704,6 +705,8 @@ export async function claimLocalRecorderIntent(input: {
     .innerJoin(meetings, eq(meetings.id, localRecordingAttempts.meetingId))
     .where(
       and(
+        eq(meetings.teamId, input.workspace.teamId),
+        getMeetingManagerCondition(input.workspace),
         eq(localRecordingAttempts.userId, input.workspace.userId),
         eq(localRecordingAttempts.deviceIdHash, deviceIdHash),
         eq(localRecordingAttempts.fallbackIntentIdHash, fallbackIntentIdHash),
@@ -711,7 +714,7 @@ export async function claimLocalRecorderIntent(input: {
     )
     .limit(1);
 
-  if (!attempt || attempt.expiresAt < input.now) {
+  if (!attempt || attempt.expiresAt < input.now || !["notified", "started"].includes(attempt.attemptState)) {
     return { claimed: false, reason: "expired_or_missing" as const };
   }
 
@@ -767,14 +770,18 @@ export async function claimLocalRecorderIntent(input: {
   }
 
   try {
-    await db
-      .update(localRecordingAttempts)
-      .set({
-        attemptState: "started",
-        claimedAt: input.now,
-        updatedAt: input.now,
-      })
-      .where(eq(localRecordingAttempts.id, attempt.id));
+    const claimed = await databaseSql`
+      update local_recording_attempts
+      set attempt_state = 'started', claimed_at = ${input.now}, updated_at = ${input.now}
+      where id = ${attempt.id}::uuid
+        and meeting_id = ${attempt.meetingId}::uuid
+        and attempt_state in ('notified', 'started')
+        and expires_at >= ${input.now}
+      returning id
+    `;
+    if (!claimed.length) {
+      return { claimed: false, reason: "expired_or_missing" as const };
+    }
   } catch (error) {
     if (isLocalRecorderPrimaryClaimConflict(error)) {
       return { claimed: false, reason: "already_recording" as const };

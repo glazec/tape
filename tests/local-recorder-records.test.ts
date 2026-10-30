@@ -854,10 +854,24 @@ describe("local recorder records", () => {
     ]);
   });
 
+  it.each(["sealed", "uploading", "uploaded", "completed", "failed"])("does not reopen a %s attempt through a notification replay", async (attemptState) => {
+    db.select.mockReturnValueOnce(selectRows([{ ...eligibleAttempt(), attemptState }]));
+    await expect(claimLocalRecorderIntent({ deviceId: "mac_1", fallbackIntentId: "intent_1", now: new Date("2026-07-20T12:00:00.000Z"), workspace: workspace() })).resolves.toEqual({ claimed: false, reason: "expired_or_missing" });
+    expect(db.update).not.toHaveBeenCalled();
+    expect(databaseSql).not.toHaveBeenCalled();
+  });
+
+  it("does not report a claim when finish wins after the eligibility read", async () => {
+    db.select.mockReturnValueOnce(selectRows([{ ...eligibleAttempt(), attemptState: "started" }])).mockReturnValueOnce(selectRows([]));
+    databaseSql.mockResolvedValue([]);
+    await expect(claimLocalRecorderIntent({ deviceId: "mac_1", fallbackIntentId: "intent_1", now: new Date("2026-07-20T12:00:00.000Z"), workspace: workspace() })).resolves.toEqual({ claimed: false, reason: "expired_or_missing" });
+  });
+
   it("claims an eligible recorder intent", async () => {
     const now = new Date("2026-07-20T12:00:00.000Z");
     db.select
       .mockReturnValueOnce(selectRows([{
+        attemptState: "notified",
         activeTranscriptJob: false,
         endedAt: new Date("2026-07-20T12:30:00.000Z"),
         expiresAt: new Date("2026-07-20T13:00:00.000Z"),
@@ -871,9 +885,7 @@ describe("local recorder records", () => {
         title: "Weekly sync",
       }]))
       .mockReturnValueOnce(selectRows([]));
-    db.update.mockReturnValue({
-      set: vi.fn(() => ({ where: vi.fn().mockResolvedValue(undefined) })),
-    });
+    databaseSql.mockResolvedValue([{ id: "attempt_1" }]);
 
     await expect(claimLocalRecorderIntent({
       deviceId: "mac_1",
@@ -894,6 +906,7 @@ describe("local recorder records", () => {
 
     db.select
       .mockReturnValueOnce(selectRows([{
+        attemptState: "notified",
         activeTranscriptJob: false,
         endedAt: null,
         expiresAt: new Date("2026-07-20T13:00:00.000Z"),
@@ -917,7 +930,8 @@ describe("local recorder records", () => {
 
   it("recommends an ad hoc recording for an automatic claim outside the meeting window", async () => {
     db.select.mockReturnValueOnce(selectRows([{
-      activeTranscriptJob: false,
+      attemptState: "notified",
+        activeTranscriptJob: false,
       endedAt: null,
       expiresAt: new Date("2026-07-20T13:00:00.000Z"),
       id: "attempt_1",
@@ -944,14 +958,7 @@ describe("local recorder records", () => {
     db.select
       .mockReturnValueOnce(selectRows([eligibleAttempt()]))
       .mockReturnValueOnce(selectRows([]));
-    db.update.mockReturnValue({
-      set: vi.fn(() => ({
-        where: vi.fn().mockRejectedValue({
-          code: "23505",
-          constraint: "local_recording_attempts_primary_active_unique",
-        }),
-      })),
-    });
+    databaseSql.mockRejectedValue({ code: "23505", constraint: "local_recording_attempts_primary_active_unique" });
 
     await expect(claimLocalRecorderIntent({
       deviceId: "mac_1",
@@ -1209,6 +1216,7 @@ function workspace() {
 
 function eligibleAttempt() {
   return {
+    attemptState: "notified",
     activeTranscriptJob: false,
     endedAt: new Date("2026-07-20T12:30:00.000Z"),
     expiresAt: new Date("2026-07-20T13:00:00.000Z"),
