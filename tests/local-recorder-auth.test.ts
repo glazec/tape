@@ -10,6 +10,8 @@ const {
   getCurrentUser,
   getWorkspace,
   innerJoin,
+  insert,
+  values,
   limit,
   select,
   where,
@@ -19,6 +21,8 @@ const {
     getCurrentUser: vi.fn(),
     getWorkspace: vi.fn(),
     innerJoin: vi.fn(),
+    insert: vi.fn(),
+    values: vi.fn(),
     limit: vi.fn(),
     select: vi.fn(),
     where: vi.fn(),
@@ -27,6 +31,7 @@ const {
 vi.mock("@/db/client", () => ({
   db: {
     select,
+    insert,
   },
 }));
 
@@ -52,10 +57,38 @@ describe("local recorder auth", () => {
     getWorkspace.mockReset();
     assertCanCreateMeetings.mockReset();
     innerJoin.mockReset();
+    insert.mockReset();
+    values.mockReset();
+    vi.useRealTimers();
     limit.mockReset();
     select.mockReset();
     where.mockReset();
     vi.resetModules();
+  });
+
+  it("issues a device bound credential lasting 180 days from login", async () => {
+    vi.useFakeTimers();
+    const now = new Date("2026-10-30T19:00:00Z");
+    vi.setSystemTime(now);
+    getCurrentUser.mockResolvedValue({ id: "auth", email: "person@example.com" });
+    getWorkspace.mockResolvedValue({ teamId: "team", userId: "user", canCreateMeetings: true });
+    insert.mockReturnValue({ values });
+    values.mockResolvedValue(undefined);
+    const { createLocalRecorderDeviceSession } = await import("@/lib/local-recorder-auth");
+    const result = await createLocalRecorderDeviceSession({
+      callbackUrl: "meetingnote-local-recorder://login", deviceId: "mac_123",
+      requestUrl: "https://app.example.com/api/local-recorder/device-login",
+    });
+    expect("redirectUrl" in result).toBe(true);
+    if (!("redirectUrl" in result)) throw new Error("Missing device callback");
+    const callback = new URL(result.redirectUrl);
+    const token = callback.searchParams.get("token")!;
+    expect(token).toBeTruthy();
+    expect(values).toHaveBeenCalledWith({
+      deviceIdHash, teamId: "team", userId: "user",
+      tokenHash: createHash("sha256").update(token).digest("base64url"),
+      expiresAt: new Date(now.getTime() + 180 * 86400_000),
+    });
   });
 
   it("asks which organization to pair before issuing a recorder credential", async () => {
