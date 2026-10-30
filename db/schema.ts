@@ -852,6 +852,7 @@ export const transcriptJobs = pgTable(
     }),
     provider: text("provider").notNull().default("elevenlabs"),
     mode: transcriptMode("mode").notNull().default("replace"),
+    recordingOffsetMs: integer("recording_offset_ms"),
     generationId: uuid("generation_id"),
     providerJobId: text("provider_job_id"),
     billingKeytermsUsed: boolean("billing_keyterms_used")

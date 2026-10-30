@@ -947,7 +947,6 @@ describe("applyRecallMeetingEvent", () => {
     selectLimit.mockResolvedValue([]);
     retrieveRecallRecording.mockResolvedValue({
       id: "recording_123",
-      started_at: "2026-07-08T11:00:00.000Z",
       media_shortcuts: {
         audio_mixed: {
           data: {
@@ -987,6 +986,7 @@ describe("applyRecallMeetingEvent", () => {
         meetingId: "11111111-1111-4111-8111-111111111111",
         source: "local_recorder_sdk",
           fallbackIntentId: "intent_123",
+          localRecordingStartedAt: "2026-07-08T11:00:00.000Z",
       },
     });
 
@@ -997,6 +997,7 @@ describe("applyRecallMeetingEvent", () => {
       externalRecordingId: "recording_123",
       meetingId: "11111111-1111-4111-8111-111111111111",
       mode: "append",
+      startedAt: new Date("2026-07-08T11:00:00.000Z"),
     });
     expect(fetchAndPersistRecallParticipantTimeline).toHaveBeenCalledWith({
       meetingId: "11111111-1111-4111-8111-111111111111",

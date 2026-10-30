@@ -140,6 +140,7 @@ describe("local recorder records", () => {
       selectRows([
         {
           attemptState: "started",
+          claimedAt: new Date("2026-10-30T12:00:00.000Z"),
           expiresAt: new Date(Date.now() + 60_000),
           id: "44444444-4444-4444-8444-444444444444",
           meetingId: "22222222-2222-4222-8222-222222222222",
@@ -174,6 +175,7 @@ describe("local recorder records", () => {
     expect(createRecallDesktopSdkUpload).toHaveBeenCalledWith({
       metadata: {
         clientRecordingId: "client_recording_123",
+        localRecordingStartedAt: "2026-10-30T12:00:00.000Z",
         fallbackIntentId: "intent_123",
         meetingId: "22222222-2222-4222-8222-222222222222",
         source: "local_recorder_sdk",

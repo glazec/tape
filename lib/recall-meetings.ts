@@ -323,7 +323,10 @@ async function queueRecallRecordingProcessing(
       eq(recordings.meetingId, update.meetingId),
       sql`${recordings.externalId} is distinct from ${update.recallRecordingId}`,
     )).limit(1);
+  const localStartedAtValue = getMetadataString(metadata, "localRecordingStartedAt");
+  const localStartedAt = localStartedAtValue ? new Date(localStartedAtValue) : null;
   const transcription = await createRecallRecordingTranscription({
+    ...(localStartedAt && Number.isFinite(localStartedAt.getTime()) ? { startedAt: localStartedAt } : {}),
     ...(recordingTiming ?? {}),
     externalBotId: update.recallBotId ?? undefined,
     externalRecordingId: update.recallRecordingId,

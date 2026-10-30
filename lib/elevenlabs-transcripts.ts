@@ -11,6 +11,7 @@ import {
   users,
 } from "@/db/schema";
 import { normalizeEmailDomain } from "@/lib/access";
+import { recordingTimelineRebaseQuery } from "@/lib/recording-timeline";
 import { activeTranscriptJobIdsSubquery } from "@/lib/current-transcript-job";
 import {
   listMeetingParticipantTimeline,
@@ -343,7 +344,9 @@ export async function applyElevenLabsTranscriptEvent(
     persistence.meetingId,
     persistence.transcriptJobId,
   );
-  const segmentOffsetMs = getTranscriptSegmentOffsetMs(applicationContext);
+  // Recorded segments enter with local times. Their final offset and every
+  // earlier segment's rebase are computed under the transaction's meeting lock.
+  const segmentOffsetMs = persistence.recordingId ? 0 : getTranscriptSegmentOffsetMs(applicationContext);
 
   const replaceMeetingTranscript =
     applicationContext.mode === "replace" && !persistence.recordingId;
@@ -405,7 +408,9 @@ export async function applyElevenLabsTranscriptEvent(
       on conflict (meeting_id, type, normalized_value) do nothing
     `);
 
+  const timelineRebase = new PgDialect().sqlToQuery(recordingTimelineRebaseQuery(persistence.meetingId));
   await databaseSql.transaction((txn) => [
+    txn`select pg_advisory_xact_lock(hashtextextended(${`recording-timeline:${persistence.meetingId}`}, 0))`,
     txn`
       delete from meeting_entities
       where ${replaceMeetingTranscript}
@@ -470,10 +475,12 @@ export async function applyElevenLabsTranscriptEvent(
           provider_job_id
         ),
         status = 'completed',
+        recording_offset_ms = ${segmentOffsetMs},
         completion_email_ready_at = coalesce(completion_email_ready_at, ${now}),
         updated_at = ${now}
       where id = ${persistence.transcriptJobId}::uuid
     `,
+    txn.query(timelineRebase.sql, timelineRebase.params),
   ]);
 
   await recordElevenLabsTranscriptUsage({

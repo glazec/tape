@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
@@ -167,24 +167,30 @@ describe.skipIf(!dsn)("recording target PostgreSQL transactions", () => {
     }
   });
 
-  it("retains all media on resumed completion and creates only append jobs", async () => {
+  it.each([false, true])("retains capture chronology and media with reversed completion %s", async (reversed) => {
     const complete = async (fallbackIntentId: string) => {
-      const [line] = await sql("select id, meeting_id, attempt_state, expires_at from local_recording_attempts where attempt_state = 'sealed' order by claimed_at desc limit 1");
-      const [id, meetingId, attemptState, expiresAt] = line.split("|");
+      const tokenHash = createHash("sha256").update(fallbackIntentId).digest("base64url");
+      const [line] = await sql(`select id, meeting_id, attempt_state, expires_at, claimed_at from local_recording_attempts where fallback_intent_id_hash = '${tokenHash}'`);
+      const [id, meetingId, attemptState, expiresAt, claimedAt] = line.split("|");
+      const recordingStartedAt = new Date(claimedAt);
       const rows = (data: unknown[]) => {
         const chain = { from: () => chain, innerJoin: () => chain, where: () => chain, limit: async () => data };
         return chain;
       };
       db.select.mockReturnValueOnce(rows([])).mockReturnValueOnce(rows([{ id, meetingId, attemptState, expiresAt: new Date(expiresAt) }]));
-      return completeLocalRecorderRecordingUpload({ ...input, fallbackIntentId, clientRecordingId: randomUUID(), manifest: {}, recordingStartedAt: input.now, recordingStoppedAt: new Date(input.now.getTime() + 1000), assets: { computerAudioAssetId: randomUUID(), microphoneAudioAssetId: randomUUID(), synthesizedAudioAssetId: randomUUID() } });
+      return completeLocalRecorderRecordingUpload({ ...input, fallbackIntentId, clientRecordingId: randomUUID(), manifest: {}, recordingStartedAt, recordingStoppedAt: new Date(recordingStartedAt.getTime() + 1000), assets: { computerAudioAssetId: randomUUID(), microphoneAudioAssetId: randomUUID(), synthesizedAudioAssetId: randomUUID() } });
     };
     const a = await setLocalRecorderRecordingTarget(input);
     await finishLocalRecorderRecordingTarget({ ...input, fallbackIntentId: a.fallbackIntentId });
     const b = await setLocalRecorderRecordingTarget({ ...input, now: new Date(input.now.getTime() + 1000) });
-    await complete(a.fallbackIntentId);
     expect(await sql("select count(*) from local_recording_attempts where attempt_state = 'started'")).toEqual(["1"]);
     await finishLocalRecorderRecordingTarget({ ...input, fallbackIntentId: b.fallbackIntentId });
-    await complete(b.fallbackIntentId);
+    const completionOrder = reversed ? [b, a] : [a, b];
+    const firstCompleted = await complete(completionOrder[0].fallbackIntentId);
+    const secondCompleted = await complete(completionOrder[1].fallbackIntentId);
+    expect(await sql("select id from recordings order by started_at")).toEqual(reversed
+      ? [secondCompleted.localRecordingId, firstCompleted.localRecordingId]
+      : [firstCompleted.localRecordingId, secondCompleted.localRecordingId]);
     expect(await sql("select count(*) from media_assets")).toEqual(["6"]);
     expect(await sql("select count(*) from recordings")).toEqual(["2"]);
     expect(await sql("select count(*) from local_recordings where is_primary")).toEqual(["1"]);

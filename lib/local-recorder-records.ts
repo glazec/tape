@@ -151,6 +151,7 @@ export async function createRecallDesktopSdkUploadForLocalRecorder(input: {
     webhookUrl: input.requestUrl,
     metadata: {
       clientRecordingId: input.clientRecordingId,
+      ...(attempt.claimedAt ? { localRecordingStartedAt: attempt.claimedAt.toISOString() } : {}),
       fallbackIntentId: input.fallbackIntentId,
       meetingId: attempt.meetingId,
       source: "local_recorder_sdk",
@@ -1139,7 +1140,7 @@ export async function completeLocalRecorderRecordingUpload(input: {
   const durationMs =
     input.recordingStoppedAt.getTime() - input.recordingStartedAt.getTime();
   const [, rows] = await databaseSql.transaction((tx) => [
-    tx`select pg_advisory_xact_lock(hashtextextended(${`local-recording-complete:${attempt.meetingId}`}, 0))`,
+    tx`select pg_advisory_xact_lock(hashtextextended(${`recording-timeline:${attempt.meetingId}`}, 0))`,
     tx`
     with valid_attempt as (
       update local_recording_attempts
@@ -1535,6 +1536,7 @@ async function getStartedLocalRecorderAttempt(input: {
   const [attempt] = await db
     .select({
       attemptState: localRecordingAttempts.attemptState,
+      claimedAt: localRecordingAttempts.claimedAt,
       expiresAt: localRecordingAttempts.expiresAt,
       id: localRecordingAttempts.id,
       meetingId: localRecordingAttempts.meetingId,
