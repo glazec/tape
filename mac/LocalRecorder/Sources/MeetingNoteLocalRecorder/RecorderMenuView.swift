@@ -153,14 +153,33 @@ struct RecorderMenuView: View {
             .foregroundStyle(TapePalette.ash)
             .frame(height: 14)
 
-            Text(state.title)
-                .font(TapeType.serif(22))
-                .tracking(-0.3)
-                .lineLimit(2)
-                .fixedSize(horizontal: false, vertical: true)
-                .truncationMode(.tail)
-                .padding(.top, 6)
-                .padding(.trailing, showsWindowChrome ? 0 : 24)
+            Group {
+                if model.isRecording {
+                    Button {
+                        model.isMeetingPickerPresented.toggle()
+                        if model.isMeetingPickerPresented { model.loadMeetingChoices() }
+                    } label: {
+                        HStack(alignment: .firstTextBaseline, spacing: 6) {
+                            Text(state.title).lineLimit(2)
+                            Image(systemName: "chevron.down").font(TapeType.sans(11, .medium))
+                        }
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .help("Choose where this recording is saved")
+                } else {
+                    Text(state.title).lineLimit(2)
+                }
+            }
+            .font(TapeType.serif(22))
+            .tracking(-0.3)
+            .fixedSize(horizontal: false, vertical: true)
+            .padding(.top, 6)
+            .padding(.trailing, showsWindowChrome ? 0 : 24)
+
+            if model.isRecording && model.isMeetingPickerPresented {
+                RecorderMeetingPicker(model: model).padding(.top, 12)
+            }
 
             if model.isRecording {
                 RecordingLevelsView(
@@ -179,6 +198,22 @@ struct RecorderMenuView: View {
                     .padding(.top, 3)
             }
 
+            if let prompt = model.endPrompt {
+                RecorderEndPromptView(model: model, prompt: prompt).padding(.top, 12)
+            }
+
+            if model.pendingUploadCount > 0 || model.uploadStatusText != nil {
+                Text(model.uploadStatusText ?? "Uploading recording. Keep Tape open.")
+                    .font(TapeType.sans(11))
+                    .foregroundStyle(TapePalette.muted)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.top, 8)
+            }
+
+            if model.uploadStatusText?.localizedCaseInsensitiveContains("reconnect") == true || model.uploadStatusText?.localizedCaseInsensitiveContains("sign in") == true {
+                Button("Reconnect", action: model.signIn).font(TapeType.sans(11, .medium)).padding(.top, 4)
+            }
+
             if let notice = statusNotice {
                 HStack(alignment: .firstTextBaseline, spacing: 5) {
                     if notice.isProblem {
@@ -194,6 +229,7 @@ struct RecorderMenuView: View {
                 .padding(.top, 8)
             }
 
+            if model.endPrompt == nil {
             Button(action: performPrimaryAction) {
                 Text(state.actionTitle)
             }
@@ -201,6 +237,7 @@ struct RecorderMenuView: View {
             .disabled(state.isActionDisabled)
             .fixedSize()
             .padding(.top, 16)
+            }
         }
         .overlay(alignment: .topTrailing) {
             if !showsWindowChrome {
@@ -243,7 +280,7 @@ struct RecorderMenuView: View {
             "", "Sign in to start monitoring", "Finish access setup", "Permissions ready",
             "Screen and audio ready", "Checking your calendar", "Watching your calendar",
             "No upcoming meetings", "Monitoring", "Recording \(model.activeRecordingTitle ?? "")",
-            "Signed out", "Testing audio levels", "Recording",
+            "Signed out", "Testing audio levels", "Recording", "Capture stopped", "Starting recording",
         ]
         guard !routine.contains(text), !model.isFinishingRecording, !model.isRequestingPermissions else {
             return nil
@@ -258,7 +295,7 @@ struct RecorderMenuView: View {
 
     private var settingsToggle: some View {
         Button(action: { model.isAdvancedExpanded.toggle() }) {
-            Image(systemName: model.isAdvancedExpanded ? "xmark" : "gearshape")
+            Image(systemName: "gearshape")
                 .font(TapeType.sans(12, .regular))
                 .foregroundStyle(TapePalette.ash)
                 .frame(width: 20, height: 20)
@@ -275,7 +312,7 @@ struct RecorderMenuView: View {
     }
 
     private var state: RecorderSummaryState {
-        let title = model.activeRecordingTitle ?? "Untitled recording"
+        let title = model.destinationUnconfirmed ? "Confirm recording destination" : (model.activeRecordingTitle ?? "Untitled recording")
 
         if model.isRequestingPermissions {
             return RecorderSummaryState(
@@ -287,6 +324,9 @@ struct RecorderMenuView: View {
                 actionKind: .primary,
                 isActionDisabled: true
             )
+        }
+        if model.isStartingRecording {
+            return RecorderSummaryState(eyebrow: "Starting", tone: TapePalette.amber, title: model.nextScheduleMeeting?.title ?? "New meeting", detail: "Preparing audio capture", actionTitle: "Starting", actionKind: .quiet, isActionDisabled: true)
         }
         if model.isFinishingRecording {
             let isUploading = model.statusText.localizedCaseInsensitiveContains("upload")
@@ -302,7 +342,7 @@ struct RecorderMenuView: View {
         }
         if model.isRecording {
             return RecorderSummaryState(
-                eyebrow: "Recording",
+                eyebrow: model.captureNaturallyEnded ? "Capture ended" : "Recording",
                 tone: TapePalette.coral,
                 title: title,
                 detail: "",
@@ -334,17 +374,6 @@ struct RecorderMenuView: View {
                 isActionDisabled: false
             )
         }
-        if let missed = model.pendingMeetings.first {
-            return RecorderSummaryState(
-                eyebrow: "Not being recorded",
-                tone: TapePalette.coral,
-                title: missed.title,
-                detail: "Started \(timeText(missed.displayTimeWindow.startsAt))",
-                actionTitle: "Record on this Mac",
-                actionKind: .primary,
-                isActionDisabled: false
-            )
-        }
         if let meeting = model.nextScheduleMeeting {
             let isOngoing = meeting.isOngoing(at: Date())
             return RecorderSummaryState(
@@ -352,7 +381,7 @@ struct RecorderMenuView: View {
                 tone: isOngoing ? TapePalette.green : nil,
                 title: meeting.title,
                 detail: isOngoing
-                    ? "Until \(meeting.endsAt.map(timeText) ?? "the end") · \(notetakerText(meeting))"
+                    ? "\(meeting.endsAt.map { "Until " + timeText($0) } ?? "Started at " + timeText(meeting.startsAt)) · \(notetakerText(meeting))"
                     : "\(rangeText(meeting)) · \(notetakerText(meeting))",
                 detailHelp: meeting.botStatusDetail,
                 actionTitle: "Record on this Mac",
@@ -372,7 +401,7 @@ struct RecorderMenuView: View {
     }
 
     private func performPrimaryAction() {
-        if model.isFinishingRecording {
+        if model.isFinishingRecording || model.isStartingRecording {
             return
         } else if model.isRecording {
             model.stopRecording()
@@ -417,10 +446,14 @@ struct RecorderMenuView: View {
             return "Tape will join automatically"
         case "joined", "recording":
             return "Tape is in the call"
+        case "joining", "joining_call":
+            return "Bot joining"
+        case "not_planned", "unavailable", "not_scheduled", "none":
+            return "No meeting bot"
         case "in_meeting_room":
             return "Tape is waiting to be let in"
         default:
-            return meeting.botStatusLabel
+            return meeting.botStatusLabel == "Not planned" ? "No meeting bot" : meeting.botStatusLabel
         }
     }
 

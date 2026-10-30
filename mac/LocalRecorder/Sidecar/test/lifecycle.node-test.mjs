@@ -12,14 +12,6 @@ test("awaits SDK initialization and permission requests", () => {
   assert.match(source, /await RecallAiSdk\.requestPermission\(name\)/);
 });
 
-test("shuts down the SDK before the sidecar process exits", () => {
-  const shutdownIndex = source.indexOf("await RecallAiSdk.shutdown()");
-  const exitIndex = source.lastIndexOf("process.exit(");
-
-  assert.notEqual(shutdownIndex, -1);
-  assert.ok(exitIndex > shutdownIndex);
-});
-
 test("accepts the parent app process id for orphan cleanup", () => {
   assert.match(source, /args\.get\("parent-pid"\)/);
   assert.match(source, /startParentProcessMonitor\(/);

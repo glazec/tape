@@ -74,6 +74,32 @@ enum LocalRecorderSnapshot {
         recording.microphoneLevel = 0.55
         recording.systemAudioLevel = 0.32
 
+        let picker = RecorderAppModel(snapshotBearerToken: "token")
+        picker.permissionChecklist = granted
+        picker.isRecording = true
+        picker.recordingStartedAt = recording.recordingStartedAt
+        picker.activeRecordingTitle = "Design sync with Northwind"
+        picker.statusText = "Recording"
+        picker.audioLevels = recording.audioLevels
+        picker.isMeetingPickerPresented = true
+        picker.activeTarget = RecordingTarget(fallbackIntentId: "snapshot", meetingId: "current", meetingTitle: "Design sync with Northwind")
+        let choices = """
+        [{"meetingId":"current","title":"Design sync with Northwind","status":"recording"},
+        {"meetingId":"previous","title":"Weekly product review","status":"completed"},
+        {"meetingId":"research","title":"Customer research catch up","status":"completed"}]
+        """
+        picker.meetingChoices = (try? decoder.decode([RecordingMeeting].self, from: Data(choices.utf8))) ?? []
+        picker.meetingChoicesHaveMore = true
+
+        let prompt = RecorderAppModel(snapshotBearerToken: "token")
+        prompt.permissionChecklist = granted
+        prompt.isRecording = true
+        prompt.recordingStartedAt = recording.recordingStartedAt
+        prompt.activeRecordingTitle = "Design sync with Northwind"
+        prompt.statusText = "Recording"
+        prompt.captureSessionID = "snapshot-prompt"
+        prompt.endPrompt = RecorderEndPrompt(id: "snapshot", sessionID: "snapshot-prompt", reason: .silence)
+
         let uploadIssue = RecorderAppModel(snapshotBearerToken: "token")
         uploadIssue.permissionChecklist = granted
         uploadIssue.nextScheduleMeeting = upcoming.nextScheduleMeeting
@@ -92,6 +118,7 @@ enum LocalRecorderSnapshot {
         return [
             ("signed-out", signedOut), ("upcoming", upcoming), ("recording", recording),
             ("upload-issue", uploadIssue), ("settings", settings), ("permissions", permissions),
+            ("meeting-picker", picker), ("end-prompt", prompt),
         ]
     }
 

@@ -60,6 +60,10 @@ private final class LocalRecorderAppDelegate: NSObject, NSApplicationDelegate {
         showRecorderWindow()
     }
 
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        recorderAppModel.canCloseApp(allowPendingUploads: true) ? .terminateNow : .terminateCancel
+    }
+
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
         showRecorderWindow()
         return true
@@ -91,7 +95,7 @@ private final class LocalRecorderAppDelegate: NSObject, NSApplicationDelegate {
     }
 }
 
-private enum ActiveRecordingBackend: Equatable {
+enum ActiveRecordingBackend: Equatable {
     case recallDesktopSDK
     case localUpload
 }
@@ -245,29 +249,49 @@ final class RecorderAppModel: NSObject, ObservableObject, UNUserNotificationCent
     private static let pendingMeetingsDefaultsKey =
         "meeting-note-local-recorder-pending-meetings"
 
-    private let appVersion = LocalRecorderAppVersion.current
-    private let captureController = LocalRecordingCaptureController()
-    private let recallSDKController = RecallDesktopSDKRecordingController()
+    let appVersion = LocalRecorderAppVersion.current
+    let captureController = LocalRecordingCaptureController()
+    let recallSDKController = RecallDesktopSDKRecordingController()
     private let credentialStore: LocalRecorderKeychainCredentialStore
     private let deviceIdStore = DeviceIdStore()
-    private lazy var notificationCenter = UNUserNotificationCenter.current()
-    private let uploadQueue: LocalRecordingUploadQueue
-    private var activeClient: LocalRecorderAPIClient?
-    private var activeFallbackIntentId: String?
-    private var activeRecordingBackend: ActiveRecordingBackend?
-    private var isUploadingQueuedRecordings = false
+    lazy var notificationCenter = UNUserNotificationCenter.current()
+    let uploadQueue: LocalRecordingUploadQueue
+    var activeClient: LocalRecorderAPIClient?
+    var activeFallbackIntentId: String?
+    var activeRecordingBackend: ActiveRecordingBackend?
+    var isUploadingQueuedRecordings = false
     private var queuedUploadRetryAfter: Date?
-    private var isSilencePromptVisible = false
     private var appActivationObserver: NSObjectProtocol?
     private var levelTestSession: AudioLevelTestSession?
     private var levelTestTimeoutTask: Task<Void, Never>?
     private var recallSDKMeterSession: AudioLevelTestSession?
-    private var recallSDKMeterGeneration = 0
+    var recallSDKMeterGeneration = 0
     private var monitoringTimer: Timer?
     private var permissionRefreshTask: Task<Void, Never>?
     private var fallbackNotificationCountsByIntentId: [String: Int] = [:]
     private var fallbackNotificationNextDatesByIntentId: [String: Date] = [:]
-    private var silencePromptTracker = SilencePromptTracker()
+    var endPromptPolicy = RecorderEndPromptPolicy(scheduledEnd: nil)
+    @Published var isStartingRecording = false
+    @Published var isSwitchingMeeting = false
+    @Published var destinationUnconfirmed = false
+    @Published var isMeetingPickerPresented = false
+    @Published var meetingChoices: [RecordingMeeting] = []
+    @Published var meetingSearch = ""
+    @Published var meetingChoicesHaveMore = false
+    @Published var isLoadingMeetingChoices = false
+    @Published var meetingPickerError: String?
+    @Published var endPrompt: RecorderEndPrompt?
+    @Published var pendingUploadCount = 0
+    @Published var uploadStatusText: String?
+    var activeTarget: RecordingTarget?
+    var captureSessionID: String?
+    var captureNaturallyEnded = false
+    var recoveryState = RecorderCaptureRecovery()
+    var sdkDrainTasks: [String: Task<Void, Never>] = [:]
+    var meetingSearchGeneration = 0
+    var recordingAudioGeneration = 0
+    var retainedStoppedPayload: LocalRecordingUploadPayload?
+
 
     #if DEBUG
     init(snapshotBearerToken: String) {
@@ -292,8 +316,9 @@ final class RecorderAppModel: NSObject, ObservableObject, UNUserNotificationCent
         self.bearerToken = credentials?.bearerToken ?? ""
         super.init()
         loadPersistedPendingMeetings()
-        recallSDKController.onUnexpectedTermination = { [weak self] in
+        recallSDKController.onUnexpectedTermination = { [weak self] id in
             Task { @MainActor in
+                guard self?.captureSessionID == id else { return }
                 await self?.recoverFromUnexpectedRecallSDKStop()
             }
         }
@@ -302,6 +327,7 @@ final class RecorderAppModel: NSObject, ObservableObject, UNUserNotificationCent
             self?.handleLoginCallback(url)
         }
         notificationCenter.delegate = self
+        configureRecordingWorkflow()
         appActivationObserver = NotificationCenter.default.addObserver(
             forName: NSApplication.didBecomeActiveNotification,
             object: nil,
@@ -398,7 +424,7 @@ final class RecorderAppModel: NSObject, ObservableObject, UNUserNotificationCent
         }
     }
 
-    private func makeClient() -> LocalRecorderAPIClient? {
+    func makeClient() -> LocalRecorderAPIClient? {
         guard let serverURL = URL(string: serverURLText) else {
             return nil
         }
@@ -430,7 +456,7 @@ final class RecorderAppModel: NSObject, ObservableObject, UNUserNotificationCent
         await uploadQueuedRecordings(client: client)
     }
 
-    private func uploadQueuedRecordings(client: LocalRecorderAPIClient) async {
+    func uploadQueuedRecordings(client: LocalRecorderAPIClient) async {
         guard !isUploadingQueuedRecordings else {
             return
         }
@@ -442,7 +468,7 @@ final class RecorderAppModel: NSObject, ObservableObject, UNUserNotificationCent
         do {
             queuedPayloads = try uploadQueue.load()
         } catch {
-            statusText = "Could not read saved recordings"
+            uploadStatusText = "Could not read saved recordings"
             return
         }
 
@@ -453,10 +479,12 @@ final class RecorderAppModel: NSObject, ObservableObject, UNUserNotificationCent
         isUploadingQueuedRecordings = true
         defer {
             isUploadingQueuedRecordings = false
+            refreshPendingUploadCount()
         }
 
-        statusText = "Uploading saved recordings"
+        uploadStatusText = "Uploading saved recordings"
         for payload in queuedPayloads {
+            let client = makeClient() ?? client
             do {
                 try await uploadWithRetry(client: client, payload: payload)
                 try uploadQueue.remove(clientRecordingId: payload.clientRecordingId)
@@ -472,7 +500,7 @@ final class RecorderAppModel: NSObject, ObservableObject, UNUserNotificationCent
         }
 
         queuedUploadRetryAfter = nil
-        statusText = "Saved recordings uploaded"
+        uploadStatusText = "Saved recordings uploaded"
     }
 
     private func cleanupRecordingFiles(for payload: LocalRecordingUploadPayload) {
@@ -583,50 +611,12 @@ final class RecorderAppModel: NSObject, ObservableObject, UNUserNotificationCent
     }
 
     func startRecording() {
-        startRecording(fallbackIntentId: nil)
+        beginRecording(meetingId: nextScheduleMeeting?.meetingId, title: nil)
     }
 
     func startRecording(fallbackIntentId: String?) {
-        guard canMonitor else {
-            statusText = "Login and permissions are needed first"
-            return
-        }
-
-        // An explicit tap on a meeting (e.g. a fallback notification) always
-        // claims it. The generic record button only auto-attaches to a meeting
-        // that is live right now; otherwise the user is starting an ad-hoc
-        // recording. The explicit flag is sent to the server, which enforces
-        // the same policy regardless of client version.
-        if let intentId = fallbackIntentId {
-            let title = pendingMeetings
-                .first { $0.fallbackIntentId == intentId }?.title ?? "meeting"
-            Task {
-                await claimAndStart(
-                    fallbackIntentId: intentId,
-                    title: title,
-                    explicit: true
-                )
-            }
-            return
-        }
-
-        if let meeting = LocalRecorderAutoClaimPolicy.autoClaimMeeting(
-            from: pendingMeetings,
-            at: Date()
-        ) {
-            Task {
-                await claimAndStart(
-                    fallbackIntentId: meeting.fallbackIntentId,
-                    title: meeting.title,
-                    explicit: false
-                )
-            }
-            return
-        }
-
-        Task {
-            await createManualIntentAndStart()
-        }
+        guard let fallbackIntentId else { return }
+        beginRecording(legacyIntent: fallbackIntentId)
     }
 
     func checkNow() {
@@ -666,7 +656,8 @@ final class RecorderAppModel: NSObject, ObservableObject, UNUserNotificationCent
                     scheduleNextMonitoringCheck(after: 5 * 60)
                     return
                 }
-                await uploadQueuedRecordings(client: client)
+                try? await sealRecoveredCaptures(client: client)
+                Task { await uploadQueuedRecordings(client: client) }
                 let now = Date()
                 nextScheduleMeeting = monitoringStatus.nextMeeting
                 pendingMeetings = LocalRecorderPendingMeetingQueue.merge(
@@ -752,6 +743,7 @@ final class RecorderAppModel: NSObject, ObservableObject, UNUserNotificationCent
         client: LocalRecorderAPIClient,
         now: Date
     ) async -> Bool {
+        guard !isRecording, !isStartingRecording else { return true }
         let dueMeetings = pendingMeetings.filter { meeting in
             guard let nextDate = fallbackNotificationNextDatesByIntentId[
                 meeting.fallbackIntentId
@@ -775,6 +767,7 @@ final class RecorderAppModel: NSObject, ObservableObject, UNUserNotificationCent
                     continue
                 }
 
+                guard !isRecording, !isStartingRecording else { return true }
                 try await notify(meeting: meeting)
                 let delivery = try await client.markNotificationDelivered(
                     fallbackIntentId: meeting.fallbackIntentId
@@ -836,7 +829,7 @@ final class RecorderAppModel: NSObject, ObservableObject, UNUserNotificationCent
         )
     }
 
-    private func persistPendingMeetings() {
+    func persistPendingMeetings() {
         guard
             let data = try? JSONEncoder.localRecorder.encode(pendingMeetings)
         else {
@@ -846,130 +839,77 @@ final class RecorderAppModel: NSObject, ObservableObject, UNUserNotificationCent
         UserDefaults.standard.set(data, forKey: Self.pendingMeetingsDefaultsKey)
     }
 
-    private func claimAndStart(
-        fallbackIntentId: String,
-        title: String,
-        explicit: Bool
-    ) async {
-        guard let serverURL = URL(string: serverURLText) else {
-            statusText = "Enter a valid server URL"
-            return
-        }
-
-        do {
-            let client = LocalRecorderAPIClient(
-                serverURL: serverURL,
-                bearerToken: bearerToken,
-                deviceId: deviceIdStore.deviceId,
-                appVersion: appVersion,
-                permissionReadiness: permissionReadinessReport
-            )
-            let claim = try await client.claimIntent(
-                fallbackIntentId: fallbackIntentId,
-                explicit: explicit
-            )
-
-            guard claim.claimed else {
-                // An auto claim the server declined (e.g. the meeting is no
-                // longer live) becomes an ad-hoc recording rather than a dead
-                // end; explicit claims surface the failure reason as before.
-                if !explicit {
-                    await createManualIntentAndStart()
-                } else {
-                    statusText = claimFailureStatus(reason: claim.reason)
-                }
-                return
-            }
-
-            await startCapture(
-                client: client,
-                fallbackIntentId: fallbackIntentId,
-                title: claim.meetingTitle ?? title
-            )
-        } catch {
-            LocalRecorderTelemetry.capture(error, operation: .recordingClaim)
-            statusText = "Could not start recording"
-        }
-    }
-
-    private func createManualIntentAndStart() async {
-        guard let serverURL = URL(string: serverURLText) else {
-            statusText = "Enter a valid server URL"
-            return
-        }
-
-        do {
-            let client = LocalRecorderAPIClient(
-                serverURL: serverURL,
-                bearerToken: bearerToken,
-                deviceId: deviceIdStore.deviceId,
-                appVersion: appVersion,
-                permissionReadiness: permissionReadinessReport
-            )
-            let intent = try await client.createManualIntent()
-            await startCapture(
-                client: client,
-                fallbackIntentId: intent.fallbackIntentId,
-                title: intent.meetingTitle ?? "Manual recording"
-            )
-        } catch {
-            LocalRecorderTelemetry.capture(error, operation: .recordingCreate)
-            statusText = "Could not start recording"
-        }
-    }
-
-    private func startCapture(
+    func startCapture(
         client: LocalRecorderAPIClient,
         fallbackIntentId: String,
-        title: String
+        title: String,
+        nativeOnly: Bool = false
     ) async {
         stopLevelTest()
-
-        let clientRecordingId = UUID().uuidString
-        let startedWithRecallSDK = await startRecallSDKCapture(
-            client: client,
-            clientRecordingId: clientRecordingId,
-            fallbackIntentId: fallbackIntentId
-        )
-
+        isAdvancedExpanded = false
+        var intentID = fallbackIntentId
+        var confirmedTitle = title
+        let clientRecordingId = captureSessionID ?? UUID().uuidString
+        var startedWithRecallSDK = false
+        var captureStateUnknown = false
+        if !nativeOnly {
+            do {
+                try await startRecallSDKCapture(client: client, clientRecordingId: clientRecordingId, fallbackIntentId: intentID)
+                startedWithRecallSDK = true
+            } catch RecallDesktopSDKRecordingError.captureStateUnknown {
+                startedWithRecallSDK = true
+                captureStateUnknown = true
+            } catch {
+                LocalRecorderTelemetry.capture(error, operation: .sdkStart)
+                guard let target = activeTarget else { return }
+                do {
+                    let replacement = try await replaceSDKAttemptForNative(client: client, target: target, recordingID: clientRecordingId)
+                    intentID = replacement.fallbackIntentId
+                    confirmedTitle = replacement.meetingTitle
+                } catch {
+                    statusText = "Could not prepare local recording. Retry to recover this meeting."
+                    return
+                }
+            }
+        }
         if startedWithRecallSDK {
             activeRecordingBackend = .recallDesktopSDK
         } else {
             do {
-                try await startLocalCapture(fallbackIntentId: fallbackIntentId)
+                try await startLocalCapture(fallbackIntentId: intentID)
                 activeRecordingBackend = .localUpload
             } catch {
                 LocalRecorderTelemetry.capture(error, operation: .recordingStart)
-                try? await client.failIntent(
-                    fallbackIntentId: fallbackIntentId,
-                    errorMessage: error.localizedDescription
-                )
+                try? await client.failIntent(fallbackIntentId: intentID, errorMessage: error.localizedDescription)
                 statusText = "Could not start recording: \(error.localizedDescription)"
                 await refreshPermissions()
                 return
             }
         }
-
         activeClient = client
-        activeFallbackIntentId = fallbackIntentId
-        activeRecordingTitle = title
+        activeFallbackIntentId = intentID
+        activeRecordingTitle = confirmedTitle
         pendingMeetings.removeAll { $0.fallbackIntentId == fallbackIntentId }
         fallbackNotificationCountsByIntentId.removeValue(forKey: fallbackIntentId)
         fallbackNotificationNextDatesByIntentId.removeValue(forKey: fallbackIntentId)
         persistPendingMeetings()
         isRecording = true
-        statusText = "Recording \(title)"
-
-        if activeRecordingBackend == .recallDesktopSDK {
-            startRecallSDKLevelMetering()
+        statusText = captureStateUnknown ? "Capture state is unconfirmed. Use Stop before recording again." : "Recording \(confirmedTitle)"
+        if activeRecordingBackend == .recallDesktopSDK && !captureStateUnknown {
+            if recallSDKController.activeCaptureEnded {
+                captureNaturallyEnded = true
+                presentEndPrompt(reason: .captureEnded)
+            } else {
+                startRecallSDKLevelMetering()
+            }
         }
     }
 
     /// The Recall Desktop SDK records in a separate process and reports no
     /// audio levels, so run a meter-only capture alongside it to keep the
     /// level bars, waveform, and silence detection alive.
-    private func startRecallSDKLevelMetering() {
-        silencePromptTracker = SilencePromptTracker()
+    func startRecallSDKLevelMetering() {
+        endPromptPolicy = RecorderEndPromptPolicy(scheduledEnd: activeTarget?.endsAt)
         audioLevels = Array(repeating: 0, count: Self.audioLevelSampleCount)
 
         // The session takes ~1s to spin up (SCStream). A stop or a second
@@ -979,6 +919,9 @@ final class RecorderAppModel: NSObject, ObservableObject, UNUserNotificationCent
         // session down instead of leaking a live mic tap / SCStream.
         recallSDKMeterGeneration += 1
         let generation = recallSDKMeterGeneration
+        recordingAudioGeneration += 1
+        let audioGeneration = recordingAudioGeneration
+        let captureID = captureSessionID
         let previousSession = recallSDKMeterSession
         recallSDKMeterSession = nil
 
@@ -990,8 +933,10 @@ final class RecorderAppModel: NSObject, ObservableObject, UNUserNotificationCent
             let session = AudioLevelTestSession(
                 microphoneDeviceUID: selectedMicrophoneUID,
                 onAudioLevel: { [weak self] source, level in
+                    let observedAt = Date()
                     Task { @MainActor in
-                        self?.observeAudioLevel(source: source, level: level)
+                        guard self?.captureSessionID == captureID, self?.recordingAudioGeneration == audioGeneration else { return }
+                        self?.observeAudioLevel(source: source, level: level, at: observedAt)
                     }
                 }
             )
@@ -1018,10 +963,11 @@ final class RecorderAppModel: NSObject, ObservableObject, UNUserNotificationCent
         }
     }
 
-    private func stopRecallSDKLevelMetering() async {
+    func stopRecallSDKLevelMetering() async {
         // Invalidate any metering start still spinning up so it tears itself
         // down when it finishes instead of resurrecting a stopped session.
         recallSDKMeterGeneration += 1
+        recordingAudioGeneration += 1
 
         guard let session = recallSDKMeterSession else {
             return
@@ -1035,80 +981,58 @@ final class RecorderAppModel: NSObject, ObservableObject, UNUserNotificationCent
         client: LocalRecorderAPIClient,
         clientRecordingId: String,
         fallbackIntentId: String
-    ) async -> Bool {
-        do {
-            let upload = try await client.createRecallSDKUpload(
-                fallbackIntentId: fallbackIntentId,
-                clientRecordingId: clientRecordingId
-            )
-            try await recallSDKController.start(
-                upload: upload,
-                clientRecordingId: clientRecordingId
-            )
-            return true
-        } catch {
-            LocalRecorderTelemetry.capture(error, operation: .sdkStart)
-            try? await client.markRecallSDKFallback(
-                fallbackIntentId: fallbackIntentId
-            )
-            return false
+    ) async throws {
+        let upload = try await client.createRecallSDKUpload(fallbackIntentId: fallbackIntentId, clientRecordingId: clientRecordingId)
+        if let target = activeTarget {
+            recoveryState.sdkDrains.append(.init(recordingID: clientRecordingId, target: target))
+            try persistCaptureRecovery()
         }
+        try await recallSDKController.start(upload: upload, clientRecordingId: clientRecordingId)
     }
 
-    private func startLocalCapture(fallbackIntentId: String) async throws {
-        silencePromptTracker = SilencePromptTracker()
+    func startLocalCapture(fallbackIntentId: String) async throws {
+        endPromptPolicy = RecorderEndPromptPolicy(scheduledEnd: activeTarget?.endsAt)
         audioLevels = Array(repeating: 0, count: Self.audioLevelSampleCount)
+        recordingAudioGeneration += 1
+        let audioGeneration = recordingAudioGeneration
+        let captureID = captureSessionID
         try await captureController.start(
             fallbackIntentId: fallbackIntentId,
             appVersion: appVersion,
             microphoneDeviceUID: selectedMicrophoneUID,
             onAudioLevel: { [weak self] source, level in
+                    let observedAt = Date()
                 Task { @MainActor in
-                    self?.observeAudioLevel(source: source, level: level)
+                    guard self?.captureSessionID == captureID, self?.recordingAudioGeneration == audioGeneration else { return }
+                    self?.observeAudioLevel(source: source, level: level, at: observedAt)
                 }
             }
         )
     }
 
     private func recoverFromUnexpectedRecallSDKStop() async {
-        guard
-            isRecording,
-            !isFinishingRecording,
-            activeRecordingBackend == .recallDesktopSDK,
-            let client = activeClient,
-            let fallbackIntentId = activeFallbackIntentId
-        else {
-            return
-        }
-
+        guard isRecording, !isFinishingRecording, activeRecordingBackend == .recallDesktopSDK,
+              let client = activeClient, let target = activeTarget, let recordingID = captureSessionID else { return }
         isFinishingRecording = true
-        activeRecordingBackend = nil
-        statusText = "Switching to local recording"
         await stopRecallSDKLevelMetering()
-        try? await client.markRecallSDKFallback(fallbackIntentId: fallbackIntentId)
-
-        do {
-            try await startLocalCapture(fallbackIntentId: fallbackIntentId)
-            activeRecordingBackend = .localUpload
-            statusText = "Recording locally"
-        } catch {
-            LocalRecorderTelemetry.capture(error, operation: .fallbackStart)
-            try? await client.failIntent(
-                fallbackIntentId: fallbackIntentId,
-                errorMessage: error.localizedDescription
-            )
-            isRecording = false
-            activeClient = nil
-            activeFallbackIntentId = nil
-            activeRecordingTitle = nil
-            resetAudioLevels()
-            statusText = "Recording stopped unexpectedly"
-        }
-
+        // The SDK process is gone. Its token may already be terminal, so a
+        // replacement capture always receives its own attempt on this meeting.
+        startSDKDrain(client: client, target: target, recordingID: recordingID)
+        isRecording = false
+        captureSessionID = nil
+        activeClient = nil
+        activeFallbackIntentId = nil
+        activeRecordingBackend = nil
+        activeTarget = nil
+        activeRecordingTitle = nil
+        endPrompt = nil
+        resetAudioLevels()
         isFinishingRecording = false
+        beginRecording(meetingId: target.meetingId, nativeOnly: true)
     }
 
-    private func observeAudioLevel(source: LocalRecorderAudioSource, level: Float) {
+    private func observeAudioLevel(source: LocalRecorderAudioSource, level: Float, at observedAt: Date = Date()) {
+        guard Date().timeIntervalSince(observedAt) <= 2 else { return }
         guard isRecording || isTestingLevels else {
             return
         }
@@ -1130,7 +1054,7 @@ final class RecorderAppModel: NSObject, ObservableObject, UNUserNotificationCent
             audioLevels.removeFirst(audioLevels.count - Self.audioLevelSampleCount)
         }
 
-        if silencePromptTracker.observe(level: level) == .prompt {
+        if endPromptPolicy.observe(source: source, level: level, at: observedAt) {
             showSilencePrompt()
         }
     }
@@ -1239,33 +1163,7 @@ final class RecorderAppModel: NSObject, ObservableObject, UNUserNotificationCent
     }
 
     private func showSilencePrompt() {
-        guard isRecording, !isSilencePromptVisible else {
-            return
-        }
-
-        isSilencePromptVisible = true
-        let alert = NSAlert()
-        alert.alertStyle = .informational
-        alert.messageText = "Meeting ended?"
-        alert.informativeText = "The recording has been silent for 1 minute. End this meeting recording?"
-        alert.addButton(withTitle: "End recording")
-        alert.addButton(withTitle: "Keep recording")
-
-        NSApp.activate(ignoringOtherApps: true)
-        let response = alert.runModal()
-        isSilencePromptVisible = false
-
-        guard isRecording else {
-            silencePromptTracker.finishAfterPrompt()
-            return
-        }
-
-        if response == .alertFirstButtonReturn {
-            silencePromptTracker.finishAfterPrompt()
-            stopRecording()
-        } else {
-            silencePromptTracker.dismissPrompt()
-        }
+        presentEndPrompt(reason: .silence)
     }
 
     private func notify(meeting: MissedMeeting) async throws {
@@ -1273,6 +1171,7 @@ final class RecorderAppModel: NSObject, ObservableObject, UNUserNotificationCent
         content.title = "Bot did not join"
         content.body = "Start local recording for \(meeting.title)?"
         content.sound = .default
+        content.categoryIdentifier = RecorderNotificationAction.missingBotCategory
         content.userInfo = ["fallbackIntentId": meeting.fallbackIntentId]
         let request = UNNotificationRequest(
             identifier: meeting.fallbackIntentId,
@@ -1284,86 +1183,10 @@ final class RecorderAppModel: NSObject, ObservableObject, UNUserNotificationCent
     }
 
     func stopRecording() {
-        guard !isFinishingRecording else {
-            return
-        }
-
-        guard isRecording else {
-            statusText = "No active recording"
-            return
-        }
-
+        guard isRecording, !isFinishingRecording else { return }
         isFinishingRecording = true
-        statusText = "Saving recording"
-        silencePromptTracker.finishAfterPrompt()
-        Task {
-            var stoppedUploadPayload: LocalRecordingUploadPayload?
-            defer {
-                isFinishingRecording = false
-            }
-
-            do {
-                switch activeRecordingBackend {
-                case .recallDesktopSDK:
-                    await stopRecallSDKLevelMetering()
-                    _ = try await recallSDKController.stop()
-                    isRecording = false
-                    activeClient = nil
-                    activeFallbackIntentId = nil
-                    activeRecordingTitle = nil
-                    activeRecordingBackend = nil
-                    resetAudioLevels()
-                    statusText = "Recording processing"
-                case .localUpload, nil:
-                    let result = try await captureController.stop()
-                    isRecording = false
-                    try uploadQueue.save(result.payload)
-                    stoppedUploadPayload = result.payload
-                    guard let client = activeClient else {
-                        throw LocalRecorderAPIError.invalidResponse
-                    }
-
-                    statusText = "Uploading recording"
-                    try await uploadWithRetry(
-                        client: client,
-                        payload: result.payload
-                    )
-                    try uploadQueue.remove(clientRecordingId: result.payload.clientRecordingId)
-                    try? FileManager.default.removeItem(at: result.cleanupDirectoryURL)
-                    activeClient = nil
-                    activeFallbackIntentId = nil
-                    activeRecordingTitle = nil
-                    activeRecordingBackend = nil
-                    resetAudioLevels()
-                    statusText = "Recording uploaded"
-                }
-            } catch {
-                if stoppedUploadPayload == nil {
-                    LocalRecorderTelemetry.capture(error, operation: .recordingStop)
-                }
-                await stopRecallSDKLevelMetering()
-                let failedBackend = activeRecordingBackend
-                if let payload = stoppedUploadPayload,
-                   let client = activeClient {
-                    await handleUploadFailure(
-                        client: client,
-                        payload: payload,
-                        error: error
-                    )
-                }
-                isRecording = false
-                activeClient = nil
-                activeFallbackIntentId = nil
-                activeRecordingTitle = nil
-                activeRecordingBackend = nil
-                resetAudioLevels()
-                if failedBackend == .recallDesktopSDK {
-                    statusText = "Could not stop recording"
-                } else if stoppedUploadPayload == nil {
-                    statusText = "Could not save recording"
-                }
-            }
-        }
+        endPrompt = nil
+        Task { await finishCapture() }
     }
 
     nonisolated func userNotificationCenter(
@@ -1371,11 +1194,17 @@ final class RecorderAppModel: NSObject, ObservableObject, UNUserNotificationCent
         didReceive response: UNNotificationResponse,
         withCompletionHandler completionHandler: @escaping () -> Void
     ) {
-        let fallbackIntentId = response.notification.request.content
-            .userInfo["fallbackIntentId"] as? String
-
+        let action = response.actionIdentifier
+        let info = response.notification.request.content.userInfo
+        let intentID = info["fallbackIntentId"] as? String
+        let sessionID = info["captureSessionID"] as? String
+        let promptID = info["promptID"] as? String
         Task { @MainActor in
-            self.startRecording(fallbackIntentId: fallbackIntentId)
+            if action == RecorderNotificationAction.start, let intentID {
+                self.startRecording(fallbackIntentId: intentID)
+            } else if action == RecorderNotificationAction.stop || action == RecorderNotificationAction.keep {
+                self.respondToEndPrompt(sessionID: sessionID, promptID: promptID, stop: action == RecorderNotificationAction.stop)
+            }
         }
         completionHandler()
     }
@@ -1388,7 +1217,7 @@ final class RecorderAppModel: NSObject, ObservableObject, UNUserNotificationCent
         completionHandler([.banner, .sound])
     }
 
-    private func claimFailureStatus(reason: String?) -> String {
+    func claimFailureStatus(reason: String?) -> String {
         switch reason {
         case "already_recording":
             return "Another user is already recording"
@@ -1431,7 +1260,7 @@ final class RecorderAppModel: NSObject, ObservableObject, UNUserNotificationCent
         statusText = "Signed out"
     }
 
-    private func resetAudioLevels() {
+    func resetAudioLevels() {
         audioLevels = Array(repeating: 0, count: Self.audioLevelSampleCount)
         microphoneLevel = 0
         systemAudioLevel = 0
@@ -1483,30 +1312,27 @@ final class RecorderAppModel: NSObject, ObservableObject, UNUserNotificationCent
     }
 
     func exitApp() {
-        guard canCloseApp() else {
-            return
-        }
-
-        stopLevelTest()
+        // The delegate also catches Cmd Q and system termination requests.
         NSApp.terminate(nil)
     }
 
-    private func canCloseApp() -> Bool {
-        guard !isRecording && !isFinishingRecording else {
-            let alert = NSAlert()
-            alert.alertStyle = .warning
-            alert.messageText = isFinishingRecording
-                ? "Recording is saving"
-                : "Recording is active"
-            alert.informativeText = isFinishingRecording
-                ? "Wait for the recorder to finish saving before closing."
-                : "Stop recording before closing the recorder."
+    func canCloseApp(allowPendingUploads: Bool = false) -> Bool {
+        let captureBusy = isRecording || isFinishingRecording || isStartingRecording
+        let pending = pendingUploadCount > 0 || !recoveryState.targets.isEmpty || recoveryState.pendingStart != nil || recoveryState.pendingLegacyIntent != nil
+        guard captureBusy || pending else { return true }
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = captureBusy ? "Recording is active" : "Recordings are still saving"
+        if captureBusy {
+            alert.informativeText = "Stop recording before closing the recorder."
             alert.addButton(withTitle: "OK")
             alert.runModal()
             return false
         }
-
-        return true
+        alert.informativeText = "Keep Tape open while recordings finish uploading. Saved local files will remain on this Mac. If you quit now, reopen Tape to confirm the remaining uploads."
+        alert.addButton(withTitle: "Keep open")
+        if allowPendingUploads { alert.addButton(withTitle: "Quit anyway") }
+        return alert.runModal() == .alertSecondButtonReturn && allowPendingUploads
     }
 
     private func refreshPermissions() async {
@@ -1790,7 +1616,10 @@ final class RecorderAppModel: NSObject, ObservableObject, UNUserNotificationCent
         error: Error
     ) async {
         LocalRecorderTelemetry.capture(error, operation: .recordingUpload)
-        if requireSignInIfExpired(error) { return }
+        if localRecorderRequiresSignIn(error) {
+            uploadStatusText = "Upload needs sign in. Reconnect to continue."
+            return
+        }
         if case let .wait(retryAfterSeconds) = localRecorderUploadRetryDecision(
             error: error,
             attempt: 1
@@ -1798,12 +1627,12 @@ final class RecorderAppModel: NSObject, ObservableObject, UNUserNotificationCent
             queuedUploadRetryAfter = Date().addingTimeInterval(
                 TimeInterval(retryAfterSeconds)
             )
-            statusText = "Upload paused. Retrying later."
+            uploadStatusText = "Upload paused. Retrying later."
             return
         }
 
         guard isPermanentLocalRecorderUploadError(error) else {
-            statusText = "Could not upload recording. Files kept locally."
+            uploadStatusText = "Could not upload recording. Files kept locally."
             return
         }
 
@@ -1815,7 +1644,7 @@ final class RecorderAppModel: NSObject, ObservableObject, UNUserNotificationCent
         try? uploadQueue.quarantine(
             clientRecordingId: payload.clientRecordingId
         )
-        statusText = "Upload stopped: \(message). Files kept locally."
+        uploadStatusText = "Upload stopped: \(message). Files kept locally."
     }
 }
 

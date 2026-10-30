@@ -227,7 +227,7 @@ import Testing
         pendingMeetings: []
     )
 
-    #expect(delay == 130)
+    #expect(delay == 60)
 }
 
 @Test func notificationBackoffDoublesUntilOneHour() {

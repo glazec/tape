@@ -7,6 +7,7 @@ struct RecallDesktopSDKRecordingResult {
     var windowId: String
     var startedAt: Date
     var stoppedAt: Date
+    var didCaptureStart: Bool
 }
 
 enum RecallDesktopSDKRecordingError: LocalizedError {
@@ -15,9 +16,12 @@ enum RecallDesktopSDKRecordingError: LocalizedError {
     case invalidAPIURL
     case scriptNotFound
     case startFailed(String)
+    case captureStateUnknown
 
     var errorDescription: String? {
         switch self {
+        case .captureStateUnknown:
+            return "Capture has not confirmed it stopped. Use Stop before recording again."
         case .alreadyRecording:
             return "Recording is already running"
         case .noActiveRecording:
@@ -34,127 +38,166 @@ enum RecallDesktopSDKRecordingError: LocalizedError {
 
 @MainActor
 final class RecallDesktopSDKRecordingController {
-    private var activeSession: RecallDesktopSDKRecordingSession?
-    var onUnexpectedTermination: (() -> Void)?
+    private var sessions: [String: RecallDesktopSDKRecordingSession] = [:]
+    private var activeID: String?
+    var onUnexpectedTermination: ((String) -> Void)?
+    var onCaptureFailure: ((String) -> Void)?
+    func didCaptureStart(_ id: String) -> Bool { sessions[id]?.started ?? false }
+    var activeCaptureEnded: Bool { activeID.flatMap { sessions[$0]?.stopped } ?? false }
+    var onLifecycleEvent: ((String, RecorderSDKEvent) -> Void)?
 
-    func start(
-        upload: RecallSDKUploadResponse,
-        clientRecordingId: String
-    ) async throws {
-        if activeSession != nil {
-            throw RecallDesktopSDKRecordingError.alreadyRecording
-        }
-
-        guard URL(string: upload.recallApiUrl) != nil else {
-            throw RecallDesktopSDKRecordingError.invalidAPIURL
-        }
-
+    func start(upload: RecallSDKUploadResponse, clientRecordingId: String) async throws {
+        guard activeID == nil else { throw RecallDesktopSDKRecordingError.alreadyRecording }
+        guard URL(string: upload.recallApiUrl) != nil else { throw RecallDesktopSDKRecordingError.invalidAPIURL }
         let scriptURL = try sidecarScriptURL()
-        let nodeInvocation = nodeInvocation(scriptURL: scriptURL)
+        let invocation = nodeInvocation(scriptURL: scriptURL)
+        let controlURL = Self.controlURL(clientRecordingId)
+        try FileManager.default.createDirectory(at: controlURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Data().write(to: controlURL, options: .atomic)
         let process = Process()
-        let outputPipe = Pipe()
-        let errorPipe = Pipe()
-        let inputPipe = Pipe()
-
-        process.executableURL = nodeInvocation.executableURL
-        process.arguments = nodeInvocation.arguments + [
-            "--api-url",
-            upload.recallApiUrl,
-            "--upload-token",
-            upload.uploadToken,
-            "--parent-pid",
-            String(ProcessInfo.processInfo.processIdentifier),
-        ]
-        process.standardOutput = outputPipe
-        process.standardError = errorPipe
-        process.standardInput = inputPipe
-        process.terminationHandler = { [weak self, weak process] _ in
-            guard let process else {
-                return
-            }
-
-            Task { @MainActor in
-                self?.handleUnexpectedTermination(process)
-            }
+        let output = Pipe(), input = Pipe()
+        process.executableURL = invocation.executableURL
+        process.arguments = invocation.arguments + ["--api-url", upload.recallApiUrl, "--upload-token", upload.uploadToken, "--parent-pid", String(ProcessInfo.processInfo.processIdentifier), "--control-file", controlURL.path]
+        process.standardInput = input
+        process.standardOutput = output
+        // The structured error stream is stdout; never leave an unread stderr pipe.
+        process.standardError = FileHandle.nullDevice
+        let session = RecallDesktopSDKRecordingSession(id: clientRecordingId, process: process, input: input, output: output, uploadID: upload.sdkUploadId)
+        sessions[clientRecordingId] = session
+        activeID = clientRecordingId
+        process.terminationHandler = { [weak self] process in
+            Task { @MainActor in self?.terminated(id: clientRecordingId, status: process.terminationStatus) }
         }
-
-        try process.run()
-
         do {
-            let windowId = try await Self.readStartedWindowId(
-                from: outputPipe.fileHandleForReading
-            )
-            activeSession = RecallDesktopSDKRecordingSession(
-                clientRecordingId: clientRecordingId,
-                inputPipe: inputPipe,
-                outputPipe: outputPipe,
-                process: process,
-                sdkUploadId: upload.sdkUploadId,
-                startedAt: Date(),
-                windowId: windowId
-            )
-            if !process.isRunning {
-                activeSession = nil
-                throw RecallDesktopSDKRecordingError.startFailed(
-                    "Recall Desktop SDK stopped before recording was ready"
-                )
+            try process.run()
+            // Exactly one reader owns stdout for the entire process lifetime.
+            session.reader = Task { [weak self] in
+                do {
+                    for try await line in output.fileHandleForReading.bytes.lines {
+                        guard let data = line.data(using: .utf8),
+                              let message = try? JSONDecoder().decode(RecallDesktopSDKSidecarMessage.self, from: data) else { continue }
+                        self?.receive(message, id: clientRecordingId)
+                    }
+                } catch {
+                    session.error = error.localizedDescription
+                }
+            }
+            let deadline = Date().addingTimeInterval(30)
+            while !session.started && session.error == nil && process.isRunning && Date() < deadline {
+                try await Task.sleep(for: .milliseconds(50))
+            }
+            guard session.started, session.error == nil, process.isRunning else {
+                throw RecallDesktopSDKRecordingError.startFailed(session.error ?? "Recording did not start")
             }
         } catch {
+            session.stopRequested = true
+            session.lifecycle?.explicitStopRequested = true
             if process.isRunning {
-                process.terminate()
+                try? send("stop", to: session)
+                let deadline = Date().addingTimeInterval(15)
+                while !session.stopped && process.isRunning && Date() < deadline {
+                    try await Task.sleep(for: .milliseconds(50))
+                }
             }
-
-            let stderr = String(
-                data: errorPipe.fileHandleForReading.readDataToEndOfFile(),
-                encoding: .utf8
-            )?
-                .trimmingCharacters(in: .whitespacesAndNewlines)
-
-            throw RecallDesktopSDKRecordingError.startFailed(
-                stderr?.isEmpty == false ? stderr! : error.localizedDescription
-            )
+            guard session.stopped || !process.isRunning else {
+                // Keep ownership and the stdout reader. Never overlap a native
+                // fallback with an SDK start whose cancellation is unconfirmed.
+                throw RecallDesktopSDKRecordingError.captureStateUnknown
+            }
+            activeID = nil
+            session.stopped = true
+            throw error
         }
     }
 
+    /// Acknowledges capture stop, leaving the sidecar alive for its upload.
     func stop() async throws -> RecallDesktopSDKRecordingResult {
-        guard let session = activeSession else {
+        guard let id = activeID, let session = sessions[id] else {
             throw RecallDesktopSDKRecordingError.noActiveRecording
         }
-
-        activeSession = nil
-
-        let stopMessage = Data("{\"type\":\"stop\"}\n".utf8)
-        session.inputPipe.fileHandleForWriting.write(stopMessage)
-        try? session.inputPipe.fileHandleForWriting.close()
-
+        session.stopRequested = true
+        session.lifecycle?.explicitStopRequested = true
+        if !session.stopped { try send("stop", to: session) }
         let deadline = Date().addingTimeInterval(15)
-        while session.process.isRunning && Date() < deadline {
-            try await Task.sleep(for: .milliseconds(100))
+        while !session.stopped && session.process.isRunning && Date() < deadline {
+            try await Task.sleep(for: .milliseconds(50))
         }
+        guard session.stopped else {
+            throw RecallDesktopSDKRecordingError.startFailed(session.error ?? "Capture has not confirmed it stopped. Try Stop again.")
+        }
+        activeID = nil
+        return RecallDesktopSDKRecordingResult(clientRecordingId: id, sdkUploadId: session.uploadID, windowId: session.windowID ?? "unstarted", startedAt: session.startedAt, stoppedAt: Date(), didCaptureStart: session.started)
+    }
 
+    func shutdown(clientRecordingId: String) async throws {
+        let controlURL = Self.controlURL(clientRecordingId)
+        guard let session = sessions[clientRecordingId] else {
+            // A surviving upload from a prior app process reads this unique file.
+            try FileManager.default.createDirectory(at: controlURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try Data("shutdown".utf8).write(to: controlURL, options: .atomic)
+            return
+        }
+        guard session.stopped else { throw RecallDesktopSDKRecordingError.startFailed("Capture is still active") }
         if session.process.isRunning {
-            session.process.terminate()
-            throw RecallDesktopSDKRecordingError.startFailed(
-                "Recall Desktop SDK did not stop within 15 seconds"
-            )
+            try send("shutdown", to: session)
+            let deadline = Date().addingTimeInterval(15)
+            while session.process.isRunning && Date() < deadline { try await Task.sleep(for: .milliseconds(100)) }
+            guard !session.process.isRunning else { throw RecallDesktopSDKRecordingError.startFailed("Upload process is still closing") }
         }
+        session.reader?.cancel()
+        try? session.input.fileHandleForWriting.close()
+        sessions.removeValue(forKey: clientRecordingId)
+        try? FileManager.default.removeItem(at: controlURL)
+    }
 
-        let output = String(
-            data: session.outputPipe.fileHandleForReading.readDataToEndOfFile(),
-            encoding: .utf8
-        ) ?? ""
-        try RecallDesktopSDKStopAcknowledgement.validate(
-            output: output,
-            terminationStatus: session.process.terminationStatus
-        )
+    private static func controlURL(_ id: String) -> URL {
+        LocalRecorderFileLocations.uploadQueueDirectoryURL().deletingLastPathComponent().appendingPathComponent("sdk-controls").appendingPathComponent(id + ".control")
+    }
 
-        return RecallDesktopSDKRecordingResult(
-            clientRecordingId: session.clientRecordingId,
-            sdkUploadId: session.sdkUploadId,
-            windowId: session.windowId,
-            startedAt: session.startedAt,
-            stoppedAt: Date()
-        )
+    private func send(_ type: String, to session: RecallDesktopSDKRecordingSession) throws {
+        try session.input.fileHandleForWriting.write(contentsOf: Data("{\"type\":\"\(type)\"}\n".utf8))
+    }
+
+    private func receive(_ message: RecallDesktopSDKSidecarMessage, id: String) {
+        guard let session = sessions[id] else { return }
+        switch message.type {
+        case "started":
+            session.started = true
+            session.windowID = message.windowId
+            if let windowID = message.windowId, session.lifecycle == nil {
+                session.lifecycle = RecorderSDKLifecycle(windowID: windowID)
+                session.lifecycle?.explicitStopRequested = session.stopRequested
+            }
+        case "prepared":
+            session.windowID = message.windowId
+            if let windowID = message.windowId, session.lifecycle == nil {
+                session.lifecycle = RecorderSDKLifecycle(windowID: windowID)
+                session.lifecycle?.explicitStopRequested = session.stopRequested
+            }
+        case "cancelled", "stopped": session.stopped = true
+        case "error":
+            session.error = message.message
+            if activeID == id, session.started, session.lifecycle?.explicitStopRequested == false {
+                onCaptureFailure?(id)
+            }
+        case "sdk_event":
+            guard let event = message.event else { return }
+            if let decision = session.lifecycle?.observe(event: event, windowID: message.payload?.window?.id) {
+                if decision == .recordingEnded { session.stopped = true }
+                if activeID == id { onLifecycleEvent?(id, decision) }
+            }
+        default: break
+        }
+    }
+
+    private func terminated(id: String, status: Int32) {
+        guard let session = sessions[id] else { return }
+        session.error = session.error ?? "Recording process exited (\(status))"
+        if activeID == id && !session.stopped && session.started && session.lifecycle?.explicitStopRequested == false {
+            activeID = nil
+            sessions.removeValue(forKey: id)
+            onUnexpectedTermination?(id)
+        }
     }
 
     private func sidecarScriptURL() throws -> URL {
@@ -231,58 +274,26 @@ final class RecallDesktopSDKRecordingController {
         )
     }
 
-    private static func readStartedWindowId(from handle: FileHandle) async throws -> String {
-        for try await line in handle.bytes.lines {
-            guard let data = line.data(using: .utf8) else {
-                continue
-            }
-
-            let message = try JSONDecoder().decode(
-                RecallDesktopSDKSidecarMessage.self,
-                from: data
-            )
-
-            switch message.type {
-            case "started":
-                if let windowId = message.windowId, !windowId.isEmpty {
-                    return windowId
-                }
-            case "error":
-                throw RecallDesktopSDKRecordingError.startFailed(
-                    message.message ?? "Recall Desktop SDK recording failed"
-                )
-            default:
-                continue
-            }
-        }
-
-        throw RecallDesktopSDKRecordingError.startFailed(
-            "Recall Desktop SDK sidecar exited before recording started"
-        )
-    }
-
-    private func handleUnexpectedTermination(_ process: Process) {
-        guard let session = activeSession, session.process === process else {
-            return
-        }
-
-        LocalRecorderTelemetry.capture(
-            NSError(domain: "RecallDesktopSDK", code: Int(process.terminationStatus)),
-            operation: .sdkTermination
-        )
-        activeSession = nil
-        onUnexpectedTermination?()
-    }
 }
 
-private struct RecallDesktopSDKRecordingSession {
-    var clientRecordingId: String
-    var inputPipe: Pipe
-    var outputPipe: Pipe
-    var process: Process
-    var sdkUploadId: String
-    var startedAt: Date
-    var windowId: String
+@MainActor
+private final class RecallDesktopSDKRecordingSession {
+    let id: String
+    let process: Process
+    let input: Pipe
+    let output: Pipe
+    let uploadID: String
+    let startedAt = Date()
+    var windowID: String?
+    var lifecycle: RecorderSDKLifecycle?
+    var stopped = false
+    var started = false
+    var stopRequested = false
+    var error: String?
+    var reader: Task<Void, Never>?
+    init(id: String, process: Process, input: Pipe, output: Pipe, uploadID: String) {
+        self.id = id; self.process = process; self.input = input; self.output = output; self.uploadID = uploadID
+    }
 }
 
 private struct RecallDesktopSDKNodeInvocation {
@@ -294,4 +305,8 @@ private struct RecallDesktopSDKSidecarMessage: Decodable {
     var type: String
     var windowId: String?
     var message: String?
+    var event: String?
+    var payload: Payload?
+    struct Payload: Decodable { var window: Window? }
+    struct Window: Decodable { var id: String? }
 }

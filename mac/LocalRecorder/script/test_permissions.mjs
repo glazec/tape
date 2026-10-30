@@ -46,7 +46,7 @@ import Foundation
 enum LocalRecorderAudioSource { case microphone, computerAudio }
 struct SilenceTracker {
   enum Result { case none, prompt }
-  func observe(level: Float) -> Result { .none }
+  func observe(source: LocalRecorderAudioSource, level: Float, at: Date) -> Bool { false }
 }
 enum PermissionGrant: Sendable { case unknown, granted, denied }
 enum RecorderPermissionStep { case microphone, accessibility, screenAndSystemAudio, alerts }
@@ -81,7 +81,7 @@ struct Checklist {
   var microphoneLevel: Float = 0
   var systemAudioLevel: Float = 0
   var audioLevels = Array(repeating: Float(0), count: audioLevelSampleCount)
-  var silencePromptTracker = SilenceTracker()
+  var endPromptPolicy = SilenceTracker()
   func showSilencePrompt() {}
   var isSignedIn = false
   var isRequestingPermissions = false
