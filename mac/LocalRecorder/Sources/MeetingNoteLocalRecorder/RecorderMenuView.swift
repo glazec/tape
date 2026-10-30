@@ -85,6 +85,13 @@ enum TapeType {
     }
 }
 
+/// The interface copy is English, so dates follow it instead of mixing in the system language.
+enum TapeFormat {
+    static let locale = Locale(identifier: "en_US")
+    static let time = Date.FormatStyle(date: .omitted, time: .shortened, locale: locale)
+    static let timeRange = Date.IntervalFormatStyle.interval.hour().minute().locale(locale)
+}
+
 enum RecorderWindowChrome {
     /// Runs the paper canvas under a transparent titlebar so the window reads as one surface,
     /// keeping the native traffic lights.
@@ -101,6 +108,7 @@ enum RecorderWindowChrome {
 struct RecorderMenuView: View {
     @ObservedObject var model: RecorderAppModel
     @FocusState private var isTitleFocused: Bool
+    @State private var pickerClosedAt = Date.distantPast
     /// The setup window shares its titlebar row with the settings control;
     /// the menu bar panel has no titlebar and keeps the control beside the status line.
     var showsWindowChrome = false
@@ -153,45 +161,26 @@ struct RecorderMenuView: View {
             .foregroundStyle(TapePalette.ash)
             .frame(height: 14)
 
-            Group {
-                if model.isRecording {
-                    Button {
-                        model.isMeetingPickerPresented.toggle()
-                        if model.isMeetingPickerPresented { model.loadMeetingChoices() }
-                    } label: {
-                        HStack(alignment: .firstTextBaseline, spacing: 6) {
-                            Text(state.title).lineLimit(2)
-                            Image(systemName: "chevron.down").font(TapeType.sans(11, .medium))
-                        }
-                        .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    .focused($isTitleFocused)
-                    .accessibilityLabel("Change recording meeting")
-                    .accessibilityValue("\(state.title), \(model.isMeetingPickerPresented ? "Expanded" : "Collapsed")")
-                    .help("Choose where this recording is saved")
-                } else {
-                    Text(state.title).lineLimit(2)
-                }
-            }
-            .font(TapeType.serif(22))
-            .tracking(-0.3)
-            .fixedSize(horizontal: false, vertical: true)
-            .padding(.top, 6)
-            .padding(.trailing, showsWindowChrome ? 0 : 24)
-
-            if model.isRecording && model.isMeetingPickerPresented {
-                RecorderMeetingPicker(model: model).padding(.top, 12)
-            }
-
             if model.isRecording {
+                RecordingDestinationCard(model: model, togglePicker: toggleMeetingPicker)
+                    .focused($isTitleFocused)
+                    .padding(.top, 10)
+                    .padding(.trailing, showsWindowChrome ? 0 : 24)
+
                 RecordingLevelsView(
-                    samples: model.audioLevels,
                     microphoneLevel: model.microphoneLevel,
                     systemAudioLevel: model.systemAudioLevel
                 )
-                .padding(.top, 10)
+                .padding(.top, 14)
             } else {
+                Text(state.title)
+                    .lineLimit(2)
+                    .font(TapeType.serif(22))
+                    .tracking(-0.3)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.top, 6)
+                    .padding(.trailing, showsWindowChrome ? 0 : 24)
+
                 Text(state.detail)
                     .font(TapeType.sans(12.5))
                     .foregroundStyle(TapePalette.muted)
@@ -199,6 +188,11 @@ struct RecorderMenuView: View {
                     .truncationMode(.tail)
                     .help(state.detailHelp ?? "")
                     .padding(.top, 3)
+
+                if showsDestinationChip {
+                    RecordingDestinationChip(model: model, togglePicker: toggleMeetingPicker)
+                        .padding(.top, 14)
+                }
             }
 
             if let prompt = model.endPrompt {
@@ -263,11 +257,11 @@ struct RecorderMenuView: View {
             .buttonStyle(RecorderActionButtonStyle(kind: state.actionKind))
             .disabled(state.isActionDisabled)
             .fixedSize()
-            .padding(.top, 16)
+            .padding(.top, showsDestinationChip ? 10 : 16)
             }
         }
         .onChange(of: model.isMeetingPickerPresented) { _, expanded in
-            if !expanded { isTitleFocused = true }
+            if !expanded { isTitleFocused = true; pickerClosedAt = Date() }
         }
         .overlay(alignment: .topTrailing) {
             if !showsWindowChrome {
@@ -339,6 +333,24 @@ struct RecorderMenuView: View {
 
     private var isSignedIn: Bool {
         !model.bearerToken.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    /// Record always says where it will save, so nothing lands in a meeting the user did not see.
+    private var showsDestinationChip: Bool {
+        isSignedIn && model.nextPermissionStep == nil && model.endPrompt == nil
+            && !model.isRecording && !model.isStartingRecording && !model.isFinishingRecording
+            && !model.isRequestingPermissions && model.recordingStartFailure != .signInRequired
+    }
+
+    private func toggleMeetingPicker() {
+        // A transient popover closes on mouse-down, before the anchor's action runs;
+        // without this, clicking the anchor to close it would reopen it.
+        if !model.isMeetingPickerPresented, Date().timeIntervalSince(pickerClosedAt) < 0.3 { return }
+        model.isMeetingPickerPresented.toggle()
+        if model.isMeetingPickerPresented {
+            model.meetingSearch = ""
+            model.loadMeetingChoices()
+        }
     }
 
     private var state: RecorderSummaryState {
@@ -440,27 +452,22 @@ struct RecorderMenuView: View {
         } else if model.nextPermissionStep != nil {
             model.requestNextPermission()
         } else {
-            if model.startTargetRejected || model.nextScheduleMeeting?.botStatus == "recording" {
-                model.beginRecording()
-            } else {
-                model.startRecording()
-            }
+            // The destination chip already excludes rejected or bot-recorded meetings.
+            model.startRecording()
         }
     }
 
     // MARK: Formatting
 
     private func timeText(_ date: Date) -> String {
-        date.formatted(date: .omitted, time: .shortened)
+        date.formatted(TapeFormat.time)
     }
 
     private func rangeText(_ meeting: LocalRecorderMonitoringMeeting) -> String {
         guard let endsAt = meeting.endsAt else {
             return timeText(meeting.startsAt)
         }
-        return (meeting.startsAt..<max(endsAt, meeting.startsAt)).formatted(
-            .interval.hour().minute()
-        )
+        return (meeting.startsAt..<max(endsAt, meeting.startsAt)).formatted(TapeFormat.timeRange)
     }
 
     private func dayText(_ date: Date) -> String {
@@ -471,7 +478,7 @@ struct RecorderMenuView: View {
         if calendar.isDateInTomorrow(date) {
             return "Tomorrow"
         }
-        return date.formatted(.dateTime.weekday(.wide))
+        return date.formatted(.dateTime.weekday(.wide).locale(TapeFormat.locale))
     }
 
     private func notetakerText(_ meeting: LocalRecorderMonitoringMeeting) -> String {
@@ -520,14 +527,17 @@ private struct RecorderSummaryState {
 struct RecorderActionButtonStyle: ButtonStyle {
     enum Kind {
         case primary
+        /// Quiet capsule with a coral square: the recording itself is the focus, not the button.
         case stop
         case quiet
     }
 
     var kind: Kind
+    var height: CGFloat = 30
     @Environment(\.isEnabled) private var isEnabled
 
     func makeBody(configuration: Configuration) -> some View {
+        let isQuiet = kind != .primary
         HStack(spacing: 7) {
             if kind == .stop {
                 RoundedRectangle(cornerRadius: 1.5, style: .continuous)
@@ -536,15 +546,15 @@ struct RecorderActionButtonStyle: ButtonStyle {
             }
             configuration.label
         }
-        .font(TapeType.sans(13, .medium))
-        .foregroundStyle(kind == .quiet ? TapePalette.ink : TapePalette.paper)
-        .padding(.horizontal, 14)
-        .frame(height: 30)
+        .font(TapeType.sans(height < 30 ? 12 : 13, .medium))
+        .foregroundStyle(isQuiet ? TapePalette.ink : TapePalette.paper)
+        .padding(.horizontal, height < 30 ? 11 : 14)
+        .frame(height: height)
         .background(
-            Capsule().fill(kind == .quiet ? TapePalette.surface : TapePalette.charcoal)
+            Capsule().fill(isQuiet ? TapePalette.surface : TapePalette.charcoal)
         )
         .overlay(
-            Capsule().strokeBorder(kind == .quiet ? TapePalette.border : Color.clear)
+            Capsule().inset(by: 0.5).stroke(isQuiet ? TapePalette.border : Color.clear, lineWidth: 1)
         )
         .opacity(configuration.isPressed ? 0.8 : (isEnabled ? 1 : 0.55))
         .contentShape(Capsule())
@@ -588,44 +598,154 @@ struct LiveLevelMeter: View {
     }
 }
 
-/// Live proof that capture is working: a rolling waveform plus one meter per source,
-/// so a silent microphone or missing system audio is visible at a glance.
-struct RecordingLevelsView: View {
-    var samples: [Float]
-    var microphoneLevel: Float
-    var systemAudioLevel: Float
+/// Where the current recording is saved. The whole card opens the meeting picker.
+struct RecordingDestinationCard: View {
+    @ObservedObject var model: RecorderAppModel
+    var togglePicker: () -> Void
+    @State private var isHovering = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            RollingWaveform(samples: samples)
-                .frame(height: 26)
-            HStack(spacing: 16) {
-                SourceLevel(title: "Mic", level: microphoneLevel)
-                SourceLevel(title: "Mac sound", level: systemAudioLevel)
+        let title = model.activeRecordingTitle ?? "Untitled recording"
+        Button(action: togglePicker) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Saving to")
+                    .font(TapeType.sans(11.5, .medium))
+                    .foregroundStyle(TapePalette.muted)
+
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Text(title)
+                        .font(TapeType.serif(18))
+                        .tracking(-0.2)
+                        .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .contentTransition(.opacity)
+                    Spacer(minLength: 0)
+                    Image(systemName: "chevron.up.chevron.down")
+                        .font(TapeType.sans(11, .medium))
+                        .foregroundStyle(TapePalette.ash)
+                }
+                .foregroundStyle(TapePalette.ink)
+
+                if model.destinationUnconfirmed {
+                    HStack(spacing: 5) {
+                        Circle().fill(TapePalette.amber).frame(width: 5, height: 5)
+                        Text("Move not confirmed · Choose again")
+                    }
+                    .font(TapeType.sans(11.5, .medium))
+                    .foregroundStyle(TapePalette.amber)
+                } else if let meta = meta {
+                    Text(meta)
+                        .font(TapeType.sans(11.5))
+                        .foregroundStyle(TapePalette.muted)
+                        .monospacedDigit()
+                }
             }
+            .padding(12)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(isHovering || model.isMeetingPickerPresented ? TapePalette.mist : TapePalette.surface, in: RoundedRectangle(cornerRadius: 8))
+            .overlay(RoundedRectangle(cornerRadius: 8).stroke(TapePalette.border, lineWidth: 1))
+            .contentShape(RoundedRectangle(cornerRadius: 8))
         }
+        .buttonStyle(.plain)
+        .onHover { isHovering = $0 }
+        .animation(.easeOut(duration: 0.15), value: title)
+        .modifier(MeetingPickerPopover(model: model))
+        .help("Change which meeting this recording is saved to")
+        .accessibilityLabel("Saving to \(title)")
+        .accessibilityHint("Change which meeting this recording is saved to")
+        .accessibilityValue(model.destinationUnconfirmed ? "Move not confirmed" : "")
+    }
+
+    private var meta: String? {
+        guard let start = model.activeTarget?.startsAt else { return nil }
+        let calendar = Calendar.current
+        let day = calendar.isDateInToday(start) ? "Today"
+            : calendar.isDateInYesterday(start) ? "Yesterday"
+            : start.formatted(.dateTime.weekday(.abbreviated).month(.abbreviated).day().locale(TapeFormat.locale))
+        guard let end = model.activeTarget?.endsAt, end > start else {
+            return "\(day) · \(start.formatted(TapeFormat.time))"
+        }
+        return "\(day) · \((start..<end).formatted(TapeFormat.timeRange))"
     }
 }
 
-struct RollingWaveform: View {
-    var samples: [Float]
+/// Before recording: states where Record will save, and opens the picker to change it.
+struct RecordingDestinationChip: View {
+    @ObservedObject var model: RecorderAppModel
+    var togglePicker: () -> Void
+    @State private var isHovering = false
 
     var body: some View {
-        GeometryReader { proxy in
-            let count = max(samples.count, 1)
-            let spacing: CGFloat = 2
-            let barWidth = max(1.5, (proxy.size.width - spacing * CGFloat(count - 1)) / CGFloat(count))
-            HStack(alignment: .center, spacing: spacing) {
-                ForEach(Array(samples.enumerated()), id: \.offset) { _, sample in
-                    Capsule()
-                        .fill(TapePalette.coral.opacity(0.8))
-                        .frame(width: barWidth, height: max(2, proxy.size.height * CGFloat(min(1, sample))))
+        Button(action: togglePicker) {
+            HStack(spacing: 6) {
+                Image(systemName: isNewMeeting ? "plus.circle" : "doc.text")
+                    .font(TapeType.sans(11))
+                    .foregroundStyle(TapePalette.ash)
+                Text("Saves to")
+                    .foregroundStyle(TapePalette.muted)
+                Text(label)
+                    .foregroundStyle(TapePalette.ink)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                Image(systemName: "chevron.up.chevron.down")
+                    .font(TapeType.sans(9, .medium))
+                    .foregroundStyle(TapePalette.ash)
+            }
+            .font(TapeType.sans(12, .medium))
+            .padding(.horizontal, 10)
+            .frame(height: 28)
+            .background(Capsule().fill(isHovering || model.isMeetingPickerPresented ? TapePalette.mist : TapePalette.surface))
+            .overlay(Capsule().inset(by: 0.5).stroke(TapePalette.border, lineWidth: 1))
+            .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .onHover { isHovering = $0 }
+        .modifier(MeetingPickerPopover(model: model))
+        .help("Choose which meeting this recording is saved to")
+        .accessibilityLabel("Saves to \(label)")
+        .accessibilityHint("Choose which meeting this recording is saved to")
+    }
+
+    private var label: String {
+        switch model.recordingDestination {
+        case .meeting(let id, let title):
+            // The suggested meeting is the one titled right above the chip.
+            return id == model.suggestedMeeting?.meetingId ? "This meeting" : title
+        case .newMeeting(let title):
+            return title.map { "New meeting · \($0)" } ?? "New meeting"
+        }
+    }
+
+    private var isNewMeeting: Bool {
+        if case .newMeeting = model.recordingDestination { return true }
+        return false
+    }
+}
+
+/// Live proof that capture is working: one meter per source, so a silent microphone
+/// or missing system audio is visible at a glance.
+struct RecordingLevelsView: View {
+    var microphoneLevel: Float
+    var systemAudioLevel: Float
+    @State private var lastHeard = Date()
+
+    var body: some View {
+        HStack(spacing: 18) {
+            SourceLevel(title: "Mic", level: microphoneLevel)
+            SourceLevel(title: "Mac sound", level: systemAudioLevel)
+            Spacer(minLength: 0)
+            TimelineView(.periodic(from: .now, by: 1)) { context in
+                if context.date.timeIntervalSince(lastHeard) > 10 {
+                    Text("No sound yet")
+                        .font(TapeType.sans(11))
+                        .foregroundStyle(TapePalette.ash)
+                        .transition(.opacity)
                 }
             }
-            .frame(width: proxy.size.width, height: proxy.size.height, alignment: .leading)
         }
-        .animation(.linear(duration: 0.1), value: samples)
-        .accessibilityHidden(true)
+        .onChange(of: max(microphoneLevel, systemAudioLevel)) { _, level in
+            if level > 0.02 { lastHeard = Date() }
+        }
     }
 }
 
@@ -638,8 +758,8 @@ struct SourceLevel: View {
             Text(title)
                 .font(TapeType.sans(11.5))
                 .foregroundStyle(TapePalette.muted)
-            AudioLevelBar(level: level, inkOpacity: 0.65)
-                .frame(width: 54)
+            AudioLevelBar(level: level, inkOpacity: 0.65, height: 6)
+                .frame(width: 64)
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("\(title) level")
@@ -650,6 +770,7 @@ struct SourceLevel: View {
 struct AudioLevelBar: View {
     var level: Float
     var inkOpacity: Double
+    var height: CGFloat = 4
 
     var body: some View {
         GeometryReader { proxy in
@@ -660,7 +781,7 @@ struct AudioLevelBar: View {
                     .frame(width: proxy.size.width * CGFloat(min(1, max(0, level))))
             }
         }
-        .frame(height: 4)
+        .frame(height: height)
         .animation(.linear(duration: 0.1), value: level)
     }
 }

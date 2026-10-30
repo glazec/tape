@@ -36,7 +36,27 @@ struct RecorderCaptureRecovery: Codable {
     }
 }
 
+/// Where the next recording will be saved.
+enum RecordingDestination: Equatable {
+    case meeting(id: String, title: String)
+    case newMeeting(title: String?)
+}
+
 extension RecorderAppModel {
+    /// The calendar meeting is only a sensible default while it is happening or about to start,
+    /// so a recording made today never lands in tomorrow's meeting.
+    var suggestedMeeting: LocalRecorderMonitoringMeeting? {
+        guard let meeting = nextScheduleMeeting, !startTargetRejected, meeting.botStatus != "recording" else { return nil }
+        let now = Date()
+        return meeting.isOngoing(at: now) || meeting.startsAt.timeIntervalSince(now) <= 30 * 60 ? meeting : nil
+    }
+
+    var recordingDestination: RecordingDestination {
+        // An unused choice goes stale; after half an hour fall back to the calendar default.
+        let pending = pendingDestinationChosenAt.map { Date().timeIntervalSince($0) < 30 * 60 } == true ? pendingDestination : nil
+        return pending ?? suggestedMeeting.map { .meeting(id: $0.meetingId, title: $0.title) } ?? .newMeeting(title: nil)
+    }
+
     func clearRecordingDisplayState() {
         uploadReceipts = []
         uploadStatusText = nil
@@ -47,6 +67,7 @@ extension RecorderAppModel {
         isLoadingMeetingChoices = false
         meetingPickerError = nil
         meetingPickerLoadFailed = false
+        rejectedMeetingIDs = []
         recordingStartFailure = nil
     }
 
@@ -155,6 +176,7 @@ extension RecorderAppModel {
                 recoveryState.pendingLegacyIntent = nil
                 try persistCaptureRecovery()
                 activeTarget = target
+                pendingDestination = nil
                 startingRecordingTitle = target.meetingTitle
                 captureSessionID = UUID().uuidString
                 captureNaturallyEnded = false
@@ -173,6 +195,7 @@ extension RecorderAppModel {
             } catch {
                 if !isRecording { activeTarget = nil; captureSessionID = nil }
                 if localRecorderTargetWasRejected(error) {
+                    pendingDestination = nil
                     recoveryState.pendingStart = nil
                     try? persistCaptureRecovery()
                 }
@@ -241,7 +264,7 @@ extension RecorderAppModel {
                 meetingChoicesHaveMore = response.hasMore
             } catch {
                 guard generation == meetingSearchGeneration else { return }
-                meetingPickerError = "Could not load meetings. Try again."
+                meetingPickerError = "Couldn't load meetings"
                 meetingPickerLoadFailed = true
             }
             if generation == meetingSearchGeneration { isLoadingMeetingChoices = false }
@@ -278,10 +301,11 @@ extension RecorderAppModel {
                 // The response may have been lost after a committed move. Keep
                 // the selector open and do not claim a destination was confirmed.
                 if localRecorderTargetWasRejected(error) {
-                    meetingPickerError = "That meeting is unavailable. Choose another meeting. Recording continues."
+                    if let meetingId { rejectedMeetingIDs.insert(meetingId) }
+                    meetingPickerError = "That meeting can't take this recording. Choose another."
                 } else {
                     destinationUnconfirmed = true
-                    meetingPickerError = "Could not confirm the destination. Choose it again to retry. Recording continues."
+                    meetingPickerError = "Couldn't confirm the meeting. Choose it again. Recording continues."
                 }
             }
         }

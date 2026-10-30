@@ -241,7 +241,10 @@ final class RecorderAppModel: NSObject, ObservableObject, UNUserNotificationCent
     @Published var isFinishingRecording = false
     @Published var isRefreshingSchedule = false
     @Published var isAdvancedExpanded = false
-    @Published var nextScheduleMeeting: LocalRecorderMonitoringMeeting?
+    @Published var nextScheduleMeeting: LocalRecorderMonitoringMeeting? {
+        // A destination picked for one meeting should not carry over to the next.
+        didSet { if oldValue?.meetingId != nextScheduleMeeting?.meetingId { pendingDestination = nil } }
+    }
     @Published var pendingMeetings: [MissedMeeting] = []
 
     private static let microphoneDefaultsKey = "meeting-note-local-recorder-microphone-uid"
@@ -276,6 +279,13 @@ final class RecorderAppModel: NSObject, ObservableObject, UNUserNotificationCent
     @Published var isSwitchingMeeting = false
     @Published var destinationUnconfirmed = false
     @Published var isMeetingPickerPresented = false
+    /// A destination chosen before Record is pressed; nil follows `recordingDestination`'s default.
+    @Published var pendingDestination: RecordingDestination? {
+        didSet { pendingDestinationChosenAt = pendingDestination == nil ? nil : Date() }
+    }
+    var pendingDestinationChosenAt: Date?
+    /// Meetings the server refused for this recording; shown as unavailable in the picker.
+    @Published var rejectedMeetingIDs: Set<String> = []
     @Published var meetingChoices: [RecordingMeeting] = []
     @Published var meetingSearch = ""
     @Published var meetingChoicesHaveMore = false
@@ -621,7 +631,12 @@ final class RecorderAppModel: NSObject, ObservableObject, UNUserNotificationCent
     }
 
     func startRecording() {
-        beginRecording(meetingId: nextScheduleMeeting?.meetingId, title: nil)
+        switch recordingDestination {
+        case .meeting(let id, _):
+            beginRecording(meetingId: id)
+        case .newMeeting(let title):
+            beginRecording(title: title)
+        }
     }
 
     func startRecording(fallbackIntentId: String?) {
