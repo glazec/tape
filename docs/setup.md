@@ -478,6 +478,8 @@ Inngest Cloud and the self-hosted database. Before cutover:
 
 The recorder is a Swift package for macOS 15 or newer.
 
+The recording destination workflow requires migration `0063_recording_timeline_offsets` before deploying the updated server. It adds the nullable applied transcript offset used to preserve capture order when resumed audio arrives out of order. Deploy the matching server before distributing the desktop update. The authenticated desktop routes are `GET /api/local-recorder/recording-meetings`, `POST /api/local-recorder/recording-target`, and the target's `finish` and `status` routes. Existing meeting selection is limited to the paired workspace and the caller's meeting management rights. Starting a capture checks provider credit; moving an active capture within its workspace does not start new provider work.
+
 ```bash
 cd mac/LocalRecorder
 swift test
@@ -494,6 +496,8 @@ The recorder settings show Microphone, Accessibility, Alerts, and Screen and Sys
 If Accessibility is enabled in System Settings but the app still reports it missing, an older development build may own the saved grant. In recorder settings, expand `Accessibility still blocked?` and select `Reset access…`. After confirmation, the app removes only its Accessibility entry and requests access again. Enable the current copy in System Settings. `Show this app` reveals the exact app to add if macOS does not list it. If the reset fails, remove the existing entry manually under Privacy & Security → Accessibility, add the current `Tape Desktop.app` from `/Applications`, and enable it. Toggling an entry for a different signing certificate does not grant access to the current app. Keep the published release certificate unchanged; local development certificates are separate identities even if their display names match.
 
 Audio checks appear after capture permissions are ready. Settings show the signed in email and the workspace paired with this Mac. Changing the browser workspace does not move the device session; sign out and pair again to select another workspace. Restart waits for a replacement app instance before quitting; if opening fails, the current app stays open and reports the failure.
+
+Keep the recorder open while a stopped SDK capture is uploading. Capture stop and upload completion are separate states: the desktop polls its scoped recording status before shutting down that capture's SDK process. Local audio is saved to a durable upload queue before network work. Recovery metadata preserves unconfirmed starts and stopped captures across app restarts. Do not infer upload success from a stopped timer; confirm the meeting contains its media and transcript after processing.
 
 ## Verification
 

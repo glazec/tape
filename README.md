@@ -46,7 +46,9 @@ The transcript supports raw and polished text, synchronized playback, speaker pr
 
 Desktop settings show the signed in account and paired workspace. “Record on this Mac” captures local audio, and the waveform reflects both microphone and Mac sound. The desktop recorder opens a visible setup window at launch and after browser sign in. Desktop sign in is checked before permission setup completes, so connected devices can report missing permissions. Expired device sessions offer sign in again. Dashboard loading errors preserve browser login and offer a page reload. Sharing suggests colleagues from all connected organizations, organization addresses seen in calendars, and previous recipients; new external addresses can also be selected.
 
-The companion recorder captures microphone and system audio when cloud capture misses a meeting. It monitors eligible meetings, verifies permissions, uploads durable recording assets, and attaches the result to the existing meeting.
+The companion recorder shows the current or next eligible calendar event. Record starts capture for that event immediately; during capture, click the title to select another writable meeting or create a new one. Selecting a recent meeting adds another recording segment while preserving its earlier audio and transcript. Settings stay behind the gear and collapse when recording starts.
+
+When a linked meeting starts without its bot recording, an actionable notification offers local capture. The recorder asks whether to finish when the captured meeting window closes, after one minute of silence beyond a scheduled end, or after five minutes of silence for an ad hoc meeting. Silence never stops capture automatically. Uploads continue after Stop, with pending work visible in the recorder.
 
 <p align="center">
   <img src="assets/product/macos-recorder.png" alt="Tape macOS recorder with meeting monitoring, permissions, recording, and upload state" width="405">

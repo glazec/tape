@@ -18,6 +18,10 @@ Hide unnecessary information. Make the next useful action obvious. Keep every sc
 
 The desktop permission panel uses one continuous surface. Keep audio checks collapsed and omit meters until capture permissions are ready. Accessibility recovery belongs in a disclosure beside the permission list. Restart failures stay visible. Settings show the paired account and workspace, with no editable credentials in release builds. Meeting titles allow two lines, local capture says “Record on this Mac”, and live meters expose their percentage values to accessibility. Secondary text meets 4.5:1 contrast in both appearances.
 
+The desktop settings control always uses a gear and toggles the settings below; starting capture collapses them. Idle shows the current or next eligible calendar event. Record starts for that displayed event without an intervening chooser. During capture the title opens a searchable meeting selector with a new meeting action. Show the confirmed destination and keep Stop available while a destination change is pending. Recent meetings use this same selector to resume recording.
+
+End prompts stay inside the recorder and also use actionable system notifications. Offer End recording and Keep recording without blocking the controls or stopping on silence. A prompt from an earlier capture must never affect a newer one. Distinguish capture stopped, upload pending, and transcript processing; closing capture controls does not imply upload completion.
+
 Every visible element must help the user do one of four things:
 
 1. Understand the current state

@@ -25,6 +25,8 @@ Add authenticated GET /api/local-recorder/recording-meetings?q=... returning { m
 
 Add POST /api/local-recorder/recording-target with { fallbackIntentId?, meetingId?, title? }. With no token, create an attempt for the chosen event or a new meeting. With a token, reassign that same active attempt. Return { fallbackIntentId, meetingId, meetingTitle, startsAt, endsAt }. Reject another device/user's token, cancelled/inaccessible meetings, completed attempts and competing active capture. Preserve bot state and existing assets. Use transactional or atomic SQL for coupled changes. Ensure SDK metadata/webhooks follow the moved attempt rather than stale meeting identifiers. Ensure transcription append behavior for both capture backends.
 
+Add POST /api/local-recorder/recording-target/finish with { fallbackIntentId } to freeze a stopped segment as sealed. A new segment may start while this segment uploads. All older start/retry endpoints must preserve the freeze. Add authenticated POST /api/local-recorder/recording-target/status with the same body to report the attempt state. Native SDK upload processes remain alive until the server confirms completion; stopping capture is not proof that the upload finished. Only successful SDK completion handling marks the attempt completed. A late failure must not downgrade completion.
+
 Write failing tests for target selection, unauthorized changes, races, stale schedule selection, repeated switching, resume preservation, and SDK completion. Run targeted Vitest tests before and after implementation.
 
 ## Task 2: Native recording flow and end prompts
@@ -38,6 +40,12 @@ Add a pure end prompt policy with injectable times. Observe the maximum fresh mi
 Maintain one sidecar stdout reader; forward meeting end events for the active capture window without confusing explicit stop or SDK failure with meeting end. Preserve normal stop acknowledgement. Add explicit Start recording notification action, and never treat notification dismissal as start.
 
 Verify with Swift tests, native build, sidecar tests and existing permission scripts. Inspect snapshot rendering where supported.
+
+For SDK natural meeting end, offer Stop and Keep recording. Keep recording creates an additional segment for the same destination; it never discards the ended SDK segment. Explicitly stopping a segment freezes its destination before a new capture starts. Prevent normal app quit/restart/sign out while SDK uploads still need the app, and make pending uploads visible. Tests must cover event ordering and distinguish explicit stop from a detected meeting closure.
+
+SDK lifecycle reference: [Recall event types](https://docs.recall.ai/docs/desktop-recording-sdk-event-types) and [safe shutdown](https://docs.recall.ai/docs/dsdk-safe-shutdown), checked against the installed 2.0.24 TypeScript declarations. Use meeting-closed for call closure; recording-ended is not upload confirmation.
+
+Review followups: new starts send a persisted clientRequestId UUID to recover a lost HTTP response without creating a second attempt. Persist the exact initial destination with that ID. Store each transcript job's applied recording offset and rebase existing segment timestamps under the meeting transaction when an earlier capture arrives late. Preserve segment identity and edits, and keep replacement generation boundaries unchanged.
 
 ## Task 3: Review and documentation
 
