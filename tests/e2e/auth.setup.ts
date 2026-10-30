@@ -1,4 +1,5 @@
-import { createHmac } from "node:crypto";
+import { Pool } from "pg";
+import { createHmac, randomUUID } from "node:crypto";
 import { mkdir } from "node:fs/promises";
 import { dirname } from "node:path";
 
@@ -15,8 +16,7 @@ import {
   isolatedWorkspaceFixture,
 } from "./authenticated-dashboard-fixture";
 
-const sessionTokenCookieName = "__Secure-neon-auth.session_token";
-const sessionDataCookieName = "__Secure-neon-auth.local.session_data";
+const sessionTokenCookieName = "__Secure-tape-auth.session_token";
 
 setup("create authenticated dashboard state", async ({ context }, testInfo) => {
   await createAuthenticatedState({
@@ -61,40 +61,25 @@ async function createAuthenticatedState({
     process.env.NEON_AUTH_COOKIE_SECRET,
     "NEON_AUTH_COOKIE_SECRET",
   );
-  const now = new Date();
-  const expiresAt = new Date(now.getTime() + 5 * 60 * 1000);
-  const sessionToken = "tape-e2e-session-token";
-  const sessionData = signSessionData(
-    {
-      session: {
-        createdAt: now.toISOString(),
-        expiresAt: expiresAt.toISOString(),
-        id: "tape-e2e-session",
-        ipAddress: "127.0.0.1",
-        token: sessionToken,
-        updatedAt: now.toISOString(),
-        userAgent: "Playwright",
-        userId: fixture.authUserId,
-      },
-      user: {
-        createdAt: now.toISOString(),
-        email: fixture.email,
-        emailVerified: true,
-        id: fixture.authUserId,
-        image: null,
-        name: fixture.name,
-        updatedAt: now.toISOString(),
-      },
-    },
-    cookieSecret,
-    expiresAt,
-    fixture.authUserId,
-  );
+  const databaseUrl = requireString(process.env.DATABASE_URL, "DATABASE_URL");
+  if (new URL(databaseUrl).pathname !== "/tape_ci") throw new Error("Auth fixtures require tape_ci");
+  const expiresAt = new Date(Date.now() + 60 * 60 * 1000);
+  const token = randomUUID();
+  const pool = new Pool({ connectionString: databaseUrl });
+  try {
+    await pool.query(`INSERT INTO web_auth_users (id, name, email, email_verified)
+      VALUES ($1, $2, $3, true) ON CONFLICT (id) DO NOTHING`, [fixture.authUserId, fixture.name, fixture.email]);
+    await pool.query("DELETE FROM web_auth_sessions WHERE user_id = $1", [fixture.authUserId]);
+    await pool.query("INSERT INTO web_auth_sessions (token, user_id, expires_at) VALUES ($1, $2, $3)", [token, fixture.authUserId, expiresAt]);
+  } finally {
+    await pool.end();
+  }
+  const sessionToken = encodeURIComponent(`${token}.${createHmac("sha256", cookieSecret).update(token).digest("base64")}`);
   const baseUrlObject = new URL(baseURL);
 
   if (baseUrlObject.protocol !== "https:") {
     throw new Error(
-      "Authenticated Playwright tests require an HTTPS base URL for Neon Auth cookies",
+      "Authenticated Playwright tests require an HTTPS base URL for secure session cookies",
     );
   }
 
@@ -116,16 +101,6 @@ async function createAuthenticatedState({
       domain,
       expires,
       httpOnly: true,
-      name: sessionDataCookieName,
-      path: "/",
-      sameSite: "Lax",
-      secure: true,
-      value: sessionData,
-    },
-    {
-      domain,
-      expires,
-      httpOnly: true,
       name: `tape_onboarding_hidden_${fixture.userId}_${fixture.teamId}`,
       path: "/",
       sameSite: "Lax",
@@ -136,32 +111,6 @@ async function createAuthenticatedState({
 
   await mkdir(dirname(storageStatePath), { recursive: true });
   await context.storageState({ path: storageStatePath });
-}
-
-function signSessionData(
-  sessionData: Record<string, unknown>,
-  secret: string,
-  expiresAt: Date,
-  authUserId: string,
-) {
-  const issuedAt = Math.floor(Date.now() / 1000);
-  const header = encodeJson({ alg: "HS256", typ: "JWT" });
-  const payload = encodeJson({
-    ...sessionData,
-    exp: Math.floor(expiresAt.getTime() / 1000),
-    iat: issuedAt,
-    sub: authUserId,
-  });
-  const unsignedToken = `${header}.${payload}`;
-  const signature = createHmac("sha256", secret)
-    .update(unsignedToken)
-    .digest("base64url");
-
-  return `${unsignedToken}.${signature}`;
-}
-
-function encodeJson(value: unknown) {
-  return Buffer.from(JSON.stringify(value)).toString("base64url");
 }
 
 function requireString(value: unknown, name: string): string {

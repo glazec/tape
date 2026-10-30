@@ -39,6 +39,12 @@ jobs:
       - run: npm ci
       - name: Check migration lineage and schema drift
         run: npm run test:migrations
+      - name: Check persistent Web sessions against PostgreSQL
+        env:
+          AUTH_TEST_DATABASE_URL: postgresql://ci:ci@127.0.0.1:5432/tape_auth_test
+        run: |
+          psql "$DATABASE_URL" --set ON_ERROR_STOP=1 --command 'CREATE DATABASE tape_auth_test'
+          npx vitest run tests/auth-server.test.ts
       - name: Replay every migration on an empty database
         shell: bash
         run: |
@@ -52,6 +58,8 @@ jobs:
         env:
           TAPE_SHARING_TEST_DATABASE: postgresql://ci:ci@127.0.0.1:5432/meeting_note
         run: npx vitest run tests/meeting-share-service.test.ts tests/share-recipient-suggestions.test.ts
+      - name: Check desktop session lifetime migration
+        run: psql "$DATABASE_URL" --set ON_ERROR_STOP=1 --file tests/local-recorder-session-lifetime.sql
       - name: Check company calendar consolidation
         run: psql "$DATABASE_URL" --set ON_ERROR_STOP=1 --file tests/iosf-company-migration.sql
       - name: Check personal notes isolation
@@ -90,6 +98,8 @@ jobs:
       NEON_AUTH_JWKS_URL: https://auth.example.com/.well-known/jwks.json
       NEON_AUTH_ISSUER: https://auth.example.com
       NEON_AUTH_COOKIE_SECRET: ci-only-cookie-secret-at-least-32-characters
+      WEB_AUTH_GOOGLE_CLIENT_ID: ci-client
+      WEB_AUTH_GOOGLE_CLIENT_SECRET: ci-secret
       R2_ACCOUNT_ID: ci-account
       R2_ACCESS_KEY_ID: ci-access-key
       R2_SECRET_ACCESS_KEY: ci-secret-key

@@ -446,8 +446,22 @@
     {
       "idx": 63,
       "version": "7",
-      "when": 1793393530562,
-      "tag": "0063_recording_timeline_offsets",
+      "when": 1793385764688,
+      "tag": "0063_web_auth_sessions",
+      "breakpoints": true
+    },
+    {
+      "idx": 64,
+      "version": "7",
+      "when": 1793387828092,
+      "tag": "0064_desktop_session_lifetime",
+      "breakpoints": true
+    },
+    {
+      "idx": 65,
+      "version": "7",
+      "when": 1793399230852,
+      "tag": "0065_recording_timeline_offsets",
       "breakpoints": true
     }
   ]

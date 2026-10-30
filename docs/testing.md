@@ -62,9 +62,9 @@ all migrations.
 
 GitHub Actions also runs the authenticated page rendering suite when
 `E2E_DATABASE_URL` and `E2E_DATABASE_AUTHENTICATED_URL` are available. The
-owner URL is limited to migration and deterministic fixture setup. The
-application uses the RLS enforced URL. Playwright signs Neon Auth's short lived
-session cache cookie with the CI only cookie secret. Every protected page must
+owner URL creates dedicated database auth sessions and deterministic fixtures. Product data access
+uses the RLS enforced URL. Playwright signs the database session token
+with the CI only cookie secret. Every protected page must
 render its own heading without browser or server errors. The dashboard test
 also verifies that streamed loading completes and a meeting from another
 workspace remains hidden. The suite does not automate Google's interface or add
@@ -278,3 +278,7 @@ Verify a real recording longer than 45 minutes on desktop and mobile. Its audio 
 Chunked transcription registers a terminal Inngest failure callback so exhausted step retries mark the job failed even when the replayed handler attempt remains zero. `tests/image-worker.test.ts` covers that failure callback.
 
 Desktop UX verification: the Swift regression tests distinguish a missing workflow route (HTML 404) from a missing meeting (JSON 404), sign in failures, and uncertain retries. Verify the recording failure remains visible after Refresh, and open and close settings repeatedly to confirm the gear and summary stay in place. The `recording-unavailable` snapshot includes a successful calendar refresh after a failed start. Run `mac/LocalRecorder/script/snapshot.sh /tmp/tape-desktop-snapshots` for long meeting titles and account settings in the compact 340 point window. Check light and dark appearances. Native source meters expose percentage values to accessibility, and the waveform follows both microphone and Mac sound. Account decoding accepts older servers without the optional identity field; route tests bind the displayed email and workspace to the authenticated device membership.
+
+Web session persistence is covered by `tests/auth-server.test.ts` against a disposable PostgreSQL database. Set `AUTH_TEST_DATABASE_URL` to an empty test database and run `npx vitest run tests/auth-server.test.ts`. The suite creates and removes its own auth tables. CI runs it on a separate database. It checks real Better Auth handlers, legacy identity migration, 180 day cookie and database expiry, server recreation, simulated day 179 and day 181, logout revocation, tampered cookies, revoked legacy replay, banned users, and Google callback routing. Provider responses are simulated locally; production verification additionally requires real Google login and a service restart while retaining the same session.
+
+Desktop session lifetime is checked by `tests/local-recorder-auth.test.ts` at credential issuance. `tests/local-recorder-session-lifetime.sql` replays migration `0064` twice and checks active session extension, retained token and device hashes, unchanged login date, and preservation of expired, revoked, and longer sessions. CI runs this SQL on its disposable PostgreSQL database.

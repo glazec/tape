@@ -16,7 +16,7 @@ import {
   type WorkspaceContext,
 } from "@/lib/workspace";
 
-const deviceSessionTtlMs = 30 * 24 * 60 * 60 * 1000;
+const deviceSessionTtlMs = 180 * 24 * 60 * 60 * 1000;
 const deviceTokenBytes = 32;
 
 export async function getLocalRecorderWorkspace(

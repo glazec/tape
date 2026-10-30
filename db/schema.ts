@@ -27,6 +27,53 @@ const timestamps = {
     .notNull(),
 };
 
+// Web authentication is owned by Tape. IDs imported from Neon stay unchanged.
+export const webAuthUsers = pgTable("web_auth_users", {
+  banned: boolean("banned").notNull().default(false),
+  id: uuid("id").primaryKey().defaultRandom(),
+  name: text("name").notNull(),
+  email: text("email").notNull().unique(),
+  emailVerified: boolean("email_verified").notNull().default(false),
+  image: text("image"),
+  ...timestamps,
+});
+
+export const webAuthSessions = pgTable("web_auth_sessions", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  token: text("token").notNull().unique(),
+  userId: uuid("user_id").notNull().references(() => webAuthUsers.id, { onDelete: "cascade" }),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  ipAddress: text("ip_address"),
+  userAgent: text("user_agent"),
+  ...timestamps,
+}, (table) => [index("web_auth_sessions_user_idx").on(table.userId)]);
+
+export const webAuthAccounts = pgTable("web_auth_accounts", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  accountId: text("account_id").notNull(),
+  providerId: text("provider_id").notNull(),
+  userId: uuid("user_id").notNull().references(() => webAuthUsers.id, { onDelete: "cascade" }),
+  accessToken: text("access_token"),
+  refreshToken: text("refresh_token"),
+  idToken: text("id_token"),
+  accessTokenExpiresAt: timestamp("access_token_expires_at", { withTimezone: true }),
+  refreshTokenExpiresAt: timestamp("refresh_token_expires_at", { withTimezone: true }),
+  scope: text("scope"),
+  password: text("password"),
+  ...timestamps,
+}, (table) => [
+  index("web_auth_accounts_user_idx").on(table.userId),
+  uniqueIndex("web_auth_accounts_provider_idx").on(table.providerId, table.accountId),
+]);
+
+export const webAuthVerifications = pgTable("web_auth_verifications", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  identifier: text("identifier").notNull(),
+  value: text("value").notNull(),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  ...timestamps,
+}, (table) => [index("web_auth_verifications_identifier_idx").on(table.identifier)]);
+
 export const meetingPlatform = pgEnum("meeting_platform", [
   "google_meet",
   "in_person",

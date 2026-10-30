@@ -1,62 +1,38 @@
-import { describe, expect, it, vi } from "vitest";
-import { NextRequest, NextResponse } from "next/server";
+import { describe, expect, it } from "vitest";
+import { NextRequest } from "next/server";
+import { proxy, config } from "../proxy";
 
-const neonProxyHandler = vi.fn(() => NextResponse.next());
-const middleware = vi.fn(() => neonProxyHandler);
-
-vi.mock("@/lib/auth/server", () => ({
-  auth: {
-    middleware,
-  },
-}));
-
-describe("Neon Auth middleware", () => {
-  it("runs on authenticated app routes so OAuth can exchange verifier tokens", async () => {
-    const proxyModule = await import("../proxy");
-    const request = new NextRequest("https://app.example.com/dashboard");
-
-    expect(middleware).toHaveBeenCalledWith({ loginUrl: "/auth/sign-in" });
-    expect(await proxyModule.proxy(request)).toBeInstanceOf(Response);
-    expect(neonProxyHandler).toHaveBeenCalledWith(request);
-    expect(proxyModule.config.matcher).toEqual([
-      "/dashboard/:path*",
-      "/settings/:path*",
-      "/meetings/:path*",
-      "/api/local-recorder/device-login",
-    ]);
-  });
-
-  it("returns a shared meeting recipient to the original link after sign in", async () => {
-    neonProxyHandler.mockReturnValueOnce(NextResponse.redirect("https://app.example.com/auth/sign-in"));
-    const { proxy } = await import("../proxy");
+describe("Web authentication routing", () => {
+  it("preserves the requested meeting when sign in is required", async () => {
     const response = await proxy(new NextRequest("https://app.example.com/meetings/abc?tab=notes"));
     const destination = new URL(response.headers.get("location")!);
+    expect(destination.pathname).toBe("/auth/sign-in");
     expect(destination.searchParams.get("callbackUrl")).toBe("/meetings/abc?tab=notes");
+    expect(config.matcher).toContain("/meetings/:path*");
   });
-
-  it("lets plain local recorder device login requests reach the route handler", async () => {
-    const proxyModule = await import("../proxy");
-    const request = new NextRequest(
-      "https://app.example.com/api/local-recorder/device-login?deviceId=mac_123&callbackUrl=meetingnote-local-recorder%3A%2F%2Flogin",
-    );
-
-    neonProxyHandler.mockClear();
-
-    const response = await proxyModule.proxy(request);
-
-    expect(response).not.toBe("next-response");
-    expect(neonProxyHandler).not.toHaveBeenCalled();
+  it("routes old sessions through server verification before entering the app", async () => {
+    const response = await proxy(new NextRequest("https://app.example.com/dashboard", {
+      headers: { cookie: "__Secure-neon-auth.session_token=legacy" },
+    }));
+    expect(new URL(response.headers.get("location")!).pathname).toBe("/api/auth/migrate-session");
   });
-
-  it("runs Neon Auth middleware for local recorder OAuth verifier callbacks", async () => {
-    const proxyModule = await import("../proxy");
-    const request = new NextRequest(
-      "https://app.example.com/api/local-recorder/device-login?deviceId=mac_123&callbackUrl=meetingnote-local-recorder%3A%2F%2Flogin&neon_auth_session_verifier=verifier_123",
-    );
-
-    neonProxyHandler.mockClear();
-
-    expect(await proxyModule.proxy(request)).toBeInstanceOf(Response);
-    expect(neonProxyHandler).toHaveBeenCalledWith(request);
+  it("leaves new cookie validation to protected pages and APIs", async () => {
+    const response = await proxy(new NextRequest("https://app.example.com/dashboard", {
+      headers: { cookie: "__Secure-tape-auth.session_token=opaque" },
+    }));
+    expect(response.headers.get("x-middleware-next")).toBe("1");
+  });
+  it("lets anonymous recorder requests reach the route recovery UI", async () => {
+    const response = await proxy(new NextRequest("https://app.example.com/api/local-recorder/device-login?deviceId=mac_123"));
+    expect(response.headers.get("x-middleware-next")).toBe("1");
+  });
+  it("migrates recorder browser sessions while preserving device parameters", async () => {
+    const path = "/api/local-recorder/device-login?deviceId=mac_123&callbackUrl=meetingnote-local-recorder%3A%2F%2Flogin";
+    const response = await proxy(new NextRequest(`https://app.example.com${path}`, {
+      headers: { cookie: "__Secure-neon-auth.session_token=legacy" },
+    }));
+    const destination = new URL(response.headers.get("location")!);
+    expect(destination.pathname).toBe("/api/auth/migrate-session");
+    expect(destination.searchParams.get("callbackUrl")).toBe(path);
   });
 });

@@ -373,7 +373,14 @@ describe("database migrations", () => {
       expect(sql).toContain(`'${table}'`);
     }
 
+    const authSql = readFileSync("db/migrations/0063_web_auth_sessions.sql", "utf8");
+    const privateAuthTables = ["web_auth_users", "web_auth_accounts", "web_auth_sessions", "web_auth_verifications"];
+    for (const table of privateAuthTables) {
+      expect(authSql).toContain(`ALTER TABLE ${table} ENABLE ROW LEVEL SECURITY`);
+      expect(authSql).not.toMatch(new RegExp(`CREATE POLICY.*${table}`, "i"));
+    }
     const intentionallyGlobalTables = new Set([
+      ...privateAuthTables,
       "request_rate_limits",
       "vendor_webhook_events",
     ]);

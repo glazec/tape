@@ -18,11 +18,17 @@ Automatic note answers additionally require migration `0058_meeting_note_blocks`
 
 Set `NEXT_PUBLIC_APP_URL` to the public web origin so desktop login never hands off an internal reverse proxy address. Keep `NEON_AUTH_COOKIE_SECRET` stable across releases. Dashboard failures no longer clear cookies. The auth proxy handles meeting URLs and preserves their callback destination. Desktop login logs `recorder.login.started`, `recorder.login.sign_in_required`, `recorder.login.rejected`, and `recorder.login.handoff_ready` without tokens or callback URLs. Device version, permissions, and last activity are stored in `local_recorder_devices` after authenticated status checks, including incomplete permission setup. These records do not prove that a downloaded app launched before sign in.
 
+Web authentication is managed by Better Auth inside Tape. Migration `0063_web_auth_sessions` creates private `web_auth_*` tables and imports existing user IDs and Google account associations without copying provider tokens. Set `WEB_AUTH_GOOGLE_CLIENT_ID` and `WEB_AUTH_GOOGLE_CLIENT_SECRET` to the existing Google client and add `https://<app-origin>/api/auth/callback/google` to its allowed redirects before deployment. Keep the old Neon callback during migration.
+
+Sessions expire 180 days after login. Automatic expiry extension and browser session caching are disabled. Keep `DATABASE_URL`, `NEXT_PUBLIC_APP_URL`, and `NEON_AUTH_COOKIE_SECRET` stable across deployments; never generate the secret at startup. The app checks the database for each authenticated session, and sign out deletes that session. Provider authorization and calendar tokens have separate lifetimes.
+
+Existing browsers with a valid Neon session pass through `/api/auth/migrate-session`. The server verifies the old session directly with Neon, preserves its imported identity, revokes the old session, and issues the new cookie. Cached browser identity alone is insufficient. Retain the Neon endpoint during this transition; invalid or expired old sessions require Google sign in. Desktop recorder identity and MCP authentication retain their existing mechanisms. A rollback to the old application may require signing in again because migrated old sessions have been revoked.
+
 ## Requirements
 
 1. Node.js 24
 2. npm
-3. A Postgres database and Neon Auth project
+3. A Postgres database and Google OAuth web client
 4. Cloudflare R2 object storage
 5. Recall.ai, ElevenLabs, OpenRouter, and Inngest accounts for the complete meeting workflow
 6. A public HTTPS origin for provider webhooks
@@ -47,7 +53,7 @@ Fill these values in `.env.local` for the complete application:
 | Area | Variables |
 | --- | --- |
 | Database | `DATABASE_URL`, `DATABASE_AUTHENTICATED_URL` |
-| Neon Auth | `NEON_AUTH_JWKS_URL`, `NEON_AUTH_ISSUER`, `NEON_AUTH_COOKIE_SECRET` |
+| Web authentication | `WEB_AUTH_GOOGLE_CLIENT_ID`, `WEB_AUTH_GOOGLE_CLIENT_SECRET`, `NEON_AUTH_COOKIE_SECRET` |
 | R2 storage | `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET` |
 | Recall.ai | `RECALL_API_KEY`, `RECALL_API_BASE_URL`, `RECALL_WEBHOOK_SECRET`, `RECALL_REALTIME_WEBHOOK_URL` |
 | ElevenLabs | `ELEVENLABS_API_KEY`, `ELEVENLABS_WEBHOOK_SECRET` |
@@ -61,7 +67,7 @@ Transcript translation and original language polishing use `google/gemini-3.8-fl
 
 AI followup also uses `google/gemini-3.8-flash`, with low reasoning because this endpoint does not accept disabled reasoning. Apply migration `0057_meeting_followup` before deploying the updated web application. Followups are generated automatically on transcript completion and on demand through `POST /api/meetings/:meetingId/followup`, stored in the meeting row under existing access policies, and shown only while the current transcript fingerprint matches. The route requires meeting management access and provider credit, rechecks source and access before saving, and validates explicit speaker names and exact evidence. Input above 400,000 serialized characters is rejected rather than truncated. Potential research is stored in the existing JSON followup result and requires no new database migration. Existing summaries remain visible until regenerated. Research prompts are copied locally by the reader and contain the question, meeting context, source excerpts and suggested evidence to collect. Clipboard copying requires a secure browser context and permission; failures show an error toast. No automatic backfill or external research execution is added by this feature.
 
-Generate the Neon Auth cookie secret locally:
+For a new installation, generate the Web session signing secret locally and store it as `NEON_AUTH_COOKIE_SECRET`. Existing deployments must retain their current value:
 
 ```bash
 openssl rand -base64 32
@@ -75,10 +81,10 @@ MCP Google OAuth refresh sessions have no local calendar expiry. Keep `FASTMCP_J
 
 For local browser access, use `NEXT_PUBLIC_APP_URL=http://localhost:3000` until other webhook testing requires a public origin.
 
-`DATABASE_URL` is the Neon owner connection used only by migrations and
+`DATABASE_URL` is the Neon owner connection used by migrations, private Web authentication tables, and
 privileged background jobs. `DATABASE_AUTHENTICATED_URL` must use a separate
-login role without `BYPASSRLS`; all signed in web requests use that connection
-and inject their verified Neon Auth claims in the same transaction as each
+login role without `BYPASSRLS`; signed in product data requests use that connection
+and inject their verified session identity in the same transaction as each
 query. Never use the owner URL for `DATABASE_AUTHENTICATED_URL`.
 
 Check the complete configuration before running a production deployment:
@@ -97,7 +103,8 @@ REST API key are configured.
 | --- | --- |
 | Google Calendar OAuth | `GOOGLE_CALENDAR_CLIENT_ID`, `GOOGLE_CALENDAR_CLIENT_SECRET` |
 | Tape MCP shared API keys | `APIKEY_DATABASE_URL` |
-| Explicit Neon Auth base URL | `NEON_AUTH_BASE_URL` |
+| Legacy browser migration | `NEON_AUTH_BASE_URL` or `NEON_AUTH_JWKS_URL` |
+| MCP legacy JWT validation | `NEON_AUTH_JWKS_URL`, `NEON_AUTH_ISSUER` |
 | Public R2 media URL | `R2_PUBLIC_BASE_URL` |
 | Admin access | `APP_ADMIN_EMAILS`, `APP_SELF_HOSTED` |
 | Exa web search for live answers | `EXA_API_KEY` |
@@ -238,7 +245,7 @@ Run migrations before deploying code that depends on new tables, columns, indexe
 npm run dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000). Google sign in must already be configured in Neon Auth. To accept public registrations, configure the Google provider to allow accounts outside the organization.
+Open [http://localhost:3000](http://localhost:3000). Register `/api/auth/callback/google` on the Google OAuth web client for the exact application origin. To accept public registrations, configure the Google provider to allow accounts outside the organization.
 
 IOSG team members join the IOSG workspace with no Tape credit ceiling. Other domains already present in `allowed_domains` join their existing organization workspace and also have no Tape credit ceiling unless a limit is configured on their team. Unknown accounts receive isolated personal workspaces with $5 of provider credit. Do not rely on the first sign in to bootstrap an organization domain; insert the intended domain and team association explicitly before inviting organization members.
 
@@ -260,11 +267,12 @@ Recall.ai, ElevenLabs, Google Calendar OAuth, and Inngest require a stable publi
 | ElevenLabs transcription | `/api/elevenlabs/webhook` |
 
 Keep only the current Tape transcription webhook enabled in the ElevenLabs workspace. Legacy deployments sharing the database can claim the same callback before the current deployment and bypass newer completion behavior.
+| Web Google sign in | `/api/auth/callback/google` |
 | Google Calendar OAuth | `/api/calendar/oauth/callback` |
 | Landing pricing calculator calendar | `/api/pricing-calendar/callback` |
 | Inngest | `/api/inngest` |
 
-Both Google routes use the same `GOOGLE_CALENDAR_CLIENT_ID`, so add **both** callback paths to the Authorized redirect URIs of that OAuth client. Without `/api/pricing-calendar/callback` registered, the landing page pricing calculator returns `?calendar=error` instead of an estimate.
+Both calendar routes use the same `GOOGLE_CALENDAR_CLIENT_ID`, so add **both** callback paths to the Authorized redirect URIs of that OAuth client. Without `/api/pricing-calendar/callback` registered, the landing page pricing calculator returns `?calendar=error` instead of an estimate.
 
 The pricing calculator calendar flow is deliberately separate from the signed-in calendar connection: it is public, requests read-only event scope with `access_type=online` so Google issues no refresh token, creates no Tape session, writes nothing to the database, and holds the access token only in a short-lived encrypted `HttpOnly` cookie that is dropped once the estimate renders.
 
@@ -478,7 +486,7 @@ Inngest Cloud and the self-hosted database. Before cutover:
 
 The recorder is a Swift package for macOS 15 or newer.
 
-The recording destination workflow requires migration `0063_recording_timeline_offsets` before deploying the updated server. It adds the nullable applied transcript offset used to preserve capture order when resumed audio arrives out of order. Deploy the matching server before distributing the desktop update. An HTML 404 from these routes means the server release is missing; the app reports that recording needs a server update instead of offering another meeting. A JSON 404 from the recording API still represents a missing meeting. The authenticated desktop routes are `GET /api/local-recorder/recording-meetings`, `POST /api/local-recorder/recording-target`, and the target's `finish` and `status` routes. Existing meeting selection is limited to the paired workspace and the caller's meeting management rights. Starting a capture checks provider credit; moving an active capture within its workspace does not start new provider work.
+The recording destination workflow requires migration `0065_recording_timeline_offsets` before deploying the updated server. It adds the nullable applied transcript offset used to preserve capture order when resumed audio arrives out of order. Deploy the matching server before distributing the desktop update. An HTML 404 from these routes means the server release is missing; the app reports that recording needs a server update instead of offering another meeting. A JSON 404 from the recording API still represents a missing meeting. The authenticated desktop routes are `GET /api/local-recorder/recording-meetings`, `POST /api/local-recorder/recording-target`, and the target's `finish` and `status` routes. Existing meeting selection is limited to the paired workspace and the caller's meeting management rights. Starting a capture checks provider credit; moving an active capture within its workspace does not start new provider work.
 
 ```bash
 cd mac/LocalRecorder
@@ -494,6 +502,8 @@ Tape Desktop initially connects to `https://tape.inevitable.tech`. Select `Sign 
 The recorder settings show Microphone, Accessibility, Alerts, and Screen and System Audio as required setup items. Select `Allow` for each permission; these settings also work before sign in. Open at login is optional and uses a separate switch. Monitoring and recording require sign in and the four required permissions.
 
 If Accessibility is enabled in System Settings but the app still reports it missing, an older development build may own the saved grant. In recorder settings, expand `Accessibility still blocked?` and select `Reset access…`. After confirmation, the app removes only its Accessibility entry and requests access again. Enable the current copy in System Settings. `Show this app` reveals the exact app to add if macOS does not list it. If the reset fails, remove the existing entry manually under Privacy & Security → Accessibility, add the current `Tape Desktop.app` from `/Applications`, and enable it. Toggling an entry for a different signing certificate does not grant access to the current app. Keep the published release certificate unchanged; local development certificates are separate identities even if their display names match.
+
+Desktop device sessions last 180 days from login. Migration `0064_desktop_session_lifetime` extends currently valid, unrevoked sessions to 180 days from their original creation time, retaining the same credential and device binding. It does not reactivate expired or revoked sessions or shorten longer sessions. Credentials remain in the macOS Keychain and session hashes remain in Postgres, so backend deployments do not reset login. This server change requires no new desktop binary.
 
 Audio checks appear after capture permissions are ready. Settings show the signed in email and the workspace paired with this Mac. Changing the browser workspace does not move the device session; sign out and pair again to select another workspace. Restart waits for a replacement app instance before quitting; if opening fails, the current app stays open and reports the failure.
 

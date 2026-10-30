@@ -4,9 +4,9 @@ import { fileURLToPath } from "node:url";
 export const requiredDeploymentVariables = [
   "DATABASE_URL",
   "DATABASE_AUTHENTICATED_URL",
-  "NEON_AUTH_JWKS_URL",
-  "NEON_AUTH_ISSUER",
   "NEON_AUTH_COOKIE_SECRET",
+  "WEB_AUTH_GOOGLE_CLIENT_ID",
+  "WEB_AUTH_GOOGLE_CLIENT_SECRET",
   "R2_ACCOUNT_ID",
   "R2_ACCESS_KEY_ID",
   "R2_SECRET_ACCESS_KEY",

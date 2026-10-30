@@ -44,7 +44,7 @@ The transcript supports raw and polished text, synchronized playback, speaker pr
 
 ### Record locally on macOS
 
-Desktop settings show the signed in account and paired workspace. “Record on this Mac” captures local audio, and the waveform reflects both microphone and Mac sound. The desktop recorder opens a visible setup window at launch and after browser sign in. Desktop sign in is checked before permission setup completes, so connected devices can report missing permissions. Expired device sessions offer sign in again. Dashboard loading errors preserve browser login and offer a page reload. Sharing suggests colleagues from all connected organizations, organization addresses seen in calendars, and previous recipients; new external addresses can also be selected.
+Desktop settings show the signed in account and paired workspace. “Record on this Mac” captures local audio, and the waveform reflects both microphone and Mac sound. The desktop recorder opens a visible setup window at launch and after browser sign in. Desktop sign in is checked before permission setup completes, so connected devices can report missing permissions. Desktop device sessions last 180 days from sign in and persist across deployments; expired sessions offer sign in again. Dashboard loading errors preserve browser login and offer a page reload. Sharing suggests colleagues from all connected organizations, organization addresses seen in calendars, and previous recipients; new external addresses can also be selected.
 
 The companion recorder shows the current or next eligible calendar event. Record starts capture for that event immediately; during capture, click the title to select another writable meeting or create a new one. Selecting a recent meeting adds another recording segment while preserving its earlier audio and transcript. Settings stay behind the gear, open without moving the summary controls, and collapse when recording starts. Recording start errors remain visible across calendar refreshes; an unavailable server route offers Retry recording rather than a separate meeting.
 
@@ -94,7 +94,7 @@ Team settings shows remaining workspace credit plus current month personal and o
 | Area | Current implementation |
 | --- | --- |
 | Web application | Next.js 16 and React 19 on Railway |
-| Authentication | Neon Auth with Google sign in |
+| Authentication | App managed Better Auth with Google sign in and 180 day database sessions |
 | Product data | Neon Postgres with Drizzle migrations |
 | Tenant isolation | Forced PostgreSQL RLS for signed in web and MCP reads |
 | Media | Cloudflare R2 with authenticated application routes |

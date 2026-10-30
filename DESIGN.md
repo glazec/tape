@@ -354,3 +354,5 @@ Speaker correction preserves the selected participant email and offers Remember 
 ## Unresolved meeting visibility
 
 A started meeting must not disappear because its status notification is missing. Keep started scheduled meetings, recordings, processing meetings, and failures as visible rows rather than folding them under a later recurring meeting. The three meeting cap applies only to future bot meetings.
+
+Web and desktop sign in use the existing Google flow. Desktop device credentials have a separate fixed 180 day lifetime and retain their existing reconnect flow. Sessions last 180 days from login and persist across deployments. Expired sessions return to sign in with the requested destination; transient dashboard failures retain the session and offer retry.
