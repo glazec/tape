@@ -193,3 +193,21 @@ export async function finishLocalRecorderRecordingTarget(input: {
   if (!rows[0]) throw new LocalRecorderTargetError("Recording target unavailable");
   return { ...rows[0], fallbackIntentId: input.fallbackIntentId };
 }
+
+export async function getLocalRecorderRecordingTargetStatus(input: {
+  deviceId: string;
+  fallbackIntentId: string;
+  workspace: WorkspaceContext;
+}) {
+  const [attempt] = await databaseSql`
+    select a.attempt_state as state from local_recording_attempts a
+    join meetings m on m.id = a.meeting_id
+    where m.team_id = ${input.workspace.teamId}::uuid
+      and a.user_id = ${input.workspace.userId}::uuid
+      and a.device_id_hash = ${hash(input.deviceId)}
+      and a.fallback_intent_id_hash = ${hash(input.fallbackIntentId)}
+    limit 1
+  ` as Array<{ state: string }>;
+  if (!attempt) throw new LocalRecorderTargetError("Recording target unavailable", 404);
+  return attempt;
+}

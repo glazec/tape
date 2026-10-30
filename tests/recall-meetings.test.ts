@@ -12,6 +12,7 @@ const {
   isRecallBotAccepted,
   isRecallDesktopSdkFallbackIntent,
   resolveLocalRecorderSdkMeeting,
+  markLocalRecorderSdkIntentTerminal,
   probeRecallMediaDurationMs,
   retrieveRecallBot,
   retrieveRecallRecording,
@@ -28,6 +29,7 @@ const {
   isRecallBotAccepted: vi.fn(),
   isRecallDesktopSdkFallbackIntent: vi.fn(),
   resolveLocalRecorderSdkMeeting: vi.fn(),
+  markLocalRecorderSdkIntentTerminal: vi.fn(),
   probeRecallMediaDurationMs: vi.fn(),
   retrieveRecallBot: vi.fn(),
   retrieveRecallRecording: vi.fn(),
@@ -64,6 +66,7 @@ vi.mock("@/lib/meeting-participant-timeline", () => ({
 vi.mock("@/lib/local-recorder-records", () => ({
   isRecallDesktopSdkFallbackIntent,
   resolveLocalRecorderSdkMeeting,
+  markLocalRecorderSdkIntentTerminal,
 }));
 
 vi.mock("@/lib/meeting-bot-lineage", () => ({
@@ -91,6 +94,7 @@ afterEach(() => {
   isRecallBotAccepted.mockResolvedValue(true);
   isRecallDesktopSdkFallbackIntent.mockReset();
   resolveLocalRecorderSdkMeeting.mockReset();
+  markLocalRecorderSdkIntentTerminal.mockReset();
   resolveLocalRecorderSdkMeeting.mockResolvedValue("11111111-1111-4111-8111-111111111111");
   probeRecallMediaDurationMs.mockReset();
   probeRecallMediaDurationMs.mockImplementation(async (url: string) => {
@@ -315,6 +319,7 @@ describe("applyRecallMeetingEvent", () => {
     const result = await applyRecallMeetingEvent({ eventType: "sdk_upload.failed", botId: null, recordingId: null, meetingUrl: null, statusCode: "failed", code: "failed", subCode: null, updatedAt: null, metadata: { source: "local_recorder_sdk", fallbackIntentId: "intent", meetingId: "old" } });
     expect(result).toMatchObject({ meetingId: "reassigned" });
     expect(resolveLocalRecorderSdkMeeting).toHaveBeenCalledWith("intent");
+    expect(markLocalRecorderSdkIntentTerminal).toHaveBeenCalledWith("intent", "failed");
   });
 
   it("prevents delayed recording callbacks from regressing ready or processing meetings", async () => {
@@ -924,6 +929,14 @@ describe("applyRecallMeetingEvent", () => {
     expect(send).not.toHaveBeenCalled();
   });
 
+  it("keeps the SDK upload nonterminal when queue dispatch fails", async () => {
+    update.mockReturnValue({ set: vi.fn().mockReturnValue({ where }) });
+    retrieveRecallRecording.mockResolvedValue({ id: "recording", media_shortcuts: { audio_mixed: { data: { download_url: "https://recall.example.com/audio.mp3" } } } });
+    send.mockRejectedValueOnce(new Error("queue unavailable"));
+    await expect(applyRecallMeetingEvent({ eventType: "sdk_upload.complete", botId: null, recordingId: "recording", meetingUrl: null, statusCode: "complete", code: "complete", subCode: null, updatedAt: null, metadata: { source: "local_recorder_sdk", fallbackIntentId: "intent", meetingId: "old" } })).rejects.toThrow("queue unavailable");
+    expect(markLocalRecorderSdkIntentTerminal).not.toHaveBeenCalled();
+  });
+
   it("queues transcription when a Recall Desktop SDK upload completes", async () => {
     update.mockReturnValue({
       set: vi.fn().mockReturnValue({ where }),
@@ -1012,6 +1025,7 @@ describe("applyRecallMeetingEvent", () => {
         },
       ],
     ]);
+    expect(markLocalRecorderSdkIntentTerminal).toHaveBeenCalledWith("intent_123", "completed");
   });
 
   it("fails a completed SDK upload when Recall has terminal failed media", async () => {
@@ -1157,6 +1171,7 @@ describe("applyRecallMeetingEvent", () => {
         recallRecordingId: "recording_123",
       },
     });
+    expect(markLocalRecorderSdkIntentTerminal).not.toHaveBeenCalled();
   });
 
   it("queues extraction but not transcription for video completion assets", async () => {

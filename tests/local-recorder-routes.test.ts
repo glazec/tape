@@ -26,8 +26,9 @@ const markLocalRecorderNotificationDelivered = vi.fn();
 const listLocalRecorderRecordingMeetings = vi.fn();
 const setLocalRecorderRecordingTarget = vi.fn();
 const finishLocalRecorderRecordingTarget = vi.fn();
+const getLocalRecorderRecordingTargetStatus = vi.fn();
 const LocalRecorderTargetError = vi.hoisted(() => class LocalRecorderTargetError extends Error { constructor(message: string, public status = 409) { super(message); } });
-vi.mock("@/lib/local-recorder-targets", () => ({ listLocalRecorderRecordingMeetings, setLocalRecorderRecordingTarget, finishLocalRecorderRecordingTarget, LocalRecorderTargetError }));
+vi.mock("@/lib/local-recorder-targets", () => ({ listLocalRecorderRecordingMeetings, setLocalRecorderRecordingTarget, finishLocalRecorderRecordingTarget, getLocalRecorderRecordingTargetStatus, LocalRecorderTargetError }));
 const LocalRecorderUploadError = vi.hoisted(() => class LocalRecorderUploadError extends Error {});
 
 vi.mock("@/lib/local-recorder-auth", () => ({
@@ -100,6 +101,19 @@ describe("local recorder API routes", () => {
     expect(listLocalRecorderRecordingMeetings).toHaveBeenCalledWith({ workspace: { teamId: "team_123", userId: "user_123" }, query: "Old", offset: 100 });
     expect(response.headers.get("cache-control")).toBe("no-store");
     expect((await GET(new Request("https://app.example.com/route?offset=-1"))).status).toBe(400);
+  });
+
+  it("returns upload state only to the paired authenticated device", async () => {
+    mockSignedInDevice();
+    getLocalRecorderRecordingTargetStatus.mockResolvedValue({ state: "completed" });
+    const { POST } = await import("@/app/api/local-recorder/recording-target/status/route");
+    const request = () => new Request("https://app.example.com/route", { method: "POST", body: JSON.stringify({ fallbackIntentId: "stable" }) });
+    const response = await POST(request());
+    await expect(response.json()).resolves.toEqual({ state: "completed" });
+    expect(response.headers.get("cache-control")).toBe("no-store");
+    expect(getLocalRecorderRecordingTargetStatus).toHaveBeenCalledWith({ fallbackIntentId: "stable", deviceId: "mac_123", workspace: { teamId: "team_123", userId: "user_123" } });
+    getLocalRecorderDeviceRequestContext.mockResolvedValue({ ok: false, error: "Unauthorized", status: 401 });
+    expect((await POST(request())).status).toBe(401);
   });
 
   it("selects and freezes a target using the paired device identity", async () => {

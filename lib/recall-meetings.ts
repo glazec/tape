@@ -6,7 +6,7 @@ import { inngest } from "@/inngest/client";
 import { fetchAndPersistRecallParticipantTimeline } from "@/lib/meeting-participant-timeline";
 import { isRecallBotAccepted } from "@/lib/meeting-bot-lineage";
 import { getRecallRecordingReadiness } from "@/lib/recall-recording-readiness";
-import { isRecallDesktopSdkFallbackIntent, resolveLocalRecorderSdkMeeting } from "@/lib/local-recorder-records";
+import { isRecallDesktopSdkFallbackIntent, resolveLocalRecorderSdkMeeting, markLocalRecorderSdkIntentTerminal } from "@/lib/local-recorder-records";
 import { createRecallRecordingTranscription } from "@/lib/transcription-records";
 import type { normalizeRecallWebhook } from "@/lib/vendors/recall";
 import {
@@ -144,11 +144,17 @@ export async function applyRecallMeetingEvent(event: RecallWebhookEvent) {
     update.recallRecordingId &&
     (shouldQueueTranscription || shouldQueueVideoFrames)
   ) {
-    await queueRecallRecordingProcessing(update, event.metadata, {
+    const queued = await queueRecallRecordingProcessing(update, event.metadata, {
       shouldQueueTranscription,
       shouldQueueVideoFrames,
       videoFrameReadiness: getVideoFrameReadiness(event),
     });
+    const token = getMetadataString(event.metadata, "fallbackIntentId", "fallback_intent_id");
+    if (isLocalSdk && queued && token) await markLocalRecorderSdkIntentTerminal(token, "completed");
+  }
+  if (isLocalSdk && status === "failed") {
+    const token = getMetadataString(event.metadata, "fallbackIntentId", "fallback_intent_id");
+    if (token) await markLocalRecorderSdkIntentTerminal(token, "failed");
   }
 
   return update;
@@ -318,7 +324,7 @@ async function queueRecallRecordingProcessing(
   });
 
   if (transcription.shouldQueue === false) {
-    return;
+    return true;
   }
 
   await inngest.send({
@@ -329,6 +335,7 @@ async function queueRecallRecordingProcessing(
       ...transcription,
     },
   });
+  return true;
 }
 
 function hasTerminalRecallMediaFailure(

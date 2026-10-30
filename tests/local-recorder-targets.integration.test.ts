@@ -12,8 +12,8 @@ vi.mock("@/lib/r2", () => ({
   createUploadUrl: vi.fn(), getObjectMetadata: vi.fn(async () => ({ contentLength: 100, contentType: "audio/wav" })), parseR2Env: () => ({ R2_BUCKET: "test" }),
 }));
 vi.mock("@/lib/vendors/recall", () => ({ createRecallDesktopSdkUpload: vi.fn(), getRecallApiBaseUrl: vi.fn(), retrieveRecallBot: vi.fn() }));
-import { claimLocalRecorderIntent, completeLocalRecorderRecordingUpload, resolveLocalRecorderSdkMeeting } from "@/lib/local-recorder-records";
-import { finishLocalRecorderRecordingTarget, listLocalRecorderRecordingMeetings, setLocalRecorderRecordingTarget } from "@/lib/local-recorder-targets";
+import { claimLocalRecorderIntent, completeLocalRecorderRecordingUpload, resolveLocalRecorderSdkMeeting, markLocalRecorderSdkIntentTerminal } from "@/lib/local-recorder-records";
+import { finishLocalRecorderRecordingTarget, getLocalRecorderRecordingTargetStatus, listLocalRecorderRecordingMeetings, setLocalRecorderRecordingTarget } from "@/lib/local-recorder-targets";
 
 const dsn = process.env.TAPE_RECORDER_TEST_DATABASE;
 const run = promisify(execFile);
@@ -66,6 +66,7 @@ describe.skipIf(!dsn)("recording target PostgreSQL transactions", () => {
     databaseSql.mockImplementation(async (...args) => {
       const query = statement(...args as [TemplateStringsArray, ...unknown[]]);
       const lines = await sql(query);
+      if (query.includes("attempt_state as state")) return lines.map((state) => ({ state }));
       if (query.includes('m.status\n')) return lines.map((line) => {
         const [meetingId, title, startsAt, endsAt, status] = line.split("|");
         return { meetingId, title, startsAt: startsAt || null, endsAt: endsAt || null, status };
@@ -175,6 +176,20 @@ describe.skipIf(!dsn)("recording target PostgreSQL transactions", () => {
     expect(await resolveLocalRecorderSdkMeeting(started.fallbackIntentId)).toBe(second);
     await expect(setLocalRecorderRecordingTarget({ ...input, fallbackIntentId: started.fallbackIntentId })).rejects.toThrow("unavailable");
     expect(await sql("select attempt_state from local_recording_attempts")).toEqual(["sealed"]);
+  });
+
+  it("reports monotonic SDK upload state only within the paired identity", async () => {
+    const started = await setLocalRecorderRecordingTarget(input);
+    const statusInput = { ...input, fallbackIntentId: started.fallbackIntentId };
+    await resolveLocalRecorderSdkMeeting(started.fallbackIntentId);
+    expect(await getLocalRecorderRecordingTargetStatus(statusInput)).toEqual({ state: "sealed" });
+    await markLocalRecorderSdkIntentTerminal(started.fallbackIntentId, "completed");
+    await markLocalRecorderSdkIntentTerminal(started.fallbackIntentId, "failed");
+    expect(await resolveLocalRecorderSdkMeeting(started.fallbackIntentId)).toBe(first);
+    expect(await getLocalRecorderRecordingTargetStatus(statusInput)).toEqual({ state: "completed" });
+    await expect(getLocalRecorderRecordingTargetStatus({ ...statusInput, deviceId: "another" })).rejects.toThrow("unavailable");
+    await expect(getLocalRecorderRecordingTargetStatus({ ...statusInput, workspace: { ...workspace, userId: other } })).rejects.toThrow("unavailable");
+    await expect(getLocalRecorderRecordingTargetStatus({ ...statusInput, workspace: { ...workspace, teamId: other } })).rejects.toThrow("unavailable");
   });
 
   it.each(["sealed", "completed"])("cannot reopen %s through a claim that read the old active state", async (state) => {

@@ -1709,3 +1709,17 @@ export async function resolveLocalRecorderSdkMeeting(fallbackIntentId: string) {
   ` as Array<{ meeting_id: string }>;
   return attempt?.meeting_id ?? null;
 }
+
+export async function markLocalRecorderSdkIntentTerminal(
+  fallbackIntentId: string,
+  state: "completed" | "failed",
+) {
+  const tokenHash = await hashLocalRecorderValue(fallbackIntentId);
+  await databaseSql`
+    update local_recording_attempts
+    set attempt_state = ${state}, updated_at = now()
+    where fallback_intent_id_hash = ${tokenHash}
+      and attempt_state in ('sealed', 'uploading', 'uploaded')
+      and notification_state <> 'recall_sdk_fallback'
+  `;
+}
