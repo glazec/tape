@@ -119,7 +119,7 @@ struct RecorderMenuView: View {
             summary
                 .padding(.horizontal, 20)
                 .padding(.top, showsWindowChrome ? 8 : 18)
-                .padding(.bottom, model.isAdvancedExpanded ? 14 : 18)
+                .padding(.bottom, 18)
 
             if model.isAdvancedExpanded {
                 RecorderSettingsView(model: model, isSignedIn: isSignedIn)
@@ -128,7 +128,6 @@ struct RecorderMenuView: View {
         .frame(width: 340)
         .background(TapePalette.paper)
         .foregroundStyle(TapePalette.ink)
-        .animation(.easeOut(duration: 0.18), value: model.isAdvancedExpanded)
     }
 
     // MARK: Summary
@@ -267,7 +266,7 @@ struct RecorderMenuView: View {
             .padding(.top, 16)
             }
             if !model.isRecording, model.canMonitor, !model.isStartingRecording,
-               !model.startTargetRejected, model.nextScheduleMeeting?.botStatus != "recording" {
+               model.recordingStartFailure == nil, model.nextScheduleMeeting?.botStatus != "recording" {
                 Text("After starting, choose a recent meeting from the title to continue its recording.")
                     .font(TapeType.sans(11)).foregroundStyle(TapePalette.muted)
                     .fixedSize(horizontal: false, vertical: true).padding(.top, 6)
@@ -312,7 +311,7 @@ struct RecorderMenuView: View {
     /// Surfaces the model's status line when it says something the summary does not,
     /// such as a failed upload, an expired session, or a fallback to local recording.
     private var statusNotice: (text: String, isProblem: Bool)? {
-        let text = model.statusText.trimmingCharacters(in: .whitespacesAndNewlines)
+        let text = (model.recordingStartFailure?.message ?? model.statusText).trimmingCharacters(in: .whitespacesAndNewlines)
         let routine: Set<String> = [
             "", "Sign in to start monitoring", "Finish access setup", "Permissions ready",
             "Screen and audio ready", "Checking your calendar", "Watching your calendar",
@@ -326,7 +325,7 @@ struct RecorderMenuView: View {
             return nil
         }
         let problemMarkers = ["could not", "stopped", "expired", "paused", "enter a valid", "enable", "allow", "failed"]
-        let isProblem = problemMarkers.contains { text.localizedCaseInsensitiveContains($0) }
+        let isProblem = model.recordingStartFailure != nil || problemMarkers.contains { text.localizedCaseInsensitiveContains($0) }
         return (text, isProblem)
     }
 
@@ -421,7 +420,7 @@ struct RecorderMenuView: View {
                     ? "\(meeting.endsAt.map { "Until " + timeText($0) } ?? "Started at " + timeText(meeting.startsAt)) · \(notetakerText(meeting))"
                     : "\(rangeText(meeting)) · \(notetakerText(meeting))",
                 detailHelp: meeting.botStatusDetail,
-                actionTitle: model.startTargetRejected || meeting.botStatus == "recording" ? "Record a separate meeting" : "Record on this Mac",
+                actionTitle: model.recordingStartFailure?.actionTitle ?? (meeting.botStatus == "recording" ? "Record a separate meeting" : "Record on this Mac"),
                 actionKind: .primary,
                 isActionDisabled: false
             )
@@ -431,7 +430,7 @@ struct RecorderMenuView: View {
             tone: nil,
             title: "Nothing scheduled",
             detail: "Tape will pick up your next meeting",
-            actionTitle: "Record on this Mac",
+            actionTitle: model.recordingStartFailure?.actionTitle ?? "Record on this Mac",
             actionKind: .primary,
             isActionDisabled: false
         )
@@ -442,7 +441,7 @@ struct RecorderMenuView: View {
             return
         } else if model.isRecording {
             model.stopRecording()
-        } else if !isSignedIn {
+        } else if !isSignedIn || model.recordingStartFailure == .signInRequired {
             model.signIn()
         } else if model.nextPermissionStep != nil {
             model.requestNextPermission()

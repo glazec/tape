@@ -21,6 +21,37 @@ import Testing
     #expect(!localRecorderTargetWasRejected(URLError(.timedOut)))
 }
 
+@Test func missingWorkflowRouteIsNotAnUnavailableMeeting() throws {
+    let response = try #require(HTTPURLResponse(
+        url: URL(string: "https://example.com/api/local-recorder/recording-target")!,
+        statusCode: 404, httpVersion: nil, headerFields: ["Content-Type": "text/html; charset=utf-8"]
+    ))
+    let error = localRecorderHTTPError(data: Data("<!DOCTYPE html><title>Not found</title>".utf8), response: response)
+    #expect(error == .recordingWorkflowUnavailable)
+    #expect(RecorderStartFailure(error: error) == .serviceUnavailable)
+    #expect(RecorderStartFailure(error: error).actionTitle == "Retry recording")
+    #expect(!localRecorderTargetWasRejected(error))
+}
+
+@Test func missingMeetingStillOffersASeparateRecording() throws {
+    let response = try #require(HTTPURLResponse(
+        url: URL(string: "https://example.com/api/local-recorder/recording-target")!,
+        statusCode: 404, httpVersion: nil, headerFields: ["Content-Type": "application/json"]
+    ))
+    let error = localRecorderHTTPError(data: Data(#"{"error":"Meeting not found"}"#.utf8), response: response)
+    #expect(RecorderStartFailure(error: error) == .meetingUnavailable)
+    #expect(RecorderStartFailure(error: error).actionTitle == "Record a separate meeting")
+    #expect(localRecorderTargetWasRejected(error))
+}
+
+@Test func recordingStartRecoveryMatchesTheFailure() {
+    #expect(RecorderStartFailure(error: URLError(.timedOut)) == .retrySameMeeting)
+    #expect(RecorderStartFailure(error: LocalRecorderAPIError.httpStatus(401)).actionTitle == "Sign in again")
+    #expect(RecorderStartFailure(error: LocalRecorderAPIError.httpStatus(403)) == .accessDenied)
+    #expect(RecorderStartFailure(error: LocalRecorderAPIError.httpStatus(409)) == .meetingUnavailable)
+    #expect(RecorderStartFailure(error: LocalRecorderAPIError.httpStatus(503)) == .retrySameMeeting)
+}
+
 @Test func lateMeetingConfirmationPreservesCompletedUploadReceipt() {
     var receipt = RecordingUploadReceipt(id: "intent", message: "Confirming meeting")
     receipt.update(target: nil, message: "Uploaded", serverURL: nil, terminal: true)

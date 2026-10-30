@@ -120,6 +120,13 @@ enum LocalRecorderSnapshot {
         conflict.nextScheduleMeeting?.startsAt = Date().addingTimeInterval(-300)
         conflict.statusText = "Watching your calendar"
 
+        let serverUnavailable = RecorderAppModel(snapshotBearerToken: "token")
+        serverUnavailable.permissionChecklist = granted
+        serverUnavailable.nextScheduleMeeting = upcoming.nextScheduleMeeting
+        serverUnavailable.recordingStartFailure = .serviceUnavailable
+        // A successful background refresh must not hide the failed Record action.
+        serverUnavailable.statusText = "Watching your calendar"
+
         let settings = RecorderAppModel(snapshotBearerToken: "token")
         settings.permissionChecklist = granted
         settings.statusText = "Watching your calendar"
@@ -135,6 +142,7 @@ enum LocalRecorderSnapshot {
             ("upload-issue", uploadIssue), ("settings", settings), ("permissions", permissions),
             ("meeting-picker", picker), ("end-prompt", prompt),
             ("upload-receipt", receipt), ("recording-conflict", conflict),
+            ("recording-unavailable", serverUnavailable),
         ]
     }
 

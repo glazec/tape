@@ -47,7 +47,7 @@ extension RecorderAppModel {
         isLoadingMeetingChoices = false
         meetingPickerError = nil
         meetingPickerLoadFailed = false
-        startTargetRejected = false
+        recordingStartFailure = nil
     }
 
     var visibleUploadReceipts: [RecordingUploadReceipt] {
@@ -122,7 +122,7 @@ extension RecorderAppModel {
             id == nextScheduleMeeting?.meetingId ? nextScheduleMeeting?.title : meetingChoices.first(where: { $0.meetingId == id })?.title
         } ?? title ?? "New meeting"
         isStartingRecording = true
-        startTargetRejected = false
+        recordingStartFailure = nil
         isAdvancedExpanded = false
         isMeetingPickerPresented = false
         statusText = "Starting recording"
@@ -175,15 +175,10 @@ extension RecorderAppModel {
                 if localRecorderTargetWasRejected(error) {
                     recoveryState.pendingStart = nil
                     try? persistCaptureRecovery()
-                    if case LocalRecorderAPIError.httpStatus(let status, _, _) = error, status == 409 || status == 404 {
-                        startTargetRejected = true
-                        statusText = "This meeting is unavailable for recording. Choose a separate meeting."
-                    } else {
-                        statusText = localRecorderRequiresSignIn(error) ? "Sign in again to start recording." : "Could not start recording. Check workspace access and credit."
-                    }
-                } else {
-                    statusText = "Could not start recording. Retry to recover the same meeting."
                 }
+                let failure = RecorderStartFailure(error: error)
+                recordingStartFailure = failure
+                statusText = failure.message
             }
             refreshPendingUploadCount()
         }

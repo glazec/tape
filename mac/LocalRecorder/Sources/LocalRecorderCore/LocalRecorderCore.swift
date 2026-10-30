@@ -718,6 +718,7 @@ public struct LocalRecorderAPIClient: Sendable {
 
 public enum LocalRecorderAPIError: Error, Equatable {
     case invalidResponse
+    case recordingWorkflowUnavailable
     case httpStatus(
         Int,
         message: String? = nil,
@@ -737,6 +738,13 @@ func localRecorderHTTPError(
     data: Data,
     response: HTTPURLResponse
 ) -> LocalRecorderAPIError {
+    // A missing route returns the web app's HTML 404 page. A missing meeting
+    // returns JSON from the recording API. They need different recovery actions.
+    if response.statusCode == 404,
+       response.url?.path.hasPrefix("/api/local-recorder/recording-") == true,
+       response.value(forHTTPHeaderField: "Content-Type")?.lowercased().contains("application/json") != true {
+        return .recordingWorkflowUnavailable
+    }
     let message = try? JSONDecoder().decode(
         LocalRecorderAPIErrorResponse.self,
         from: data

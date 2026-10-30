@@ -28,6 +28,40 @@ public func localRecorderTargetWasRejected(_ error: Error) -> Bool {
     return (400..<500).contains(status) && status != 408 && status != 429
 }
 
+public enum RecorderStartFailure: Equatable, Sendable {
+    case serviceUnavailable, meetingUnavailable, signInRequired, accessDenied, retrySameMeeting
+
+    public init(error: Error) {
+        if let apiError = error as? LocalRecorderAPIError, apiError == .recordingWorkflowUnavailable {
+            self = .serviceUnavailable
+        } else if localRecorderRequiresSignIn(error) {
+            self = .signInRequired
+        } else if case LocalRecorderAPIError.httpStatus(let status, _, _) = error, status == 404 || status == 409 {
+            self = .meetingUnavailable
+        } else {
+            self = localRecorderTargetWasRejected(error) ? .accessDenied : .retrySameMeeting
+        }
+    }
+
+    public var message: String {
+        switch self {
+        case .serviceUnavailable: "Recording needs a Tape server update. Nothing was recorded."
+        case .meetingUnavailable: "This meeting is unavailable for recording. Choose a separate meeting."
+        case .signInRequired: "Sign in again to start recording."
+        case .accessDenied: "Could not start recording. Check workspace access and credit."
+        case .retrySameMeeting: "Could not start recording. Retry to recover the same meeting."
+        }
+    }
+
+    public var actionTitle: String {
+        switch self {
+        case .meetingUnavailable: "Record a separate meeting"
+        case .signInRequired: "Sign in again"
+        default: "Retry recording"
+        }
+    }
+}
+
 public struct RecordingMeetingsResponse: Codable, Sendable {
     public var meetings: [RecordingMeeting]
     public var hasMore: Bool

@@ -282,7 +282,8 @@ final class RecorderAppModel: NSObject, ObservableObject, UNUserNotificationCent
     @Published var isLoadingMeetingChoices = false
     @Published var meetingPickerError: String?
     @Published var meetingPickerLoadFailed = false
-    @Published var startTargetRejected = false
+    @Published var recordingStartFailure: RecorderStartFailure?
+    var startTargetRejected: Bool { recordingStartFailure == .meetingUnavailable }
     @Published var endPrompt: RecorderEndPrompt?
     @Published var pendingUploadCount = 0
     @Published var uploadStatusText: String?
@@ -669,8 +670,8 @@ final class RecorderAppModel: NSObject, ObservableObject, UNUserNotificationCent
                 try? await sealRecoveredCaptures(client: client)
                 Task { await uploadQueuedRecordings(client: client) }
                 let now = Date()
-                if nextScheduleMeeting?.meetingId != monitoringStatus.nextMeeting?.meetingId {
-                    startTargetRejected = false
+                if nextScheduleMeeting?.meetingId != monitoringStatus.nextMeeting?.meetingId, startTargetRejected {
+                    recordingStartFailure = nil
                 }
                 nextScheduleMeeting = monitoringStatus.nextMeeting
                 pendingMeetings = LocalRecorderPendingMeetingQueue.merge(
