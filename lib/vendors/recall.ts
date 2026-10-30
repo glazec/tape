@@ -157,7 +157,7 @@ const recallCalendarDeleteInputSchema = z.object({
 
 const recallCalendarEventListInputSchema = z.object({
   calendarId: z.string().trim().min(1),
-  updatedAtGte: z.iso.datetime().optional(),
+  updatedAtGte: z.iso.datetime({ offset: true }).optional(),
   startTimeGte: z.iso.datetime().optional(),
   isDeleted: z.boolean().optional(),
 });
@@ -927,6 +927,12 @@ export async function sendRecallChatMessage(input: {
   return response.json();
 }
 
+export class RecallBotRetrievalError extends Error {
+  constructor(public status: number, statusText: string) {
+    super(`Recall bot retrieval failed with ${status} ${statusText}`);
+  }
+}
+
 export async function retrieveRecallBot(botId: string) {
   const env = recallApiEnvSchema.parse(process.env);
   const response = await fetch(
@@ -941,9 +947,7 @@ export async function retrieveRecallBot(botId: string) {
   );
 
   if (!response.ok) {
-    throw new Error(
-      `Recall bot retrieval failed with ${response.status} ${response.statusText}`,
-    );
+    throw new RecallBotRetrievalError(response.status, response.statusText);
   }
 
   return response.json();

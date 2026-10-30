@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { and, eq, inArray, notInArray } from "drizzle-orm";
 
 import { db } from "@/db/client";
 import { meetings } from "@/db/schema";
@@ -132,7 +132,12 @@ export async function applyRecallMeetingEvent(event: RecallWebhookEvent) {
       status: status ?? undefined,
       updatedAt: new Date(),
     })
-    .where(eq(meetings.id, update.meetingId));
+    .where(and(
+      eq(meetings.id, update.meetingId),
+      notInArray(meetings.status, ["ready", "cancelled"]),
+      ...(status === "scheduled" ? [eq(meetings.status, "scheduled")] : []),
+      ...(status === "recording" ? [inArray(meetings.status, ["scheduled", "recording"])] : []),
+    ));
 
   const shouldQueueTranscription =
     status === "processing" && shouldQueueRecallRecordingTranscription(event);
@@ -314,6 +319,7 @@ async function queueRecallRecordingProcessing(
   }
 
   await inngest.send({
+    id: `recall-transcription:${transcription.transcriptJobId}`,
     name: "meeting/transcribe.audio",
     data: {
       audioUrl,

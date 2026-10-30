@@ -1,3 +1,4 @@
+import { PgDialect } from "drizzle-orm/pg-core";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
@@ -298,6 +299,18 @@ describe("buildRecallMeetingUpdate", () => {
 });
 
 describe("applyRecallMeetingEvent", () => {
+  it("prevents delayed recording callbacks from regressing ready or processing meetings", async () => {
+    update.mockReturnValue({ set: vi.fn().mockReturnValue({ where }) });
+    await applyRecallMeetingEvent({ eventType: "bot.in_call_recording", botId: "bot", recordingId: null,
+      meetingUrl: null, statusCode: "in_call_recording", code: "in_call_recording", subCode: null,
+      updatedAt: "2026-10-29T02:00:00Z", metadata: { meetingId: "meeting" },
+    });
+    const query = new PgDialect().sqlToQuery(where.mock.calls[0][0]);
+    expect(query.sql).toContain('"meetings"."status" not in');
+    expect(query.sql).toContain('"meetings"."status" in');
+    expect(query.params).toEqual(["meeting", "ready", "cancelled", "scheduled", "recording"]);
+  });
+
   it("rejects a completed recording from a displaced bot", async () => {
     isRecallBotAccepted.mockResolvedValue(false);
 
@@ -500,6 +513,7 @@ describe("applyRecallMeetingEvent", () => {
       ],
       [
         {
+          id: "recall-transcription:22222222-2222-4222-8222-222222222222",
           name: "meeting/transcribe.audio",
           data: {
             audioUrl: "https://recall.example.com/recording.mp4",
@@ -676,6 +690,7 @@ describe("applyRecallMeetingEvent", () => {
       }),
     );
     expect(send).toHaveBeenCalledWith({
+      id: "recall-transcription:33333333-3333-4333-8333-333333333333",
       name: "meeting/transcribe.audio",
       data: expect.objectContaining({
         audioUrl: "https://recall.example.com/part-2.mp3",
@@ -869,6 +884,7 @@ describe("applyRecallMeetingEvent", () => {
       ],
       [
         {
+          id: "recall-transcription:22222222-2222-4222-8222-222222222222",
           name: "meeting/transcribe.audio",
           data: {
             audioUrl: "https://recall.example.com/sdk-audio.mp3",

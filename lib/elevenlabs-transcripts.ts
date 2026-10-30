@@ -137,6 +137,7 @@ export function buildElevenLabsTranscriptPersistence(
   if (isFailedStatus(event.status)) {
     return {
       action: "fail",
+      ...("errorMessage" in event ? { errorMessage: event.errorMessage } : {}),
       providerJobId,
       transcriptJobId,
     };

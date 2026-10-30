@@ -20,6 +20,11 @@ function validEnvironment() {
 }
 
 describe("deployment environment", () => {
+  it("rejects batch models on the realtime chat endpoint", () => {
+    expect(getDeploymentEnvironmentIssues({
+      ...validEnvironment(), OPENROUTER_MODEL: "z-ai/glm-5.3-flash:batch",
+    })).toContain("OPENROUTER_MODEL must support chat/completions, not a :batch model");
+  });
   it("reports every missing required value at once", () => {
     expect(getDeploymentEnvironmentIssues({}, { production: true })).toEqual(
       requiredDeploymentVariables.map((name) => `${name} is missing`),

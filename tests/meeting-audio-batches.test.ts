@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { neon, neonConfig } from "@neondatabase/serverless";
 
 const {
   assertCanManageMeeting,
@@ -195,6 +196,42 @@ describe("meeting audio batches", () => {
     expect(meetingUpdate).toContain("translation_error_message = null");
     expect(meetingUpdate).toContain("translation_started_at = null");
     expect(meetingUpdate).toContain("translation_completed_at = null");
+  });
+
+  it.each([1, 2])("serializes a %i file attachment with the real SQL driver", async (fileCount) => {
+    mockExistingRows([]);
+    assertCanManageMeeting.mockResolvedValue(undefined);
+    const previousFetch = neonConfig.fetchFunction;
+    const fetchQuery = vi.fn(async (_url: unknown, options: RequestInit) => {
+      const { queries } = JSON.parse(String(options.body));
+      return Response.json({
+        results: queries.map(() => ({ fields: [], rows: [] })),
+      });
+    });
+    neonConfig.fetchFunction = fetchQuery;
+    const sql = neon("postgresql://test:test@localhost/test");
+    databaseTransaction.mockImplementation((build) => sql.transaction(build));
+
+    try {
+      const { attachUploadedAudioBatch } = await import("@/lib/meeting-audio-batches");
+      const meetingId = "11111111-1111-4111-8111-111111111111";
+      const result = await attachUploadedAudioBatch({
+        files: files.slice(0, fileCount),
+        meetingId,
+        workspace,
+      });
+
+      expect(result.transcriptions).toHaveLength(fileCount);
+      expect(fetchQuery).toHaveBeenCalledOnce();
+      const { queries } = JSON.parse(String(fetchQuery.mock.calls[0]![1].body));
+      expect(queries[0].query.replace(/\s+/g, " ").trim()).toBe(
+        "delete from meeting_entities where meeting_id = $1::uuid",
+      );
+      expect(queries[0].params).toEqual([meetingId]);
+      expect(queries).toHaveLength(2 + fileCount * 3);
+    } finally {
+      neonConfig.fetchFunction = previousFetch;
+    }
   });
 
   it("returns an existing complete batch in requested playback order", async () => {

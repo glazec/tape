@@ -284,7 +284,7 @@ export async function createRecallRecordingTranscription(input: {
   });
 
   const [existingJob] = await db
-    .select({ id: transcriptJobs.id })
+    .select({ id: transcriptJobs.id, status: transcriptJobs.status, providerJobId: transcriptJobs.providerJobId })
     .from(transcriptJobs)
     .where(eq(transcriptJobs.recordingId, recording.id))
     .limit(1);
@@ -293,7 +293,7 @@ export async function createRecallRecordingTranscription(input: {
     return {
       meetingId: input.meetingId,
       recordingId: recording.id,
-      shouldQueue: false,
+      shouldQueue: existingJob.status === "queued" && !existingJob.providerJobId,
       transcriptJobId: existingJob.id,
     };
   }
@@ -313,7 +313,7 @@ export async function createRecallRecordingTranscription(input: {
 
   if (!job) {
     [job] = await db
-      .select({ id: transcriptJobs.id })
+      .select({ id: transcriptJobs.id, status: transcriptJobs.status, providerJobId: transcriptJobs.providerJobId })
       .from(transcriptJobs)
       .where(eq(transcriptJobs.recordingId, recording.id))
       .limit(1);

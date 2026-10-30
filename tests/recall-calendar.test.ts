@@ -143,7 +143,10 @@ describe("Recall Calendar V2 adapter", () => {
     );
   });
 
-  it("lists changed Recall calendar events for a calendar sync webhook", async () => {
+  it.each([
+    "2026-06-30T11:00:00.000Z",
+    "2026-10-29T04:24:04.227809+00:00",
+  ])("lists changed Recall calendar events since %s", async (updatedAtGte) => {
     vi.stubEnv("RECALL_API_KEY", "recall-key\n");
     const fetchMock = vi.fn().mockResolvedValue(
       new Response(
@@ -179,7 +182,7 @@ describe("Recall Calendar V2 adapter", () => {
     await expect(
       listRecallCalendarEvents({
         calendarId: "44444444-4444-4444-8444-444444444444",
-        updatedAtGte: "2026-06-30T11:00:00.000Z",
+        updatedAtGte,
       }),
     ).resolves.toEqual([
       expect.objectContaining({
@@ -189,7 +192,7 @@ describe("Recall Calendar V2 adapter", () => {
     ]);
 
     expect(fetchMock.mock.calls[0][0]).toBe(
-      "https://us-east-1.recall.ai/api/v2/calendar-events/?calendar_id=44444444-4444-4444-8444-444444444444&updated_at__gte=2026-06-30T11%3A00%3A00.000Z",
+      `https://us-east-1.recall.ai/api/v2/calendar-events/?calendar_id=44444444-4444-4444-8444-444444444444&updated_at__gte=${encodeURIComponent(updatedAtGte)}`,
     );
   });
 

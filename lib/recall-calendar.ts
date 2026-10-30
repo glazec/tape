@@ -26,7 +26,7 @@ const recallCalendarWebhookSchema = z.discriminatedUnion("event", [
     event: z.literal("calendar.sync_events"),
     data: z.object({
       calendar_id: z.string().min(1),
-      last_updated_ts: z.iso.datetime(),
+      last_updated_ts: z.iso.datetime({ offset: true }),
     }),
   }),
 ]);
@@ -258,6 +258,7 @@ export async function processRecallCalendarWebhook(
     await autoJoinCalendarEvent({
       connection,
       event: syncedEvent,
+      repairMode: true,
     });
     count += 1;
   }

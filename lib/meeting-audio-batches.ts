@@ -5,7 +5,6 @@ import type { NeonQueryFunctionInTransaction } from "@neondatabase/serverless";
 import { databaseSql, db } from "@/db/client";
 import {
   mediaAssets,
-  meetingEntities,
   meetings,
   transcriptJobs,
 } from "@/db/schema";
@@ -130,8 +129,8 @@ export async function attachUploadedAudioBatch(input: {
 
   await databaseSql.transaction((txn) => [
     txn`
-      delete from ${meetingEntities}
-      where ${meetingEntities.meetingId} = ${input.meetingId}::uuid
+      delete from meeting_entities
+      where meeting_id = ${input.meetingId}::uuid
     `,
     ...buildAudioBatchInsertQueries(txn, transcriptions),
     txn`
