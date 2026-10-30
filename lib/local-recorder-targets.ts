@@ -56,6 +56,7 @@ export async function listLocalRecorderRecordingMeetings(input: {
 export async function setLocalRecorderRecordingTarget(input: {
   deviceId: string;
   fallbackIntentId?: string;
+  clientRequestId?: string;
   meetingId?: string;
   title?: string;
   now: Date;
@@ -64,7 +65,9 @@ export async function setLocalRecorderRecordingTarget(input: {
   if (input.workspace.canCreateMeetings === false) {
     throw new LocalRecorderTargetError("Shared users cannot add meetings", 403);
   }
-  const fallbackIntentId = input.fallbackIntentId ?? randomBytes(18).toString("base64url");
+  const fallbackIntentId = input.fallbackIntentId ?? (input.clientRequestId
+    ? hash(`recording-start:${input.workspace.teamId}:${input.workspace.userId}:${input.deviceId}:${input.clientRequestId}`)
+    : randomBytes(18).toString("base64url"));
   const tokenHash = hash(fallbackIntentId);
   const deviceHash = hash(input.deviceId);
   const expiresAt = new Date(input.now.getTime() + 6 * 60 * 60 * 1000);
@@ -73,9 +76,11 @@ export async function setLocalRecorderRecordingTarget(input: {
     // Each statement after the lock receives a fresh READ COMMITTED snapshot.
     const results = await databaseSql.transaction((tx) => [
       tx`select pg_advisory_xact_lock(hashtextextended(${`${input.workspace.userId}:${deviceHash}`}, 0))`,
-      tx`update local_recording_attempts a set attempt_state = 'completed', updated_at = ${input.now}
-        where a.attempt_state = 'uploaded'
-          and exists (select 1 from local_recordings r where r.local_recording_attempt_id = a.id)
+      tx`update local_recording_attempts a set
+          attempt_state = case when a.attempt_state = 'started' then 'sealed' else 'completed' end,
+          updated_at = ${input.now}
+        where ((a.attempt_state = 'uploaded' and exists (select 1 from local_recordings r where r.local_recording_attempt_id = a.id))
+          or (a.attempt_state = 'started' and a.expires_at <= ${input.now}))
           and (a.meeting_id = ${input.meetingId ?? null}::uuid
             or (a.user_id = ${input.workspace.userId}::uuid and a.device_id_hash = ${deviceHash}))
           and a.meeting_id in (
@@ -86,7 +91,22 @@ export async function setLocalRecorderRecordingTarget(input: {
               ))
           )`,
       tx`
-        with active_attempt as materialized (
+        with replayed as materialized (
+          select m.* from local_recording_attempts a
+          join meetings m on m.id = a.meeting_id
+          where ${Boolean(input.clientRequestId && !input.fallbackIntentId)}
+            and a.fallback_intent_id_hash = ${tokenHash}
+            and a.user_id = ${input.workspace.userId}::uuid and a.device_id_hash = ${deviceHash}
+            and a.attempt_state = 'started' and a.expires_at > ${input.now}
+            and m.team_id = ${input.workspace.teamId}::uuid and m.status <> 'cancelled'
+            and (m.owner_user_id = ${input.workspace.userId}::uuid or exists (
+              select 1 from team_memberships membership where membership.team_id = m.team_id
+                and membership.user_id = ${input.workspace.userId}::uuid and membership.role in ('owner', 'admin')
+            ))
+            and (m.id = ${input.meetingId ?? null}::uuid
+              or (${input.meetingId ?? null}::uuid is null and m.platform = 'in_person'
+                and m.title = ${input.title?.trim() || "Manual recording"}))
+        ), active_attempt as materialized (
           select a.id from local_recording_attempts a
           join meetings original on original.id = a.meeting_id
           where ${Boolean(input.fallbackIntentId)}
@@ -100,7 +120,9 @@ export async function setLocalRecorderRecordingTarget(input: {
         ), permission as materialized (
           select 1 where (
             (${Boolean(input.fallbackIntentId)} and exists (select 1 from active_attempt))
-            or (not ${Boolean(input.fallbackIntentId)} and not exists (
+            or (not ${Boolean(input.fallbackIntentId)}
+              and not exists (select 1 from local_recording_attempts where fallback_intent_id_hash = ${tokenHash})
+              and not exists (
               select 1 from local_recording_attempts
               where user_id = ${input.workspace.userId}::uuid and device_id_hash = ${deviceHash}
                 and attempt_state in ('started', 'uploading', 'uploaded')
@@ -150,6 +172,9 @@ export async function setLocalRecorderRecordingTarget(input: {
         select target.id as "meetingId", target.title as "meetingTitle",
           target.started_at as "startsAt", target.ended_at as "endsAt"
         from target where target.id in (select meeting_id from switched union all select meeting_id from started)
+        union all
+        select replayed.id as "meetingId", replayed.title as "meetingTitle",
+          replayed.started_at as "startsAt", replayed.ended_at as "endsAt" from replayed
       `,
     ]);
     const [target] = results[2] as RecordingTarget[];

@@ -99,6 +99,28 @@ describe.skipIf(!dsn)("recording target PostgreSQL transactions", () => {
   });
   afterAll(async () => { await sql(`drop schema ${schema} cascade`); });
 
+  it("recovers a lost start response with a stable client request without reassigning", async () => {
+    const clientRequestId = randomUUID();
+    const initial = await setLocalRecorderRecordingTarget({ ...input, clientRequestId });
+    const replay = await setLocalRecorderRecordingTarget({ ...input, clientRequestId });
+    expect(replay).toEqual(initial);
+    expect(await sql("select count(*) from local_recording_attempts")).toEqual(["1"]);
+    await expect(setLocalRecorderRecordingTarget({ ...input, clientRequestId, meetingId: second })).rejects.toThrow("unavailable");
+    await finishLocalRecorderRecordingTarget({ ...input, fallbackIntentId: initial.fallbackIntentId });
+    await expect(setLocalRecorderRecordingTarget({ ...input, clientRequestId })).rejects.toThrow("unavailable");
+  });
+
+  it("replays new meeting creation without another placeholder and seals expired unknown starts", async () => {
+    const request = { ...input, meetingId: undefined, title: "Created once", clientRequestId: randomUUID() };
+    const initial = await setLocalRecorderRecordingTarget(request);
+    expect(await setLocalRecorderRecordingTarget(request)).toEqual(initial);
+    expect(await sql("select count(*) from meetings")).toEqual(["3"]);
+    await sql("update local_recording_attempts set expires_at = now() - interval '1 day'");
+    const recovered = await setLocalRecorderRecordingTarget({ ...input, now: new Date() });
+    expect(recovered.fallbackIntentId).not.toBe(initial.fallbackIntentId);
+    expect(await getLocalRecorderRecordingTargetStatus({ ...input, fallbackIntentId: initial.fallbackIntentId })).toEqual({ state: "sealed" });
+  });
+
   it("creates, switches repeatedly with the same token and preserves old meeting dates and data", async () => {
     const original = await sql(`select row_to_json(m) from meetings m where id = '${first}'`);
     const started = await setLocalRecorderRecordingTarget(input);

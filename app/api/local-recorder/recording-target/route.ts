@@ -6,10 +6,11 @@ import { assertWorkspaceHasProviderCredit, providerCreditErrorResponse } from "@
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 const schema = z.object({
+  clientRequestId: z.string().uuid().optional(),
   fallbackIntentId: z.string().trim().min(1).max(200).optional(),
   meetingId: z.string().uuid().optional(),
   title: z.string().trim().min(1).max(500).optional(),
-}).refine((value) => !(value.meetingId && value.title));
+}).refine((value) => !(value.meetingId && value.title) && !(value.clientRequestId && value.fallbackIntentId));
 
 export async function POST(request: Request) {
   const context = await getLocalRecorderDeviceRequestContext(request);
