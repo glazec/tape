@@ -442,6 +442,13 @@
       "when": 1793225202299,
       "tag": "0062_backfill_legacy_calendar_accounts",
       "breakpoints": true
+    },
+    {
+      "idx": 63,
+      "version": "7",
+      "when": 1793385764688,
+      "tag": "0063_web_auth_sessions",
+      "breakpoints": true
     }
   ]
 }

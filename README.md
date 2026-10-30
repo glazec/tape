@@ -90,7 +90,7 @@ Team settings shows remaining workspace credit plus current month personal and o
 | Area | Current implementation |
 | --- | --- |
 | Web application | Next.js 16 and React 19 on Railway |
-| Authentication | Neon Auth with Google sign in |
+| Authentication | App managed Better Auth with Google sign in and 180 day database sessions |
 | Product data | Neon Postgres with Drizzle migrations |
 | Tenant isolation | Forced PostgreSQL RLS for signed in web and MCP reads |
 | Media | Cloudflare R2 with authenticated application routes |

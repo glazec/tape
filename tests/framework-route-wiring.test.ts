@@ -20,6 +20,8 @@ vi.mock("@/lib/auth/server", () => ({
   auth: { handler: authHandler },
 }));
 
+vi.mock("better-auth/next-js", () => ({ toNextJsHandler: authHandler }));
+
 vi.mock("inngest/next", () => ({ serve }));
 vi.mock("@/inngest/client", () => ({ inngest: { id: "tape" } }));
 vi.mock("@/inngest/functions", () => ({ functions: [] }));

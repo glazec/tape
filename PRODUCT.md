@@ -1,6 +1,6 @@
 # Tape Product
 
-Browser dashboard failures preserve the session and offer Retry. Meeting links return to the requested meeting after authentication. Sharing accepts any valid email, including people who have never signed in; suggestions combine connected organizations and prior recipients. Desktop launch and browser callbacks open the recorder window. Desktop status checks run during permission setup and distinguish expired sessions from connection failures.
+Web sign in lasts 180 days from login and survives deployments with the same database, public origin, and signing secret. Signing out revokes the current session. Existing valid Neon sessions migrate after server verification, preserving user identity. Browser dashboard failures preserve the session and offer Retry. Meeting links return to the requested meeting after authentication. Sharing accepts any valid email, including people who have never signed in; suggestions combine connected organizations and prior recipients. Desktop launch and browser callbacks open the recorder window. Desktop status checks run during permission setup and distinguish expired sessions from connection failures.
 
 ## Users
 

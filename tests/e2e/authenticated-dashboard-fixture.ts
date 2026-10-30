@@ -15,7 +15,7 @@ export const authenticatedAdminStorageStatePath = join(
 );
 
 export const authenticatedDashboardFixture = {
-  authUserId: "tape-e2e-dashboard-user",
+  authUserId: "00000000-0000-4000-8000-000000000501",
   calendarConnectionId: "00000000-0000-4000-8000-000000000401",
   email: "dashboard.e2e@tape-ci.test",
   meetingId: "00000000-0000-4000-8000-000000000301",
@@ -27,7 +27,7 @@ export const authenticatedDashboardFixture = {
 } as const;
 
 export const isolatedWorkspaceFixture = {
-  authUserId: "tape-e2e-isolated-user",
+  authUserId: "00000000-0000-4000-8000-000000000502",
   email: "private.e2e@other-ci.test",
   meetingId: "00000000-0000-4000-8000-000000000302",
   meetingTitle: "Other Workspace Secret",
