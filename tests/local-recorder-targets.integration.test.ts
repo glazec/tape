@@ -11,7 +11,10 @@ vi.mock("@/lib/r2", () => ({
   buildMeetingObjectKey: ({ meetingId, assetId }: { meetingId: string; assetId: string }) => `${meetingId}/${assetId}`,
   createUploadUrl: vi.fn(), getObjectMetadata: vi.fn(async () => ({ contentLength: 100, contentType: "audio/wav" })), parseR2Env: () => ({ R2_BUCKET: "test" }),
 }));
+vi.mock("@/lib/provider-usage", () => ({ recordRecallRecordingUsage: vi.fn() }));
 vi.mock("@/lib/vendors/recall", () => ({ createRecallDesktopSdkUpload: vi.fn(), getRecallApiBaseUrl: vi.fn(), retrieveRecallBot: vi.fn() }));
+import { finalizeMeetingTranscriptGeneration } from "@/lib/transcript-job-failure";
+import { createRecallRecordingTranscription } from "@/lib/transcription-records";
 import { claimLocalRecorderIntent, completeLocalRecorderRecordingUpload, resolveLocalRecorderSdkMeeting, markLocalRecorderSdkIntentTerminal } from "@/lib/local-recorder-records";
 import { finishLocalRecorderRecordingTarget, getLocalRecorderRecordingTargetStatus, listLocalRecorderRecordingMeetings, setLocalRecorderRecordingTarget } from "@/lib/local-recorder-targets";
 
@@ -55,17 +58,22 @@ describe.skipIf(!dsn)("recording target PostgreSQL transactions", () => {
       create table meetings (id uuid primary key default gen_random_uuid(), team_id uuid, owner_user_id uuid, platform text, status text, title text, started_at timestamptz, ended_at timestamptz, created_at timestamptz default now(), updated_at timestamptz default now(), recall_bot_id text);
       create table local_recording_attempts (id uuid primary key default gen_random_uuid(), meeting_id uuid references meetings(id), user_id uuid, device_id_hash text, fallback_intent_id_hash text unique, attempt_state text, claimed_at timestamptz, expires_at timestamptz, notification_state text, updated_at timestamptz default now());
       create unique index local_recording_attempts_primary_active_unique on local_recording_attempts(meeting_id) where attempt_state in ('started', 'uploading', 'uploaded');
+      create type meeting_status as enum ('scheduled', 'recording', 'processing', 'ready', 'failed', 'cancelled');
+      create type transcript_mode as enum ('replace', 'append');
       create type asset_type as enum ('computer_audio', 'microphone_audio', 'synthesized_audio');
       create table media_assets (id uuid primary key, meeting_id uuid references meetings(id), source text, type asset_type, bucket text, object_key text, mime_type text, file_size_bytes integer);
       create table local_recordings (id uuid primary key default gen_random_uuid(), local_recording_attempt_id uuid unique references local_recording_attempts(id), meeting_id uuid references meetings(id), is_primary boolean, owner_user_id uuid, client_recording_id text, recording_started_at timestamptz, recording_stopped_at timestamptz, computer_audio_asset_id uuid references media_assets(id), microphone_audio_asset_id uuid references media_assets(id), synthesized_audio_asset_id uuid references media_assets(id), manifest jsonb, synthesis_status text, updated_at timestamptz, unique(owner_user_id, client_recording_id));
       create unique index local_recordings_meeting_primary_unique on local_recordings(meeting_id) where is_primary = true;
-      create table recordings (id uuid primary key, meeting_id uuid references meetings(id), source text, started_at timestamptz, ended_at timestamptz, duration_ms integer, updated_at timestamptz);
-      create table transcript_jobs (id uuid primary key, meeting_id uuid references meetings(id), recording_id uuid references recordings(id), media_asset_id uuid references media_assets(id), provider text, status text, mode text default 'replace', updated_at timestamptz);
+      create table recordings (id uuid primary key default gen_random_uuid(), meeting_id uuid references meetings(id), source text, external_id text, external_bot_id text, started_at timestamptz, ended_at timestamptz, duration_ms integer, updated_at timestamptz);
+      create unique index recordings_source_external_unique on recordings(source, external_id) where external_id is not null;
+      create table transcript_jobs (id uuid primary key default gen_random_uuid(), meeting_id uuid references meetings(id), recording_id uuid references recordings(id), media_asset_id uuid references media_assets(id), provider text, provider_job_id text, status text, mode transcript_mode default 'replace', generation_id uuid, recording_offset_ms integer, created_at timestamptz default now(), updated_at timestamptz);
+      create table transcript_segments (id uuid primary key default gen_random_uuid(), job_id uuid references transcript_jobs(id), start_ms integer, end_ms integer, text text, translated_text text);
       create unique index transcript_jobs_recording_unique on transcript_jobs(recording_id) where recording_id is not null;
     `);
     databaseSql.mockImplementation(async (...args) => {
       const query = statement(...args as [TemplateStringsArray, ...unknown[]]);
       const lines = await sql(query);
+      if (query.includes("returning status")) return lines.map((status) => ({ status }));
       if (query.includes("attempt_state as state")) return lines.map((state) => ({ state }));
       if (query.includes('m.status\n')) return lines.map((line) => {
         const [meetingId, title, startsAt, endsAt, status] = line.split("|");
@@ -79,10 +87,15 @@ describe.skipIf(!dsn)("recording target PostgreSQL transactions", () => {
       return targetRows(lines);
     });
     databaseSql.transaction.mockImplementation(async (build) => {
-      const queries = build(statement);
+      const queryFunction = Object.assign(statement, { query: (query: string, values: unknown[]) => query.replace(/\$(\d+)/g, (_, i) => literal(values[Number(i) - 1])) });
+      const queries = build(queryFunction);
       const result = await run("psql", [dsn!, "-X", "-q", "-t", "-A", "-F", "|", "-v", "ON_ERROR_STOP=1", "-c", `set search_path to ${schema}`, "-c", "begin", ...queries.flatMap((query: string) => ["-c", query]), "-c", "commit"]);
       const lines = result.stdout.trim().split("\n").filter(Boolean);
-      if (queries.length === 2) return [[], lines.map((line) => {
+      if (queries[1].includes("as should_queue")) return [[], lines.map((line) => {
+        const [transcript_job_id, recording_id, shouldQueue] = line.split("|");
+        return { transcript_job_id, recording_id, should_queue: shouldQueue === "t" };
+      }), []];
+      if (queries[1].includes("with valid_attempt")) return [[], lines.map((line) => {
         const [local_recording_id, transcript_job_id, meeting_id, media_asset_id] = line.split("|");
         return { local_recording_id, transcript_job_id, meeting_id, media_asset_id };
       })];
@@ -91,7 +104,7 @@ describe.skipIf(!dsn)("recording target PostgreSQL transactions", () => {
   });
   beforeEach(async () => {
     db.select.mockReset();
-    await sql(`truncate transcript_jobs, recordings, local_recordings, media_assets, local_recording_attempts, meetings, team_memberships;
+    await sql(`truncate transcript_segments, transcript_jobs, recordings, local_recordings, media_assets, local_recording_attempts, meetings, team_memberships;
       insert into team_memberships values ('${team}', '${user}', 'member');
       insert into meetings(id, team_id, owner_user_id, title, platform, status, started_at) values
       ('${first}', '${team}', '${user}', 'First', 'google_meet', 'ready', '2020-01-01'),
@@ -187,14 +200,46 @@ describe.skipIf(!dsn)("recording target PostgreSQL transactions", () => {
     await finishLocalRecorderRecordingTarget({ ...input, fallbackIntentId: b.fallbackIntentId });
     const completionOrder = reversed ? [b, a] : [a, b];
     const firstCompleted = await complete(completionOrder[0].fallbackIntentId);
+    expect(await finalizeMeetingTranscriptGeneration(first, new Date())).toBe(false);
+    expect(await sql(`select status from meetings where id = '${first}'`)).toEqual(["processing"]);
+    if (reversed) await sql(`
+      update transcript_jobs set recording_offset_ms = 0, status = 'completed';
+      insert into transcript_segments(job_id, start_ms, end_ms, text, translated_text)
+      select id, 50, 100, 'B edited', 'B translated' from transcript_jobs;
+    `);
     const secondCompleted = await complete(completionOrder[1].fallbackIntentId);
+    if (reversed) {
+      expect(await sql("select start_ms, text, translated_text from transcript_segments")).toEqual(["1050|B edited|B translated"]);
+      await sql(`update transcript_jobs set status = 'failed' where recording_id = '${secondCompleted.localRecordingId}'`);
+      expect(await sql("select start_ms from transcript_segments")).toEqual(["1050"]);
+    }
     expect(await sql("select id from recordings order by started_at")).toEqual(reversed
       ? [secondCompleted.localRecordingId, firstCompleted.localRecordingId]
       : [firstCompleted.localRecordingId, secondCompleted.localRecordingId]);
     expect(await sql("select count(*) from media_assets")).toEqual(["6"]);
     expect(await sql("select count(*) from recordings")).toEqual(["2"]);
     expect(await sql("select count(*) from local_recordings where is_primary")).toEqual(["1"]);
-    expect(await sql("select mode from transcript_jobs")).toEqual(["append", "append"]);
+    expect(await sql("select mode from transcript_jobs order by created_at")).toEqual(["replace", "append"]);
+    await sql("update transcript_jobs set status = 'completed'");
+    expect(await finalizeMeetingTranscriptGeneration(first, new Date())).toBe(true);
+  });
+
+  it("rebases completed SDK transcript when an earlier SDK capture is queued, preserving generation and retries", async () => {
+    const later = await createRecallRecordingTranscription({ meetingId: first, externalRecordingId: "sdk-b", mode: "append", startedAt: new Date("2026-10-30T12:10:00Z"), durationMs: 20000 });
+    await sql(`update transcript_jobs set status = 'completed', recording_offset_ms = 0;
+      insert into transcript_segments(job_id, start_ms, end_ms, text, translated_text) values ('${later.transcriptJobId}', 50, 100, 'SDK B edited', 'SDK B translated');`);
+    const earlier = await createRecallRecordingTranscription({ meetingId: first, externalRecordingId: "sdk-a", mode: "append", startedAt: new Date("2026-10-30T12:00:00Z"), durationMs: 600000 });
+    expect(await sql("select start_ms, text, translated_text from transcript_segments")).toEqual(["600050|SDK B edited|SDK B translated"]);
+    expect(await sql("select mode, status from transcript_jobs order by created_at")).toEqual(["replace|completed", "append|queued"]);
+    await sql(`update meetings set status = 'processing' where id = '${first}'`);
+    expect(await finalizeMeetingTranscriptGeneration(first, new Date())).toBe(false);
+    await sql(`update transcript_jobs set status = 'failed' where id = '${earlier.transcriptJobId}'`);
+    const replay = await createRecallRecordingTranscription({ meetingId: first, externalRecordingId: "sdk-b", mode: "append" });
+    expect(replay).toMatchObject({ transcriptJobId: later.transcriptJobId, shouldQueue: false });
+    expect(await sql("select start_ms from transcript_segments")).toEqual(["600050"]);
+    expect(await finalizeMeetingTranscriptGeneration(first, new Date())).toBe(false);
+    expect(await sql(`select status from meetings where id = '${first}'`)).toEqual(["failed"]);
+    expect(await sql("select count(*) from recordings")).toEqual(["2"]);
   });
 
   it("resolves SDK completion through the reassigned attempt and freezes it", async () => {

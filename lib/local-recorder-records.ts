@@ -11,6 +11,8 @@ import {
   sql,
 } from "drizzle-orm";
 
+import { PgDialect } from "drizzle-orm/pg-core";
+import { recordingTimelineRebaseQuery } from "@/lib/recording-timeline";
 import { databaseSql, db } from "@/db/client";
 import {
   localRecorderDevices,
@@ -1139,6 +1141,7 @@ export async function completeLocalRecorderRecordingUpload(input: {
   const transcriptJobId = crypto.randomUUID();
   const durationMs =
     input.recordingStoppedAt.getTime() - input.recordingStartedAt.getTime();
+  const timelineRebase = new PgDialect().sqlToQuery(recordingTimelineRebaseQuery(attempt.meetingId));
   const [, rows] = await databaseSql.transaction((tx) => [
     tx`select pg_advisory_xact_lock(hashtextextended(${`recording-timeline:${attempt.meetingId}`}, 0))`,
     tx`
@@ -1276,7 +1279,8 @@ export async function completeLocalRecorderRecordingUpload(input: {
         local_recording.synthesized_audio_asset_id,
         'elevenlabs',
         'queued',
-        'append'
+        (case when exists (select 1 from transcript_jobs prior where prior.meeting_id = local_recording.meeting_id)
+          then 'append' else 'replace' end)::transcript_mode
       from local_recording
       on conflict (recording_id) where recording_id is not null do update
       set updated_at = ${now}
@@ -1290,6 +1294,7 @@ export async function completeLocalRecorderRecordingUpload(input: {
     from local_recording
     join transcript_job on transcript_job.recording_id = local_recording.id
   `,
+    tx.query(timelineRebase.sql, timelineRebase.params),
   ]);
   const [completed] = rows as Array<{
     local_recording_id: string;

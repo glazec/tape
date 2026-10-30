@@ -4,6 +4,7 @@ const getOrCreateWorkspaceForSessionUser = vi.fn();
 const assertCanCreateMeetings = vi.fn();
 const insert = vi.fn();
 const select = vi.fn();
+const databaseSql = Object.assign(vi.fn(), { transaction: vi.fn(), query: vi.fn() });
 const values = vi.fn();
 const meetingReturning = vi.fn();
 const recordingReturning = vi.fn();
@@ -13,6 +14,7 @@ const update = vi.fn();
 const reconcileMeetingSharingForMeeting = vi.fn();
 
 vi.mock("@/db/client", () => ({
+  databaseSql,
   db: {
     insert,
     select,
@@ -132,108 +134,27 @@ describe("createUploadedAudioTranscription", () => {
 
 describe("createRecallRecordingTranscription", () => {
   afterEach(() => {
-    insert.mockReset();
-    select.mockReset();
-    values.mockReset();
-    recordingReturning.mockReset();
-    jobReturning.mockReset();
+    databaseSql.mockReset(); databaseSql.transaction.mockReset(); databaseSql.query.mockReset();
     vi.resetModules();
   });
-
-  it("creates an append job for a new resumed Recall recording", async () => {
-    select
-      .mockReturnValueOnce(buildSelectResult([]))
-      .mockReturnValueOnce(buildSelectResult([]));
-    recordingReturning.mockResolvedValue([
-      { id: "77777777-7777-4777-8777-777777777777" },
-    ]);
-    jobReturning.mockResolvedValue([
-      { id: "55555555-5555-4555-8555-555555555555" },
-    ]);
-    values
-      .mockReturnValueOnce({
-        onConflictDoNothing: () => ({ returning: recordingReturning }),
-      })
-      .mockReturnValueOnce({
-        onConflictDoNothing: () => ({ returning: jobReturning }),
-      });
-    insert.mockReturnValue({ values });
-
-    const { createRecallRecordingTranscription } =
-      await import("@/lib/transcription-records");
-
-    await expect(
-      createRecallRecordingTranscription({
-        externalBotId: "bot_part_2",
-        externalRecordingId: "recording_part_2",
-        meetingId: "33333333-3333-4333-8333-333333333333",
-        mode: "append",
-      }),
-    ).resolves.toEqual({
-      meetingId: "33333333-3333-4333-8333-333333333333",
-      recordingId: "77777777-7777-4777-8777-777777777777",
-      shouldQueue: true,
-      transcriptJobId: "55555555-5555-4555-8555-555555555555",
-    });
-    expect(values).toHaveBeenNthCalledWith(
-      1,
-      expect.objectContaining({
-        externalBotId: "bot_part_2",
-        externalId: "recording_part_2",
-        source: "recall",
-      }),
-    );
-    expect(values).toHaveBeenNthCalledWith(
-      2,
-      expect.objectContaining({
-        mode: "append",
-        recordingId: "77777777-7777-4777-8777-777777777777",
-      }),
-    );
-  });
-
-  it("redispatches a queued Recall job after an interrupted event send", async () => {
-    select
-      .mockReturnValueOnce(buildSelectResult([{ id: "recording" }]))
-      .mockReturnValueOnce(buildSelectResult([{ id: "job", status: "queued", providerJobId: null }]));
+  it.each([true, false])("atomically inserts or reuses capture and job, rebases, and returns queue state %s", async (shouldQueue) => {
+    databaseSql.mockResolvedValue([{ transcript_job_id: "job", recording_id: "recording", should_queue: shouldQueue }]);
+    databaseSql.transaction.mockImplementation(async (build) => Promise.all(build(databaseSql)));
     const { createRecallRecordingTranscription } = await import("@/lib/transcription-records");
-    await expect(createRecallRecordingTranscription({
-      externalRecordingId: "external", meetingId: "meeting",
-    })).resolves.toMatchObject({ shouldQueue: true, transcriptJobId: "job" });
-    expect(insert).not.toHaveBeenCalled();
+    await expect(createRecallRecordingTranscription({ externalRecordingId: "external", meetingId: "meeting", mode: "append" })).resolves.toEqual({ meetingId: "meeting", recordingId: "recording", transcriptJobId: "job", shouldQueue });
+    expect(databaseSql.mock.calls[0][0].join(" ")).toContain("pg_advisory_xact_lock");
+    expect(databaseSql.mock.calls[1]).toContain("append");
+    expect(databaseSql.mock.calls[1][0].join(" ")).toContain("provider_job_id is null");
+    expect(databaseSql.query.mock.calls[0][0]).toContain("recording_offset_ms");
   });
-
-  it("does not queue the same Recall recording twice", async () => {
-    select
-      .mockReturnValueOnce(
-        buildSelectResult([{ id: "77777777-7777-4777-8777-777777777777" }]),
-      )
-      .mockReturnValueOnce(
-        buildSelectResult([{ id: "55555555-5555-4555-8555-555555555555" }]),
-      );
-    const { createRecallRecordingTranscription } =
-      await import("@/lib/transcription-records");
-
-    await expect(
-      createRecallRecordingTranscription({
-        externalRecordingId: "recording_part_2",
-        meetingId: "33333333-3333-4333-8333-333333333333",
-        mode: "append",
-      }),
-    ).resolves.toMatchObject({ shouldQueue: false });
-    expect(insert).not.toHaveBeenCalled();
+  it("rejects an external recording already owned by another meeting", async () => {
+    databaseSql.mockResolvedValue([]);
+    databaseSql.transaction.mockImplementation(async (build) => Promise.all(build(databaseSql)));
+    const { createRecallRecordingTranscription } = await import("@/lib/transcription-records");
+    await expect(createRecallRecordingTranscription({ externalRecordingId: "external", meetingId: "other" })).rejects.toThrow("could not be created");
+    expect(databaseSql.mock.calls[1][0].join(" ")).toContain("where recordings.meeting_id = excluded.meeting_id");
   });
 });
-
-function buildSelectResult(rows: unknown[]) {
-  return {
-    from: () => ({
-      where: () => ({
-        limit: vi.fn().mockResolvedValue(rows),
-      }),
-    }),
-  };
-}
 
 describe("createUploadedVideoTranscription", () => {
   afterEach(() => {

@@ -270,6 +270,9 @@ async function queueRecallRecordingProcessing(
       return false;
     }
 
+    if (getMetadataString(metadata, "source") === "local_recorder_sdk") {
+      throw new Error("Recall SDK recording media is not ready");
+    }
     return;
   }
 

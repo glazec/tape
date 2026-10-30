@@ -929,6 +929,21 @@ describe("applyRecallMeetingEvent", () => {
     expect(send).not.toHaveBeenCalled();
   });
 
+  it("retries a completed SDK upload with missing media before eventually marking it completed", async () => {
+    update.mockReturnValue({ set: vi.fn().mockReturnValue({ where }) });
+    select.mockReturnValue({ from: selectFrom });
+    selectFrom.mockReturnValue({ where: selectWhere });
+    selectWhere.mockReturnValue({ limit: selectLimit });
+    selectLimit.mockResolvedValue([]);
+    retrieveRecallRecording.mockResolvedValueOnce({ id: "recording", media_shortcuts: {} }).mockResolvedValueOnce({ id: "recording", media_shortcuts: { audio_mixed: { data: { download_url: "https://recall.example.com/audio.mp3" } } } });
+    createRecallRecordingTranscription.mockResolvedValue({ transcriptJobId: "job", meetingId: "meeting" });
+    const event = { eventType: "sdk_upload.complete", botId: null, recordingId: "recording", meetingUrl: null, statusCode: "complete", code: "complete", subCode: null, updatedAt: null, metadata: { source: "local_recorder_sdk", fallbackIntentId: "intent", meetingId: "old" } };
+    await expect(applyRecallMeetingEvent(event)).rejects.toThrow("media is not ready");
+    expect(markLocalRecorderSdkIntentTerminal).not.toHaveBeenCalled();
+    await applyRecallMeetingEvent(event);
+    expect(markLocalRecorderSdkIntentTerminal).toHaveBeenCalledWith("intent", "completed");
+  });
+
   it("keeps the SDK upload nonterminal when queue dispatch fails", async () => {
     update.mockReturnValue({ set: vi.fn().mockReturnValue({ where }) });
     retrieveRecallRecording.mockResolvedValue({ id: "recording", media_shortcuts: { audio_mixed: { data: { download_url: "https://recall.example.com/audio.mp3" } } } });

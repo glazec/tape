@@ -13,7 +13,7 @@ const {
 } = vi.hoisted(() => ({
     createRecallDesktopSdkUpload: vi.fn(),
     createUploadUrl: vi.fn(),
-    databaseSql: Object.assign(vi.fn(), { transaction: vi.fn() }),
+    databaseSql: Object.assign(vi.fn(), { transaction: vi.fn(), query: vi.fn() }),
     db: {
       insert: vi.fn(),
       select: vi.fn(),
@@ -106,6 +106,7 @@ describe("local recorder records", () => {
     db.update.mockReset();
     databaseSql.mockReset();
     databaseSql.transaction.mockReset();
+    databaseSql.query.mockReset();
     createRecallDesktopSdkUpload.mockReset();
     createUploadUrl.mockReset();
     getObjectMetadata.mockReset();
@@ -311,6 +312,7 @@ describe("local recorder records", () => {
     expect(db.insert).not.toHaveBeenCalled();
     expect(db.update).not.toHaveBeenCalled();
     expect(databaseSql.transaction).toHaveBeenCalledOnce();
+    expect(databaseSql.query.mock.calls[0][0]).toContain("recording_offset_ms");
     const completionSql = databaseSql.mock.calls[1]?.[0].join(" ") ?? "";
     expect(completionSql).toContain("with valid_attempt as");
     expect(completionSql).toContain("insert into local_recordings");
@@ -385,6 +387,7 @@ describe("local recorder records", () => {
     });
 
     expect(databaseSql.transaction).toHaveBeenCalledOnce();
+    expect(databaseSql.query.mock.calls[0][0]).toContain("recording_offset_ms");
     expect(inngestSend).toHaveBeenCalledTimes(2);
   });
 
