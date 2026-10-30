@@ -1,4 +1,5 @@
 @preconcurrency import Foundation
+import Darwin
 import LocalRecorderCore
 
 struct RecallDesktopSDKRecordingResult {
@@ -56,6 +57,9 @@ final class RecallDesktopSDKRecordingController {
         try Data().write(to: controlURL, options: .atomic)
         let process = Process()
         let output = Pipe(), input = Pipe()
+        // The child may close stdin between isRunning and write. Convert that
+        // race to a thrown EPIPE instead of terminating the recorder with SIGPIPE.
+        _ = fcntl(input.fileHandleForWriting.fileDescriptor, F_SETNOSIGPIPE, 1)
         process.executableURL = invocation.executableURL
         process.arguments = invocation.arguments + ["--api-url", upload.recallApiUrl, "--upload-token", upload.uploadToken, "--parent-pid", String(ProcessInfo.processInfo.processIdentifier), "--control-file", controlURL.path]
         process.standardInput = input
@@ -117,14 +121,20 @@ final class RecallDesktopSDKRecordingController {
         }
         session.stopRequested = true
         session.lifecycle?.explicitStopRequested = true
-        if !session.stopped { try send("stop", to: session) }
+        var stopWriteError: Error?
+        if !session.stopped && session.process.isRunning {
+            do { try send("stop", to: session) }
+            catch { stopWriteError = error }
+        }
         let deadline = Date().addingTimeInterval(15)
         while !session.stopped && session.process.isRunning && Date() < deadline {
             try await Task.sleep(for: .milliseconds(50))
         }
-        guard session.stopped else {
-            throw RecallDesktopSDKRecordingError.startFailed(session.error ?? "Capture has not confirmed it stopped. Try Stop again.")
+        guard session.stopped || !session.process.isRunning else {
+            throw RecallDesktopSDKRecordingError.startFailed(stopWriteError?.localizedDescription ?? session.error ?? "Capture has not confirmed it stopped. Try Stop again.")
         }
+        // Process exit proves capture ended, but says nothing about upload delivery.
+        session.stopped = true
         activeID = nil
         return RecallDesktopSDKRecordingResult(clientRecordingId: id, sdkUploadId: session.uploadID, windowId: session.windowID ?? "unstarted", startedAt: session.startedAt, stoppedAt: Date(), didCaptureStart: session.started)
     }
@@ -192,10 +202,13 @@ final class RecallDesktopSDKRecordingController {
 
     private func terminated(id: String, status: Int32) {
         guard let session = sessions[id] else { return }
+        let unexpected = !session.stopped && session.started && !session.stopRequested
         session.error = session.error ?? "Recording process exited (\(status))"
-        if activeID == id && !session.stopped && session.started && session.lifecycle?.explicitStopRequested == false {
-            activeID = nil
-            sessions.removeValue(forKey: id)
+        session.stopped = true
+        // Retain ownership and started evidence until Stop consumes it or the
+        // model handles the unexpected exit. A late termination callback must
+        // neither strand Stop nor turn a captured segment into a failed start.
+        if activeID == id && unexpected {
             onUnexpectedTermination?(id)
         }
     }

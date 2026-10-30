@@ -22,7 +22,7 @@ export function createRecordingLifecycle({ sdk, send, windowId, exit }) {
         await sdk.shutdown();
         send({ type: "shutdown", windowId });
         exit(0);
-      })();
+      })().catch((error) => { shuttingDown = undefined; throw error; });
       return shuttingDown;
     },
   };

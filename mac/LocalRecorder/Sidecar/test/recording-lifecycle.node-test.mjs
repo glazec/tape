@@ -26,3 +26,18 @@ test("shutdown refuses to truncate an active capture", async () => {
   await assert.rejects(lifecycle.shutdown(), /Capture must stop/);
   assert.deepEqual(calls, []);
 });
+test("shutdown can retry after a transient SDK failure", async () => {
+  let attempts = 0; let exits = 0;
+  const lifecycle = createRecordingLifecycle({
+    sdk: { stopRecording: async () => {}, shutdown: async () => {
+      attempts += 1;
+      if (attempts === 1) throw new Error("temporarily busy");
+    } },
+    send: () => {}, windowId: "window", exit: () => { exits += 1; },
+  });
+  lifecycle.ended();
+  await assert.rejects(lifecycle.shutdown(), /temporarily busy/);
+  await lifecycle.shutdown();
+  assert.equal(attempts, 2);
+  assert.equal(exits, 1);
+});

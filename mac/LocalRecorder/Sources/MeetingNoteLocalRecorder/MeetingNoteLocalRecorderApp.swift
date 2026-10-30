@@ -1014,6 +1014,7 @@ final class RecorderAppModel: NSObject, ObservableObject, UNUserNotificationCent
         guard isRecording, !isFinishingRecording, activeRecordingBackend == .recallDesktopSDK,
               let client = activeClient, let target = activeTarget, let recordingID = captureSessionID else { return }
         isFinishingRecording = true
+        _ = try? await recallSDKController.stop()
         await stopRecallSDKLevelMetering()
         // The SDK process is gone. Its token may already be terminal, so a
         // replacement capture always receives its own attempt on this meeting.
