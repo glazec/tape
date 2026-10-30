@@ -180,6 +180,8 @@ Button labels should describe the outcome: `Upload audio`, `Copy transcript`, `R
 
 ### Forms
 
+After successfully adding a meeting link, open the returned meeting's detail page so the user can write notes while the bot joins or waits for its scheduled start. Apply this after bot selection and nearby meeting confirmation as well.
+
 Group fields by one user decision. Put labels above inputs. Keep helper text brief and close to the relevant field. Reveal advanced controls only when requested.
 
 Use the shared shadcn components for selects, comboboxes, menus, dialogs, and other interactive controls. Preserve free text entry when a suggestion list is helpful but not exhaustive.

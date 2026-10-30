@@ -3,8 +3,8 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const { refresh, replace } = vi.hoisted(() => ({ refresh: vi.fn(), replace: vi.fn() }));
-vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh, replace }) }));
+const { push, refresh, replace } = vi.hoisted(() => ({ push: vi.fn(), refresh: vi.fn(), replace: vi.fn() }));
+vi.mock("next/navigation", () => ({ useRouter: () => ({ push, refresh, replace }) }));
 vi.mock("@/lib/auth/client", () => ({ authClient: { signOut: vi.fn() } }));
 
 import { MeetingLinkForm } from "@/components/meeting-link-form";
@@ -13,23 +13,25 @@ import { SignOutButton, signOutSession } from "@/components/sign-out-button";
 
 describe("meeting form interactions", () => {
   beforeEach(() => {
+    push.mockReset();
     refresh.mockReset();
     replace.mockReset();
     vi.stubGlobal("fetch", vi.fn());
   });
   afterEach(() => vi.unstubAllGlobals());
 
-  it("validates and schedules meeting links", async () => {
+  it.each(["joining", "scheduled"])("opens the meeting detail page after %s succeeds", async (status) => {
     const { unmount } = render(<MeetingLinkForm />);
     fireEvent.click(screen.getByRole("button", { name: "Add meeting bot" }));
     expect(await screen.findByText("Enter a Google Meet or Zoom link")).toBeTruthy();
+    expect(push).not.toHaveBeenCalled();
     unmount();
 
-    vi.mocked(fetch).mockResolvedValueOnce(json({ status: "joining" }));
+    vi.mocked(fetch).mockResolvedValueOnce(json({ meetingId: "new-meeting", status }));
     render(<MeetingLinkForm />);
     fireEvent.change(screen.getByLabelText("Meeting link"), { target: { value: "https://meet.google.com/abc" } });
     fireEvent.click(screen.getByRole("button", { name: "Add meeting bot" }));
-    expect(await screen.findByText("The bot should appear within about 30 seconds.")).toBeTruthy();
+    await waitFor(() => expect(push).toHaveBeenCalledWith("/meetings/new-meeting"));
   });
 
   it("shows exhausted credit without replacing it with a generic error", async () => {
@@ -94,7 +96,7 @@ describe("meeting form interactions", () => {
           409,
         ),
       )
-      .mockResolvedValueOnce(json({ status: "joining" }));
+      .mockResolvedValueOnce(json({ meetingId: "selected-meeting", status: "joining" }));
 
     render(<MeetingLinkForm />);
     fillLink();
@@ -122,6 +124,7 @@ describe("meeting form interactions", () => {
     expect(
       await screen.findByText("The bot should appear within about 30 seconds."),
     ).toBeTruthy();
+    await waitFor(() => expect(push).toHaveBeenCalledWith("/meetings/selected-meeting"));
     expect(fetch).toHaveBeenNthCalledWith(
       2,
       "/api/meetings/link",
@@ -153,7 +156,7 @@ describe("meeting form interactions", () => {
           409,
         ),
       )
-      .mockResolvedValueOnce(json({ status: "joining" }));
+      .mockResolvedValueOnce(json({ meetingId: "selected-meeting", status: "joining" }));
 
     render(<MeetingLinkForm />);
     fillLink();
@@ -163,6 +166,7 @@ describe("meeting form interactions", () => {
     });
     fireEvent.click(screen.getByRole("button", { name: "Keep separate" }));
 
+    await waitFor(() => expect(push).toHaveBeenCalledWith("/meetings/selected-meeting"));
     expect(fetch).toHaveBeenNthCalledWith(
       2,
       "/api/meetings/link",
@@ -272,6 +276,7 @@ describe("meeting form interactions", () => {
     fillLink();
     fireEvent.click(screen.getByRole("button", { name: "Add meeting bot" }));
     expect(await screen.findByText("Meeting bot could not be scheduled")).toBeTruthy();
+    expect(push).not.toHaveBeenCalled();
   });
 
   it("validates, cancels, saves, and reports title rename failures", async () => {

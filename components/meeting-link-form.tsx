@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { AlertCircle, CalendarPlus, CheckCircle2 } from "lucide-react";
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -29,6 +30,7 @@ type MeetingChoice = {
 };
 
 export function MeetingLinkForm() {
+  const router = useRouter();
   const [botChoices, setBotChoices] = useState<MeetingBotChoice[]>([]);
   const [selectedBot, setSelectedBot] = useState<MeetingBotChoice | null>(null);
   const [pendingDestination, setPendingDestination] = useState<{ calendarEventId?: string; createSeparateMeeting?: boolean; recoveryMeetingId?: string }>({});
@@ -94,6 +96,7 @@ export function MeetingLinkForm() {
       const responseBody = (await response.json().catch(() => null)) as {
         code?: unknown;
         error?: unknown;
+        meetingId?: unknown;
         potentialMeetings?: unknown;
         botChoices?: MeetingBotChoice[];
         status?: unknown;
@@ -168,6 +171,9 @@ export function MeetingLinkForm() {
       setPotentialMeetings([]);
       setSelectedBot(null);
       setPendingChoiceId(null);
+      if (typeof responseBody?.meetingId === "string" && responseBody.meetingId) {
+        router.push(`/meetings/${encodeURIComponent(responseBody.meetingId)}`);
+      }
     } catch {
       if (isConfirmingChoice) {
         setState("idle");
