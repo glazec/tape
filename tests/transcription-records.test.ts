@@ -143,7 +143,7 @@ describe("createRecallRecordingTranscription", () => {
     const { createRecallRecordingTranscription } = await import("@/lib/transcription-records");
     await expect(createRecallRecordingTranscription({ externalRecordingId: "external", meetingId: "meeting", mode: "append" })).resolves.toEqual({ meetingId: "meeting", recordingId: "recording", transcriptJobId: "job", shouldQueue });
     expect(databaseSql.mock.calls[0][0].join(" ")).toContain("pg_advisory_xact_lock");
-    expect(databaseSql.mock.calls[1]).toContain("append");
+    expect(databaseSql.mock.calls[1][0].join(" ")).toContain("then 'append' else 'replace'");
     expect(databaseSql.mock.calls[1][0].join(" ")).toContain("provider_job_id is null");
     expect(databaseSql.query.mock.calls[0][0]).toContain("recording_offset_ms");
   });

@@ -1,4 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
+import { PgDialect } from "drizzle-orm/pg-core";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
@@ -15,7 +16,7 @@ vi.mock("@/lib/provider-usage", () => ({ recordRecallRecordingUsage: vi.fn() }))
 vi.mock("@/lib/vendors/recall", () => ({ createRecallDesktopSdkUpload: vi.fn(), getRecallApiBaseUrl: vi.fn(), retrieveRecallBot: vi.fn() }));
 import { finalizeMeetingTranscriptGeneration } from "@/lib/transcript-job-failure";
 import { createRecallRecordingTranscription } from "@/lib/transcription-records";
-import { claimLocalRecorderIntent, completeLocalRecorderRecordingUpload, resolveLocalRecorderSdkMeeting, markLocalRecorderSdkIntentTerminal } from "@/lib/local-recorder-records";
+import { getLocalRecorderMonitoringWindowCondition, claimLocalRecorderIntent, completeLocalRecorderRecordingUpload, resolveLocalRecorderSdkMeeting, markLocalRecorderSdkIntentTerminal } from "@/lib/local-recorder-records";
 import { finishLocalRecorderRecordingTarget, getLocalRecorderRecordingTargetStatus, listLocalRecorderRecordingMeetings, setLocalRecorderRecordingTarget } from "@/lib/local-recorder-targets";
 
 const dsn = process.env.TAPE_RECORDER_TEST_DATABASE;
@@ -111,6 +112,21 @@ describe.skipIf(!dsn)("recording target PostgreSQL transactions", () => {
       ('${second}', '${team}', '${user}', 'Second', 'zoom', 'scheduled', now());`);
   });
   afterAll(async () => { await sql(`drop schema ${schema} cascade`); });
+
+  it("excludes an old recording with no end from idle suggestions while retaining the upcoming event", async () => {
+    await sql(`update meetings set status = 'recording', started_at = '${input.now.toISOString()}'::timestamptz - interval '1 day', ended_at = null where id = '${first}';
+      update meetings set started_at = '${input.now.toISOString()}'::timestamptz + interval '10 minutes' where id = '${second}'`);
+    const query = new PgDialect().sqlToQuery(getLocalRecorderMonitoringWindowCondition(input.now)!);
+    const predicate = query.sql.replace(/\$(\d+)/g, (_, i) => literal(query.params[Number(i) - 1]));
+    expect(await sql(`select id from meetings where ${predicate} order by started_at`)).toEqual([second]);
+  });
+
+  it("ignores a stale cloud replace decision after a local generation commits", async () => {
+    await sql(`insert into recordings(id, meeting_id, source, started_at, duration_ms) values ('${first}', '${first}', 'local_recorder', now(), 1000);
+      insert into transcript_jobs(meeting_id, recording_id, mode, status) values ('${first}', '${first}', 'replace', 'completed');`);
+    await createRecallRecordingTranscription({ meetingId: first, externalRecordingId: "stale-cloud-mode", mode: "replace", durationMs: 1000, startedAt: new Date(input.now.getTime() + 2000) });
+    expect(await sql("select mode from transcript_jobs order by created_at")).toEqual(["replace", "append"]);
+  });
 
   it("recovers a lost start response with a stable client request without reassigning", async () => {
     const clientRequestId = randomUUID();

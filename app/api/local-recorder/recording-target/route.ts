@@ -18,7 +18,7 @@ export async function POST(request: Request) {
   const parsed = schema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return Response.json({ error: "Invalid recording target" }, { status: 400 });
   try {
-    await assertWorkspaceHasProviderCredit(context.workspace);
+    if (!parsed.data.fallbackIntentId) await assertWorkspaceHasProviderCredit(context.workspace);
     return Response.json(await setLocalRecorderRecordingTarget({
       ...parsed.data, deviceId: context.deviceId, workspace: context.workspace, now: new Date(),
     }));

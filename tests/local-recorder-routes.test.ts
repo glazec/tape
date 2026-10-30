@@ -116,6 +116,22 @@ describe("local recorder API routes", () => {
     expect((await POST(request())).status).toBe(401);
   });
 
+  it("allows active target reassignment without credit while new captures still require credit", async () => {
+    mockSignedInDevice();
+    const credit = await import("@/lib/provider-credit");
+    const assertCredit = vi.mocked(credit.assertWorkspaceHasProviderCredit);
+    assertCredit.mockReset();
+    assertCredit.mockRejectedValue(new credit.ProviderCreditExhaustedError());
+    setLocalRecorderRecordingTarget.mockResolvedValue({ fallbackIntentId: "active", meetingId: "11111111-1111-4111-8111-111111111111", meetingTitle: "Review", startsAt: null, endsAt: null });
+    const { POST } = await import("@/app/api/local-recorder/recording-target/route");
+    const request = (body: unknown) => new Request("https://app.example.com/route", { method: "POST", body: JSON.stringify(body) });
+    expect((await POST(request({ fallbackIntentId: "active", meetingId: "11111111-1111-4111-8111-111111111111" }))).status).toBe(200);
+    expect(assertCredit).not.toHaveBeenCalled();
+    expect((await POST(request({ title: "New recording" }))).status).toBe(402);
+    expect(assertCredit).toHaveBeenCalledOnce();
+    assertCredit.mockReset();
+  });
+
   it("selects and freezes a target using the paired device identity", async () => {
     mockSignedInDevice();
     const target = { fallbackIntentId: "stable", meetingId: "11111111-1111-4111-8111-111111111111", meetingTitle: "Review", startsAt: null, endsAt: null };

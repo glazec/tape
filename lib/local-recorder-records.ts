@@ -6,6 +6,7 @@ import {
   gte,
   inArray,
   isNotNull,
+  isNull,
   lte,
   or,
   sql,
@@ -380,6 +381,19 @@ export async function listMissedLocalRecorderMeetings(input: {
   return items;
 }
 
+export function getLocalRecorderMonitoringWindowCondition(now: Date) {
+  return or(
+    gte(meetings.startedAt, now),
+    and(
+      lte(meetings.startedAt, now),
+      or(
+        gte(meetings.endedAt, now),
+        and(isNull(meetings.endedAt), gte(meetings.startedAt, new Date(now.getTime() - scheduleLookbackMs))),
+      ),
+    ),
+  );
+}
+
 export async function getLocalRecorderMonitoringStatus(input: {
   appVersion?: string | null;
   deviceId: string;
@@ -405,14 +419,7 @@ export async function getLocalRecorderMonitoringStatus(input: {
         getMeetingManagerCondition(input.workspace),
         isNotNull(meetings.startedAt),
         inArray(meetings.status, ["scheduled", "recording"]),
-        or(
-          eq(meetings.status, "recording"),
-          gte(meetings.startedAt, new Date(input.now.getTime() - scheduleLookbackMs)),
-          and(
-            lte(meetings.startedAt, input.now),
-            gte(meetings.endedAt, input.now),
-          ),
-        ),
+        getLocalRecorderMonitoringWindowCondition(input.now),
       ),
     )
     .orderBy(

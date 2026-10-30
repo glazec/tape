@@ -1,7 +1,7 @@
 import { and, eq, inArray, notInArray, sql } from "drizzle-orm";
 
 import { db } from "@/db/client";
-import { meetings, recordings } from "@/db/schema";
+import { meetings } from "@/db/schema";
 import { inngest } from "@/inngest/client";
 import { fetchAndPersistRecallParticipantTimeline } from "@/lib/meeting-participant-timeline";
 import { isRecallBotAccepted } from "@/lib/meeting-bot-lineage";
@@ -320,12 +320,6 @@ async function queueRecallRecordingProcessing(
           startedAt: readiness.startedAt,
         }
       : findRecallRecordingTiming(recallArtifact, update.recallRecordingId);
-  // A later bot capture must not replace an earlier desktop segment.
-  const [priorCapture] = await db.select({ id: recordings.id }).from(recordings)
-    .where(and(
-      eq(recordings.meetingId, update.meetingId),
-      sql`${recordings.externalId} is distinct from ${update.recallRecordingId}`,
-    )).limit(1);
   const localStartedAtValue = getMetadataString(metadata, "localRecordingStartedAt");
   const localStartedAt = localStartedAtValue ? new Date(localStartedAtValue) : null;
   const transcription = await createRecallRecordingTranscription({
@@ -334,9 +328,6 @@ async function queueRecallRecordingProcessing(
     externalBotId: update.recallBotId ?? undefined,
     externalRecordingId: update.recallRecordingId,
     meetingId: update.meetingId,
-    mode: Boolean(priorCapture) || getMetadataString(metadata, "source") === "local_recorder_sdk" || getMetadataBoolean(metadata, "resumeRecording", "resume_recording")
-      ? "append"
-      : "replace",
   });
 
   if (transcription.shouldQueue === false) {
@@ -449,17 +440,6 @@ async function hasRecordingEvidence(meetingId: string) {
   // recallRecordingId. A late or out-of-order bot.done (no recording id) must
   // not revert such a meeting to "missed".
   return row.status === "processing" || row.status === "ready";
-}
-
-function getMetadataBoolean(
-  metadata: Record<string, unknown>,
-  ...keys: string[]
-) {
-  return keys.some((key) => {
-    const value = metadata[key];
-
-    return value === true || value === "true";
-  });
 }
 
 function getMetadataString(

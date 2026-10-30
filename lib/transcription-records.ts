@@ -249,9 +249,8 @@ export async function createRecallRecordingTranscription(input: {
       ), job as (
         insert into transcript_jobs (meeting_id, recording_id, mode, provider, status)
         select ${input.meetingId}::uuid, recording.id,
-          (case when ${input.mode ?? "replace"} = 'append'
-            and not exists (select 1 from transcript_jobs prior where prior.meeting_id = ${input.meetingId}::uuid)
-            then 'replace' else ${input.mode ?? "replace"} end)::transcript_mode,
+          (case when exists (select 1 from transcript_jobs prior where prior.meeting_id = ${input.meetingId}::uuid)
+            then 'append' else 'replace' end)::transcript_mode,
           'elevenlabs', 'queued'
         from recording
         on conflict (recording_id) where recording_id is not null do update

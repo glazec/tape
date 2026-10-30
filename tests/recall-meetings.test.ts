@@ -515,7 +515,6 @@ describe("applyRecallMeetingEvent", () => {
       externalBotId: "bot_123",
       externalRecordingId: "recording_123",
       meetingId: "11111111-1111-4111-8111-111111111111",
-      mode: "replace",
       startedAt: new Date("2026-06-23T12:00:00.000Z"),
     });
     expect(fetchAndPersistRecallParticipantTimeline).toHaveBeenCalledWith({
@@ -548,7 +547,7 @@ describe("applyRecallMeetingEvent", () => {
     ]);
   });
 
-  it("appends a later cloud bot recording when an earlier capture exists", async () => {
+  it("defers cloud capture generation choice to the locked recording transaction", async () => {
     update.mockReturnValue({
       set: vi.fn().mockReturnValue({ where }),
     });
@@ -614,7 +613,6 @@ describe("applyRecallMeetingEvent", () => {
       externalBotId: "bot_123",
       externalRecordingId: "recording_123",
       meetingId: "11111111-1111-4111-8111-111111111111",
-      mode: "append",
       startedAt: new Date("2026-06-23T12:00:00.000Z"),
     });
     expect(fetchAndPersistRecallParticipantTimeline).toHaveBeenCalledWith({
@@ -808,8 +806,7 @@ describe("applyRecallMeetingEvent", () => {
       expect.objectContaining({
         externalBotId: "bot_456",
         externalRecordingId: "recording_456",
-        mode: "append",
-      }),
+        }),
     );
     expect(send).toHaveBeenCalledWith({
       id: "recall-transcription:33333333-3333-4333-8333-333333333333",
@@ -1011,7 +1008,6 @@ describe("applyRecallMeetingEvent", () => {
       externalBotId: undefined,
       externalRecordingId: "recording_123",
       meetingId: "11111111-1111-4111-8111-111111111111",
-      mode: "append",
       startedAt: new Date("2026-07-08T11:00:00.000Z"),
     });
     expect(fetchAndPersistRecallParticipantTimeline).toHaveBeenCalledWith({
