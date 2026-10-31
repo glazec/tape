@@ -327,4 +327,31 @@ describe("TeamSettingsPage", () => {
     expect((screen.getByRole("checkbox", { name: "Use this bot when both organizations are invited" }) as HTMLInputElement).checked).toBe(true);
   });
 
+  it("replaces organization form state when switching settings workspaces", async () => {
+    requireCurrentUser.mockResolvedValue({ id: "auth", email: "admin@example.com" });
+    getWorkspaceAccessSummary.mockResolvedValue({ canCreateMeetings: true });
+    canManageTeamSettings.mockResolvedValue(true);
+    listTeamVocabularyTerms.mockResolvedValue([]);
+    listWorkspaceMembers.mockResolvedValue([]);
+    getMeetingBotProfile.mockResolvedValue({ botName: "Bot", avatarJpegBase64: "avatar" });
+    getProviderBillingOverview.mockResolvedValue({
+      creditLimitUsdMicros: null, creditRemainingUsdMicros: null,
+      organizationMonthUsdMicros: 0, personalMonthUsdMicros: 0,
+    });
+    const { default: TeamSettingsPage } = await import("@/app/settings/team/page");
+    getWorkspace.mockResolvedValue({ teamId: "alpha", userId: "admin", domain: "example.com" });
+    getTeamConfiguration.mockResolvedValue({ name: "Alpha", translationLanguage: "en",
+      shareAudience: { name: "Alpha reviewers", emails: ["alpha@example.com"] } });
+    const view = render(await TeamSettingsPage({}));
+    fireEvent.change(screen.getByLabelText("Team name"), { target: { value: "Alpha draft" } });
+    getWorkspace.mockResolvedValue({ teamId: "beta", userId: "admin", domain: "example.com" });
+    getTeamConfiguration.mockResolvedValue({ name: "Beta", translationLanguage: "zh",
+      shareAudience: { name: "Beta reviewers", emails: ["beta@example.com"] } });
+    view.rerender(await TeamSettingsPage({}));
+    expect((screen.getByLabelText("Team name") as HTMLInputElement).value).toBe("Beta");
+    expect((screen.getByLabelText("Sharing group name") as HTMLInputElement).value).toBe("Beta reviewers");
+    expect(screen.queryByRole("button", { name: "Remove alpha@example.com" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Remove beta@example.com" })).toBeTruthy();
+  });
+
 });

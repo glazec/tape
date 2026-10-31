@@ -1,3 +1,4 @@
+import { getRecallCalendarAccountEmail } from "@/lib/recall-calendar-account";
 import { CalendarAccountSelectionError } from "@/lib/calendar-account-selection";
 import { and, eq, isNull, lt, or, sql } from "drizzle-orm";
 import { z } from "zod";
@@ -793,8 +794,7 @@ function normalizeRecallCalendar(calendar: unknown): RecallCalendarSummary | nul
   return {
     id,
     platform: getString(candidate?.platform),
-    platformEmail:
-      getString(candidate?.platform_email) ?? getString(candidate?.oauth_email),
+    platformEmail: getRecallCalendarAccountEmail(calendar),
     status: getString(candidate?.status),
     metadata: getStringRecord(candidate?.metadata),
   };

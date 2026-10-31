@@ -84,9 +84,13 @@ enum LocalRecorderSnapshot {
         settings.statusText = "Watching your calendar"
         settings.isAdvancedExpanded = true
 
+        let permissions = RecorderAppModel(snapshotBearerToken: "token")
+        permissions.isAdvancedExpanded = true
+        permissions.statusText = "Finish access setup"
+
         return [
             ("signed-out", signedOut), ("upcoming", upcoming), ("recording", recording),
-            ("upload-issue", uploadIssue), ("settings", settings),
+            ("upload-issue", uploadIssue), ("settings", settings), ("permissions", permissions),
         ]
     }
 
@@ -125,6 +129,17 @@ enum LocalRecorderSnapshot {
         )!
         rep.size = bounds.size
         frameView.cacheDisplay(in: bounds, to: rep)
+        if model.isAdvancedExpanded {
+            let expandedHeight = window.frame.height
+            model.isAdvancedExpanded = false
+            let resizeDeadline = Date().addingTimeInterval(0.4)
+            while Date() < resizeDeadline {
+                if let event = NSApp.nextEvent(matching: .any, until: Date().addingTimeInterval(0.05), inMode: .default, dequeue: true) {
+                    NSApp.sendEvent(event)
+                }
+            }
+            print("Settings window height: \(expandedHeight) expanded, \(window.frame.height) collapsed")
+        }
         window.orderOut(nil)
         let image = NSImage(size: bounds.size)
         image.addRepresentation(rep)

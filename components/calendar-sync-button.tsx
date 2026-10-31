@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   AlertCircle,
@@ -45,6 +46,7 @@ type CalendarSyncButtonProps = {
 type CalendarSyncResponse = {
   error?: string;
   failedEventCount?: number;
+  failedAccountCount?: number;
   reconnect?: boolean;
   syncedEventCount?: number;
   historyRepairQueued?: boolean;
@@ -75,6 +77,10 @@ export function getCalendarConnectHref(setupMode: boolean) {
 export function formatCalendarSyncMessage(result: CalendarSyncResponse) {
   const count = result.syncedEventCount ?? 0;
   const failedCount = result.failedEventCount ?? 0;
+  const failedAccountCount = result.failedAccountCount ?? 0;
+  const accountMessage = failedAccountCount
+    ? ` ${failedAccountCount} calendar ${failedAccountCount === 1 ? "account could" : "accounts could"} not sync. ${result.reconnect ? "Reconnect the affected account in Settings." : "Check the affected account in Settings and try again."}`
+    : "";
   const historyMessage = result.historyRepairQueued
     ? " Checking missing meetings from the past 30 days in the background. Refresh shortly to see recovered meetings."
     : "";
@@ -83,20 +89,15 @@ export function formatCalendarSyncMessage(result: CalendarSyncResponse) {
       ? "Captured 1 upcoming calendar event."
       : `Captured ${count} upcoming calendar events.`;
 
-  if (failedCount === 0) {
-    return capturedMessage + historyMessage;
-  }
-
   const reviewMessage =
-    failedCount === 1
-      ? "1 event needs review."
-      : `${failedCount} events need review.`;
+    failedCount === 0
+      ? ""
+      : failedCount === 1
+        ? " 1 event needs review."
+        : ` ${failedCount} events need review.`;
+  const progressMessage = count === 0 && failedCount > 0 ? "Calendar checked." : capturedMessage;
 
-  if (count === 0) {
-    return `Calendar checked. ${reviewMessage}${historyMessage}`;
-  }
-
-  return `${capturedMessage} ${reviewMessage}${historyMessage}`;
+  return progressMessage + reviewMessage + accountMessage + historyMessage;
 }
 
 export function CalendarSyncButton({
@@ -112,10 +113,13 @@ export function CalendarSyncButton({
   const autoSyncAttempted = useRef(false);
   const [state, setState] = useState<SyncState>("idle");
   const [message, setMessage] = useState<string | null>(null);
+  const [hasFailedAccounts, setHasFailedAccounts] = useState(false);
+  const manageAccountsHref = `/settings/team${teamId ? `?teamId=${encodeURIComponent(teamId)}` : ""}#connected-accounts`;
 
   const syncCalendar = useCallback(async () => {
     setState("syncing");
     setMessage(null);
+    setHasFailedAccounts(false);
 
     try {
       const response = await fetch("/api/calendar/sync", {
@@ -136,7 +140,8 @@ export function CalendarSyncButton({
         throw new Error(result.error ?? "Calendar sync failed");
       }
 
-      setState(result.failedEventCount ? "partial" : "synced");
+      setHasFailedAccounts(Boolean(result.failedAccountCount));
+      setState(result.failedEventCount || result.failedAccountCount ? "partial" : "synced");
       setMessage(formatCalendarSyncMessage(result));
 
       const postSuccessAction = getCalendarSyncPostSuccessAction(
@@ -272,7 +277,7 @@ export function CalendarSyncButton({
                 </DropdownMenuItem>
                 {multipleAccounts ? (
                   <DropdownMenuItem
-                    onClick={() => router.push("/settings/team#connected-accounts")}
+                    onClick={() => router.push(manageAccountsHref)}
                   >
                     <Settings2 />
                     Manage accounts
@@ -303,12 +308,17 @@ export function CalendarSyncButton({
             state === "error" ? "text-destructive" : "text-muted-foreground",
           )}
         >
-          {state === "error" || needsConnection ? (
+          {state === "error" || state === "partial" || needsConnection ? (
             <AlertCircle className="mt-0.5 size-3.5 shrink-0" />
           ) : (
             <CalendarCheck className="mt-0.5 size-3.5 shrink-0" />
           )}
-          <span>{message}</span>
+          <span>
+            {message}
+            {hasFailedAccounts ? (
+              <> <Link className="underline" href={manageAccountsHref}>Manage accounts</Link></>
+            ) : null}
+          </span>
         </p>
       ) : null}
     </div>

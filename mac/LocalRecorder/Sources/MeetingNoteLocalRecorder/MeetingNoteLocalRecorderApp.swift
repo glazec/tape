@@ -223,6 +223,7 @@ final class RecorderAppModel: NSObject, ObservableObject, UNUserNotificationCent
     @Published var recordingStartedAt: Date?
     @Published var isTestingLevels = false
     @Published var isRequestingPermissions = false
+    @Published var isRestarting = false
     @Published var availableMicrophones: [AudioInputDevice] = []
     @Published var selectedMicrophoneUID: String?
     @Published var microphoneLevel: Float = 0
@@ -514,7 +515,7 @@ final class RecorderAppModel: NSObject, ObservableObject, UNUserNotificationCent
 
     private func requestPermission(_ requestedStep: RecorderPermissionStep?) {
         Task {
-            guard isSignedIn, !isRequestingPermissions else {
+            guard !isRequestingPermissions else {
                 return
             }
 
@@ -1419,17 +1420,48 @@ final class RecorderAppModel: NSObject, ObservableObject, UNUserNotificationCent
     }
 
     func restartApp() {
-        guard canCloseApp() else {
+        guard !isRestarting, canCloseApp() else {
             return
         }
+        isRestarting = true
+        Task {
+            defer { isRestarting = false }
+            do {
+                try await RecorderSystemActions.launchReplacement(at: Bundle.main.bundleURL)
+                stopLevelTest()
+                NSApp.terminate(nil)
+            } catch {
+                statusText = "Could not restart. Quit and reopen Tape Desktop."
+            }
+        }
+    }
 
-        stopLevelTest()
+    func repairAccessibility() {
+        guard !isRequestingPermissions, canCloseApp(),
+              let bundleIdentifier = Bundle.main.bundleIdentifier else { return }
+        let alert = NSAlert()
+        alert.messageText = "Reset Accessibility access?"
+        alert.informativeText = "This removes the old permission entry for Tape Desktop and requests access for this copy. Enable Tape Desktop again in System Settings."
+        alert.addButton(withTitle: "Reset access")
+        alert.addButton(withTitle: "Cancel")
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
 
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/open")
-        process.arguments = ["-n", Bundle.main.bundleURL.path]
-        try? process.run()
-        NSApp.terminate(nil)
+        isRequestingPermissions = true
+        Task {
+            defer { isRequestingPermissions = false }
+            do {
+                try await RecorderSystemActions.resetAccessibility(bundleIdentifier: bundleIdentifier)
+                permissionChecklist.accessibility = requestAccessibilityPermission()
+                statusText = "Access reset. Enable Tape Desktop in Accessibility settings."
+            } catch {
+                statusText = "Reset failed. Remove the old Accessibility entry, then add this app."
+                openAccessibilitySettings()
+            }
+        }
+    }
+
+    func showAppInFinder() {
+        NSWorkspace.shared.activateFileViewerSelecting([Bundle.main.bundleURL])
     }
 
     func exitApp() {
@@ -1488,11 +1520,10 @@ final class RecorderAppModel: NSObject, ObservableObject, UNUserNotificationCent
             return .denied
         }
 
-        return await withCheckedContinuation { (continuation: CheckedContinuation<PermissionGrant, Never>) in
-            AVCaptureDevice.requestAccess(for: .audio) { granted in
-                continuation.resume(returning: granted ? .granted : .denied)
-            }
-        }
+        // AVFoundation may complete on a background queue. Its async API
+        // resumes this main-actor method safely after the permission decision.
+        let granted = await AVCaptureDevice.requestAccess(for: .audio)
+        return granted ? .granted : .denied
     }
 
     private func requestNotificationPermission() async -> PermissionGrant {

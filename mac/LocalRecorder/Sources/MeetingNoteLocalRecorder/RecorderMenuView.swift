@@ -118,7 +118,7 @@ struct RecorderMenuView: View {
             summary
                 .padding(.horizontal, 20)
                 .padding(.top, showsWindowChrome ? 8 : 18)
-                .padding(.bottom, 18)
+                .padding(.bottom, model.isAdvancedExpanded ? 14 : 18)
 
             if model.isAdvancedExpanded {
                 RecorderSettingsView(model: model, isSignedIn: isSignedIn)
@@ -568,20 +568,30 @@ struct SourceLevel: View {
             Text(title)
                 .font(TapeType.sans(11.5))
                 .foregroundStyle(TapePalette.muted)
-            GeometryReader { proxy in
-                ZStack(alignment: .leading) {
-                    Capsule().fill(TapePalette.hairline)
-                    Capsule()
-                        .fill(level > 0.9 ? TapePalette.amber : TapePalette.ink.opacity(0.65))
-                        .frame(width: proxy.size.width * CGFloat(min(1, max(0, level))))
-                }
-            }
-            .frame(width: 54, height: 4)
-            .animation(.linear(duration: 0.1), value: level)
+            AudioLevelBar(level: level, inkOpacity: 0.65)
+                .frame(width: 54)
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("\(title) level")
         .accessibilityValue("\(Int(min(1, max(0, level)) * 100)) percent")
+    }
+}
+
+struct AudioLevelBar: View {
+    var level: Float
+    var inkOpacity: Double
+
+    var body: some View {
+        GeometryReader { proxy in
+            ZStack(alignment: .leading) {
+                Capsule().fill(TapePalette.hairline)
+                Capsule()
+                    .fill(level > 0.9 ? TapePalette.amber : TapePalette.ink.opacity(inkOpacity))
+                    .frame(width: proxy.size.width * CGFloat(min(1, max(0, level))))
+            }
+        }
+        .frame(height: 4)
+        .animation(.linear(duration: 0.1), value: level)
     }
 }
 
@@ -616,22 +626,29 @@ struct StatusDot: View {
 struct RecorderSettingsView: View {
     @ObservedObject var model: RecorderAppModel
     var isSignedIn: Bool
+    @State private var showsAudioCheck = false
+    @State private var showsConnectionSettings = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
+        VStack(alignment: .leading, spacing: 14) {
             section("Permissions") {
                 PermissionList(
                     checklist: model.permissionChecklist,
                     requestPermission: model.requestPermission,
-                    setStartAtLoginEnabled: model.setStartAtLoginEnabled
+                    setStartAtLoginEnabled: model.setStartAtLoginEnabled,
+                    repairAccessibility: model.repairAccessibility,
+                    showAppInFinder: model.showAppInFinder,
+                    isBusy: model.isRequestingPermissions || model.isRestarting || model.isRecording || model.isFinishingRecording
                 )
             }
 
-            section("Audio check") {
-                audioCheck
+            if model.hasAudioCapturePermissions {
+                DisclosureGroup("Audio check", isExpanded: $showsAudioCheck) {
+                    audioCheck.padding(.top, 8)
+                }
             }
 
-            section("Account") {
+            DisclosureGroup("Connection settings", isExpanded: $showsConnectionSettings) {
                 VStack(alignment: .leading, spacing: 8) {
                     TextField("Server", text: $model.serverURLText)
                         .textFieldStyle(.roundedBorder)
@@ -639,6 +656,7 @@ struct RecorderSettingsView: View {
                         .textFieldStyle(.roundedBorder)
                 }
                 .controlSize(.small)
+                .padding(.top, 8)
             }
 
             HStack(spacing: 14) {
@@ -646,17 +664,17 @@ struct RecorderSettingsView: View {
                     textButton("Sign out", isDestructive: true, action: model.signOut)
                 }
                 textButton("Updates", action: model.checkForUpdates)
-                textButton("Restart", action: model.restartApp)
+                textButton(model.isRestarting ? "Restarting…" : "Restart", action: model.restartApp)
+                    .disabled(model.isRestarting || model.isRequestingPermissions)
                 Spacer()
                 textButton("Quit", isDestructive: true, action: model.exitApp)
             }
         }
-        .padding(16)
+        .font(TapeType.sans(12))
+        .tint(TapePalette.graphite)
+        .padding(.horizontal, 20)
+        .padding(.bottom, 16)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(TapePalette.mist)
-        .overlay(alignment: .top) {
-            Rectangle().fill(TapePalette.hairline).frame(height: 1)
-        }
         .transition(.opacity)
     }
 
@@ -726,86 +744,7 @@ struct AudioLevelMeterRow: View {
                 .foregroundStyle(TapePalette.graphite)
                 .frame(width: 76, alignment: .leading)
 
-            GeometryReader { proxy in
-                ZStack(alignment: .leading) {
-                    Capsule()
-                        .fill(TapePalette.hairline)
-                    Capsule()
-                        .fill(level > 0.9 ? TapePalette.amber : TapePalette.ink.opacity(0.7))
-                        .frame(width: max(0, proxy.size.width * CGFloat(min(1, level))))
-                }
-            }
-            .frame(height: 4)
-            .animation(.linear(duration: 0.1), value: level)
+            AudioLevelBar(level: level, inkOpacity: 0.7)
         }
-    }
-}
-
-struct PermissionList: View {
-    var checklist: PermissionChecklist
-    var requestPermission: (OperationalPermission) -> Void
-    var setStartAtLoginEnabled: @MainActor @Sendable (Bool) -> Void
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            PermissionRow(title: "Microphone", grant: checklist.microphone) {
-                requestPermission(.microphone)
-            }
-            PermissionRow(title: "Screen and system audio", grant: checklist.screenCapture) {
-                requestPermission(.screenCapture)
-            }
-            PermissionRow(title: "Accessibility", grant: checklist.accessibility) {
-                requestPermission(.accessibility)
-            }
-            PermissionRow(title: "Alerts", grant: checklist.notifications) {
-                requestPermission(.notifications)
-            }
-            HStack {
-                Text("Open at login")
-                    .font(TapeType.sans(12))
-                Spacer()
-                Toggle(
-                    "",
-                    isOn: Binding(
-                        get: { checklist.startAtLogin == .granted },
-                        set: { isEnabled in
-                            Task { @MainActor in
-                                setStartAtLoginEnabled(isEnabled)
-                            }
-                        }
-                    )
-                )
-                .labelsHidden()
-                .toggleStyle(.switch)
-                .controlSize(.mini)
-                .accessibilityLabel("Start Tape Desktop at login")
-            }
-        }
-    }
-}
-
-struct PermissionRow: View {
-    var title: String
-    var grant: PermissionGrant
-    var action: () -> Void
-
-    var body: some View {
-        HStack {
-            Text(title)
-                .font(TapeType.sans(12))
-            Spacer()
-            if grant == .granted {
-                Image(systemName: "checkmark")
-                    .font(TapeType.sans(10, .semibold))
-                    .foregroundStyle(TapePalette.green)
-                    .accessibilityLabel("Allowed")
-            } else {
-                Button("Allow", action: action)
-                    .buttonStyle(.plain)
-                    .font(TapeType.sans(12, .semibold))
-                    .foregroundStyle(TapePalette.coralInk)
-            }
-        }
-        .frame(height: 18)
     }
 }

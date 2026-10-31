@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   ownerRows: vi.fn(),
+  parentRows: vi.fn(),
   composed: vi.fn(),
   current: vi.fn(),
   ready: vi.fn(),
@@ -14,6 +15,7 @@ vi.mock("@/db/client", () => ({
   db: {
     select: () => ({
       from: () => ({
+        where: () => ({ limit: mocks.parentRows }),
         innerJoin: () => ({
           where: () => ({ limit: mocks.ownerRows }),
         }),
@@ -46,7 +48,7 @@ vi.mock("@/lib/vendors/openrouter", () => ({
   generateMeetingFollowup: mocks.generate,
 }));
 
-import { autoGenerateMeetingFollowup } from "@/lib/meeting-followup-generation";
+import { autoGenerateMeetingFollowup, getMeetingFollowupParentId } from "@/lib/meeting-followup-generation";
 
 const meetingId = "11111111-1111-4111-8111-111111111111";
 const meeting = {
@@ -106,4 +108,12 @@ describe("autoGenerateMeetingFollowup", () => {
       status: "not_found",
     });
   });
+});
+
+
+it("finds the combined meeting for a completed source", async () => {
+  mocks.parentRows.mockResolvedValue([{ meetingId: "combined" }]);
+  expect(await getMeetingFollowupParentId(meetingId)).toBe("combined");
+  mocks.parentRows.mockResolvedValue([]);
+  expect(await getMeetingFollowupParentId(meetingId)).toBeNull();
 });

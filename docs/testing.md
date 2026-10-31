@@ -30,7 +30,7 @@ CI sets `PLAYWRIGHT_CHANNEL=chrome` to use the GitHub runner's installed Chrome.
 | Vitest | Domain rules, access policy, database queries, API routes, Inngest functions, services, and React rendering | `npm run test:coverage` |
 | Playwright | Public navigation, sign in, protected redirects, authenticated page rendering, RLS isolation, and desktop and mobile browser flows | `npm run test:e2e` |
 | Node test runner | Recall desktop SDK sidecar lifecycle and capture fallback | `npm run test:sidecar` |
-| Swift Testing and build | macOS recorder state, permission failures, API requests, scheduling, capture, upload behavior, and executable compilation | `npm run test:swift` |
+| Swift Testing and build | macOS recorder state, permission failures, API requests, scheduling, capture, upload behavior, executable compilation, and permission callback probes | `npm run test:swift` |
 | Python unittest | MCP authentication, caller scope, SQL safety, media tools, signed upload handoff, and read only database boundaries | `npm run test:mcp` |
 | Live calendar probe | Stored production connection, Google token refresh, Calendar read access, Recall connectivity, and recent sync state | `CALENDAR_LIVE_TEST_EMAIL=user@example.com npm run test:calendar-live` |
 

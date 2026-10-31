@@ -211,7 +211,7 @@ describe("Inngest functions", () => {
       },
       {
         id: "generate-meeting-followup",
-        triggers: [{ event: "meeting/enrich.transcript" }],
+        triggers: [{ event: "meeting/enrich.transcript" }, { event: "meeting/generate.followup" }],
       },
       {
         id: "share-meeting-with-participants",

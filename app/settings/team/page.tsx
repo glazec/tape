@@ -103,7 +103,7 @@ export default async function TeamSettingsPage({ searchParams }: {
       canCreateMeetings
       oneSignalExternalId={workspace.userId}
     >
-      <SettingsSaveStatusProvider>
+      <SettingsSaveStatusProvider key={workspace.teamId}>
       <div className="flex w-full flex-col gap-8 md:flex-row md:gap-14">
         <aside className="shrink-0 md:w-44">
           <div className="flex flex-col gap-5 md:sticky md:top-24">

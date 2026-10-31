@@ -146,6 +146,7 @@ const TRANSCRIPT_FALLBACK_WORD_PATTERN = /[A-Za-z0-9]+(?:['’][A-Za-z0-9]+)?/g;
 const TRANSCRIPT_CJK_CHARACTER_PATTERN = /[\u3400-\u9fff\uf900-\ufaff]/g;
 
 type TranscriptViewerProps = {
+  audioPlayerPlacement?: "fixed" | "inline";
   audioParts?: AudioPlaylistPart[];
   audioUrl?: string | null;
   meetingId?: string | null;
@@ -369,6 +370,7 @@ export function getVisualAssetPlacements(
 }
 
 export function TranscriptViewer({
+  audioPlayerPlacement = "fixed",
   audioParts,
   audioUrl,
   meetingId,
@@ -1684,6 +1686,7 @@ export function TranscriptViewer({
 
       {activeAudioUrl ? (
         <TranscriptAudioPlayer
+          placement={audioPlayerPlacement}
           activeSegmentId={activeSegmentId}
           allowAudioWaveform={playbackParts.length === 1}
           audioRef={audioRef}
@@ -2237,6 +2240,7 @@ function TranscriptText({
 }
 
 function TranscriptAudioPlayer({
+  placement,
   activeSegmentId,
   allowAudioWaveform,
   audioRef,
@@ -2259,6 +2263,7 @@ function TranscriptAudioPlayer({
   onTogglePlayback,
   setIsPlaying,
 }: {
+  placement: "fixed" | "inline";
   activeSegmentId: string | null;
   allowAudioWaveform: boolean;
   audioRef: RefObject<HTMLAudioElement | null>;
@@ -2499,7 +2504,10 @@ function TranscriptAudioPlayer({
   }
 
   return (
-    <div className="fixed inset-x-0 bottom-0 z-40 border-t bg-background/95 backdrop-blur">
+    <div className={cn(
+      "border-t bg-background/95 backdrop-blur",
+      placement === "fixed" ? "fixed inset-x-0 bottom-0 z-40" : "relative mt-4",
+    )}>
       <audio
         onLoadedMetadata={(event) => onPlaybackReady(event.currentTarget)}
         onCanPlay={(event) => onPlaybackReady(event.currentTarget)}

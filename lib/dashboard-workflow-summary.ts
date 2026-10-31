@@ -1,6 +1,6 @@
 import {
   getMeetingDisplayStatus,
-  type MeetingDisplayStatus,
+  isActiveMeetingStatus,
   type MeetingRecordStatus,
   type TranscriptJobStatus,
 } from "@/lib/meeting-display-status";
@@ -70,13 +70,6 @@ export type DashboardWorkflowSummaryOptions = {
   userSpeakerAliases?: string[];
 };
 
-const activeStatuses = new Set<MeetingDisplayStatus>([
-  "waiting_room",
-  "recording",
-  "queued",
-  "transcribing",
-  "processing",
-]);
 const CALENDAR_WEEK_MS = 7 * 24 * 60 * 60 * 1000;
 const TRANSCRIPT_FALLBACK_WORD_PATTERN = /[A-Za-z0-9]+(?:['’][A-Za-z0-9]+)?/g;
 const TRANSCRIPT_CJK_CHARACTER_PATTERN = /[\u3400-\u9fff\uf900-\ufaff]/g;
@@ -120,7 +113,7 @@ export function getDashboardWorkflowSummary(
       summary.failedMeetings += 1;
     }
 
-    if (activeStatuses.has(status)) {
+    if (isActiveMeetingStatus(status)) {
       summary.activeWork += 1;
     }
 

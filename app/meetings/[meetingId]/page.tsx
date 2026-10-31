@@ -24,7 +24,7 @@ import {
   getFollowupSourceHash,
   isFollowupReady,
 } from "@/lib/meeting-followup-source";
-import { getMeetingDisplayStatus } from "@/lib/meeting-display-status";
+import { getComposedMeetingState, getMeetingDisplayStatus } from "@/lib/meeting-display-status";
 import {
   isMeetingBotRecoveryEligible,
 } from "@/lib/meeting-bot-recovery-policy";
@@ -82,11 +82,11 @@ export default async function MeetingPage({
     meetingStatus: meeting.status,
     transcriptJobStatus: meeting.transcriptJobStatus,
   });
+  const composedState = getComposedMeetingState(meeting, parts
+    .filter(part => part.id !== meetingId)
+    .map(part => ({ ...part, kind: composition.sources.find(source => source.id === part.id)?.kind })));
   const displayStatus = isComposed
-    ? parts.some(part => part.status === "recording") ? "recording"
-      : hasActivePart ? "scheduled"
-      : parts.some(part => ["queued", "running"].includes(part.transcriptJobStatus ?? "") || part.status === "processing") ? "processing"
-      : parts.some(part => part.status === "failed") ? "failed" : primaryDisplayStatus
+    ? getMeetingDisplayStatus({ meetingStatus: composedState.status, botState: composedState.botState })
     : primaryDisplayStatus;
   const recordingParts = meeting.recordingParts ?? [];
   const continuousVisualAssets =
@@ -389,6 +389,10 @@ function formatPlatform(platform: string) {
 function formatStatus(status: string) {
   if (status === "missed") {
     return "No recording";
+  }
+
+  if (status === "joining") {
+    return "Bot joining";
   }
 
   if (status === "waiting_room") {

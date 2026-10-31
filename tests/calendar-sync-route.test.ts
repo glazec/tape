@@ -114,7 +114,7 @@ describe("POST /api/calendar/sync", () => {
     });
   });
 
-  it("syncs every connected account when none is named", async () => {
+  it.each([false, true])("reports a failed account without losing successful syncs (reconnect: %s)", async (reconnect) => {
     const workspace = {
       userId: "11111111-1111-4111-8111-111111111111",
       teamId: "22222222-2222-4222-8222-222222222222",
@@ -129,7 +129,7 @@ describe("POST /api/calendar/sync", () => {
     listCalendarConnectionIdsForWorkspace.mockResolvedValue([first, second]);
     syncRecallCalendarEventsForWorkspace
       .mockResolvedValueOnce({ connectionId: first, failedEventCount: 0, syncedEventCount: 5 })
-      .mockRejectedValueOnce(new Error("Recall unavailable"));
+      .mockRejectedValueOnce(reconnect ? new RecallCalendarConnectionError() : new Error("Recall unavailable"));
 
     const response = await postCalendarSync({ autoJoinEnabled: true });
 
@@ -138,6 +138,8 @@ describe("POST /api/calendar/sync", () => {
       connectionId: first,
       failedEventCount: 0,
       syncedEventCount: 5,
+      failedAccountCount: 1,
+      reconnect,
       historyRepairQueued: true,
     });
     expect(syncRecallCalendarEventsForWorkspace).toHaveBeenCalledWith({ workspace, autoJoinEnabled: true, connectionId: second });

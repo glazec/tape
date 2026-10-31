@@ -26,6 +26,8 @@ export default async function NewMeetingPage({
     redirect("/dashboard");
   }
 
+  const initialSource = parseMeetingSource((await searchParams)?.source);
+
   return (
     <AppShell
       activeHref="/meetings/new"
@@ -38,7 +40,8 @@ export default async function NewMeetingPage({
         </h1>
 
         <NewMeetingSources
-          initialSource={parseMeetingSource((await searchParams)?.source)}
+          key={`${workspace.teamId}:${initialSource}`}
+          initialSource={initialSource}
           teamId={workspace.teamId}
         />
       </section>

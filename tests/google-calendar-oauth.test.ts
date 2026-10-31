@@ -4,6 +4,7 @@ import { PgDialect } from "drizzle-orm/pg-core";
 const {
   createRecallCalendar,
   deleteRecallCalendar,
+  retrieveRecallCalendar,
   insert,
   select,
   update,
@@ -11,6 +12,7 @@ const {
 } = vi.hoisted(() => ({
   createRecallCalendar: vi.fn(),
   deleteRecallCalendar: vi.fn(),
+  retrieveRecallCalendar: vi.fn(),
   insert: vi.fn(),
   select: vi.fn(),
   update: vi.fn(),
@@ -32,6 +34,7 @@ vi.mock("@/lib/auth-config", () => ({
 vi.mock("@/lib/vendors/recall", () => ({
   createRecallCalendar,
   deleteRecallCalendar,
+  retrieveRecallCalendar,
   updateRecallCalendar,
 }));
 
@@ -62,7 +65,36 @@ describe("Google Calendar OAuth storage", () => {
     expect(values).toHaveBeenCalledWith(expect.objectContaining({ accountEmail: "second@example.com" }));
     expect(updateRecallCalendar).toHaveBeenCalledWith(expect.objectContaining({ calendarId: "recall-first" }));
     expect(predicates[0]).toContain("second@example.com");
-    expect(predicates[1]).toContain("first@example.com");
+    expect(predicates.at(-1)).toContain("first@example.com");
+  });
+  it.each(["alice@example.com", "different@example.com"])("checks the legacy provider identity %s before reconnecting", async (providerEmail) => {
+    vi.stubEnv("GOOGLE_CALENDAR_CLIENT_ID", "client");
+    vi.stubEnv("GOOGLE_CALENDAR_CLIENT_SECRET", "secret");
+    const dialect = new PgDialect();
+    const legacy = { id: "legacy", recallCalendarId: "old-calendar", recallCalendarStatus: "connected" };
+    select.mockReturnValue({ from: () => ({ where: (condition: Parameters<typeof dialect.sqlToQuery>[0]) => ({
+      limit: async () => dialect.sqlToQuery(condition).sql.includes('"account_email" is null') ? [legacy] : [],
+    }) }) });
+    retrieveRecallCalendar.mockResolvedValue({ platform_email: providerEmail });
+    updateRecallCalendar.mockResolvedValue({ id: "old-calendar", status: "connected" });
+    createRecallCalendar.mockResolvedValue({ id: "new-calendar", status: "connected" });
+    const set = vi.fn(() => ({ where: async () => ({ rowCount: 1 }) }));
+    update.mockReturnValue({ set });
+    insert.mockReturnValue({ values: () => ({ returning: async () => [{ id: "new" }] }) });
+    const { storeGoogleCalendarTokens } = await import("@/lib/google-calendar-oauth");
+    const id = await storeGoogleCalendarTokens({
+      workspace: { teamId: "team", userId: "person", domain: "example.com" },
+      accountEmail: "alice@example.com", accessToken: "access", refreshToken: "refresh", accessTokenExpiresAt: new Date(),
+    });
+    if (providerEmail === "alice@example.com") {
+      expect(id).toBe("legacy");
+      expect(createRecallCalendar).not.toHaveBeenCalled();
+      expect(insert).not.toHaveBeenCalled();
+      expect(set).toHaveBeenCalledWith(expect.objectContaining({ accountEmail: "alice@example.com" }));
+    } else {
+      expect(id).toBe("new");
+      expect(updateRecallCalendar).not.toHaveBeenCalled();
+    }
   });
   it("accepts only verified Google account emails", async () => {
     const { getVerifiedGoogleCalendarEmail } = await import("@/lib/google-calendar-oauth");
@@ -77,6 +109,7 @@ describe("Google Calendar OAuth storage", () => {
   afterEach(() => {
     createRecallCalendar.mockReset();
     deleteRecallCalendar.mockReset();
+    retrieveRecallCalendar.mockReset();
     updateRecallCalendar.mockReset();
     insert.mockReset();
     select.mockReset();

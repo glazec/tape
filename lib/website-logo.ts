@@ -1,10 +1,23 @@
 import { lookup } from "node:dns/promises";
-import { isIP } from "node:net";
+import { request as httpRequest, type IncomingMessage } from "node:http";
+import { request as httpsRequest } from "node:https";
+import { BlockList, isIP } from "node:net";
 
 const FETCH_TIMEOUT_MS = 5_000;
 const MAX_HTML_BYTES = 1_000_000;
 const MAX_IMAGE_BYTES = 2_000_000;
 const MAX_REDIRECTS = 3;
+
+// Node's address parser also checks IPv4 embedded in IPv6, including hex forms.
+const privateAddresses = new BlockList();
+for (const [address, prefix] of [
+  ["0.0.0.0", 8], ["10.0.0.0", 8], ["127.0.0.0", 8],
+  ["100.64.0.0", 10], ["169.254.0.0", 16], ["172.16.0.0", 12],
+  ["192.168.0.0", 16], ["224.0.0.0", 3],
+] as const) privateAddresses.addSubnet(address, prefix, "ipv4");
+for (const [address, prefix] of [
+  ["::", 128], ["::1", 128], ["fc00::", 7], ["fe80::", 10], ["ff00::", 8],
+] as const) privateAddresses.addSubnet(address, prefix, "ipv6");
 
 export class WebsiteLogoError extends Error {}
 
@@ -92,34 +105,47 @@ async function safeFetch(start: URL, maxBytes: number) {
   let url = start;
 
   for (let hop = 0; hop <= MAX_REDIRECTS; hop += 1) {
-    await assertPublicHost(url);
-    const response = await fetch(url, {
-      headers: { "user-agent": "Mozilla/5.0 (compatible; TapeLogoFetcher/1.0)", accept: "*/*" },
-      redirect: "manual",
-      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+    const addresses = await resolvePublicHost(url);
+    const response = await new Promise<IncomingMessage>((resolve, reject) => {
+      const request = url.protocol === "https:" ? httpsRequest : httpRequest;
+      request(url, {
+        headers: { "user-agent": "Mozilla/5.0 (compatible; TapeLogoFetcher/1.0)", accept: "*/*" },
+        signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+        // Connect only to the addresses checked above, without a second DNS lookup.
+        // Keeping the original URL preserves the Host header and TLS server name.
+        lookup: (_hostname, options, callback) => {
+          if (options.all) callback(null, addresses);
+          else callback(null, addresses[0].address, addresses[0].family);
+        },
+      }, resolve).once("error", reject).end();
     });
 
-    if (response.status >= 300 && response.status < 400) {
-      const location = response.headers.get("location");
+    const status = response.statusCode ?? 0;
+    if (status >= 300 && status < 400) {
+      const location = response.headers.location;
+      response.destroy();
       if (!location) break;
       url = new URL(location, url);
       continue;
     }
 
-    if (!response.ok || !response.body) throw new WebsiteLogoError(`Fetch failed: ${response.status}`);
+    if (status < 200 || status >= 300) {
+      response.destroy();
+      throw new WebsiteLogoError(`Fetch failed: ${status}`);
+    }
 
-    const declared = Number(response.headers.get("content-length") ?? 0);
-    if (declared > maxBytes) throw new WebsiteLogoError("Response too large");
+    const declared = Number(response.headers["content-length"] ?? 0);
+    if (declared > maxBytes) {
+      response.destroy();
+      throw new WebsiteLogoError("Response too large");
+    }
 
-    const reader = response.body.getReader();
     const chunks: Uint8Array[] = [];
     let total = 0;
-    for (;;) {
-      const { done, value } = await reader.read();
-      if (done) break;
+    for await (const value of response) {
       total += value.byteLength;
       if (total > maxBytes) {
-        await reader.cancel();
+        response.destroy();
         throw new WebsiteLogoError("Response too large");
       }
       chunks.push(value);
@@ -132,44 +158,31 @@ async function safeFetch(start: URL, maxBytes: number) {
       offset += chunk.byteLength;
     }
 
-    return { bytes, contentType: response.headers.get("content-type")?.split(";")[0].trim() ?? "", url };
+    return { bytes, contentType: response.headers["content-type"]?.split(";")[0].trim() ?? "", url };
   }
 
   throw new WebsiteLogoError("Too many redirects");
 }
 
-async function assertPublicHost(url: URL) {
+async function resolvePublicHost(url: URL) {
   if (url.protocol !== "https:" && url.protocol !== "http:") {
     throw new WebsiteLogoError("Blocked address");
   }
 
   const host = url.hostname.replace(/^\[|\]$/g, "");
-  const addresses = isIP(host)
-    ? [host]
-    : (await lookup(host, { all: true }).catch(() => [])).map((entry) => entry.address);
+  const family = isIP(host);
+  const addresses = family
+    ? [{ address: host, family }]
+    : await lookup(host, { all: true }).catch(() => []);
 
   if (addresses.length === 0) throw new WebsiteLogoError("Website not found");
-  if (addresses.some(isPrivateAddress)) throw new WebsiteLogoError("Blocked address");
+  if (addresses.some(({ address }) => isPrivateAddress(address))) throw new WebsiteLogoError("Blocked address");
+  return addresses;
 }
 
 export function isPrivateAddress(address: string) {
-  const mapped = address.toLowerCase().replace(/^::ffff:/, "");
-
-  if (isIP(mapped) === 4) {
-    const [a, b] = mapped.split(".").map(Number);
-    return (
-      a === 0 || a === 10 || a === 127 || a >= 224 ||
-      (a === 100 && b >= 64 && b <= 127) ||
-      (a === 169 && b === 254) ||
-      (a === 172 && b >= 16 && b <= 31) ||
-      (a === 192 && b === 168)
-    );
-  }
-
-  return (
-    mapped === "::" || mapped === "::1" ||
-    /^f[cd]/.test(mapped) || /^fe[89ab]/.test(mapped)
-  );
+  const family = isIP(address);
+  return family === 0 || privateAddresses.check(address, family === 4 ? "ipv4" : "ipv6");
 }
 
 function readAttribute(tag: string, name: string) {

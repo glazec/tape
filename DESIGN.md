@@ -16,6 +16,8 @@ Calendar sync feedback distinguishes completed recent sync from a queued scan of
 
 Hide unnecessary information. Make the next useful action obvious. Keep every screen intuitive and clean.
 
+The desktop permission panel uses one continuous surface. Keep audio checks and connection details collapsed, and omit audio meters until capture permissions are ready. Accessibility recovery belongs in a disclosure beside the permission list. Restart failures stay visible in the open app.
+
 Every visible element must help the user do one of four things:
 
 1. Understand the current state

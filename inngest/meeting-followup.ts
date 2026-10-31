@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 import { inngest } from "@/inngest/client";
-import { autoGenerateMeetingFollowup } from "@/lib/meeting-followup-generation";
+import { autoGenerateMeetingFollowup, getMeetingFollowupParentId } from "@/lib/meeting-followup-generation";
 import { ProviderCreditExhaustedError } from "@/lib/provider-credit";
 
 const dataSchema = z.object({
@@ -19,7 +19,7 @@ export const generateMeetingFollowupOnTranscript = inngest.createFunction(
     id: "generate-meeting-followup",
     retries: 2,
     concurrency: { limit: 1, key: "event.data.meetingId" },
-    triggers: [{ event: "meeting/enrich.transcript" }],
+    triggers: [{ event: "meeting/enrich.transcript" }, { event: "meeting/generate.followup" }],
   },
   async ({ event, step }) => {
     const data = dataSchema.parse(event.data);
@@ -28,6 +28,16 @@ export const generateMeetingFollowupOnTranscript = inngest.createFunction(
     // requests reuse this event and must not trigger new generation.
     if (!data.sendCompletionEmail) {
       return { status: "skipped", reason: "not_transcript_completion" };
+    }
+
+    const parentId = await step.run("load-followup-parent", () => getMeetingFollowupParentId(data.meetingId));
+    if (parentId) {
+      // Refresh the combined source hash as well as this recording's own summary.
+      // A separate event gives the parent its own readiness wait and concurrency key.
+      await step.sendEvent("refresh-combined-followup", {
+        name: "meeting/generate.followup",
+        data: { meetingId: parentId, sendCompletionEmail: true },
+      });
     }
 
     for (let check = 0; check < READY_CHECKS; check += 1) {

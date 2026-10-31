@@ -853,6 +853,23 @@ describe("listMeetingsForWorkspace", () => {
     expect(page.hasNextPage).toBe(false);
   });
 
+  it.each([null, "joining", "waiting_room"])("keeps a continuation visible with source bot state %s", async (botState) => {
+    select.mockReturnValueOnce({ from: () => ({ leftJoin: () => ({ where: () => ({ orderBy: vi.fn().mockResolvedValue([{
+      id: "parent", title: "Conversation", status: "ready", botState: null,
+      sourceStates: [{ status: "scheduled", botState, kind: "continuation" }],
+      platform: "zoom", canManage: true, teamId: "team_123", recallBotId: "old-bot",
+      calendarAttendeeEmails: [], transcriptJobStatus: "completed",
+      createdAt: new Date("2026-10-28T14:00:00Z"), startedAt: new Date("2026-10-28T14:00:00Z"),
+      endedAt: new Date("2026-10-28T14:30:00Z"),
+    }]) }) }) }) });
+    const { listMeetingLibraryPageForWorkspace } = await import("@/lib/meeting-queries");
+    const page = await listMeetingLibraryPageForWorkspace({ teamId: "team_123", userId: "user_123", domain: "example.com" }, {
+      now: new Date("2026-10-28T14:35:00Z"), status: "in_progress",
+    });
+    expect(page.meetings).toHaveLength(1);
+    expect(page.meetings[0]).toMatchObject({ id: "parent", status: "scheduled", botState: botState ?? "joining" });
+  });
+
   it("marks a manageable failed remote meeting from the last hour as recoverable", async () => {
     select
       .mockReturnValueOnce({
@@ -1880,6 +1897,35 @@ describe("listMeetingsForWorkspace", () => {
 describe("buildMeetingLibraryPage", () => {
   afterEach(() => {
     vi.resetModules();
+  });
+
+  it.each(["joining", "waiting_room"])(
+    "keeps %s bots visible after their scheduled start and preserves related states",
+    async (botState) => {
+      const { buildMeetingLibraryPage } = await import("@/lib/meeting-queries");
+      const meetings = ["2026-06-28T11:00:00Z", "2026-06-28T10:00:00Z"].map((startedAt, index) => ({
+        ...libraryMeeting({ id: `waiting-${index}`, title: "Weekly sync", platform: "zoom", startedAt }),
+        status: "scheduled" as const,
+        botState,
+        hasRecallBot: true,
+      }));
+      const page = buildMeetingLibraryPage(meetings, {
+        now: new Date("2026-06-28T12:00:00Z"), status: "in_progress",
+      });
+      expect(page.meetings).toHaveLength(1);
+      expect(page.meetings[0]).toMatchObject({ botState, status: "scheduled" });
+      expect(page.meetings[0].relatedMeetings).toHaveLength(1);
+      expect(page.meetings[0].relatedMeetings?.[0]).toMatchObject({ botState });
+    },
+  );
+
+  it("preserves a waiting room override on an existing recording row", async () => {
+    const { buildMeetingLibraryPage } = await import("@/lib/meeting-queries");
+    const page = buildMeetingLibraryPage([{
+      ...libraryMeeting({ id: "waiting", title: "Board sync", platform: "zoom", startedAt: "2026-06-28T11:00:00Z" }),
+      status: "recording" as const, botState: "waiting_room", hasRecallBot: true,
+    }], { now: new Date("2026-06-28T12:00:00Z") });
+    expect(page.meetings[0]).toMatchObject({ botState: "waiting_room" });
   });
 
   it("sorts visible library meetings by newest started time across platforms", async () => {

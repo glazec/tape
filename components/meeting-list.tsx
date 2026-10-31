@@ -98,6 +98,7 @@ const platformLabels: Record<MeetingListItem["platform"], string> = {
 
 const statusLabels: Record<MeetingDisplayStatus, string> = {
   scheduled: "Scheduled",
+  joining: "Bot joining",
   waiting_room: "In waiting room",
   recording: "Recording",
   queued: "In progress",
@@ -751,6 +752,7 @@ function MeetingMeta({
 }
 
 const statusDotClassNames: Partial<Record<MeetingDisplayStatus, string>> = {
+  joining: "bg-amber-500",
   queued: "bg-amber-500",
   transcribing: "bg-amber-500",
   processing: "bg-amber-500",

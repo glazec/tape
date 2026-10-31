@@ -36,7 +36,7 @@ type RecallMeetingUpdate =
       recallBotId: string | null;
       recallRecordingId: string | null;
       /** Undefined leaves the stored state alone; null clears it. */
-      botState?: "waiting_room" | null;
+      botState?: "joining" | "waiting_room" | null;
       status:
         | "scheduled"
         | "recording"
@@ -64,11 +64,7 @@ export function buildRecallMeetingUpdate(
   }
 
   const status = mapRecallStatus(event);
-  const botState = isRecallWaitingRoom(event)
-    ? "waiting_room"
-    : status
-      ? null
-      : undefined;
+  const botState = status ? null : getRecallPendingBotState(event);
 
   return {
     action: "update",
@@ -474,7 +470,7 @@ function mapRecallStatus(event: RecallWebhookEvent) {
 
   // A bot that is joining or held in the waiting room is not recording yet;
   // the waiting room is tracked as bot state instead.
-  if (isRecallWaitingRoom(event) || /joining/.test(statusText)) {
+  if (getRecallPendingBotState(event)) {
     return null;
   }
 
@@ -485,13 +481,17 @@ function mapRecallStatus(event: RecallWebhookEvent) {
   return null;
 }
 
-function isRecallWaitingRoom(event: RecallWebhookEvent) {
+function getRecallPendingBotState(event: RecallWebhookEvent) {
   const code = (event.code ?? event.statusCode ?? "").toLowerCase();
 
-  return (
+  if (
     code === "in_waiting_room" ||
     event.eventType.toLowerCase() === "bot.in_waiting_room"
-  );
+  ) return "waiting_room" as const;
+  if ([event.code, event.statusCode, event.eventType].some((value) => value?.toLowerCase().includes("joining"))) {
+    return "joining" as const;
+  }
+  return undefined;
 }
 
 function isRecallMissedRecording(event: RecallWebhookEvent) {
