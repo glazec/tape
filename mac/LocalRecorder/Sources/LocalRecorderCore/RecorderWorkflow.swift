@@ -10,6 +10,22 @@ public struct RecordingMeeting: Codable, Equatable, Identifiable, Sendable {
     public var unavailableReason: String?
     public var id: String { meetingId }
     public var displayDate: Date? { startsAt ?? createdAt }
+
+    private enum CodingKeys: String, CodingKey {
+        case meetingId, title, startsAt, endsAt, status, createdAt, unavailableReason
+    }
+
+    /// One unreadable date drops that date, not the whole meeting list.
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        meetingId = try container.decode(String.self, forKey: .meetingId)
+        title = try container.decode(String.self, forKey: .title)
+        status = (try? container.decodeIfPresent(String.self, forKey: .status)) ?? "scheduled"
+        unavailableReason = try? container.decodeIfPresent(String.self, forKey: .unavailableReason)
+        startsAt = (try? container.decodeIfPresent(Date.self, forKey: .startsAt)) ?? nil
+        endsAt = (try? container.decodeIfPresent(Date.self, forKey: .endsAt)) ?? nil
+        createdAt = (try? container.decodeIfPresent(Date.self, forKey: .createdAt)) ?? nil
+    }
     public var dateIsCreationDate: Bool { startsAt == nil }
     public var statusLabel: String {
         switch status {
@@ -45,11 +61,11 @@ public enum RecorderStartFailure: Equatable, Sendable {
 
     public var message: String {
         switch self {
-        case .serviceUnavailable: "Recording needs a Tape server update. Nothing was recorded."
-        case .meetingUnavailable: "This meeting is unavailable for recording. Choose a separate meeting."
+        case .serviceUnavailable: "Tape can't start a recording right now. Nothing was recorded."
+        case .meetingUnavailable: "This meeting can't take a recording. Record it as a new meeting instead."
         case .signInRequired: "Sign in again to start recording."
-        case .accessDenied: "Could not start recording. Check workspace access and credit."
-        case .retrySameMeeting: "Could not start recording. Retry to recover the same meeting."
+        case .accessDenied: "Couldn't start recording. Check your workspace access and credit."
+        case .retrySameMeeting: "Couldn't start recording. Try again to keep the same meeting."
         }
     }
 
@@ -57,7 +73,7 @@ public enum RecorderStartFailure: Equatable, Sendable {
         switch self {
         case .meetingUnavailable: "Record a separate meeting"
         case .signInRequired: "Sign in again"
-        default: "Retry recording"
+        default: "Try again"
         }
     }
 }
@@ -169,18 +185,43 @@ extension LocalRecorderAPIClient {
     private func workflowResponse<T: Decodable>(for request: URLRequest) async throws -> T {
         let (data, response) = try await URLSession.shared.data(for: request)
         try validateHTTPResponse(data: data, response: response)
+        return try JSONDecoder.localRecorderWorkflow.decode(T.self, from: data)
+    }
+}
+
+public extension JSONDecoder {
+    static var localRecorderWorkflow: JSONDecoder {
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .custom { decoder in
             let value = try decoder.singleValueContainer().decode(String.self)
-            let formatter = ISO8601DateFormatter()
-            formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-            if let date = formatter.date(from: value) { return date }
-            formatter.formatOptions = [.withInternetDateTime]
-            guard let date = formatter.date(from: value) else { throw LocalRecorderAPIError.invalidResponse }
+            guard let date = localRecorderDate(from: value) else { throw LocalRecorderAPIError.invalidResponse }
             return date
         }
-        return try decoder.decode(T.self, from: data)
+        return decoder
     }
+}
+
+/// Accepts ISO 8601 and the Postgres text form the server can pass through
+/// ("2026-10-30 18:00:00.123456+00"), with any number of fractional digits.
+public func localRecorderDate(from value: String) -> Date? {
+    var text = value.trimmingCharacters(in: .whitespaces)
+    if text.count > 10, text[text.index(text.startIndex, offsetBy: 10)] == " " {
+        text.replaceSubrange(text.index(text.startIndex, offsetBy: 10)...text.index(text.startIndex, offsetBy: 10), with: "T")
+    }
+    // A bare "+00" or "-05" offset needs minutes for ISO 8601.
+    if let match = text.range(of: #"[+-]\d{2}$"#, options: .regularExpression) {
+        text.replaceSubrange(match, with: text[match] + ":00")
+    }
+    // ISO8601DateFormatter reads milliseconds only; trim microseconds.
+    if let match = text.range(of: #"\.\d+"#, options: .regularExpression) {
+        let digits = text[match].dropFirst()
+        text.replaceSubrange(match, with: "." + String((digits + "000").prefix(3)))
+    }
+    let formatter = ISO8601DateFormatter()
+    formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+    if let date = formatter.date(from: text) { return date }
+    formatter.formatOptions = [.withInternetDateTime]
+    return formatter.date(from: text)
 }
 
 /// Silence is evidence only while BOTH independent streams keep reporting.

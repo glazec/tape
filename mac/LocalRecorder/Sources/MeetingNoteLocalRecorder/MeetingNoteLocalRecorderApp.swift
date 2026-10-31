@@ -122,39 +122,39 @@ enum RecorderPermissionStep {
     var actionTitle: String {
         switch self {
         case .microphone:
-            return "Grant microphone"
+            return "Allow microphone"
         case .accessibility:
-            return "Grant accessibility"
+            return "Allow meeting detection"
         case .screenAndSystemAudio:
-            return "Grant screen and audio"
+            return "Allow system audio"
         case .alerts:
-            return "Allow alerts"
+            return "Allow notifications"
         }
     }
 
     var statusTitle: String {
         switch self {
         case .microphone:
-            return "Microphone needed"
+            return "Allow microphone access"
         case .accessibility:
-            return "Accessibility needed"
+            return "Allow meeting detection"
         case .screenAndSystemAudio:
-            return "Screen access needed"
+            return "Allow screen and system audio"
         case .alerts:
-            return "Alerts needed"
+            return "Allow notifications"
         }
     }
 
     var statusDetail: String {
         switch self {
         case .microphone:
-            return "Allow microphone access"
+            return "Records your voice while you press Record."
         case .accessibility:
-            return "Allow meeting window detection"
+            return "Lets Tape notice when a meeting window opens or closes."
         case .alerts:
-            return "Allow meeting notifications"
+            return "Tells you when a recording starts or needs attention."
         case .screenAndSystemAudio:
-            return "Allow screen and system audio capture"
+            return "Captures the other side of the call from your Mac."
         }
     }
 
@@ -241,7 +241,10 @@ final class RecorderAppModel: NSObject, ObservableObject, UNUserNotificationCent
     @Published var isFinishingRecording = false
     @Published var isRefreshingSchedule = false
     @Published var isAdvancedExpanded = false
-    @Published var nextScheduleMeeting: LocalRecorderMonitoringMeeting?
+    @Published var nextScheduleMeeting: LocalRecorderMonitoringMeeting? {
+        // A destination picked for one meeting should not carry over to the next.
+        didSet { if oldValue?.meetingId != nextScheduleMeeting?.meetingId { pendingDestination = nil } }
+    }
     @Published var pendingMeetings: [MissedMeeting] = []
 
     private static let microphoneDefaultsKey = "meeting-note-local-recorder-microphone-uid"
@@ -276,6 +279,15 @@ final class RecorderAppModel: NSObject, ObservableObject, UNUserNotificationCent
     @Published var isSwitchingMeeting = false
     @Published var destinationUnconfirmed = false
     @Published var isMeetingPickerPresented = false
+    /// A destination chosen before Record is pressed; nil follows `recordingDestination`'s default.
+    @Published var pendingDestination: RecordingDestination? {
+        didSet { pendingDestinationChosenAt = pendingDestination == nil ? nil : Date() }
+    }
+    var pendingDestinationChosenAt: Date?
+    /// Meetings the server refused for this recording; shown as unavailable in the picker.
+    @Published var rejectedMeetingIDs: Set<String> = []
+    /// The most recent refusal, so its message can sit under that row.
+    @Published var lastRejectedMeetingID: String?
     @Published var meetingChoices: [RecordingMeeting] = []
     @Published var meetingSearch = ""
     @Published var meetingChoicesHaveMore = false
@@ -454,6 +466,16 @@ final class RecorderAppModel: NSObject, ObservableObject, UNUserNotificationCent
         ]
     }
 
+    /// Lets the person retry a failed upload now instead of waiting for the backoff.
+    func retryUploadsNow() {
+        queuedUploadRetryAfter = nil
+        Task { await retryQueuedUploadsIfPossible() }
+    }
+
+    func showSavedRecordings() {
+        NSWorkspace.shared.activateFileViewerSelecting([uploadQueue.directoryURL])
+    }
+
     private func retryQueuedUploadsIfPossible() async {
         guard let client = makeClient() else {
             return
@@ -621,7 +643,12 @@ final class RecorderAppModel: NSObject, ObservableObject, UNUserNotificationCent
     }
 
     func startRecording() {
-        beginRecording(meetingId: nextScheduleMeeting?.meetingId, title: nil)
+        switch recordingDestination {
+        case .meeting(let id, _):
+            beginRecording(meetingId: id)
+        case .newMeeting(let title):
+            beginRecording(title: title)
+        }
     }
 
     func startRecording(fallbackIntentId: String?) {

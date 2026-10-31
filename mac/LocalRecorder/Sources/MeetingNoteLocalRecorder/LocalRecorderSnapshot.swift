@@ -33,6 +33,70 @@ enum LocalRecorderSnapshot {
         }
         // The review composite keeps the three primary states; the rest are written for checking.
         write(composite(captures.prefix(3).map(\.1)), to: directory.appendingPathComponent("composite.png"))
+
+        // The picker replaces the panel content while it is open.
+        let pickers = pickerStates().map { name, model in
+            (name, capture(model: model, appearance: appearance))
+        }
+        for (name, image) in pickers {
+            write(image, to: directory.appendingPathComponent("\(name).png"))
+        }
+    }
+
+    private static func pickerStates() -> [(String, RecorderAppModel)] {
+        let iso = ISO8601DateFormatter()
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        let today = Calendar.current.date(bySettingHour: 14, minute: 30, second: 0, of: Date())!
+        let choices = """
+        [{"meetingId":"current","title":"Design sync with Northwind","status":"recording","startsAt":"\(iso.string(from: today))"},
+        {"meetingId":"busy","title":"Customer research","status":"recording","startsAt":"\(iso.string(from: today.addingTimeInterval(-3_600)))","unavailableReason":"Meeting bot is recording"},
+        {"meetingId":"tomorrow","title":"Weekly product review with the Northwind design team","status":"scheduled","startsAt":"\(iso.string(from: today.addingTimeInterval(86_400)))"},
+        {"meetingId":"previous","title":"Design sync with Northwind","status":"completed","startsAt":"\(iso.string(from: today.addingTimeInterval(-86_400)))"},
+        {"meetingId":"manual","title":"Manual recording","status":"processing","createdAt":"\(iso.string(from: today.addingTimeInterval(-200_000)))"}]
+        """
+        let meetings = (try? decoder.decode([RecordingMeeting].self, from: Data(choices.utf8))) ?? []
+
+        let recording = RecorderAppModel(snapshotBearerToken: "token")
+        recording.isRecording = true
+        recording.activeTarget = RecordingTarget(fallbackIntentId: "snapshot", meetingId: "current", meetingTitle: "Design sync with Northwind")
+        recording.meetingChoices = meetings
+
+        let idle = RecorderAppModel(snapshotBearerToken: "token")
+        idle.meetingChoices = meetings.filter { $0.meetingId != "current" }
+
+        let loading = RecorderAppModel(snapshotBearerToken: "token")
+        loading.isRecording = true
+        loading.isLoadingMeetingChoices = true
+
+        let failed = RecorderAppModel(snapshotBearerToken: "token")
+        failed.isRecording = true
+        failed.meetingPickerLoadFailed = true
+        failed.meetingPickerError = "Couldn't load meetings"
+
+        let empty = RecorderAppModel(snapshotBearerToken: "token")
+        empty.isRecording = true
+        empty.meetingSearch = "board prep"
+
+        let rejected = RecorderAppModel(snapshotBearerToken: "token")
+        rejected.isRecording = true
+        rejected.activeTarget = recording.activeTarget
+        rejected.meetingChoices = meetings
+        rejected.meetingPickerError = "Can't take this recording · Choose another"
+        rejected.rejectedMeetingIDs = ["tomorrow"]
+        rejected.lastRejectedMeetingID = "tomorrow"
+
+        for model in [recording, idle, loading, failed, empty, rejected] {
+            model.permissionChecklist = PermissionChecklist(
+                microphone: .granted, screenCapture: .granted, accessibility: .granted,
+                notifications: .granted, startAtLogin: .granted
+            )
+            model.isMeetingPickerPresented = true
+        }
+        return [
+            ("picker-recording", recording), ("picker-before-recording", idle), ("picker-loading", loading),
+            ("picker-error", failed), ("picker-empty", empty), ("picker-rejected", rejected),
+        ]
     }
 
     private static func states() -> [(String, RecorderAppModel)] {
@@ -81,7 +145,6 @@ enum LocalRecorderSnapshot {
         picker.activeRecordingTitle = "Design sync with Northwind"
         picker.statusText = "Recording"
         picker.audioLevels = recording.audioLevels
-        picker.isMeetingPickerPresented = true
         picker.activeTarget = RecordingTarget(fallbackIntentId: "snapshot", meetingId: "current", meetingTitle: "Design sync with Northwind")
         let choices = """
         [{"meetingId":"current","title":"Design sync with Northwind","status":"recording","startsAt":"\(iso.string(from: Date()))"},
@@ -91,6 +154,28 @@ enum LocalRecorderSnapshot {
         """
         picker.meetingChoices = (try? decoder.decode([RecordingMeeting].self, from: Data(choices.utf8))) ?? []
         picker.meetingChoicesHaveMore = true
+        picker.isMeetingPickerPresented = true
+
+        let unconfirmed = RecorderAppModel(snapshotBearerToken: "token")
+        unconfirmed.permissionChecklist = granted
+        unconfirmed.isRecording = true
+        unconfirmed.recordingStartedAt = recording.recordingStartedAt
+        unconfirmed.activeRecordingTitle = "Customer research"
+        unconfirmed.destinationUnconfirmed = true
+        unconfirmed.statusText = "Recording"
+
+        let happeningNow = RecorderAppModel(snapshotBearerToken: "token")
+        happeningNow.permissionChecklist = granted
+        happeningNow.statusText = "Watching your calendar"
+        happeningNow.nextScheduleMeeting = upcoming.nextScheduleMeeting
+        happeningNow.nextScheduleMeeting?.startsAt = Date().addingTimeInterval(-600)
+        happeningNow.nextScheduleMeeting?.endsAt = Date().addingTimeInterval(1_800)
+
+        let chosen = RecorderAppModel(snapshotBearerToken: "token")
+        chosen.permissionChecklist = granted
+        chosen.statusText = "Watching your calendar"
+        chosen.nextScheduleMeeting = upcoming.nextScheduleMeeting
+        chosen.pendingDestination = .newMeeting(title: "Interview with Priya")
 
         let prompt = RecorderAppModel(snapshotBearerToken: "token")
         prompt.permissionChecklist = granted
@@ -134,7 +219,7 @@ enum LocalRecorderSnapshot {
         settings.account = LocalRecorderAccount(email: "alex@example.com", workspaceName: "Northwind Design")
 
         let permissions = RecorderAppModel(snapshotBearerToken: "token")
-        permissions.isAdvancedExpanded = true
+        permissions.permissionChecklist.microphone = .granted
         permissions.statusText = "Finish access setup"
 
         return [
@@ -143,15 +228,20 @@ enum LocalRecorderSnapshot {
             ("meeting-picker", picker), ("end-prompt", prompt),
             ("upload-receipt", receipt), ("recording-conflict", conflict),
             ("recording-unavailable", serverUnavailable),
+            ("recording-unconfirmed", unconfirmed), ("happening-now", happeningNow), ("destination-chosen", chosen),
         ]
     }
 
     private static func capture(model: RecorderAppModel, appearance: NSAppearance?) -> NSImage {
-        let controller = NSHostingController(rootView: RecorderMenuView(model: model, showsWindowChrome: true))
+        capture(RecorderMenuView(model: model, showsWindowChrome: true), model: model, appearance: appearance)
+    }
+
+    private static func capture<Root: View>(_ rootView: Root, model: RecorderAppModel? = nil, appearance: NSAppearance?, chrome: Bool = true) -> NSImage {
+        let controller = NSHostingController(rootView: rootView)
         controller.safeAreaRegions = []
         let window = SnapshotWindow(contentViewController: controller)
         window.title = "Tape Desktop"
-        window.styleMask = [.titled, .closable, .miniaturizable]
+        window.styleMask = chrome ? [.titled, .closable, .miniaturizable] : [.borderless]
         RecorderWindowChrome.apply(to: window)
         window.appearance = appearance
         window.setFrameOrigin(NSPoint(x: -10_000, y: -10_000))
@@ -181,7 +271,7 @@ enum LocalRecorderSnapshot {
         )!
         rep.size = bounds.size
         frameView.cacheDisplay(in: bounds, to: rep)
-        if model.isAdvancedExpanded {
+        if let model, model.isAdvancedExpanded {
             let expandedHeight = window.frame.height
             model.isAdvancedExpanded = false
             let resizeDeadline = Date().addingTimeInterval(0.4)

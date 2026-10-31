@@ -50,11 +50,15 @@ export async function listLocalRecorderRecordingMeetings(input: {
     from meetings m
     where m.team_id = ${input.workspace.teamId}::uuid
       and m.status <> 'cancelled'
-      and (m.owner_user_id = ${input.workspace.userId}::uuid or exists (
-        select 1 from team_memberships membership
-        where membership.team_id = m.team_id
-          and membership.user_id = ${input.workspace.userId}::uuid
-          and membership.role in ('owner', 'admin')
+      -- The picker lists meetings the person is in: ones they own, plus ones they
+      -- attend when they may record into them (only owners and admins may). Other
+      -- teammates' meetings stay out even though admins can target them by id.
+      and (m.owner_user_id = ${input.workspace.userId}::uuid or (
+        exists (select 1 from meeting_access ma where ma.meeting_id = m.id
+          and ma.user_id = ${input.workspace.userId}::uuid
+          and ma.source = 'participant' and ma.revoked_at is null)
+        and exists (select 1 from team_memberships membership where membership.team_id = m.team_id
+          and membership.user_id = ${input.workspace.userId}::uuid and membership.role in ('owner', 'admin'))
       ))
       and (${search} = '' or strpos(lower(m.title), lower(${search})) > 0)
     order by abs(extract(epoch from (coalesce(m.started_at, m.created_at) - now()))), m.id
