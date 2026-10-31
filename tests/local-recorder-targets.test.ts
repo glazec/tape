@@ -6,15 +6,15 @@ import { listLocalRecorderRecordingMeetings, setLocalRecorderRecordingTarget } f
 const workspace = { teamId: "team", userId: "user", domain: "", canCreateMeetings: true };
 afterEach(() => { databaseSql.mockReset(); databaseSql.transaction.mockReset(); });
 describe("recording targets", () => {
-  it("pages the entire writable inventory and preserves nullable schedule fields", async () => {
+  it("pages the person's own meetings and preserves nullable schedule fields", async () => {
     databaseSql.mockResolvedValue(Array.from({ length: 101 }, (_, i) => ({ meetingId: String(i), title: "Old meeting", startsAt: null, endsAt: null, status: "ready" })));
     const result = await listLocalRecorderRecordingMeetings({ workspace, query: "Old", offset: 100 });
     expect(result.meetings).toHaveLength(100);
     expect(result.hasMore).toBe(true);
     expect(result.meetings[0].startsAt).toBeNull();
     const query = databaseSql.mock.calls[0][0].join("?");
-    expect(query).toContain("owner_user_id");
-    expect(query).toContain("membership.role in ('owner', 'admin')");
+    expect(query).toContain("m.owner_user_id = ");
+    expect(query).not.toContain("membership.role in ('owner', 'admin')");
     expect(query).not.toContain("meeting_access");
     expect(databaseSql.mock.calls[0]).toContain(100);
   });

@@ -34,9 +34,9 @@ enum LocalRecorderSnapshot {
         // The review composite keeps the three primary states; the rest are written for checking.
         write(composite(captures.prefix(3).map(\.1)), to: directory.appendingPathComponent("composite.png"))
 
-        // The picker is a popover, which offscreen caching cannot see, so render it on its own.
+        // The picker replaces the panel content while it is open.
         let pickers = pickerStates().map { name, model in
-            (name, capture(RecorderMeetingPicker(model: model), appearance: appearance, chrome: false))
+            (name, capture(model: model, appearance: appearance))
         }
         for (name, image) in pickers {
             write(image, to: directory.appendingPathComponent("\(name).png"))
@@ -82,9 +82,17 @@ enum LocalRecorderSnapshot {
         rejected.isRecording = true
         rejected.activeTarget = recording.activeTarget
         rejected.meetingChoices = meetings
-        rejected.meetingPickerError = "That meeting can't take this recording. Choose another."
+        rejected.meetingPickerError = "Can't take this recording · Choose another"
         rejected.rejectedMeetingIDs = ["tomorrow"]
+        rejected.lastRejectedMeetingID = "tomorrow"
 
+        for model in [recording, idle, loading, failed, empty, rejected] {
+            model.permissionChecklist = PermissionChecklist(
+                microphone: .granted, screenCapture: .granted, accessibility: .granted,
+                notifications: .granted, startAtLogin: .granted
+            )
+            model.isMeetingPickerPresented = true
+        }
         return [
             ("picker-recording", recording), ("picker-before-recording", idle), ("picker-loading", loading),
             ("picker-error", failed), ("picker-empty", empty), ("picker-rejected", rejected),
@@ -146,6 +154,7 @@ enum LocalRecorderSnapshot {
         """
         picker.meetingChoices = (try? decoder.decode([RecordingMeeting].self, from: Data(choices.utf8))) ?? []
         picker.meetingChoicesHaveMore = true
+        picker.isMeetingPickerPresented = true
 
         let unconfirmed = RecorderAppModel(snapshotBearerToken: "token")
         unconfirmed.permissionChecklist = granted
@@ -210,7 +219,7 @@ enum LocalRecorderSnapshot {
         settings.account = LocalRecorderAccount(email: "alex@example.com", workspaceName: "Northwind Design")
 
         let permissions = RecorderAppModel(snapshotBearerToken: "token")
-        permissions.isAdvancedExpanded = true
+        permissions.permissionChecklist.microphone = .granted
         permissions.statusText = "Finish access setup"
 
         return [

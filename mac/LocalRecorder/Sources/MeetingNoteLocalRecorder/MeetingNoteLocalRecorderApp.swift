@@ -122,39 +122,39 @@ enum RecorderPermissionStep {
     var actionTitle: String {
         switch self {
         case .microphone:
-            return "Grant microphone"
+            return "Allow microphone"
         case .accessibility:
-            return "Grant accessibility"
+            return "Allow meeting detection"
         case .screenAndSystemAudio:
-            return "Grant screen and audio"
+            return "Allow system audio"
         case .alerts:
-            return "Allow alerts"
+            return "Allow notifications"
         }
     }
 
     var statusTitle: String {
         switch self {
         case .microphone:
-            return "Microphone needed"
+            return "Allow microphone access"
         case .accessibility:
-            return "Accessibility needed"
+            return "Allow meeting detection"
         case .screenAndSystemAudio:
-            return "Screen access needed"
+            return "Allow screen and system audio"
         case .alerts:
-            return "Alerts needed"
+            return "Allow notifications"
         }
     }
 
     var statusDetail: String {
         switch self {
         case .microphone:
-            return "Allow microphone access"
+            return "Records your voice while you press Record."
         case .accessibility:
-            return "Allow meeting window detection"
+            return "Lets Tape notice when a meeting window opens or closes."
         case .alerts:
-            return "Allow meeting notifications"
+            return "Tells you when a recording starts or needs attention."
         case .screenAndSystemAudio:
-            return "Allow screen and system audio capture"
+            return "Captures the other side of the call from your Mac."
         }
     }
 
@@ -286,6 +286,8 @@ final class RecorderAppModel: NSObject, ObservableObject, UNUserNotificationCent
     var pendingDestinationChosenAt: Date?
     /// Meetings the server refused for this recording; shown as unavailable in the picker.
     @Published var rejectedMeetingIDs: Set<String> = []
+    /// The most recent refusal, so its message can sit under that row.
+    @Published var lastRejectedMeetingID: String?
     @Published var meetingChoices: [RecordingMeeting] = []
     @Published var meetingSearch = ""
     @Published var meetingChoicesHaveMore = false
@@ -462,6 +464,16 @@ final class RecorderAppModel: NSObject, ObservableObject, UNUserNotificationCent
             "notifications": permissionChecklist.notifications.reportValue,
             "startAtLogin": permissionChecklist.startAtLogin.reportValue,
         ]
+    }
+
+    /// Lets the person retry a failed upload now instead of waiting for the backoff.
+    func retryUploadsNow() {
+        queuedUploadRetryAfter = nil
+        Task { await retryQueuedUploadsIfPossible() }
+    }
+
+    func showSavedRecordings() {
+        NSWorkspace.shared.activateFileViewerSelecting([uploadQueue.directoryURL])
     }
 
     private func retryQueuedUploadsIfPossible() async {

@@ -2,7 +2,7 @@ import LocalRecorderCore
 import SwiftUI
 
 /// Chooses where a recording is saved. Before recording it sets the destination Record uses;
-/// while recording it moves the whole recording. Shown in a popover so the panel never resizes.
+/// while recording it moves the whole recording. Shown as a page inside the panel.
 struct RecorderMeetingPicker: View {
     @ObservedObject var model: RecorderAppModel
     @State private var newTitle = ""
@@ -12,35 +12,56 @@ struct RecorderMeetingPicker: View {
     private enum Field: Hashable { case search, newTitle, meeting(String) }
     @FocusState private var focus: Field?
 
-    static let width: CGFloat = 300
     private static let rowHeight: CGFloat = 34
     private static let headerHeight: CGFloat = 26
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             VStack(alignment: .leading, spacing: 8) {
-                Text(model.isRecording ? "Move recording to" : "Save recording to")
-                    .font(TapeType.sans(11, .semibold))
-                    .foregroundStyle(TapePalette.ash)
+                HStack(spacing: 6) {
+                    Button { model.isMeetingPickerPresented = false } label: {
+                        Image(systemName: "chevron.left")
+                            .font(TapeType.sans(12, .medium))
+                            .foregroundStyle(TapePalette.graphite)
+                            .frame(width: 24, height: 24)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .help("Back")
+                    .accessibilityLabel("Back")
+                    Text(model.isRecording ? "Move recording to" : "Save recording to")
+                        .font(TapeType.serif(18))
+                        .tracking(-0.2)
+                    Spacer(minLength: 0)
+                    if model.isRecording {
+                        HStack(spacing: 5) {
+                            Circle().fill(TapePalette.coral).frame(width: 6, height: 6)
+                            Text("Recording")
+                        }
+                        .font(TapeType.sans(11, .medium))
+                        .foregroundStyle(TapePalette.ash)
+                    }
+                }
+                .padding(.leading, -6)
                 searchField
-                if let error = model.meetingPickerError, !model.meetingPickerLoadFailed {
+                if let error = model.meetingPickerError, !model.meetingPickerLoadFailed, model.lastRejectedMeetingID == nil {
                     Text(error)
                         .font(TapeType.sans(11.5))
                         .foregroundStyle(TapePalette.coralInk)
                         .fixedSize(horizontal: false, vertical: true)
-                } else if model.isRecording {
-                    Text("The whole recording moves to the meeting you choose.")
+                } else {
+                    Text(model.isRecording ? "The whole recording moves to the meeting you choose." : "Record saves to the meeting you choose.")
                         .font(TapeType.sans(11))
                         .foregroundStyle(TapePalette.muted)
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
-            .padding([.horizontal, .top], 12)
+            .padding(.horizontal, 14).padding(.top, 10)
             .padding(.bottom, 6)
 
             ScrollViewReader { scroll in
                 ScrollView {
-                    list.padding(.horizontal, 6).padding(.bottom, 6)
+                    list.padding(.horizontal, 8).padding(.bottom, 6)
                 }
                 .frame(height: listHeight)
                 .onChange(of: focus) { _, value in
@@ -49,9 +70,9 @@ struct RecorderMeetingPicker: View {
             }
 
             Divider().overlay(TapePalette.hairline)
-            footer.padding(.horizontal, 6).padding(.vertical, 6)
+            footer.padding(.horizontal, 8).padding(.vertical, 6)
         }
-        .frame(width: Self.width)
+        .frame(maxWidth: .infinity)
         .background(TapePalette.paper)
         .foregroundStyle(TapePalette.ink)
         .font(TapeType.sans(12.5))
@@ -106,8 +127,8 @@ struct RecorderMeetingPicker: View {
             } else {
                 ForEach(sections, id: \.title) { section in
                     Text(section.title)
-                        .font(TapeType.sans(10.5, .semibold))
-                        .tracking(0.6)
+                        .font(TapeType.sans(11, .medium))
+                        .tracking(0.7)
                         .textCase(.uppercase)
                         .foregroundStyle(TapePalette.ash)
                         .padding(.horizontal, 8)
@@ -115,6 +136,15 @@ struct RecorderMeetingPicker: View {
                         .padding(.bottom, 2)
                     ForEach(section.meetings) { meeting in
                         meetingRow(meeting, section: section.kind).id(meeting.id)
+                        if meeting.meetingId == model.lastRejectedMeetingID, let error = model.meetingPickerError {
+                            Text(error)
+                                .font(TapeType.sans(11.5))
+                                .foregroundStyle(TapePalette.coralInk)
+                                .fixedSize(horizontal: false, vertical: true)
+                                .padding(.horizontal, 8)
+                                .padding(.top, 2)
+                                .padding(.bottom, 6)
+                        }
                     }
                 }
                 if model.meetingPickerLoadFailed {
@@ -134,9 +164,7 @@ struct RecorderMeetingPicker: View {
             Text(model.meetingPickerError ?? "Couldn't load meetings")
             Spacer(minLength: 0)
             Button("Retry") { model.loadMeetingChoices(reset: model.meetingChoices.isEmpty) }
-                .buttonStyle(.plain)
-                .font(TapeType.sans(12, .medium))
-                .foregroundStyle(TapePalette.graphite)
+                .buttonStyle(RecorderActionButtonStyle(kind: .quiet, height: 26))
         }
         .font(TapeType.sans(12))
         .foregroundStyle(TapePalette.coralInk)
@@ -164,7 +192,7 @@ struct RecorderMeetingPicker: View {
                             .font(TapeType.sans(11, .semibold))
                             .foregroundStyle(TapePalette.green)
                     } else if let reason = unavailableReason(meeting) {
-                        Text(reason.short)
+                        if !reason.short.isEmpty { Text(reason.short) }
                     } else {
                         Text(timeLabel(meeting, section: section))
                     }
@@ -182,7 +210,7 @@ struct RecorderMeetingPicker: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .opacity(unavailable ? 0.6 : (model.isSwitchingMeeting && !isChosen ? 0.6 : 1))
+        .opacity(unavailable ? 0.75 : (model.isSwitchingMeeting && !isChosen ? 0.6 : 1))
         .onHover { hoveredID = $0 ? meeting.id : (hoveredID == meeting.id ? nil : hoveredID) }
         .help(unavailableReason(meeting).map { current ? meeting.title : $0.full } ?? meeting.title)
         .focused($focus, equals: .meeting(meeting.id))
@@ -233,7 +261,7 @@ struct RecorderMeetingPicker: View {
                         Image(systemName: "plus")
                             .font(TapeType.sans(11, .medium))
                             .foregroundStyle(TapePalette.ash)
-                        Text(isNewMeetingCurrent ? "New meeting" : "New meeting\u{2026}")
+                        Text(newMeetingLabel)
                         Spacer(minLength: 0)
                         if isNewMeetingCurrent {
                             Image(systemName: "checkmark")
@@ -245,7 +273,7 @@ struct RecorderMeetingPicker: View {
                     .frame(height: Self.rowHeight)
                     .background(
                         RoundedRectangle(cornerRadius: 6)
-                            .fill(hoveredID == "new" ? TapePalette.mist : Color.clear)
+                            .fill(hoveredID == "new" || isNewMeetingCurrent ? TapePalette.mist : Color.clear)
                     )
                     .contentShape(Rectangle())
                 }
@@ -309,6 +337,13 @@ struct RecorderMeetingPicker: View {
         return nil
     }
 
+    private var newMeetingLabel: String {
+        if !trimmedSearch.isEmpty && model.meetingChoices.isEmpty && !model.isLoadingMeetingChoices {
+            return "Create \u{201C}\(trimmedSearch)\u{201D}"
+        }
+        return isNewMeetingCurrent ? "New meeting" : "New meeting\u{2026}"
+    }
+
     private var isNewMeetingCurrent: Bool {
         !model.isRecording && model.recordingDestination == .newMeeting(title: nil)
     }
@@ -316,7 +351,8 @@ struct RecorderMeetingPicker: View {
     /// A short trailing label plus the full reason for the tooltip.
     private func unavailableReason(_ meeting: RecordingMeeting) -> (short: String, full: String)? {
         if model.rejectedMeetingIDs.contains(meeting.meetingId) {
-            return ("Unavailable", "That meeting can't take this recording")
+            // The sentence under the row explains it; a trailing label would repeat it.
+            return ("", "That meeting can't take this recording")
         }
         guard let reason = meeting.unavailableReason else { return nil }
         return (reason.localizedCaseInsensitiveContains("bot") ? "Bot recording" : "Unavailable", reason)
@@ -393,17 +429,6 @@ private struct SkeletonRow: View {
         }
         .frame(height: 34)
         .accessibilityLabel("Loading meetings")
-    }
-}
-
-/// Anchors the meeting picker to a destination control.
-struct MeetingPickerPopover: ViewModifier {
-    @ObservedObject var model: RecorderAppModel
-
-    func body(content: Content) -> some View {
-        content.popover(isPresented: $model.isMeetingPickerPresented, arrowEdge: .bottom) {
-            RecorderMeetingPicker(model: model)
-        }
     }
 }
 

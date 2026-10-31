@@ -15,6 +15,22 @@ import Testing
     #expect(meeting.unavailableReason == "Meeting bot is recording")
 }
 
+@Test func meetingListAcceptsPostgresTimestampsAndSurvivesABadDate() throws {
+    let json = """
+    {"meetings":[
+      {"meetingId":"a","title":"Postgres","status":"completed","startsAt":"2026-10-30 18:00:00.123456+00","endsAt":null,"createdAt":"2026-10-29 09:15:00+00"},
+      {"meetingId":"b","title":"Micro ISO","status":"scheduled","startsAt":"2026-10-31T14:30:00.654321+00:00","createdAt":"2026-10-30T10:00:00.000Z"},
+      {"meetingId":"c","title":"Broken","status":"processing","startsAt":"not a date","createdAt":"2026-10-28T08:00:00Z"}
+    ],"hasMore":false}
+    """
+    let response = try JSONDecoder.localRecorderWorkflow.decode(RecordingMeetingsResponse.self, from: Data(json.utf8))
+    #expect(response.meetings.map(\.meetingId) == ["a", "b", "c"])
+    #expect(abs((response.meetings[0].startsAt?.timeIntervalSince1970 ?? 0) - 1_793_383_200.123) < 0.001)
+    #expect(abs((response.meetings[1].startsAt?.timeIntervalSince1970 ?? 0) - 1_793_457_000.654) < 0.001)
+    #expect(response.meetings[2].startsAt == nil)
+    #expect(response.meetings[2].displayDate != nil)
+}
+
 @Test func targetRejectionIsDifferentFromUnknownNetworkOutcome() {
     #expect(localRecorderTargetWasRejected(LocalRecorderAPIError.httpStatus(409, message: nil, retryAfterSeconds: nil)))
     #expect(!localRecorderTargetWasRejected(LocalRecorderAPIError.httpStatus(503, message: nil, retryAfterSeconds: nil)))
@@ -29,7 +45,7 @@ import Testing
     let error = localRecorderHTTPError(data: Data("<!DOCTYPE html><title>Not found</title>".utf8), response: response)
     #expect(error == .recordingWorkflowUnavailable)
     #expect(RecorderStartFailure(error: error) == .serviceUnavailable)
-    #expect(RecorderStartFailure(error: error).actionTitle == "Retry recording")
+    #expect(RecorderStartFailure(error: error).actionTitle == "Try again")
     #expect(!localRecorderTargetWasRejected(error))
 }
 

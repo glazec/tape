@@ -1,6 +1,12 @@
 import AppKit
 import LocalRecorderCore
+import OSLog
 @preconcurrency import UserNotifications
+
+private let meetingPickerLogger = Logger(
+    subsystem: "tech.inevitable.meeting-note.local-recorder",
+    category: "meeting-picker"
+)
 
 struct RecorderEndPrompt: Identifiable {
     enum Reason { case silence, meetingClosed, captureEnded }
@@ -9,9 +15,9 @@ struct RecorderEndPrompt: Identifiable {
     let reason: Reason
     var detail: String {
         switch reason {
-        case .silence: "Both audio sources have been quiet. Finish this recording?"
+        case .silence: "No sound from your mic or Mac for a while. Finish this recording?"
         case .meetingClosed: "The meeting window closed. Finish this recording?"
-        case .captureEnded: "Meeting capture ended. Keep recording to continue with this Mac’s audio."
+        case .captureEnded: "The call app stopped sharing audio. Keep recording to continue with this Mac’s audio."
         }
     }
 }
@@ -68,6 +74,7 @@ extension RecorderAppModel {
         meetingPickerError = nil
         meetingPickerLoadFailed = false
         rejectedMeetingIDs = []
+        lastRejectedMeetingID = nil
         recordingStartFailure = nil
     }
 
@@ -263,6 +270,8 @@ extension RecorderAppModel {
                 meetingChoices.append(contentsOf: response.meetings)
                 meetingChoicesHaveMore = response.hasMore
             } catch {
+                // Decoding errors name the failing field, which a generic message hides.
+                meetingPickerLogger.error("Meeting list failed: \(String(describing: error), privacy: .public)")
                 guard generation == meetingSearchGeneration else { return }
                 meetingPickerError = "Couldn't load meetings"
                 meetingPickerLoadFailed = true
@@ -277,6 +286,7 @@ extension RecorderAppModel {
         isSwitchingMeeting = true
         meetingPickerLoadFailed = false
         meetingPickerError = nil
+        lastRejectedMeetingID = nil
         Task {
             defer { if captureSessionID == sessionID { isSwitchingMeeting = false } }
             do {
@@ -301,8 +311,8 @@ extension RecorderAppModel {
                 // The response may have been lost after a committed move. Keep
                 // the selector open and do not claim a destination was confirmed.
                 if localRecorderTargetWasRejected(error) {
-                    if let meetingId { rejectedMeetingIDs.insert(meetingId) }
-                    meetingPickerError = "That meeting can't take this recording. Choose another."
+                    if let meetingId { rejectedMeetingIDs.insert(meetingId); lastRejectedMeetingID = meetingId }
+                    meetingPickerError = "Can't take this recording · Choose another"
                 } else {
                     destinationUnconfirmed = true
                     meetingPickerError = "Couldn't confirm the meeting. Choose it again. Recording continues."

@@ -94,3 +94,52 @@ struct PermissionRow: View {
         .frame(height: 18)
     }
 }
+
+extension PermissionChecklist {
+    /// Steps of first-run setup already done, out of the four macOS permissions.
+    var grantedSetupCount: Int {
+        [microphone, screenCapture, accessibility, notifications].filter { $0 == .granted }.count
+    }
+
+    var allSetupGranted: Bool { grantedSetupCount == 4 }
+}
+
+/// First-run progress: what is done, what the button above asks for now, and what is left.
+struct SetupChecklist: View {
+    var checklist: PermissionChecklist
+
+    var body: some View {
+        // Same order as `nextRequiredPermission`, so the highlighted row is the one the button asks for.
+        let rows: [(String, PermissionGrant)] = [
+            ("Microphone", checklist.microphone),
+            ("Meeting detection (Accessibility)", checklist.accessibility),
+            ("Notifications", checklist.notifications),
+            ("Screen and system audio", checklist.screenCapture),
+        ]
+        let current = rows.firstIndex { $0.1 != .granted }
+        VStack(alignment: .leading, spacing: 0) {
+            ForEach(Array(rows.enumerated()), id: \.offset) { index, row in
+                HStack(spacing: 8) {
+                    Group {
+                        if row.1 == .granted {
+                            Image(systemName: "checkmark")
+                                .font(TapeType.sans(11, .semibold))
+                                .foregroundStyle(TapePalette.green)
+                        } else {
+                            Circle()
+                                .strokeBorder(index == current ? TapePalette.ink : TapePalette.ash, lineWidth: 1)
+                                .frame(width: 9, height: 9)
+                        }
+                    }
+                    .frame(width: 14)
+                    Text(row.0)
+                        .font(TapeType.sans(12, index == current ? .medium : .regular))
+                        .foregroundStyle(index == current ? TapePalette.ink : (row.1 == .granted ? TapePalette.muted : TapePalette.graphite))
+                }
+                .frame(height: 22)
+                .accessibilityElement(children: .combine)
+                .accessibilityValue(row.1 == .granted ? "Allowed" : (index == current ? "Next" : "Not allowed yet"))
+            }
+        }
+    }
+}
