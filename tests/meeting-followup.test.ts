@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -228,6 +229,20 @@ describe("compact followup grounding", () => {
     ).toBeNull();
     expect(
       getCurrentMeetingFollowup({ ...meeting, aiFollowup: { result } }),
+    ).toBeNull();
+  });
+
+  it("invalidates followups generated under the old offers and needs prompt", () => {
+    const sourceHash = createHash("sha256")
+      .update(JSON.stringify([1, source]))
+      .digest("hex");
+    expect(
+      getCurrentMeetingFollowup({
+        ...source,
+        status: "ready",
+        transcriptJobStatus: "completed",
+        aiFollowup: { sourceHash, result },
+      }),
     ).toBeNull();
   });
 });
