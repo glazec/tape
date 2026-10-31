@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   autoGenerateMeetingFollowup: vi.fn(),
+  getMeetingFollowupParentId: vi.fn().mockResolvedValue(null),
 }));
 vi.mock("@/lib/meeting-followup-generation", () => mocks);
 
@@ -11,13 +12,14 @@ import { ProviderCreditExhaustedError } from "@/lib/provider-credit";
 const meetingId = "11111111-1111-4111-8111-111111111111";
 const run = vi.fn(async (_name: string, fn: () => unknown) => fn());
 const sleep = vi.fn();
+const sendEvent = vi.fn();
 
 function execute(data: Record<string, unknown>) {
   return (
     generateMeetingFollowupOnTranscript as unknown as {
       fn: (input: unknown) => Promise<unknown>;
     }
-  ).fn({ event: { data }, step: { run, sleep } });
+  ).fn({ event: { data }, step: { run, sleep, sendEvent } });
 }
 
 afterEach(() => vi.clearAllMocks());
@@ -31,6 +33,17 @@ describe("automatic meeting followup", () => {
     });
     expect(mocks.autoGenerateMeetingFollowup).toHaveBeenCalledWith(meetingId);
     expect(sleep).not.toHaveBeenCalled();
+  });
+
+  it("refreshes a combined meeting when its continuation transcript completes", async () => {
+    const parentId = "22222222-2222-4222-8222-222222222222";
+    mocks.getMeetingFollowupParentId.mockResolvedValueOnce(parentId);
+    mocks.autoGenerateMeetingFollowup.mockResolvedValue({ status: "saved" });
+    await execute({ meetingId, sendCompletionEmail: true });
+    expect(sendEvent).toHaveBeenCalledWith("refresh-combined-followup", {
+      name: "meeting/generate.followup", data: { meetingId: parentId, sendCompletionEmail: true },
+    });
+    expect(mocks.autoGenerateMeetingFollowup).toHaveBeenCalledWith(meetingId);
   });
 
   it("ignores translation requests that reuse the enrichment event", async () => {

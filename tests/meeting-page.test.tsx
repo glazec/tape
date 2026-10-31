@@ -40,10 +40,6 @@ vi.mock("@/lib/share-recipient-suggestions", () => ({
 vi.mock("@/lib/meeting-share-service", () => ({
   listActiveMeetingShares: mocks.listShares,
 }));
-vi.mock("@/lib/meeting-display-status", () => ({
-  getMeetingDisplayStatus: ({ meetingStatus }: { meetingStatus: string }) =>
-    meetingStatus,
-}));
 vi.mock("@/lib/team-configuration", () => ({
   getTeamConfiguration: mocks.getTeamConfiguration,
 }));
@@ -534,7 +530,7 @@ describe("meeting page", () => {
       ),
     ).toContain("Zoom:Completed");
     mocks.getMeeting.mockResolvedValue(
-      meeting({ platform: "other", status: "processing" }),
+      meeting({ platform: "other", status: "processing", transcriptJobStatus: null }),
     );
     expect(
       renderToStaticMarkup(

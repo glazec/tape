@@ -1,3 +1,4 @@
+import { getRecallCalendarAccountEmail } from "@/lib/recall-calendar-account";
 import { CalendarAccountSelectionError } from "@/lib/calendar-account-selection";
 import {
   createCipheriv,
@@ -15,6 +16,7 @@ import { parseGoogleCalendarOAuthEnv } from "@/lib/google-calendar-oauth-env";
 import {
   createRecallCalendar,
   deleteRecallCalendar,
+  retrieveRecallCalendar,
   updateRecallCalendar,
 } from "@/lib/vendors/recall";
 import type { WorkspaceContext } from "@/lib/workspace";
@@ -109,7 +111,8 @@ export async function storeGoogleCalendarTokens(input: {
   refreshToken: string | null;
   accountEmail: string;
 }) {
-  const existing = await findGoogleCalendarConnection(input.workspace, input.accountEmail);
+  const existing = await findGoogleCalendarConnection(input.workspace, input.accountEmail)
+    ?? await findLegacyGoogleCalendarConnection(input.workspace, input.accountEmail);
   const encryptedAccessToken = encryptToken(input.accessToken);
   const encryptedRefreshToken = input.refreshToken
     ? encryptToken(input.refreshToken)
@@ -414,6 +417,36 @@ async function requestGoogleToken(params: Record<string, string>) {
   };
 }
 
+async function findLegacyGoogleCalendarConnection(workspace: WorkspaceContext, accountEmail: string) {
+  const connections = await db.select({
+    id: calendarConnections.id,
+    oauthRefreshToken: calendarConnections.oauthRefreshToken,
+    recallCalendarId: calendarConnections.recallCalendarId,
+    recallCalendarStatus: calendarConnections.recallCalendarStatus,
+  }).from(calendarConnections).where(and(
+    eq(calendarConnections.teamId, workspace.teamId),
+    eq(calendarConnections.userId, workspace.userId),
+    eq(calendarConnections.provider, "google"),
+    eq(calendarConnections.externalCalendarId, "primary"),
+    isNull(calendarConnections.accountEmail),
+  )).limit(100);
+
+  for (const connection of connections) {
+    // Legacy rows have no account identity. Verify the actual provider account;
+    // the sign-in email is not evidence that two calendar accounts are the same.
+    let email = connection.recallCalendarId
+      ? getRecallCalendarAccountEmail(await retrieveRecallCalendar(connection.recallCalendarId))
+      : null;
+    if (!email && connection.oauthRefreshToken) {
+      email = await getVerifiedGoogleCalendarEmail(
+        await refreshStoredGoogleCalendarAccessToken(connection.oauthRefreshToken),
+      );
+    }
+    if (email === accountEmail) return connection;
+  }
+  return null;
+}
+
 async function findGoogleCalendarConnection(workspace: WorkspaceContext, accountEmail?: string) {
   const [connection] = await db
     .select({
@@ -434,11 +467,7 @@ async function findGoogleCalendarConnection(workspace: WorkspaceContext, account
     )
     .limit(1);
 
-  if (connection || !accountEmail) {
-    return connection ?? null;
-  }
-
-  return findGoogleCalendarConnection(workspace);
+  return connection ?? null;
 }
 
 async function findGoogleCalendarConnectionById(

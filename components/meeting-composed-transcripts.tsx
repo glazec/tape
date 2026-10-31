@@ -26,6 +26,7 @@ export function MeetingComposedTranscripts({
     <div className="space-y-10">
       {meetings.map((meeting, index) => {
         const status = getMeetingDisplayStatus({
+          botState: meeting.botState,
           meetingStatus: meeting.status,
           transcriptJobStatus: meeting.transcriptJobStatus,
         });
@@ -46,6 +47,7 @@ export function MeetingComposedTranscripts({
         const waiting = [
           "scheduled",
           "joining",
+          "waiting_room",
           "recording",
           "processing",
           "queued",
@@ -81,6 +83,7 @@ export function MeetingComposedTranscripts({
                     meeting.translationSummary.translatedSegments,
                   translationStatus: meeting.translationSummary.status,
                 })}
+                audioPlayerPlacement="inline"
                 meetingId={meeting.canManage ? meeting.id : null}
                 audioParts={parts.length > 1 ? parts : undefined}
                 audioUrl={meeting.audioUrl}
@@ -156,6 +159,7 @@ function RecordingPartHeader({
   isPrimary: boolean;
 }) {
   const status = getMeetingDisplayStatus({
+    botState: meeting.botState,
     meetingStatus: meeting.status,
     transcriptJobStatus: meeting.transcriptJobStatus,
   });
@@ -202,6 +206,7 @@ function subscribe() {
 
 function emptyPartTitle(status: string) {
   if (status === "recording") return "Recording in progress";
+  if (status === "waiting_room") return "In waiting room";
   if (status === "joining") return "Bot joining";
   if (["processing", "queued", "transcribing"].includes(status))
     return "Preparing transcript";

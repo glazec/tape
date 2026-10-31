@@ -1,7 +1,7 @@
 import { and, eq } from "drizzle-orm";
 
 import { db } from "@/db/client";
-import { meetings, users } from "@/db/schema";
+import { meetingParts, meetings, users } from "@/db/schema";
 import { normalizeEmailDomain } from "@/lib/access";
 import { getComposedMeetingForFollowup } from "@/lib/meeting-composition";
 import {
@@ -22,6 +22,12 @@ import type { WorkspaceContext } from "@/lib/workspace";
 type ComposedFollowupMeeting = NonNullable<
   Awaited<ReturnType<typeof getComposedMeetingForFollowup>>
 >;
+
+export async function getMeetingFollowupParentId(sourceMeetingId: string) {
+  const [parent] = await db.select({ meetingId: meetingParts.meetingId })
+    .from(meetingParts).where(eq(meetingParts.sourceMeetingId, sourceMeetingId)).limit(1);
+  return parent?.meetingId ?? null;
+}
 
 export type MeetingFollowupGenerationOutcome =
   | { status: "saved"; result: MeetingFollowup }

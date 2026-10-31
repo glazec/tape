@@ -56,6 +56,8 @@ import {
 import { normalizeEmailAddress } from "@/lib/email-domains";
 import {
   getMeetingDisplayStatus,
+  getComposedMeetingState,
+  isActiveMeetingStatus,
   type TranscriptJobStatus,
 } from "@/lib/meeting-display-status";
 import { isRecentFailedMeetingBotRecoveryEligible } from "@/lib/meeting-bot-recovery-policy";
@@ -296,16 +298,16 @@ export async function listMeetingLibraryPageForWorkspace(
       title: meetings.title,
       calendarTitle: calendarEvents.title,
       platform: meetings.platform,
-      status: sql<(typeof meetings.$inferSelect)["status"]>`case
-        when ${meetings.status} = 'recording' or exists (select 1 from meeting_parts p join meetings child on child.id=p.source_meeting_id
-          where p.meeting_id=${meetings.id} and app_private.can_read_meeting(child.id) and child.status='recording') then 'recording'::meeting_status
-        when exists (select 1 from meeting_parts p join meetings child on child.id=p.source_meeting_id
-          where p.meeting_id=${meetings.id} and app_private.can_read_meeting(child.id) and child.status='scheduled') then 'scheduled'::meeting_status
-        when exists (select 1 from meeting_parts p join meetings child on child.id=p.source_meeting_id
-          where p.meeting_id=${meetings.id} and app_private.can_read_meeting(child.id) and child.status='processing') then 'processing'::meeting_status
-        when exists (select 1 from meeting_parts p join meetings child on child.id=p.source_meeting_id
-          where p.meeting_id=${meetings.id} and app_private.can_read_meeting(child.id) and child.status='failed') then 'failed'::meeting_status
-        else ${meetings.status} end`,
+      status: meetings.status,
+      sourceStates: sql<Array<{
+        status: (typeof meetings.$inferSelect)["status"];
+        botState: string | null;
+        kind: string;
+      }>>`coalesce((
+        select jsonb_agg(jsonb_build_object('status', child.status, 'botState', child.bot_state, 'kind', p.kind))
+        from meeting_parts p join meetings child on child.id = p.source_meeting_id
+        where p.meeting_id = ${meetings.id} and app_private.can_read_meeting(child.id)
+      ), '[]'::jsonb)`,
       transcriptJobStatus: sql<TranscriptJobStatus | null>`(
         select case
           when exists (
@@ -351,7 +353,10 @@ export async function listMeetingLibraryPageForWorkspace(
 
   // Hide previously imported itineraries before grouping and pagination.
   // Keep completed and in-progress meeting records visible.
-  const rows = storedRows.filter((meeting) => !(
+  const rows = storedRows.map((meeting) => ({
+    ...meeting,
+    ...getComposedMeetingState(meeting, meeting.sourceStates ?? []),
+  })).filter((meeting) => !(
     meeting.calendarTitle &&
     getExcludedCalendarEventKind(meeting.calendarTitle) &&
     meeting.platform === "in_person" &&
@@ -685,6 +690,7 @@ function shouldShowMeetingInLibrary(
 ) {
   return (
     meeting.status !== "scheduled" ||
+    isActiveMeetingStatus(getLibraryMeetingDisplayStatus(meeting)) ||
     meeting.platform === "in_person" ||
     new Date(meeting.startedAt).getTime() <= nowTime ||
     scheduledBotMeetingIds.has(meeting.id)
@@ -734,6 +740,7 @@ function toRelatedMeeting(meeting: MeetingListItem): MeetingListRelatedItem {
       ? { participantNames: meeting.participantNames }
       : {}),
     status: meeting.status,
+    botState: meeting.botState,
     transcriptJobStatus: meeting.transcriptJobStatus,
     hasRecallBot: meeting.hasRecallBot,
     accessScope: meeting.accessScope,
@@ -748,25 +755,7 @@ function toLibraryRootMeeting(input: {
   olderRelatedMeetings?: MeetingListRelatedItem[];
 }): MeetingListItem {
   return {
-    id: input.meeting.id,
-    title: input.meeting.title,
-    platform: input.meeting.platform,
-    status: input.meeting.status,
-    transcriptJobStatus: input.meeting.transcriptJobStatus,
-    hasRecallBot: input.meeting.hasRecallBot,
-    startedAt: input.meeting.startedAt,
-    endedAt: input.meeting.endedAt,
-    ...(typeof input.meeting.durationMs === "number"
-      ? { durationMs: input.meeting.durationMs }
-      : {}),
-    participantCount: input.meeting.participantCount,
-    ...(input.meeting.participantNames?.length
-      ? { participantNames: input.meeting.participantNames }
-      : {}),
-    accessScope: input.meeting.accessScope,
-    ...(input.meeting.primaryEntity
-      ? { primaryEntity: input.meeting.primaryEntity }
-      : {}),
+    ...toRelatedMeeting(input.meeting),
     ...(input.hasMoreRelatedMeetings ? { hasMoreRelatedMeetings: true } : {}),
     relatedMeetings: input.relatedMeetings,
     ...(input.olderRelatedMeetings ? { olderRelatedMeetings: input.olderRelatedMeetings } : {}),
@@ -798,6 +787,7 @@ function isFutureScheduledBotMeeting(
 ) {
   return (
     meeting.status === "scheduled" &&
+    !isActiveMeetingStatus(getLibraryMeetingDisplayStatus(meeting)) &&
     Boolean(meeting.hasRecallBot) &&
     new Date(meeting.startedAt).getTime() >= nowTime
   );
@@ -915,6 +905,14 @@ function getMeetingDurationMs(meeting: MeetingListItem) {
   return getTranscriptDurationMs(meeting.durationMs) ?? null;
 }
 
+function getLibraryMeetingDisplayStatus(meeting: MeetingListItem) {
+  return getMeetingDisplayStatus({
+    botState: meeting.botState,
+    meetingStatus: meeting.status,
+    transcriptJobStatus: meeting.transcriptJobStatus,
+  });
+}
+
 function matchesMeetingLibraryStatus(
   meeting: MeetingListItem,
   status: MeetingLibraryStatusFilter,
@@ -923,20 +921,10 @@ function matchesMeetingLibraryStatus(
     return true;
   }
 
-  const displayStatus = getMeetingDisplayStatus({
-    botState: meeting.botState,
-    meetingStatus: meeting.status,
-    transcriptJobStatus: meeting.transcriptJobStatus,
-  });
+  const displayStatus = getLibraryMeetingDisplayStatus(meeting);
 
   if (status === "in_progress") {
-    return (
-      displayStatus === "waiting_room" ||
-      displayStatus === "recording" ||
-      displayStatus === "queued" ||
-      displayStatus === "transcribing" ||
-      displayStatus === "processing"
-    );
+    return isActiveMeetingStatus(displayStatus);
   }
 
   return displayStatus === status;
@@ -1002,7 +990,7 @@ function getMeetingLibraryRank(
   meeting: MeetingListItem,
   scheduledBotMeetingIds: Set<string>,
 ) {
-  if (meeting.status === "recording" || meeting.status === "processing") {
+  if (meeting.status === "processing" || isActiveMeetingStatus(getLibraryMeetingDisplayStatus(meeting))) {
     return 0;
   }
 

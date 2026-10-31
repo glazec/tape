@@ -29,6 +29,19 @@ describe("CalendarSyncButton interactions", () => {
     expect(refresh).toHaveBeenCalled();
   });
 
+  it.each([false, true])("surfaces partial account failures (reconnect: %s)", async (reconnect) => {
+    vi.mocked(fetch).mockResolvedValueOnce(response({
+      syncedEventCount: 2, failedEventCount: 0, failedAccountCount: 1, reconnect,
+    }, 202));
+    const { unmount } = render(<CalendarSyncButton multipleAccounts />);
+    fireEvent.click(screen.getByRole("button", { name: "Sync calendar" }));
+    expect(await screen.findByText(/1 calendar account could not sync/)).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Manage accounts" }).getAttribute("href")).toBe("/settings/team#connected-accounts");
+    if (reconnect) expect(screen.getByText(/Reconnect the affected account/)).toBeTruthy();
+    expect(refresh).toHaveBeenCalled();
+    unmount();
+  });
+
   it("syncs only the selected connected email", async () => {
     vi.mocked(fetch).mockResolvedValueOnce(response({ syncedEventCount: 2 }));
     render(<CalendarSyncButton connectionId="account-two" teamId="company" />);

@@ -57,6 +57,8 @@ export async function POST(request: Request) {
     const targets = connectionIds.length > 1 ? connectionIds : [result.data.connectionId];
     const syncResults: Awaited<ReturnType<typeof syncRecallCalendarEventsForWorkspace>>[] = [];
     let firstError: unknown = null;
+    let failedAccountCount = 0;
+    let reconnect = false;
 
     for (const connectionId of targets) {
       try {
@@ -71,6 +73,8 @@ export async function POST(request: Request) {
         // One account failing should not hide events from the others.
         if (targets.length === 1) throw error;
         firstError ??= error;
+        failedAccountCount += 1;
+        reconnect ||= error instanceof RecallCalendarConnectionError;
         console.error("calendar_sync_account_failed", { connectionId, error });
       }
     }
@@ -99,7 +103,11 @@ export async function POST(request: Request) {
             syncedEventCount: syncResults.reduce((sum, item) => sum + (item.syncedEventCount ?? 0), 0),
           };
 
-    return Response.json({ ...summary, historyRepairQueued: true }, { status: 202 });
+    return Response.json({
+      ...summary,
+      ...(failedAccountCount > 0 ? { failedAccountCount, reconnect } : {}),
+      historyRepairQueued: true,
+    }, { status: 202 });
   } catch (error) {
     if (error instanceof CalendarAccountSelectionError) {
       return Response.json({ error: error.message, code: "calendar_account_required" }, { status: 409 });

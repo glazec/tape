@@ -9,6 +9,13 @@ import {
 } from "@/lib/dashboard-workflow-summary";
 
 describe("DashboardWorkflowSummary", () => {
+  it.each(["joining", "waiting_room"])("counts %s bots as active rather than overdue", (botState) => {
+    const summary = getDashboardWorkflowSummary([meeting({
+      status: "scheduled", botState, hasRecallBot: true, startedAt: "2026-06-27T11:00:00Z",
+    })], new Date("2026-06-27T12:00:00Z"));
+    expect(summary).toMatchObject({ activeWork: 1, overdueScheduled: 0, upcomingBotJoins: 0 });
+  });
+
   it("separates covered upcoming joins from meetings needing attention", () => {
     const summary = getDashboardWorkflowSummary(
       [
