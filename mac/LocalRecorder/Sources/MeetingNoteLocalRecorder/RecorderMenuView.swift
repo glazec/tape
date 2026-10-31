@@ -1016,11 +1016,9 @@ struct RecorderSettingsView: View {
                     textButton("Sign out", isDestructive: true, action: model.signOut)
                 }
                 textButton("Check for updates", action: model.checkForUpdates)
-                // macOS applies some grants only after a relaunch, so Restart is offered only during setup.
-                if !model.permissionChecklist.allSetupGranted {
-                    textButton(model.isRestarting ? "Restarting…" : "Restart", action: model.restartApp)
-                        .disabled(model.isRestarting || model.isRequestingPermissions)
-                }
+                // macOS applies some grants only after a relaunch.
+                textButton(model.isRestarting ? "Restarting…" : "Restart", action: model.restartApp)
+                    .disabled(model.isRestarting || model.isRequestingPermissions)
                 Spacer()
                 textButton("Quit", isDestructive: true, action: model.exitApp)
             }
