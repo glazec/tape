@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const { refresh } = vi.hoisted(() => ({ refresh: vi.fn() }));
@@ -89,6 +89,67 @@ describe("TranscriptViewer interactions", () => {
     );
   });
 
+  it("applies a selected participant before the save responds", async () => {
+    let finishSave!: (response: Response) => void;
+    vi.mocked(fetch).mockReturnValueOnce(new Promise((resolve) => { finishSave = resolve; }));
+    render(<TranscriptViewer meetingId="meeting" segments={[...segments, { ...segments[0]!, id: "seg_3", startMs: 60_000, endMs: 90_000, text: "closing words" }]} speakerSuggestions={[{ email: "alice@example.com", name: "Alice Smith" }]} />);
+    fireEvent.click(screen.getByRole("button", { name: "Rename Speaker 1 everywhere" }));
+    const option = await screen.findByRole("option", { name: /Alice Smith.*alice@example.com/ });
+    fireEvent.pointerDown(option, { pointerType: "mouse" });
+    fireEvent.click(option);
+
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(screen.queryByLabelText("Speaker name")).toBeNull();
+    expect(screen.getAllByRole("button", { name: "Edit speaker Alice Smith" })).toHaveLength(2);
+    expect(screen.getByRole("button", { name: "Edit speaker Speaker 2" })).toBeTruthy();
+    expect(screen.getByRole("status").textContent).toContain("Saving speaker");
+    expect(JSON.parse(String(vi.mocked(fetch).mock.calls[0]?.[1]?.body))).toMatchObject({ speaker: "Alice Smith", participantEmail: "alice@example.com", rememberName: false });
+
+    fireEvent.click(screen.getByRole("button", { name: "Rename Speaker 2 everywhere" }));
+    expect(screen.queryByLabelText("Speaker name")).toBeNull();
+    await act(async () => { finishSave(new Response(null, { status: 200 })); });
+    expect(screen.queryByText("Saving speaker…")).toBeNull();
+    expect(screen.getAllByRole("button", { name: "Edit speaker Alice Smith" })).toHaveLength(2);
+  });
+
+  it("applies a keyboard selection only to the chosen line", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(new Response(null, { status: 200 }));
+    render(<TranscriptViewer meetingId="meeting" segments={[...segments, { ...segments[0]!, id: "seg_3", startMs: 60_000, endMs: 90_000, text: "closing words" }]} speakerSuggestions={[{ email: "alice@example.com", name: "Alice Smith" }]} />);
+    fireEvent.click(within(document.getElementById("seg_1")!).getByRole("button", { name: "Edit speaker Speaker 1" }));
+    fireEvent.click(screen.getByRole("button", { name: "This line" }));
+    const input = screen.getByLabelText("Speaker name");
+    fireEvent.keyDown(input, { key: "ArrowDown" });
+    fireEvent.keyDown(input, { key: "Enter" });
+    await waitFor(() => expect(fetch).toHaveBeenCalledTimes(1));
+    expect(JSON.parse(String(vi.mocked(fetch).mock.calls[0]?.[1]?.body))).toMatchObject({ speaker: "Alice Smith", applyTo: "segment", segmentId: "seg_1", rememberName: false });
+    expect(screen.getByRole("button", { name: "Edit speaker Alice Smith" })).toBeTruthy();
+    expect(within(document.getElementById("seg_3")!).getByRole("button", { name: "Edit speaker Speaker 1" })).toBeTruthy();
+  });
+
+  it.each(["http", "network"])("restores names and retries the selected participant after a %s failure", async (failure) => {
+    let finishSave!: (response: Response) => void;
+    let failSave!: (error: Error) => void;
+    vi.mocked(fetch).mockReturnValueOnce(new Promise((resolve, reject) => { finishSave = resolve; failSave = reject; }));
+    render(<TranscriptViewer meetingId="meeting" segments={segments} speakerSuggestions={[{ email: "alice@example.com", name: "Alice Smith" }]} />);
+    fireEvent.click(screen.getByRole("button", { name: "Rename Speaker 1 everywhere" }));
+    const option = await screen.findByRole("option", { name: /Alice Smith.*alice@example.com/ });
+    fireEvent.pointerDown(option, { pointerType: "mouse" });
+    fireEvent.click(option);
+    expect(screen.getByRole("button", { name: "Edit speaker Alice Smith" })).toBeTruthy();
+    await act(async () => {
+      if (failure === "http") finishSave(new Response(null, { status: 500 }));
+      else failSave(new Error("offline"));
+    });
+    expect(screen.getByRole("alert").textContent).toContain("could not be saved");
+    expect(screen.getByRole("button", { name: "Edit speaker Speaker 1" })).toBeTruthy();
+    expect(screen.getByLabelText("Speaker name")).toHaveProperty("value", "Alice Smith");
+    vi.mocked(fetch).mockResolvedValueOnce(new Response(null, { status: 200 }));
+    fireEvent.click(screen.getByRole("button", { name: "Save speaker" }));
+    await waitFor(() => expect(screen.queryByText("Saving speaker…")).toBeNull());
+    expect(screen.getByRole("button", { name: "Edit speaker Alice Smith" })).toBeTruthy();
+    expect(fetch).toHaveBeenCalledTimes(2);
+  });
+
   it("validates, saves, scopes, and cancels speaker edits", async () => {
     vi.mocked(fetch).mockResolvedValueOnce(new Response(null, { status: 200 }));
     render(
@@ -120,10 +181,9 @@ describe("TranscriptViewer interactions", () => {
     const restoredAliceOption = await screen.findByRole("option", {
       name: /Alice Smith.*alice@example.com/,
     });
+    fireEvent.click(screen.getByRole("button", { name: "This line" }));
     fireEvent.pointerDown(restoredAliceOption, { pointerType: "mouse" });
     fireEvent.click(restoredAliceOption);
-    fireEvent.click(screen.getByRole("button", { name: "This line" }));
-    fireEvent.click(screen.getByRole("button", { name: "Save speaker" }));
     await waitFor(() =>
       expect(screen.queryByLabelText("Speaker name")).toBeNull(),
     );
@@ -188,18 +248,47 @@ describe("TranscriptViewer interactions", () => {
   });
 
   it("retains the chosen email while editing its preferred name, and supports meeting only correction", async () => {
-    vi.mocked(fetch).mockResolvedValueOnce(new Response(null, { status: 200 }));
+    vi.mocked(fetch).mockResolvedValue(new Response(null, { status: 200 }));
     render(<TranscriptViewer meetingId="meeting" segments={segments} speakerSuggestions={[{ name: "Yiping", email: "yiping@iosf.vc" }, { name: "Yiping", email: "yiping@other.vc" }]} />);
     fireEvent.click(screen.getByRole("button", { name: "Edit speaker Speaker 1" }));
     expect(screen.queryByRole("checkbox", { name: /Remember for future meetings/ })).toBeNull();
     const choice = await screen.findByRole("option", { name: /Yiping.*yiping@iosf.vc/ });
     fireEvent.pointerDown(choice, { pointerType: "mouse" });
     fireEvent.click(choice);
+    await waitFor(() => expect(screen.queryByText("Saving speaker…")).toBeNull());
+    expect(JSON.parse(String(vi.mocked(fetch).mock.calls[0]?.[1]?.body))).toMatchObject({ speaker: "Yiping", participantEmail: "yiping@iosf.vc", rememberName: false });
+    fireEvent.click(screen.getByRole("button", { name: "Edit speaker Yiping" }));
     fireEvent.change(screen.getByLabelText("Speaker name"), { target: { value: "Yiping Chen" } });
     fireEvent.click(screen.getByRole("checkbox", { name: /Remember for future meetings/ }));
     fireEvent.click(screen.getByRole("button", { name: "Save speaker" }));
-    await waitFor(() => expect(fetch).toHaveBeenCalledTimes(1));
-    expect(JSON.parse(String(vi.mocked(fetch).mock.calls[0]?.[1]?.body))).toMatchObject({ speaker: "Yiping Chen", participantEmail: "yiping@iosf.vc", rememberName: false });
+    await waitFor(() => expect(fetch).toHaveBeenCalledTimes(2));
+    expect(JSON.parse(String(vi.mocked(fetch).mock.calls[1]?.[1]?.body))).toMatchObject({ speaker: "Yiping Chen", participantEmail: "yiping@iosf.vc", rememberName: false });
+  });
+
+  it("preserves separately selected emails for participants with the same name", async () => {
+    vi.mocked(fetch).mockResolvedValue(new Response(null, { status: 200 }));
+    render(<TranscriptViewer meetingId="meeting" segments={[
+      segments[0]!,
+      { ...segments[1]!, id: "middle", speaker: "Moderator", startMs: 30_000, endMs: 40_000 },
+      { ...segments[1]!, startMs: 40_000 },
+    ]} speakerSuggestions={[{ name: "Yiping", email: "yiping@iosf.vc" }, { name: "Yiping", email: "yiping@other.vc" }]} />);
+    fireEvent.click(screen.getByRole("button", { name: "Rename Speaker 2 everywhere" }));
+    const otherChoice = await screen.findByRole("option", { name: /Yiping.*yiping@other.vc/ });
+    fireEvent.pointerDown(otherChoice, { pointerType: "mouse" });
+    fireEvent.click(otherChoice);
+    await waitFor(() => expect(screen.queryByText("Saving speaker…")).toBeNull());
+
+    fireEvent.click(screen.getByRole("button", { name: "Rename Speaker 1 everywhere" }));
+    const choice = await screen.findByRole("option", { name: /Yiping.*yiping@iosf.vc/ });
+    fireEvent.pointerDown(choice, { pointerType: "mouse" });
+    fireEvent.click(choice);
+    await waitFor(() => expect(screen.queryByText("Saving speaker…")).toBeNull());
+
+    fireEvent.click(within(document.getElementById("seg_2")!).getByRole("button", { name: "Edit speaker Yiping" }));
+    expect(screen.getByRole("checkbox", { name: /Remember for future meetings.*yiping@other.vc/ })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Cancel speaker edit" }));
+    fireEvent.click(within(document.getElementById("seg_1")!).getByRole("button", { name: "Edit speaker Yiping" }));
+    expect(screen.getByRole("checkbox", { name: /Remember for future meetings.*yiping@iosf.vc/ })).toBeTruthy();
   });
 
   it("does not infer email from a local part or remember this line corrections", async () => {

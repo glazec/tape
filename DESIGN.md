@@ -349,6 +349,8 @@ Show Continue recording near the notes and transcript when a supported capture h
 
 Keep Merge meetings in the overflow menu. Use a searchable list with title, date, and processing state, then a compact confirmation with Undo. Show recent meetings first and future meetings afterward; use the creation date when a recording has no start time. Pending transcripts remain eligible. Combined pages show chronological parts, original source links, and independent audio and transcript states. Private notes remain attached to the current page. Explain the scope of sharing beside the sharing control.
 
+Choosing a suggested participant immediately updates the speaker name and saves the meeting correction. Show quiet saving feedback and restore the previous names with a retryable editor if saving fails. Typed names use Save or Enter. Selecting a suggestion does not remember a name for future meetings; reopening the correction retains the explicitly selected email for that optional choice.
+
 Speaker correction preserves the selected participant email and offers Remember this name only for an identified person and an all matching lines edit. Keep this option separate from the primary correction and never infer identity from a first name alone.
 
 ## Unresolved meeting visibility
