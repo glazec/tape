@@ -36,17 +36,37 @@ private enum LocalRecorderAppVersion {
 private let externalURLDispatcher = LocalRecorderExternalURLDispatcher()
 
 @MainActor
-private final class LocalRecorderUpdater {
+private final class LocalRecorderUpdater: NSObject, SPUUpdaterDelegate {
     static let shared = LocalRecorderUpdater()
+    private(set) var requiresSafeQuit = false
 
-    private let controller = SPUStandardUpdaterController(
+    private lazy var controller = SPUStandardUpdaterController(
         startingUpdater: true,
-        updaterDelegate: nil,
+        updaterDelegate: self,
         userDriverDelegate: nil
     )
 
+    override init() {
+        super.init()
+        _ = controller
+    }
+
     func checkForUpdates() {
         controller.checkForUpdates(nil)
+    }
+
+    func updater(_ updater: SPUUpdater, willInstallUpdate item: SUAppcastItem) {
+        requiresSafeQuit = true
+    }
+
+    func updater(
+        _ updater: SPUUpdater,
+        willInstallUpdateOnQuit item: SUAppcastItem,
+        immediateInstallationBlock: @escaping () -> Void
+    ) -> Bool {
+        requiresSafeQuit = true
+        // Keep Sparkle's scheduler and installation on quit; never request a restart here.
+        return false
     }
 }
 
@@ -61,7 +81,9 @@ private final class LocalRecorderAppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
-        recorderAppModel.canCloseApp(allowPendingUploads: true) ? .terminateNow : .terminateCancel
+        recorderAppModel.canCloseApp(
+            allowPendingUploads: !LocalRecorderUpdater.shared.requiresSafeQuit
+        ) ? .terminateNow : .terminateCancel
     }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
@@ -1362,7 +1384,7 @@ final class RecorderAppModel: NSObject, ObservableObject, UNUserNotificationCent
 
     func canCloseApp(allowPendingUploads: Bool = false) -> Bool {
         let captureBusy = isRecording || isFinishingRecording || isStartingRecording
-        let pending = pendingUploadCount > 0 || !recoveryState.targets.isEmpty || recoveryState.pendingStart != nil || recoveryState.pendingLegacyIntent != nil
+        let pending = pendingUploadCount > 0 || !recoveryState.targets.isEmpty || !recoveryState.sdkDrains.isEmpty || recoveryState.pendingStart != nil || recoveryState.pendingLegacyIntent != nil
         guard captureBusy || pending else { return true }
         let alert = NSAlert()
         alert.alertStyle = .warning

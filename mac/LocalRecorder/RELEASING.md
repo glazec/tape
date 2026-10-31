@@ -2,6 +2,8 @@
 
 The recorder uses Sparkle 2 to check for and install updates automatically. Release archives and the Sparkle appcast are hosted in GitHub Releases.
 
+Automatic checks and background downloads are enabled by default. Downloaded updates install on quit. Once an update is ready to install, quit waits for recording startup, active capture, finalization, uploads, and SDK capture recovery to finish. The updater does not offer the app's Quit anyway override while an update is pending. Without a pending update, that explicit override remains available for saved uploads.
+
 The app uses a stable private code signing certificate. It is not signed with an Apple Developer ID certificate and is not notarized. The stable identity preserves macOS permission grants across releases. Sparkle update archives are also signed with EdDSA so installed apps can verify future downloads.
 
 The release target is arm64 macOS 15 or newer. The workflow uses Node.js 24 for the bundled sidecar and Swift Testing for the recorder package.
@@ -30,6 +32,8 @@ No Apple Developer or App Store Connect secrets are required for this release mo
 The embedded `SPARKLE_FEED_URL` points to the stable `macos-appcast` release in `glazec/tape`. `tests/local-recorder-packaging.test.ts` verifies that this origin stays aligned with the repository URL in `package.json`.
 
 Release and local builds both use a UTC timestamp in `YYYYMMDDHHMMSS` format for `CFBundleVersion`. Sparkle compares this value rather than the displayed semantic version. Do not replace it with a Git commit count or another lower numbering scheme.
+
+Release packaging requires an explicit `APP_VERSION` in `MAJOR.MINOR.PATCH` format, supplied by the workflow tag or manual input. Local builds default to the nearest reachable desktop release tag followed by `-dev`, such as `0.3.6-dev`; source without a release tag uses `0.0.0-dev`. An explicit local `APP_VERSION` is preserved. This prevents a fresh local build from being mislabeled as `0.2.0`. A local build timestamp newer than the published appcast correctly receives no update until a newer release is published.
 
 ## Publish a release
 
