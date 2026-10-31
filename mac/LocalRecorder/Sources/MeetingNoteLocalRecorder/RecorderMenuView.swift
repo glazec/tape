@@ -147,6 +147,10 @@ struct RecorderMenuView: View {
         .onGeometryChange(for: CGFloat.self, of: { $0.size.height }) { height in
             if !showsWindowChrome { panelWindow.fit(contentHeight: height) }
         }
+        // While the panel and the content resize together, keep the content against the
+        // top edge so sections open downward instead of the whole panel shifting. The
+        // setup window sizes itself to the content, so it keeps the fixed height.
+        .frame(maxHeight: showsWindowChrome ? nil : .infinity, alignment: .top)
         .background(HostingWindowReader { panelWindow.window = $0 })
         .background(TapePalette.paper.ignoresSafeArea())
         .foregroundStyle(TapePalette.ink)
@@ -581,7 +585,16 @@ final class PanelWindowFitter {
         var frame = window.frame
         frame.origin.y += frame.height - height
         frame.size.height = height
-        window.setFrame(frame, display: true)
+        guard window.isVisible else {
+            window.setFrame(frame, display: true)
+            return
+        }
+        // Match TapeDisclosureStyle's timing so the panel edge moves with the content.
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = 0.15
+            context.timingFunction = CAMediaTimingFunction(name: .easeOut)
+            window.animator().setFrame(frame, display: true)
+        }
     }
 }
 
@@ -616,6 +629,38 @@ private struct RecorderSummaryState {
     var actionTitle: String
     var actionKind: RecorderActionButtonStyle.Kind
     var isActionDisabled: Bool
+}
+
+/// The system disclosure only toggles from its small arrow; here the whole label row does.
+struct TapeDisclosureStyle: DisclosureGroupStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Button {
+                withAnimation(.easeOut(duration: 0.15)) {
+                    configuration.isExpanded.toggle()
+                }
+            } label: {
+                HStack(spacing: 6) {
+                    configuration.label
+                    Spacer(minLength: 8)
+                    Image(systemName: "chevron.right")
+                        .font(TapeType.sans(10, .semibold))
+                        .foregroundStyle(TapePalette.muted)
+                        .rotationEffect(.degrees(configuration.isExpanded ? 90 : 0))
+                }
+                .padding(.vertical, 4)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityValue(configuration.isExpanded ? "Expanded" : "Collapsed")
+
+            if configuration.isExpanded {
+                configuration.content
+                    .transition(.opacity)
+            }
+        }
+    }
 }
 
 struct RecorderActionButtonStyle: ButtonStyle {
@@ -982,6 +1027,7 @@ struct RecorderSettingsView: View {
         }
         .font(TapeType.sans(12))
         .tint(TapePalette.graphite)
+        .disclosureGroupStyle(TapeDisclosureStyle())
         .padding(.horizontal, 20)
         .padding(.bottom, 16)
         .frame(maxWidth: .infinity, alignment: .leading)

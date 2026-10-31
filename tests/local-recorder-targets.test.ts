@@ -6,7 +6,7 @@ import { listLocalRecorderRecordingMeetings, setLocalRecorderRecordingTarget } f
 const workspace = { teamId: "team", userId: "user", domain: "", canCreateMeetings: true };
 afterEach(() => { databaseSql.mockReset(); databaseSql.transaction.mockReset(); });
 describe("recording targets", () => {
-  it("pages the person's own meetings and preserves nullable schedule fields", async () => {
+  it("pages the meetings the person is in and preserves nullable schedule fields", async () => {
     databaseSql.mockResolvedValue(Array.from({ length: 101 }, (_, i) => ({ meetingId: String(i), title: "Old meeting", startsAt: null, endsAt: null, status: "ready" })));
     const result = await listLocalRecorderRecordingMeetings({ workspace, query: "Old", offset: 100 });
     expect(result.meetings).toHaveLength(100);
@@ -14,8 +14,9 @@ describe("recording targets", () => {
     expect(result.meetings[0].startsAt).toBeNull();
     const query = databaseSql.mock.calls[0][0].join("?");
     expect(query).toContain("m.owner_user_id = ");
-    expect(query).not.toContain("membership.role in ('owner', 'admin')");
-    expect(query).not.toContain("meeting_access");
+    // Attended meetings count only through active participant access, never a bare admin role.
+    expect(query).toContain("ma.source = 'participant' and ma.revoked_at is null)\n        and exists");
+    expect(query).not.toMatch(/or exists \(\s*select 1 from team_memberships/);
     expect(databaseSql.mock.calls[0]).toContain(100);
   });
   it("rejects a shared only workspace before writing", async () => {
