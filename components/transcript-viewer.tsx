@@ -2,7 +2,6 @@
 
 import {
   type ChangeEvent,
-  type FormEvent,
   type MouseEvent,
   type PointerEvent,
   type RefObject,
@@ -406,6 +405,8 @@ export function TranscriptViewer({
   const [speakerError, setSpeakerError] = useState<string | null>(null);
   const [speakerApplyScope, setSpeakerApplyScope] =
     useState<SpeakerApplyScope>("matching_speaker");
+  const speakerSavePendingRef = useRef(false);
+  const participantEmailsBySegmentId = useRef(new Map<string, string>());
   const [savingSpeakerKey, setSavingSpeakerKey] = useState<string | null>(null);
   const [errorSpeakerKey, setErrorSpeakerKey] = useState<string | null>(null);
   const [isRequestingTranslation, setIsRequestingTranslation] = useState(false);
@@ -857,6 +858,8 @@ export function TranscriptViewer({
   }
 
   function startEditing(speaker: string | null, segmentId?: string) {
+    if (speakerSavePendingRef.current) return;
+
     const speakerStat = speakerStatByRawKey.get(getSpeakerKey(speaker));
     const speakerKey = speakerStat?.speakerKey ?? getSpeakerKey(speaker);
     const targetSegmentId =
@@ -887,7 +890,11 @@ export function TranscriptViewer({
     });
     const initialSpeaker = speakerStat?.speaker ?? speaker ?? "";
 
-    setParticipantEmail(getFullParticipantEmail(speaker) ?? getFullParticipantEmail(initialSpeaker));
+    setParticipantEmail(
+      participantEmailsBySegmentId.current.get(targetSegmentId) ??
+      getFullParticipantEmail(speaker) ??
+      getFullParticipantEmail(initialSpeaker),
+    );
     setRememberName(true);
     setSpeakerError(null);
     setDraftSpeaker(initialSpeaker);
@@ -896,11 +903,14 @@ export function TranscriptViewer({
     setErrorSpeakerKey(null);
   }
 
-  async function saveSpeaker(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const speaker = draftSpeaker.trim();
+  async function saveSpeaker(
+    name = draftSpeaker,
+    email = participantEmail,
+    shouldRemember = rememberName,
+  ) {
+    const speaker = name.trim();
 
-    if (!meetingId || !editingSpeaker || savingSpeakerKey) {
+    if (!meetingId || !editingSpeaker || speakerSavePendingRef.current) {
       return;
     }
 
@@ -912,8 +922,22 @@ export function TranscriptViewer({
       return;
     }
 
+    const updatedSegments = applySpeakerUpdateToSegments(
+      segments,
+      editingSpeaker,
+      speakerApplyScope,
+      speaker,
+    );
+    const previousSpeakers = new Map(
+      segments
+        .filter((segment, index) => updatedSegments[index] !== segment)
+        .map((segment) => [segment.id, segment.speaker]),
+    );
+    speakerSavePendingRef.current = true;
     setSavingSpeakerKey(speakerKey);
     setErrorSpeakerKey(null);
+    setSegments(updatedSegments);
+    setEditingSpeaker(null);
 
     try {
       const response = await fetch(
@@ -927,29 +951,37 @@ export function TranscriptViewer({
             currentSpeaker: editingSpeaker.currentSpeaker,
             segmentId: editingSpeaker.segmentId,
             speaker,
-            ...(speakerApplyScope === "matching_speaker" && participantEmail ? { participantEmail } : {}),
-            rememberName: speakerApplyScope === "matching_speaker" && Boolean(participantEmail) && rememberName,
+            ...(speakerApplyScope === "matching_speaker" && email ? { participantEmail: email } : {}),
+            rememberName: speakerApplyScope === "matching_speaker" && Boolean(email) && shouldRemember,
           }),
         },
       );
       if (!response.ok) throw new Error("Speaker name could not be saved. Try again.");
+      for (const [id, previousSpeaker] of previousSpeakers) {
+        const matchesSource = speakerApplyScope === "segment" ||
+          getSpeakerKey(previousSpeaker) === getSpeakerKey(editingSpeaker.currentSpeaker) ||
+          Boolean(previousSpeaker && editingSpeaker.speakerAliases.includes(previousSpeaker));
+        if (!matchesSource) continue;
+        if (email) participantEmailsBySegmentId.current.set(id, email);
+        else participantEmailsBySegmentId.current.delete(id);
+      }
     } catch {
+      setSegments((currentSegments) => currentSegments.map((segment) =>
+        previousSpeakers.has(segment.id)
+          ? { ...segment, speaker: previousSpeakers.get(segment.id)! }
+          : segment,
+      ));
+      setEditingSpeaker(editingSpeaker);
+      setDraftSpeaker(speaker);
+      setParticipantEmail(email);
+      setRememberName(shouldRemember);
       setErrorSpeakerKey(speakerKey);
       setSpeakerError("Speaker name could not be saved. Try again.");
       return;
     } finally {
+      speakerSavePendingRef.current = false;
       setSavingSpeakerKey(null);
     }
-
-    setSegments((currentSegments) =>
-      applySpeakerUpdateToSegments(
-        currentSegments,
-        editingSpeaker,
-        speakerApplyScope,
-        speaker,
-      ),
-    );
-    setEditingSpeaker(null);
   }
 
   async function requestTranslation() {
@@ -992,7 +1024,13 @@ export function TranscriptViewer({
     showScope: boolean;
   }) {
     return (
-      <form className="flex w-full max-w-xl flex-col gap-2" onSubmit={saveSpeaker}>
+      <form
+        className="flex w-full max-w-xl flex-col gap-2"
+        onSubmit={(event) => {
+          event.preventDefault();
+          void saveSpeaker();
+        }}
+      >
         <div className="flex min-w-0 flex-wrap items-start gap-1.5">
           <div className="relative min-w-[min(100%,18rem)] flex-1">
             <Combobox<SpeakerSuggestion>
@@ -1016,7 +1054,12 @@ export function TranscriptViewer({
                 if (suggestion) {
                   setDraftSpeaker(suggestion.name);
                   setParticipantEmail(getFullParticipantEmail(suggestion.email));
-                  setRememberName(true);
+                  setRememberName(false);
+                  void saveSpeaker(
+                    suggestion.name,
+                    getFullParticipantEmail(suggestion.email),
+                    false,
+                  );
                 }
               }}
               open
@@ -1335,6 +1378,11 @@ export function TranscriptViewer({
               <h3 className="text-xs font-medium text-muted-foreground">
                 Speakers
               </h3>
+              {savingSpeakerKey !== null ? (
+                <p className="mt-1 text-xs text-muted-foreground" role="status">
+                  Saving speaker…
+                </p>
+              ) : null}
               <div className="mt-2 flex min-w-0 flex-wrap items-center gap-x-4 gap-y-1">
                 {visibleSpeakerStats.map((speaker) => {
                   const speakerLabel = speaker.speaker ?? "Unknown speaker";
@@ -1411,6 +1459,7 @@ export function TranscriptViewer({
                         {canEditSpeakers ? (
                           <Button
                             aria-label={`Rename ${speakerLabel} everywhere`}
+                            disabled={savingSpeakerKey !== null}
                             onClick={() => startEditing(speaker.speaker)}
                             size="icon-xs"
                             title={`Rename ${speakerLabel} everywhere`}
@@ -1578,6 +1627,7 @@ export function TranscriptViewer({
                         ) : canEditSpeakers ? (
                           <button
                             aria-label={`Edit speaker ${speakerLabel}`}
+                            disabled={savingSpeakerKey !== null}
                             className="group inline-flex min-h-8 items-center gap-2 rounded-lg px-0 text-left text-sm font-semibold text-foreground outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
                             onClick={() =>
                               startEditing(segment.speaker, segment.id)
