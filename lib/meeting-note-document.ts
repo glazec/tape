@@ -18,11 +18,47 @@ export const noteAnswerSchema = z.strictObject({
 });
 export type NoteAnswer = z.infer<typeof noteAnswerSchema>;
 
-export const noteBlockSchema = z.strictObject({
-  id: z.string().min(1).max(100),
-  text: z.string().max(20_000),
-  answer: noteAnswerSchema.optional(),
-});
+export const noteMomentSchema = z
+  .strictObject({
+    start: z.number().int().nonnegative().max(20_000),
+    text: z
+      .string()
+      .regex(/^\[(?:Moment|\d{1,4}:[0-5]\d:[0-5]\d|\d{1,5}:[0-5]\d)\]$/),
+    sourceMeetingId: z.string().min(1).max(100),
+    capturedAt: z.iso.datetime({ offset: true }).optional(),
+    playbackMs: z.number().int().nonnegative().optional(),
+  })
+  .refine(
+    (moment) =>
+      (moment.capturedAt === undefined) !== (moment.playbackMs === undefined),
+    "A moment needs one capture anchor",
+  );
+export type NoteMoment = z.infer<typeof noteMomentSchema>;
+
+export const noteBlockSchema = z
+  .strictObject({
+    id: z.string().min(1).max(100),
+    text: z.string().max(20_000),
+    answer: noteAnswerSchema.optional(),
+    moments: z.array(noteMomentSchema).max(500).optional(),
+  })
+  .superRefine((block, context) => {
+    const positions = new Set<number>();
+    for (const moment of block.moments ?? []) {
+      if (
+        block.text.slice(moment.start, moment.start + moment.text.length) !==
+          moment.text ||
+        positions.has(moment.start)
+      ) {
+        context.addIssue({
+          code: "custom",
+          message: "Moment does not match its note",
+          path: ["moments"],
+        });
+      }
+      positions.add(moment.start);
+    }
+  });
 export type NoteBlock = z.infer<typeof noteBlockSchema>;
 
 export function noteQuestion(text: string): string | null {

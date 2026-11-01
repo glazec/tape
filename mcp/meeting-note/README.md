@@ -8,7 +8,7 @@ FastMCP server for authenticated Tape access. Python 3.13 or newer is required.
 
 It exposes caller identity, a canonical authorized meeting inventory, schema discovery, common SQL templates, safe read only SQL, protected application URLs for meeting audio and images, and a backend mediated local audio upload flow. See the [complete tool and access contract](../../docs/meeting-note-mcp-api.md).
 
-Personal notes entered in My notes on the web meeting page are not exposed through MCP. Sharing a meeting does not share personal notes.
+Personal notes entered in My notes on the web meeting page, including timestamp anchors, are not exposed through MCP. Browser calendar destination selection does not add a destination parameter to MCP tools. Sharing a meeting does not share personal notes.
 
 Inline answers to personal note questions stay private with the author. MCP tools do not expose these questions, generated answers, or manually edited answers.
 

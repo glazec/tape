@@ -50,7 +50,7 @@ jobs:
           TAPE_RECORDER_TEST_DATABASE: postgresql://ci:ci@127.0.0.1:5432/tape_workflow_test
         run: |
           psql "$DATABASE_URL" --set ON_ERROR_STOP=1 --command 'CREATE DATABASE tape_workflow_test'
-          npx vitest run tests/local-recorder-targets.integration.test.ts
+          npx vitest run tests/local-recorder-targets.integration.test.ts tests/upload-recording-import.integration.test.ts tests/recording-timeline.integration.test.ts
       - name: Replay every migration on an empty database
         shell: bash
         run: |

@@ -3,15 +3,25 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Popover } from "@base-ui/react/popover";
-import { Check, Copy, LoaderCircle, RefreshCw } from "lucide-react";
+import { Check, Copy, LoaderCircle, Pencil, RefreshCw } from "lucide-react";
 
+import { ConnectionEditor } from "@/components/connection-editor";
 import { Button } from "@/components/ui/button";
 import type { MeetingFollowup as Followup } from "@/lib/meeting-followup";
 import { buildMeetingResearchPrompt } from "@/lib/meeting-research-prompt";
+import { connectionRelationshipLabels, isOrganizationSpeaker, SPEAKER_LABELS_CHANGED, type ConnectionChanges, type MeetingConnection, type SpeakerLabelsChanged } from "@/lib/meeting-connections";
+
+const EMPTY_CONNECTIONS: MeetingConnection[] = [];
+const EMPTY_IDS: string[] = [];
 
 export function MeetingFollowup({
   canGenerate,
   initialResult,
+  initialConnections = EMPTY_CONNECTIONS,
+  initialConnectionsRevision = "",
+  initialConnectionIds = EMPTY_IDS,
+  organizationDomains = [],
+  participants = [],
   meetingId,
   meetingTitle,
   meetingStartedAt,
@@ -20,13 +30,26 @@ export function MeetingFollowup({
 }: {
   canGenerate: boolean;
   initialResult: Followup | null;
+  initialConnections?: MeetingConnection[];
+  initialConnectionsRevision?: string;
+  initialConnectionIds?: string[];
+  organizationDomains?: string[];
+  participants?: Array<{ name: string | null; email: string }>;
   meetingId: string;
   meetingTitle: string;
   meetingStartedAt: string | null;
   sourceHash: string;
-  segments: Array<{ id: string; startMs: number; speaker: string | null }>;
+  segments: Array<{ id: string; startMs: number; speaker: string | null; text?: string }>;
 }) {
   const [result, setResult] = useState(initialResult);
+  const [connections, setConnections] = useState(initialResult?.connections ?? initialConnections);
+  const [speakerOverrides, setSpeakerOverrides] = useState<Record<string, string | null>>({});
+  const [speakerIdentities, setSpeakerIdentities] = useState<Record<string, { label: string | null; identity: string | null }>>({});
+  const [connectionsRevision, setConnectionsRevision] = useState(initialConnectionsRevision);
+  const [connectionIds, setConnectionIds] = useState(initialConnectionIds);
+  const editingRef = useRef<number | null>(null);
+  const pendingSnapshot = useRef<(() => void) | null>(null);
+  const [editingConnection, setEditingConnection] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [announcement, setAnnouncement] = useState("");
@@ -36,12 +59,49 @@ export function MeetingFollowup({
     const timer = setTimeout(() => setToast(null), 4000);
     return () => clearTimeout(timer);
   }, [toast]);
+  useEffect(() => {
+    const applySnapshot = () => {
+      setResult(initialResult);
+      setConnections(initialResult?.connections ?? initialConnections);
+      setConnectionsRevision(initialConnectionsRevision);
+      setConnectionIds(initialConnectionIds);
+    };
+    if (editingRef.current !== null) pendingSnapshot.current = applySnapshot;
+    else applySnapshot();
+  }, [initialResult, initialConnections, initialConnectionsRevision, initialConnectionIds]);
   const pending = useRef<AbortController | null>(null);
   const headingId = useId();
   const router = useRouter();
   useEffect(() => () => pending.current?.abort(), []);
+  useEffect(() => {
+    const update = (event: Event) => {
+      const changes = (event as CustomEvent<SpeakerLabelsChanged>).detail;
+      const visible = changes.filter(change => segments.some(segment => segment.id === change.id));
+      if (visible.length) {
+        setSpeakerOverrides(current => ({ ...current, ...Object.fromEntries(visible.map(change => [change.id, change.speaker])) }));
+        setSpeakerIdentities(current => ({ ...current, ...Object.fromEntries(visible.map(change => [change.id,
+          { label: change.speaker, identity: change.participantEmail ?? (participants.some(person => person.name === change.speaker || person.email === change.speaker)
+            ? change.speaker : current[change.id]?.identity ?? segments.find(segment => segment.id === change.id)?.speaker ?? null) },
+        ])) }));
+      }
+    };
+    window.addEventListener(SPEAKER_LABELS_CHANGED, update);
+    return () => window.removeEventListener(SPEAKER_LABELS_CHANGED, update);
+  }, [segments, participants]);
 
-  if (!canGenerate && !result) return null;
+  const [previousSegments, setPreviousSegments] = useState(segments);
+  if (segments !== previousSegments) {
+    setPreviousSegments(segments);
+    setSpeakerOverrides(current => {
+      const acknowledged = segments.filter(segment => segment.id in current && current[segment.id] === segment.speaker);
+      if (!acknowledged.length) return current;
+      const next = { ...current };
+      for (const segment of acknowledged) delete next[segment.id];
+      return next;
+    });
+  }
+
+  if (!canGenerate && !result && !connections.length) return null;
 
   async function generate() {
     if (pending.current) return;
@@ -69,6 +129,7 @@ export function MeetingFollowup({
           response.status === 409
         ) {
           setResult(null);
+          setConnections([]);
           router.refresh();
         }
         throw new Error(
@@ -76,6 +137,9 @@ export function MeetingFollowup({
         );
       }
       setResult(data.result);
+      setConnections(data.result.connections ?? []);
+      setConnectionsRevision(data.connectionsRevision ?? "");
+      setConnectionIds(data.connectionIds ?? []);
       setAnnouncement("Followup ready.");
     } catch (cause) {
       if (controller.signal.aborted) return;
@@ -89,6 +153,38 @@ export function MeetingFollowup({
       if (!controller.signal.aborted) setBusy(false);
       pending.current = null;
     }
+  }
+
+  async function saveConnection(changes: ConnectionChanges) {
+    const response = await fetch(`/api/meetings/${encodeURIComponent(meetingId)}/connections`, {
+      method: "PATCH", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ revision: connectionsRevision, index: editingConnection, changes }),
+    });
+    const data = await response.json();
+    if (!response.ok) {
+      const failure = new Error(data.error || "Connection could not be saved. Try again.");
+      Object.assign(failure, { conflict: response.status === 409 });
+      throw failure;
+    }
+    setConnections(data.connections);
+    setConnectionsRevision(data.revision);
+    setConnectionIds(data.connectionIds ?? []);
+    pendingSnapshot.current = null;
+    setAnnouncement("Connection saved.");
+    router.refresh();
+  }
+
+  async function reloadConnection() {
+    const targetId = editingConnection === null ? undefined : connectionIds[editingConnection];
+    if (!targetId) throw new Error("The original connection is unavailable. Keep or copy your draft before closing.");
+    const response = await fetch(`/api/meetings/${encodeURIComponent(meetingId)}/connections`);
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || "Could not load the latest version. Try again.");
+    const index = data.connectionIds.indexOf(targetId);
+    if (index < 0) throw new Error("This connection's source changed. Your draft is still here; copy it before closing.");
+    setConnections(data.connections); setConnectionIds(data.connectionIds); setConnectionsRevision(data.revision);
+    editingRef.current = index; setEditingConnection(index);
+    return data.connections[index] as MeetingConnection;
   }
 
   async function copyResearch(item: Followup["research"][number]) {
@@ -106,7 +202,7 @@ export function MeetingFollowup({
     }
   }
 
-  function renderEvidence(evidence: Followup["research"][number]["evidence"]) {
+  function renderEvidence(evidence: Array<{ segmentId: string; quote?: string }>) {
     return (
       <div className="mt-1 flex flex-wrap items-center gap-x-1">
         <span className="mr-1 text-xs text-muted-foreground">Source</span>
@@ -143,7 +239,7 @@ export function MeetingFollowup({
                       Transcript · {timestamp}
                     </Popover.Title>
                     <Popover.Description className="mt-2 max-h-60 overflow-y-auto break-words text-sm leading-6">
-                      “{evidence.quote}”
+                      “{evidence.quote ?? segment.text}”
                     </Popover.Description>
                     <Popover.Close
                       render={<a href={`#${evidence.segmentId}`} />}
@@ -186,6 +282,53 @@ export function MeetingFollowup({
     );
   }
 
+  const connectionGroups = new Map<string, MeetingConnection[]>();
+  for (const connection of connections) {
+    const segment = segments.find(segment => segment.id === connection.speakerSegmentId);
+    if (!segment) continue;
+    const speaker = (segment.id in speakerOverrides ? speakerOverrides[segment.id] : segment.speaker) || "Unknown speaker";
+    const group = connectionGroups.get(speaker) ?? [];
+    group.push(connection);
+    connectionGroups.set(speaker, group);
+  }
+
+  const orderedGroups = [...connectionGroups].sort(([, first], [, second]) => {
+    const internal = (items: MeetingConnection[]) => items.every(item => {
+      const label = item.speakerSegmentId in speakerOverrides ? speakerOverrides[item.speakerSegmentId] : segments.find(segment => segment.id === item.speakerSegmentId)?.speaker ?? null;
+      const known = speakerIdentities[item.speakerSegmentId];
+      return isOrganizationSpeaker(known?.label === label ? known.identity : label, participants, organizationDomains);
+    });
+    return Number(internal(first)) - Number(internal(second));
+  });
+  const editorConnection = editingConnection === null ? null : connections[editingConnection];
+  const speakerOptions = new Map<string, { id: string; name: string }>();
+  for (const segment of segments) {
+    const name = (segment.id in speakerOverrides ? speakerOverrides[segment.id] : segment.speaker) || "Unknown speaker";
+    if (!speakerOptions.has(name) || segment.id === editorConnection?.speakerSegmentId) speakerOptions.set(name, { id: segment.id, name });
+  }
+
+  function renderConnections(items: MeetingConnection[]) {
+    return <ul className="space-y-4">
+      {items.map((item, index) => (
+        <li key={index} className="min-w-0 text-sm leading-6">
+          <p className="break-words font-medium">
+            <a href={`#${item.speakerSegmentId}`} className="rounded-sm underline decoration-muted-foreground/40 underline-offset-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+              {item.name ?? { person: "Unnamed person", team: "Unnamed team", project: "Unnamed project" }[item.kind]}
+            </a>
+            {item.company && item.company !== item.name ? <><span className="font-normal text-muted-foreground"> · </span><a href={`#${item.evidence[0].segmentId}`} className="rounded-sm font-normal underline decoration-muted-foreground/40 underline-offset-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">{item.company}</a></> : null}
+            {item.title ? <span className="font-normal text-muted-foreground"> · {item.title}</span> : null}
+          </p>
+          <p className="text-xs text-muted-foreground">{connectionRelationshipLabels[item.relationship]}{item.mutual ? <span className="ml-2 font-medium text-foreground">Mutual connection</span> : null}</p>
+          <p className="mt-1 max-w-[52ch] break-words text-pretty">{item.context}</p>
+          <div className="flex items-end justify-between gap-2">
+            {renderEvidence(item.evidence)}
+            {canGenerate && connectionsRevision ? <Button type="button" variant="ghost" size="icon-sm" className="min-h-11 min-w-11 shrink-0 text-muted-foreground" disabled={busy} aria-label={`Edit connection: ${item.name ?? item.company ?? "Unnamed " + item.kind}`} onClick={() => { editingRef.current = connections.indexOf(item); setEditingConnection(editingRef.current); }}><Pencil aria-hidden="true" className="size-3.5" /></Button> : null}
+          </div>
+        </li>
+      ))}
+    </ul>;
+  }
+
   const generateButton = canGenerate ? (
     <Button
       className={
@@ -194,7 +337,7 @@ export function MeetingFollowup({
           : "min-h-11 gap-2 sm:min-h-8"
       }
       title={result && !error ? "Regenerate followup" : undefined}
-      disabled={busy}
+      disabled={busy || editingConnection !== null}
       onClick={generate}
       size={result && !error ? "icon-sm" : "sm"}
       variant={error || !result ? "outline" : "ghost"}
@@ -292,13 +435,32 @@ export function MeetingFollowup({
                 </div>
               ) : null}
             </div>
-            {!error && canGenerate ? (
-              <div className="mt-2 flex justify-end">{generateButton}</div>
-            ) : null}
           </>
         ) : (
           <div className="pb-1">{!error ? generateButton : null}</div>
         )}
+        {connectionGroups.size ? (
+          <div className={result ? "mt-5" : "mt-3"}>
+            <h3 className="mb-3 text-sm font-semibold">Potential connections</h3>
+            <div className="max-w-[60ch] space-y-5">
+              {orderedGroups.map(([speaker, items]) => (
+                <section key={speaker} aria-label={`Connections mentioned by ${speaker}`}>
+                  <h4 className="mb-2 text-sm font-semibold">@{speaker}</h4>
+                  {renderConnections(items.slice(0, 3))}
+                  {items.length > 3 ? (
+                    <details className="mt-2">
+                      <summary className="min-h-11 cursor-pointer content-center rounded-sm text-sm text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">Show {items.length - 3} more connections</summary>
+                      <div className="mt-2">{renderConnections(items.slice(3))}</div>
+                    </details>
+                  ) : null}
+                </section>
+              ))}
+            </div>
+          </div>
+        ) : null}
+        {result && !error && canGenerate ? (
+          <div className="mt-2 flex justify-end">{generateButton}</div>
+        ) : null}
         {error ? (
           <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-destructive/20 bg-destructive/5 p-3">
             <p className="min-w-0 flex-1 text-sm leading-6 text-destructive" role="alert">
@@ -308,6 +470,7 @@ export function MeetingFollowup({
           </div>
         ) : null}
       </section>
+      {editorConnection ? <ConnectionEditor connection={editorConnection} speakers={[...speakerOptions.values()]} onClose={() => { editingRef.current = null; setEditingConnection(null); pendingSnapshot.current?.(); pendingSnapshot.current = null; }} onReload={reloadConnection} onSave={saveConnection} /> : null}
       <div
         role={toast?.error ? "alert" : "status"}
         aria-atomic="true"

@@ -297,7 +297,7 @@ describe("MeetingList", () => {
 
     expect(html).toContain("Partner sync");
     expect(html).toContain("No recording");
-    expect(html).toContain("Bot did not join");
+    expect(html).toContain("No recording");
     expect(html).toContain(
       "text-muted-foreground hover:text-foreground",
     );

@@ -27,13 +27,15 @@ vi.mock("@/db/client", () => ({
 vi.mock("@/lib/meeting-composition", () => ({
   getComposedMeetingForFollowup: mocks.composed,
 }));
-vi.mock("@/lib/meeting-followup-source", () => ({
+vi.mock("@/lib/meeting-followup-source", async importOriginal => ({
+  ...await importOriginal<typeof import("@/lib/meeting-followup-source")>(),
   getCurrentMeetingFollowup: mocks.current,
   getFollowupSource: (meeting: { title: string; segments: unknown[] }) => ({
     title: meeting.title,
     segments: meeting.segments,
   }),
   getFollowupSourceHash: () => "a".repeat(64),
+  getConnectionsSourceHash: () => "c".repeat(64),
   isFollowupReady: mocks.ready,
 }));
 vi.mock("@/lib/meeting-write-policy", () => ({
@@ -72,6 +74,8 @@ describe("autoGenerateMeetingFollowup", () => {
   it("generates and saves as the meeting owner", async () => {
     expect(await autoGenerateMeetingFollowup(meetingId)).toEqual({
       status: "saved",
+      connectionIds: [],
+      connectionsRevision: expect.stringMatching(/^[a-f0-9]{64}$/),
       result: { todos: [], dynamics: [] },
     });
     expect(mocks.composed).toHaveBeenCalledWith(

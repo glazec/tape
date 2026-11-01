@@ -10,14 +10,17 @@ import {
 import {
   buildPendingUploadObjectKey,
   putObject,
+  getObjectMetadata,
+  ObjectAlreadyExistsError,
   UnsafeObjectKeySegmentError,
 } from "@/lib/r2";
 import {
   createUploadedAudioTranscription,
   createUploadedVideoTranscription,
 } from "@/lib/transcription-records";
+import { RecordingImportError } from "@/lib/recording-import-error";
 import { SharedOnlyAccessError } from "@/lib/access-errors";
-import { normalizeRecordingDurationMs } from "@/lib/recording-duration";
+import { MAX_RECORDING_DURATION_MS, normalizeRecordingDurationMs } from "@/lib/recording-duration";
 import { titleFromUploadFileName } from "@/lib/upload-titles";
 import {
   getUploadMediaFromFile,
@@ -37,6 +40,12 @@ import {
 export const runtime = "nodejs";
 
 const uploadStartedAtSchema = z.iso.datetime();
+const destinationSchema = z.object({
+  meetingId: z.uuid().optional(),
+  title: z.string().trim().min(1).max(300).optional(),
+  uploadId: z.string().min(1).optional(),
+  durationMs: z.coerce.number().int().positive().max(MAX_RECORDING_DURATION_MS).optional(),
+});
 
 export async function POST(request: Request) {
   const user = await getCurrentUser();
@@ -63,6 +72,12 @@ export async function POST(request: Request) {
 
     const formData = await request.formData().catch(() => null);
     const file = formData?.get("meeting-audio");
+    const destination = destinationSchema.safeParse({
+      meetingId: formData?.get("meetingId") ?? undefined,
+      title: formData?.get("title") ?? undefined,
+      uploadId: formData?.get("uploadId") ?? undefined,
+      durationMs: formData?.get("durationMs") ?? undefined,
+    });
     const startedAt = parseUploadStartedAt(formData?.get("startedAt"));
     const durationMs = normalizeRecordingDurationMs(
       Number(formData?.get("durationMs")),
@@ -74,7 +89,8 @@ export async function POST(request: Request) {
       !(file instanceof File) ||
       file.size === 0 ||
       !uploadMedia ||
-      startedAt === null
+      startedAt === null ||
+      !destination.success
     ) {
       return Response.json(
         { error: "Invalid audio upload request" },
@@ -89,7 +105,7 @@ export async function POST(request: Request) {
       );
     }
 
-    const uploadId = crypto.randomUUID();
+    const uploadId = destination.data.uploadId ?? crypto.randomUUID();
     const key = buildPendingUploadObjectKey({
       userId: user.id,
       uploadId,
@@ -97,17 +113,27 @@ export async function POST(request: Request) {
     });
     const body = new Uint8Array(await file.arrayBuffer());
 
-    await putObject({
-      key,
-      body,
-      contentType: uploadMedia.contentType,
-    });
+    try {
+      await putObject({
+        key,
+        body,
+        contentType: uploadMedia.contentType,
+        ...(destination.data.uploadId ? { onlyIfAbsent: true } : {}),
+      });
+    } catch (error) {
+      if (!(error instanceof ObjectAlreadyExistsError)) throw error;
+      const existing = await getObjectMetadata({ key });
+      if (existing.contentLength !== file.size || existing.contentType !== uploadMedia.contentType) {
+        throw new RecordingImportError("This upload belongs to another file. Select the recording again.");
+      }
+    }
 
     if (uploadMedia.kind === "audio") {
       const transcription = await createUploadedAudioTranscription({
         sessionUser: user,
         objectKey: key,
-        title: titleFromUploadFileName(file.name),
+        title: destination.data.title ?? titleFromUploadFileName(file.name),
+      ...(destination.data.meetingId ? { meetingId: destination.data.meetingId } : {}),
         ...(startedAt ? { startedAt } : {}),
         ...(durationMs ? { durationMs } : {}),
         fileSizeBytes: file.size,
@@ -131,7 +157,7 @@ export async function POST(request: Request) {
           queued: true,
           key,
           meetingId: transcription.meetingId,
-          redirectTo: "/dashboard",
+          redirectTo: `/meetings/${transcription.meetingId}`,
         },
         { status: 202 },
       );
@@ -140,7 +166,8 @@ export async function POST(request: Request) {
     const transcription = await createUploadedVideoTranscription({
       sessionUser: user,
       objectKey: key,
-      title: titleFromUploadFileName(file.name),
+      title: destination.data.title ?? titleFromUploadFileName(file.name),
+      ...(destination.data.meetingId ? { meetingId: destination.data.meetingId } : {}),
       ...(startedAt ? { startedAt } : {}),
       ...(durationMs ? { durationMs } : {}),
       fileSizeBytes: file.size,
@@ -172,11 +199,14 @@ export async function POST(request: Request) {
         queued: true,
         key,
         meetingId: transcription.meetingId,
-        redirectTo: "/dashboard",
+        redirectTo: `/meetings/${transcription.meetingId}`,
       },
       { status: 202 },
     );
   } catch (error) {
+    if (error instanceof RecordingImportError) {
+      return Response.json({ error: error.message }, { status: error.status });
+    }
     const rateLimitResponse = requestRateLimitErrorResponse(error);
 
     if (rateLimitResponse) {

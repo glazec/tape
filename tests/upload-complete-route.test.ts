@@ -87,6 +87,38 @@ describe("POST /api/uploads/complete", () => {
     vi.resetModules();
   });
 
+  it("preserves the explicit destination, title and recording interval", async () => {
+    getCurrentUser.mockResolvedValue({ id: "user_123", email: "user@example.com", name: null });
+    getObjectMetadata.mockResolvedValue({ contentLength: 1024, contentType: "audio/mpeg" });
+    createUploadedAudioTranscription.mockResolvedValue({ meetingId: "22222222-2222-4222-8222-222222222222", transcriptJobId: "job" });
+    const response = await postUploadComplete({
+      uploadId: "upload", meetingId: "22222222-2222-4222-8222-222222222222", title: "  Chosen title  ",
+      startedAt: "2026-10-19T15:41:00.000Z", durationMs: 5127900,
+    });
+    expect(response.status).toBe(202);
+    expect(createUploadedAudioTranscription).toHaveBeenCalledWith(expect.objectContaining({
+      meetingId: "22222222-2222-4222-8222-222222222222", title: "Chosen title",
+      startedAt: new Date("2026-10-19T15:41:00.000Z"), durationMs: 5127900,
+    }));
+  });
+
+  it.each([403, 409] as const)("returns actionable target failure %s", async (status) => {
+    const { RecordingImportError } = await import("@/lib/recording-import-error");
+    getCurrentUser.mockResolvedValue({ id: "user_123", email: "user@example.com", name: null });
+    getObjectMetadata.mockResolvedValue({ contentLength: 1024, contentType: "audio/mpeg" });
+    createUploadedAudioTranscription.mockRejectedValue(new RecordingImportError("Choose a different meeting", status));
+    const response = await postUploadComplete({ uploadId: "upload", meetingId: "22222222-2222-4222-8222-222222222222" });
+    expect(response.status).toBe(status);
+    expect(await response.json()).toEqual({ error: "Choose a different meeting" });
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it.each([{ title: "   " }, { title: "x".repeat(301) }, { meetingId: "invalid" }])("rejects invalid destination %j", async (fields) => {
+    getCurrentUser.mockResolvedValue({ id: "user_123", email: "user@example.com", name: null });
+    expect((await postUploadComplete({ uploadId: "upload", ...fields })).status).toBe(400);
+    expect(getObjectMetadata).not.toHaveBeenCalled();
+  });
+
   it("returns 401 when the request is unauthenticated", async () => {
     getCurrentUser.mockResolvedValue(null);
 
@@ -148,7 +180,7 @@ describe("POST /api/uploads/complete", () => {
       queued: true,
       key: "users/user_123/uploads/11111111-1111-4111-8111-111111111111.mp3",
       meetingId: "22222222-2222-4222-8222-222222222222",
-      redirectTo: "/dashboard",
+      redirectTo: "/meetings/22222222-2222-4222-8222-222222222222",
     });
     expect(getObjectMetadata).toHaveBeenCalledWith({
       key: "users/user_123/uploads/11111111-1111-4111-8111-111111111111.mp3",
@@ -369,7 +401,7 @@ describe("POST /api/uploads/complete", () => {
       queued: true,
       key: "users/user_123/uploads/11111111-1111-4111-8111-111111111111.m4a",
       meetingId: "22222222-2222-4222-8222-222222222222",
-      redirectTo: "/dashboard",
+      redirectTo: "/meetings/22222222-2222-4222-8222-222222222222",
     });
     expect(createUploadedAudioTranscription).toHaveBeenCalledWith({
       sessionUser: {
@@ -434,7 +466,7 @@ describe("POST /api/uploads/complete", () => {
       queued: true,
       key: "users/user_123/uploads/11111111-1111-4111-8111-111111111111.mp4",
       meetingId: "22222222-2222-4222-8222-222222222222",
-      redirectTo: "/dashboard",
+      redirectTo: "/meetings/22222222-2222-4222-8222-222222222222",
     });
     expect(createUploadedAudioTranscription).not.toHaveBeenCalled();
     expect(createUploadedVideoTranscription).toHaveBeenCalledWith({

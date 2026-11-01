@@ -64,6 +64,7 @@ export async function completeManualTranscriptUpload(input: {
   }));
 
   await databaseSql.transaction((txn) => [
+    txn`select pg_advisory_xact_lock(hashtextextended(${`recording-timeline:${input.meetingId}`}, 0))`,
     txn`
       insert into transcript_jobs (
         id,

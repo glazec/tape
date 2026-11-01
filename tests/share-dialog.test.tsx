@@ -4,6 +4,13 @@ import { describe, expect, it } from "vitest";
 import { ShareDialog } from "@/components/share-dialog";
 
 describe("ShareDialog", () => {
+  it("does not imply that an empty recipient list excludes workspace administrators", () => {
+    const html = renderToStaticMarkup(<ShareDialog meetingId="11111111-1111-4111-8111-111111111111" initialShares={[]} teamMembers={[]} instanceId="empty" />);
+    expect(html).toContain("No additional recipients have been added.");
+    expect(html).toContain("Workspace administrators retain access to this meeting.");
+    expect(html).not.toContain("No one beyond the meeting owner");
+  });
+
   it("renders colleague oriented sharing controls without exposing the raw meeting id", () => {
     const html = renderToStaticMarkup(
       <ShareDialog
@@ -46,7 +53,7 @@ describe("ShareDialog", () => {
     expect(html).not.toContain("Share this meeting with");
     expect(html).not.toContain("Share with organization");
     expect(html).not.toContain("Share with Investment committee");
-    expect(html).toContain("People with access");
+    expect(html).toContain("Participants and recipients");
     expect(html).toContain("Meeting Participant");
     expect(html).toContain("participant@example.com");
     expect(html).toContain("guest@example.com");

@@ -18,6 +18,7 @@ import {
   createUploadedAudioTranscription,
   createUploadedVideoTranscription,
 } from "@/lib/transcription-records";
+import { RecordingImportError } from "@/lib/recording-import-error";
 import { SharedOnlyAccessError } from "@/lib/access-errors";
 import {
   MAX_RECORDING_DURATION_MS,
@@ -40,6 +41,8 @@ const completeUploadSchema = z.strictObject({
   extension: z.string().trim().toLowerCase().min(1).default("mp3"),
   contentType: z.string().trim().toLowerCase().min(1).default("audio/mpeg"),
   fileName: z.string().optional(),
+  meetingId: z.uuid().optional(),
+  title: z.string().trim().min(1).max(300).optional(),
   durationMs: z.number().int().positive().max(MAX_RECORDING_DURATION_MS).optional(),
   startedAt: z.iso.datetime().optional(),
 });
@@ -100,9 +103,9 @@ export async function POST(request: Request) {
       );
     }
 
-    const title = result.data.fileName
+    const title = result.data.title ?? (result.data.fileName
       ? titleFromUploadFileName(result.data.fileName)
-      : undefined;
+      : undefined);
     const startedAt = result.data.startedAt
       ? new Date(result.data.startedAt)
       : undefined;
@@ -111,6 +114,7 @@ export async function POST(request: Request) {
       const transcription = await createUploadedAudioTranscription({
         sessionUser: user,
         objectKey: key,
+        ...(result.data.meetingId ? { meetingId: result.data.meetingId } : {}),
         ...(title ? { title } : {}),
         ...(startedAt ? { startedAt } : {}),
         ...(durationMs ? { durationMs } : {}),
@@ -135,7 +139,7 @@ export async function POST(request: Request) {
           queued: true,
           key,
           meetingId: transcription.meetingId,
-          redirectTo: "/dashboard",
+          redirectTo: `/meetings/${transcription.meetingId}`,
         },
         { status: 202 },
       );
@@ -144,6 +148,7 @@ export async function POST(request: Request) {
     const transcription = await createUploadedVideoTranscription({
       sessionUser: user,
       objectKey: key,
+      ...(result.data.meetingId ? { meetingId: result.data.meetingId } : {}),
       ...(title ? { title } : {}),
       ...(startedAt ? { startedAt } : {}),
       ...(durationMs ? { durationMs } : {}),
@@ -176,11 +181,14 @@ export async function POST(request: Request) {
         queued: true,
         key,
         meetingId: transcription.meetingId,
-        redirectTo: "/dashboard",
+        redirectTo: `/meetings/${transcription.meetingId}`,
       },
       { status: 202 },
     );
   } catch (error) {
+    if (error instanceof RecordingImportError) {
+      return Response.json({ error: error.message }, { status: error.status });
+    }
     const creditResponse = providerCreditErrorResponse(error);
 
     if (creditResponse) {

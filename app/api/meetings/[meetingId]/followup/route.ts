@@ -46,7 +46,7 @@ export async function POST(
     switch (outcome.status) {
       case "saved":
         return Response.json(
-          { result: outcome.result },
+          { result: outcome.result, connectionsRevision: outcome.connectionsRevision, connectionIds: outcome.connectionIds },
           { headers: { "Cache-Control": "private, no-store" } },
         );
       case "not_found":
