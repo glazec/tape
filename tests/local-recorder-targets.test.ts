@@ -24,13 +24,13 @@ describe("recording targets", () => {
     expect(databaseSql.transaction).not.toHaveBeenCalled();
   });
   it.each([undefined, "same-token"])("returns the selected target and preserves an active token %s", async (fallbackIntentId) => {
-    databaseSql.transaction.mockResolvedValue([[], [], [{ meetingId: "meeting", meetingTitle: "Review", startsAt: null, endsAt: null }]]);
+    databaseSql.transaction.mockResolvedValue([[], [], [], [{ meetingId: "meeting", meetingTitle: "Review", startsAt: null, endsAt: null }]]);
     const result = await setLocalRecorderRecordingTarget({ workspace, deviceId: "mac", now: new Date(), meetingId: "meeting", fallbackIntentId });
     expect(result.meetingId).toBe("meeting");
     expect(result.fallbackIntentId).toEqual(fallbackIntentId ?? expect.any(String));
   });
   it("rejects inaccessible, cancelled, stopped or competing targets without creating an orphan", async () => {
-    databaseSql.transaction.mockResolvedValue([[], [], []]);
+    databaseSql.transaction.mockResolvedValue([[], [], [], []]);
     await expect(setLocalRecorderRecordingTarget({ workspace, deviceId: "mac", now: new Date(), fallbackIntentId: "stopped", title: "New" })).rejects.toThrow("unavailable");
   });
 });

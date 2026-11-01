@@ -52,6 +52,7 @@ export async function dispatchQueuedUploadTranscriptions(
         or(
           eq(meetings.platform, "upload"),
           isNotNull(transcriptJobs.mediaAssetId),
+          and(eq(mediaAssets.source, "upload"), eq(mediaAssets.type, "transcript_source")),
         ),
         eq(transcriptJobs.provider, "elevenlabs"),
         eq(transcriptJobs.status, "queued"),

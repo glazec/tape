@@ -8,6 +8,7 @@ const { refresh } = vi.hoisted(() => ({ refresh: vi.fn() }));
 vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh }) }));
 
 import { TranscriptViewer, type TranscriptSegment } from "@/components/transcript-viewer";
+import { MeetingFollowup } from "@/components/meeting-followup";
 
 const segments: TranscriptSegment[] = [
   { id: "seg_1", speaker: "Speaker 1", startMs: 0, endMs: 30_000, text: "raw opening words", polishedText: "Polished opening words", translatedText: "开场白", emotionLabel: "hard" },
@@ -50,6 +51,14 @@ describe("TranscriptViewer interactions", () => {
     });
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
+  });
+
+  it("keeps every cited source target when duplicate transcript lines collapse", () => {
+    render(<TranscriptViewer segments={[segments[0], { ...segments[0], id: "duplicate-source" }]} />);
+    expect(document.getElementById("duplicate-source")).toBeTruthy();
+    expect(document.getElementById("seg_1")).toBeTruthy();
+    expect(document.querySelectorAll("[data-transcript-word-index=\"0\"]")).toHaveLength(1);
+    expect(document.getElementById("seg_1")?.textContent).toContain("Polished opening words");
   });
 
   it("switches transcript language and text version", async () => {
@@ -208,6 +217,30 @@ describe("TranscriptViewer interactions", () => {
     fireEvent.click(screen.getByRole("button", { name: "Save speaker" }));
     expect(await screen.findByText("Speaker name could not be saved. Try again.")).toBeTruthy();
     expect(screen.getByLabelText("Speaker name")).toBeTruthy();
+  });
+
+  it("renames the connection group with the transcript and restores both on save failure", async () => {
+    let complete!: (response: Response) => void;
+    vi.mocked(fetch).mockImplementationOnce(() => new Promise(resolve => { complete = resolve; }));
+    render(<>
+      <MeetingFollowup canGenerate={false} initialResult={null} meetingId="meeting" meetingTitle="Meeting" meetingStartedAt={null} sourceHash="hash" segments={segments} initialConnections={[{
+        kind: "team", name: "Debt team", company: "Citi", title: null,
+        context: "Works with the debt team.", relationship: "works_with", speakerSegmentId: "seg_1",
+        evidence: [{ segmentId: "seg_1" }],
+      }]} />
+      <TranscriptViewer meetingId="meeting" segments={segments} />
+    </>);
+    fireEvent.click(screen.getByRole("button", { name: "Rename Speaker 1 everywhere" }));
+    fireEvent.change(screen.getByLabelText("Speaker name"), { target: { value: "Alice" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save speaker" }));
+    expect(screen.getByRole("heading", { name: "@Alice" })).toBeTruthy();
+    await act(async () => complete(new Response(null, { status: 500 })));
+    expect(screen.getByRole("heading", { name: "@Speaker 1" })).toBeTruthy();
+    expect(screen.queryByRole("heading", { name: "@Alice" })).toBeNull();
+    vi.mocked(fetch).mockResolvedValueOnce(new Response(null, { status: 200 }));
+    fireEvent.click(screen.getByRole("button", { name: "Save speaker" }));
+    await waitFor(() => expect(refresh).toHaveBeenCalled());
+    expect(screen.getByRole("heading", { name: "@Alice" })).toBeTruthy();
   });
 
   it("submits the typed speaker name when suggestions are visible", async () => {

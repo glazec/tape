@@ -40,6 +40,7 @@ vi.mock("@/lib/share-recipient-suggestions", () => ({
 vi.mock("@/lib/meeting-share-service", () => ({
   listActiveMeetingShares: mocks.listShares,
 }));
+vi.mock("@/lib/organization-workspaces", () => ({ getOrganizationBotSettings: vi.fn().mockResolvedValue({ domains: ["iosg.vc", "iosf.vc"], preferredBotDomain: null }) }));
 vi.mock("@/lib/team-configuration", () => ({
   getTeamConfiguration: mocks.getTeamConfiguration,
 }));
@@ -547,7 +548,7 @@ describe("meeting page", () => {
     expect(mocks.notFound).toHaveBeenCalled();
   });
 
-  it("renders followup before the transcript and replaces cached UI when a saved result changes", async () => {
+  it("renders fresh followup props without remounting an open correction draft", async () => {
     const source = { title: "Weekly meeting", startedAt: null, segments: [{ id: "seg", speaker: "Alice", startMs: 0, text: "I will send the deck." }] };
     const current = meeting({ ...source, status: "ready", transcriptJobStatus: "completed" });
     mocks.getMeeting.mockResolvedValue(current);
@@ -558,7 +559,7 @@ describe("meeting page", () => {
     const result = { todos: [{ person: "Alice", text: "Alice will send the deck.", timing: null, evidence: [{ segmentId: "seg", quote: "I will send the deck." }] }], dynamics: [], research: [] };
     mocks.getMeeting.mockResolvedValue({ ...current, aiFollowup: { sourceHash: getFollowupSourceHash(source), result } });
     const after = await MeetingPage({ params: Promise.resolve({ meetingId: "meeting_1" }) });
-    expect(followupKey(after)).not.toBe(followupKey(before));
+    expect(followupKey(after)).toBe(followupKey(before));
     expect(renderToStaticMarkup(after)).toContain("send the deck");
     mocks.getMeeting.mockResolvedValue({ ...current, canManage: false, aiFollowup: { sourceHash: getFollowupSourceHash(source), result } });
     const shared = renderToStaticMarkup(await MeetingPage({ params: Promise.resolve({ meetingId: "meeting_1" }) }));

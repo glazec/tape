@@ -21,6 +21,9 @@ import { TranscriptViewer } from "@/components/transcript-viewer";
 import { requireCurrentUser } from "@/lib/auth-guards";
 import {
   getCurrentMeetingFollowup,
+  getConnectionsRevision,
+  getCurrentMeetingConnectionIds,
+  getCurrentMeetingConnections,
   getFollowupSourceHash,
   getFollowupSource,
   isFollowupReady,
@@ -35,6 +38,7 @@ import {
   listMeetingDetailRelatedMeetingsForWorkspace,
 } from "@/lib/meeting-queries";
 import { moveRecordingTimestampToAppendedTimeline } from "@/lib/meeting-recording-timeline";
+import { getOrganizationBotSettings } from "@/lib/organization-workspaces";
 import { getTeamConfiguration } from "@/lib/team-configuration";
 import { getOrCreateWorkspaceForSessionUser } from "@/lib/workspace";
 
@@ -72,6 +76,7 @@ export default async function MeetingPage({
   const followupResult = getCurrentMeetingFollowup(followupMeeting);
   const followupSourceHash = getFollowupSourceHash(followupMeeting);
   const canShare = parts.some(part => part.segments.length > 0);
+  const { domains: organizationDomains } = await getOrganizationBotSettings(workspace.teamId);
   const [shareRecipients, activeShares, teamConfiguration] = canShare
     ? await Promise.all([
         listShareRecipientSuggestions(workspace),
@@ -255,16 +260,28 @@ export default async function MeetingPage({
               key={`${workspace.userId}:${meetingId}`}
               meetingId={meetingId}
               userId={workspace.userId}
+              momentSources={(isComposed ? parts : [meeting]).map(source => ({
+                id: source.id,
+                durationMs: source.durationMs,
+                recordings: source.recordingParts ?? [],
+                hasTranscript: source.segments.length > 0,
+                recording: source.status === "recording",
+              }))}
             />
             {isFollowupReady(followupMeeting) ? (
               <MeetingFollowup
                 canGenerate={canManage}
                 initialResult={followupResult}
-                key={`${workspace.userId}:${meetingId}:${followupSourceHash}:${canManage}:${JSON.stringify(followupResult)}`}
+                initialConnections={getCurrentMeetingConnections(followupMeeting)}
+                initialConnectionsRevision={getConnectionsRevision(followupMeeting)}
+                initialConnectionIds={getCurrentMeetingConnectionIds(followupMeeting)}
+                organizationDomains={organizationDomains}
+                participants={participants}
+                key={`${workspace.userId}:${meetingId}:${canManage}`}
                 meetingId={meetingId}
                 meetingTitle={followupMeeting.title}
                 meetingStartedAt={followupSource.startedAt}
-                segments={followupSource.segments.map(({ id, startMs, speaker }) => ({ id, startMs, speaker }))}
+                segments={followupMeeting.segments.map(({ id, startMs, speaker, text }) => ({ id, startMs, speaker, text }))}
                 sourceHash={followupSourceHash}
               />
             ) : null}
@@ -339,6 +356,7 @@ export default async function MeetingPage({
                     translationStatus: meeting.translationSummary.status,
                   })}
                   meetingId={canManage ? meetingId : null}
+                  navigationMeetingId={meetingId}
                   mobileAfterSpeakers={
                     <MeetingEntityLinks entities={meeting.entities} />
                   }

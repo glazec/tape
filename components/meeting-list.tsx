@@ -144,7 +144,7 @@ export function MeetingList({
       <Table>
         {/* The rows describe themselves; headers stay for screen readers and
             keep their sort links reachable by keyboard. */}
-        <TableHeader className="sr-only">
+        <TableHeader className="sr-only focus-within:not-sr-only">
           <TableRow className="border-border/60 hover:bg-transparent">
             <TableHead
               aria-sort={getHeaderAriaSort("startedAt", sort)}
@@ -663,7 +663,7 @@ function getMeetingCoverageNote({
     // "Bot scheduled" would repeat the Scheduled status beside it.
     return hasRecallBot
       ? null
-      : platform === "microsoft_teams"
+      : platform === "microsoft_teams" || platform === "in_person"
         ? "Local recording planned"
         : "No bot linked";
   }
@@ -791,7 +791,7 @@ function MeetingStatusLabel({ status }: { status: MeetingDisplayStatus }) {
       ) : null}
       {status === "missed" ? (
         <>
-          Bot did not join
+          No recording
           <span className="sr-only"> ({statusLabels[status]})</span>
         </>
       ) : (

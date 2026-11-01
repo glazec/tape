@@ -499,7 +499,7 @@ export function ShareDialog({
 
         <div className="border-t pt-3">
           <p className="text-xs font-medium text-muted-foreground">
-            People with access · {peopleWithAccess.length}
+            Participants and recipients · {peopleWithAccess.length}
           </p>
           {peopleWithAccess.length > 0 ? (
             <ul className="mt-2 max-h-48 space-y-2 overflow-y-auto">
@@ -535,11 +535,14 @@ export function ShareDialog({
             </ul>
           ) : (
             <p className="mt-2 text-xs leading-5 text-muted-foreground">
-              No one beyond the meeting owner has access yet.
+              No additional recipients have been added.
             </p>
           )}
         </div>
 
+        <p className="text-xs leading-5 text-muted-foreground">
+          Workspace administrators retain access to this meeting.
+        </p>
         <p className="text-xs leading-5 text-muted-foreground">
           {canRemoveAccess
             ? "Eligible internal participants receive access automatically. Remove access above or share manually with external guests."

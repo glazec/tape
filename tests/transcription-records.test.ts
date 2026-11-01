@@ -2,14 +2,10 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 const getOrCreateWorkspaceForSessionUser = vi.fn();
 const assertCanCreateMeetings = vi.fn();
+const importUploadedRecording = vi.fn();
 const insert = vi.fn();
 const select = vi.fn();
 const databaseSql = Object.assign(vi.fn(), { transaction: vi.fn(), query: vi.fn() });
-const values = vi.fn();
-const meetingReturning = vi.fn();
-const recordingReturning = vi.fn();
-const assetReturning = vi.fn();
-const jobReturning = vi.fn();
 const update = vi.fn();
 const reconcileMeetingSharingForMeeting = vi.fn();
 
@@ -51,86 +47,7 @@ vi.mock("@/lib/provider-usage", () => ({
   recordRecallRecordingUsage: vi.fn(),
 }));
 
-describe("createUploadedAudioTranscription", () => {
-  afterEach(() => {
-    assertCanCreateMeetings.mockReset();
-    getOrCreateWorkspaceForSessionUser.mockReset();
-    insert.mockReset();
-    values.mockReset();
-    meetingReturning.mockReset();
-    recordingReturning.mockReset();
-    assetReturning.mockReset();
-    jobReturning.mockReset();
-    update.mockReset();
-    reconcileMeetingSharingForMeeting.mockReset();
-    vi.resetModules();
-  });
-
-  it("uses a supplied upload start time for the meeting record", async () => {
-    getOrCreateWorkspaceForSessionUser.mockResolvedValue({
-      userId: "11111111-1111-4111-8111-111111111111",
-      teamId: "22222222-2222-4222-8222-222222222222",
-    });
-    assertCanCreateMeetings.mockResolvedValue(undefined);
-    meetingReturning.mockResolvedValue([
-      { id: "33333333-3333-4333-8333-333333333333" },
-    ]);
-    assetReturning.mockResolvedValue([
-      { id: "44444444-4444-4444-8444-444444444444" },
-    ]);
-    recordingReturning.mockResolvedValue([
-      { id: "77777777-7777-4777-8777-777777777777" },
-    ]);
-    jobReturning.mockResolvedValue([
-      { id: "55555555-5555-4555-8555-555555555555" },
-    ]);
-    values
-      .mockReturnValueOnce({ returning: meetingReturning })
-      .mockReturnValueOnce({ returning: recordingReturning })
-      .mockReturnValueOnce({ returning: assetReturning })
-      .mockReturnValueOnce({ returning: jobReturning });
-    insert.mockReturnValue({ values });
-    const startedAt = new Date("2026-06-27T15:30:00.000Z");
-
-    const { createUploadedAudioTranscription } =
-      await import("@/lib/transcription-records");
-
-    await expect(
-      createUploadedAudioTranscription({
-        sessionUser: {
-          id: "11111111-1111-4111-8111-111111111111",
-          email: "user@example.com",
-          name: null,
-        },
-        objectKey: "users/user_123/uploads/upload.mp3",
-        title: "Customer call",
-        startedAt,
-        durationMs: 45 * 60 * 1000,
-        fileSizeBytes: 1024,
-        mimeType: "audio/mpeg",
-      }),
-    ).resolves.toEqual({
-      meetingId: "33333333-3333-4333-8333-333333333333",
-      mediaAssetId: "44444444-4444-4444-8444-444444444444",
-      recordingId: "77777777-7777-4777-8777-777777777777",
-      transcriptJobId: "55555555-5555-4555-8555-555555555555",
-    });
-    expect(reconcileMeetingSharingForMeeting).toHaveBeenCalledWith(
-      "33333333-3333-4333-8333-333333333333",
-    );
-    expect(values).toHaveBeenNthCalledWith(
-      1,
-      expect.objectContaining({ startedAt }),
-    );
-    expect(values).toHaveBeenNthCalledWith(
-      2,
-      expect.objectContaining({
-        durationMs: 45 * 60 * 1000,
-        source: "upload",
-      }),
-    );
-  });
-});
+vi.mock("@/lib/upload-recording-import", () => ({ importUploadedRecording }));
 
 describe("createRecallRecordingTranscription", () => {
   afterEach(() => {
@@ -156,84 +73,22 @@ describe("createRecallRecordingTranscription", () => {
   });
 });
 
-describe("createUploadedVideoTranscription", () => {
-  afterEach(() => {
-    assertCanCreateMeetings.mockReset();
-    getOrCreateWorkspaceForSessionUser.mockReset();
-    insert.mockReset();
-    values.mockReset();
-    meetingReturning.mockReset();
-    recordingReturning.mockReset();
-    assetReturning.mockReset();
-    jobReturning.mockReset();
-    update.mockReset();
-    vi.restoreAllMocks();
-    vi.resetModules();
-  });
-
-  it("creates a source asset and queued job before conversion", async () => {
-    getOrCreateWorkspaceForSessionUser.mockResolvedValue({
-      userId: "11111111-1111-4111-8111-111111111111",
-      teamId: "22222222-2222-4222-8222-222222222222",
-    });
-    assertCanCreateMeetings.mockResolvedValue(undefined);
-    meetingReturning.mockResolvedValue([
-      { id: "33333333-3333-4333-8333-333333333333" },
-    ]);
-    assetReturning.mockResolvedValue([
-      { id: "44444444-4444-4444-8444-444444444444" },
-    ]);
-    recordingReturning.mockResolvedValue([
-      { id: "77777777-7777-4777-8777-777777777777" },
-    ]);
-    jobReturning.mockResolvedValue([
-      { id: "55555555-5555-4555-8555-555555555555" },
-    ]);
-    values
-      .mockReturnValueOnce({ returning: meetingReturning })
-      .mockReturnValueOnce({ returning: recordingReturning })
-      .mockReturnValueOnce({ returning: assetReturning })
-      .mockReturnValueOnce({ returning: jobReturning });
-    insert.mockReturnValue({ values });
-
-    const { createUploadedVideoTranscription } =
-      await import("@/lib/transcription-records");
-
-    await expect(
-      createUploadedVideoTranscription({
-        sessionUser: {
-          id: "11111111-1111-4111-8111-111111111111",
-          email: "user@example.com",
-          name: null,
-        },
-        objectKey: "users/user_123/uploads/upload.mp4",
-        title: "Customer call",
-        fileSizeBytes: 4096,
-        mimeType: "video/mp4",
-      }),
-    ).resolves.toEqual({
-      meetingId: "33333333-3333-4333-8333-333333333333",
-      sourceMediaAssetId: "44444444-4444-4444-8444-444444444444",
-      audioMediaAssetId: "55555555-5555-4555-8555-555555555555",
-      recordingId: "77777777-7777-4777-8777-777777777777",
-      transcriptJobId: "55555555-5555-4555-8555-555555555555",
-      audioObjectKey:
-        "teams/22222222-2222-4222-8222-222222222222/meetings/33333333-3333-4333-8333-333333333333/assets/55555555-5555-4555-8555-555555555555.mp3",
-    });
-    expect(values).toHaveBeenNthCalledWith(
-      3,
-      expect.objectContaining({
-        objectKey: "users/user_123/uploads/upload.mp4",
-        type: "transcript_source",
-      }),
-    );
-    expect(values).toHaveBeenNthCalledWith(
-      4,
-      expect.objectContaining({
-        mediaAssetId: null,
-        recordingId: "77777777-7777-4777-8777-777777777777",
-        status: "queued",
-      }),
-    );
+describe("uploaded transcription records", () => {
+  afterEach(() => { vi.clearAllMocks(); vi.resetModules(); });
+  it.each(["audio", "video"])("uses the atomic import for %s and preserves the chosen destination", async (kind) => {
+    const workspace = { userId: "user", teamId: "team" };
+    getOrCreateWorkspaceForSessionUser.mockResolvedValue(workspace);
+    importUploadedRecording.mockResolvedValue({ meetingId: "meeting", mediaAssetId: "asset", recordingId: "recording", transcriptJobId: "job" });
+    const input = {
+      sessionUser: { id: "user", email: "user@example.com", name: null },
+      meetingId: "meeting", objectKey: "object", title: "Title",
+      startedAt: new Date("2026-10-19T15:41:00Z"), durationMs: 5000,
+    };
+    const { createUploadedAudioTranscription, createUploadedVideoTranscription } = await import("@/lib/transcription-records");
+    const result = await (kind === "audio" ? createUploadedAudioTranscription(input) : createUploadedVideoTranscription(input));
+    expect(importUploadedRecording).toHaveBeenCalledWith({ ...input, workspace, kind });
+    expect(result).toMatchObject({ meetingId: "meeting", recordingId: "recording", transcriptJobId: "job" });
+    if (kind === "video") expect(result).toMatchObject({ sourceMediaAssetId: "asset", audioMediaAssetId: "job", audioObjectKey: "teams/team/meetings/meeting/assets/job.mp3" });
+    expect(insert).not.toHaveBeenCalled();
   });
 });

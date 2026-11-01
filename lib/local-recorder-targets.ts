@@ -90,6 +90,7 @@ export async function setLocalRecorderRecordingTarget(input: {
     // Each statement after the lock receives a fresh READ COMMITTED snapshot.
     const results = await databaseSql.transaction((tx) => [
       tx`select pg_advisory_xact_lock(hashtextextended(${`${input.workspace.userId}:${deviceHash}`}, 0))`,
+      tx`select pg_advisory_xact_lock(hashtextextended(${`recording-timeline:${input.meetingId ?? tokenHash}`}, 0))`,
       tx`update local_recording_attempts a set
           attempt_state = case when a.attempt_state = 'started' then 'sealed' else 'completed' end,
           updated_at = ${input.now}
@@ -150,6 +151,9 @@ export async function setLocalRecorderRecordingTarget(input: {
           where m.id = ${input.meetingId ?? null}::uuid
             and m.team_id = ${input.workspace.teamId}::uuid
             and m.status <> 'cancelled'
+            and not (m.status = 'processing' and exists (
+              select 1 from recordings r where r.meeting_id = m.id and r.source = 'upload'
+            ))
             and not (m.status = 'recording' and m.recall_bot_id is not null)
             and (m.owner_user_id = ${input.workspace.userId}::uuid or exists (
               select 1 from team_memberships membership
@@ -191,7 +195,7 @@ export async function setLocalRecorderRecordingTarget(input: {
           replayed.started_at as "startsAt", replayed.ended_at as "endsAt" from replayed
       `,
     ]);
-    const [target] = results[2] as RecordingTarget[];
+    const [target] = results[3] as RecordingTarget[];
     if (!target) {
       throw new LocalRecorderTargetError("Recording target unavailable or capture already stopped");
     }

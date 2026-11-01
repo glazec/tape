@@ -85,6 +85,7 @@ export function MeetingComposedTranscripts({
                 })}
                 audioPlayerPlacement="inline"
                 meetingId={meeting.canManage ? meeting.id : null}
+                navigationMeetingId={meeting.id}
                 audioParts={parts.length > 1 ? parts : undefined}
                 audioUrl={meeting.audioUrl}
                 segments={meeting.segments}

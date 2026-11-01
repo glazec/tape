@@ -1,4 +1,4 @@
-import { and, eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 
 import { db } from "@/db/client";
 import { meetingParts, meetings, users } from "@/db/schema";
@@ -10,6 +10,11 @@ import {
 } from "@/lib/meeting-followup";
 import {
   getCurrentMeetingFollowup,
+  getCurrentMeetingConnections,
+  getCurrentMeetingConnectionIds,
+  getConnectionsRevision,
+  storedFollowupSchema,
+  getConnectionsSourceHash,
   getFollowupSource,
   getFollowupSourceHash,
   isFollowupReady,
@@ -30,7 +35,7 @@ export async function getMeetingFollowupParentId(sourceMeetingId: string) {
 }
 
 export type MeetingFollowupGenerationOutcome =
-  | { status: "saved"; result: MeetingFollowup }
+  | { status: "saved"; result: MeetingFollowup; connectionsRevision: string; connectionIds: string[] }
   | { status: "not_found" }
   | { status: "not_ready" }
   | { status: "too_long" }
@@ -84,14 +89,20 @@ export async function generateAndSaveMeetingFollowup({
     return { status: "transcript_changed" };
   }
 
+  const previous = storedFollowupSchema.safeParse(current.aiFollowup);
+  const connectionEdits = previous.success && previous.data.connectionsSourceHash === getConnectionsSourceHash(source)
+    ? previous.data.connectionEdits : undefined;
+  const aiFollowup = { sourceHash, connectionsSourceHash: getConnectionsSourceHash(source), result,
+    ...(connectionEdits?.length ? { connectionEdits } : {}) };
   const saved = await db
     .update(meetings)
-    .set({ aiFollowup: { sourceHash, result } })
+    .set({ aiFollowup })
     .where(
       and(
         getManageableMeetingCondition(workspace, meetingId),
         eq(meetings.status, "ready"),
         eq(meetings.updatedAt, new Date(current.updatedAt)),
+        current.aiFollowup == null ? isNull(meetings.aiFollowup) : eq(meetings.aiFollowup, current.aiFollowup),
       ),
     )
     .returning({ id: meetings.id });
@@ -100,7 +111,10 @@ export async function generateAndSaveMeetingFollowup({
     return { status: "meeting_changed" };
   }
 
-  return { status: "saved", result };
+  const updated = { ...current, aiFollowup };
+  return { status: "saved", result: { ...result,
+    ...(result.connections ? { connections: getCurrentMeetingConnections(updated) } : {}),
+  }, connectionsRevision: getConnectionsRevision(updated), connectionIds: getCurrentMeetingConnectionIds(updated) };
 }
 
 /**

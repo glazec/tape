@@ -29,7 +29,7 @@ vi.mock("@/lib/vendors/openrouter", () => ({
 vi.mock("@/db/client", () => ({ db: { update: () => ({ set: mocks.set }) } }));
 
 import { POST } from "@/app/api/meetings/[meetingId]/followup/route";
-import { getFollowupSourceHash } from "@/lib/meeting-followup-source";
+import { getFollowupSourceHash, getConnectionsSourceHash, getCurrentMeetingConnections } from "@/lib/meeting-followup-source";
 
 const meetingId = "11111111-1111-4111-8111-111111111111";
 const meeting = {
@@ -62,6 +62,33 @@ beforeEach(() => {
 });
 
 describe("meeting followup API", () => {
+  it("saves connection anchors that remain readable after speaker correction and a reload", async () => {
+    const source = { ...meeting, segments: [{ id: "one", speaker: "Alex", startMs: 0, text: "I work with the GPU debt team." }] };
+    const result = { todos: [], dynamics: [], research: [], connections: [{
+      kind: "team", name: null, company: null, title: null,
+      relationship: "works_with", context: "Works with the GPU debt team.",
+      speakerSegmentId: "one", evidence: [{ segmentId: "one" }],
+    }] };
+    mocks.meeting.mockResolvedValue(source);
+    mocks.generate.mockResolvedValue(result);
+    expect((await POST(request(getFollowupSourceHash(source)), context)).status).toBe(200);
+    const persisted = JSON.parse(JSON.stringify(mocks.set.mock.calls[0][0].aiFollowup));
+    expect(getCurrentMeetingConnections({ ...source, aiFollowup: persisted, segments: [{ ...source.segments[0], speaker: "Alex Chen" }] })).toEqual(result.connections);
+  });
+
+  it("retains manual corrections across regeneration and compares the previous JSON before saving", async () => {
+    const original = { kind: "team", name: null, company: null, title: null, relationship: "knows", context: "Knows the team.", speakerSegmentId: "one", evidence: [{ segmentId: "one" }] };
+    const changes = { kind: "person", name: "Corrected name", company: null, title: "Director", relationship: "knows", context: "Corrected description", speakerSegmentId: "one", mutual: true };
+    const editable = { ...meeting, aiFollowup: { sourceHash: getFollowupSourceHash(meeting), connectionsSourceHash: getConnectionsSourceHash(meeting), result: { todos: [], dynamics: [], research: [], connections: [original] }, connectionEdits: [{ original, changes }] } };
+    mocks.meeting.mockResolvedValue(editable);
+    mocks.generate.mockResolvedValue({ todos: [], dynamics: [], research: [], connections: [{ ...original, context: "Regenerated wording" }] });
+    const response = await POST(request(), context);
+    expect(response.status).toBe(200);
+    expect((await response.json()).result.connections).toEqual([{ ...original, ...changes }]);
+    expect(mocks.set.mock.calls[0][0].aiFollowup.connectionEdits).toEqual(editable.aiFollowup.connectionEdits);
+    expect(new PgDialect().sqlToQuery(mocks.where.mock.calls[0][0]).sql).toContain('"ai_followup" =');
+  });
+
   it("rejects unauthenticated and invalid meeting requests", async () => {
     mocks.user.mockResolvedValue(null);
     expect((await POST(request(), context)).status).toBe(401);
@@ -128,6 +155,7 @@ describe("meeting followup API", () => {
     expect(mocks.set).toHaveBeenCalledWith({
       aiFollowup: {
         sourceHash: getFollowupSourceHash(meeting),
+        connectionsSourceHash: getConnectionsSourceHash(meeting),
         result: { todos: [], dynamics: [] },
       },
     });

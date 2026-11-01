@@ -8,6 +8,7 @@ import {
   type ReactNode,
   Fragment,
   useEffect,
+  useEffectEvent,
   useMemo,
   useRef,
   useState,
@@ -29,6 +30,7 @@ import {
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { SPEAKER_LABELS_CHANGED } from "@/lib/meeting-connections";
 import { normalizeAudioPeaks, resampleAudioPeaks } from "@/lib/audio-waveform";
 import {
   getAudioPlaylistDurationSeconds,
@@ -72,6 +74,7 @@ import {
   groupSpeakerAliasesByCanonicalKey,
   type SpeakerAlias,
 } from "@/lib/speaker-alias-normalization";
+import { NOTE_MOMENT_NAVIGATE, NOTE_PLAYBACK_POSITION, type NoteMomentNavigation } from "@/lib/note-moments";
 import { cn } from "@/lib/utils";
 
 export type TranscriptSegment = {
@@ -150,6 +153,7 @@ type TranscriptViewerProps = {
   audioParts?: AudioPlaylistPart[];
   audioUrl?: string | null;
   meetingId?: string | null;
+  navigationMeetingId?: string;
   mobileAfterSpeakers?: ReactNode;
   preferredTranslationLanguage?: TranslationLanguage;
   segments: TranscriptSegment[];
@@ -374,6 +378,7 @@ export function TranscriptViewer({
   audioParts,
   audioUrl,
   meetingId,
+  navigationMeetingId,
   mobileAfterSpeakers,
   preferredTranslationLanguage,
   segments: initialSegments,
@@ -426,6 +431,7 @@ export function TranscriptViewer({
   } | null>(null);
   const [activeAudioPartIndex, setActiveAudioPartIndex] = useState(0);
   const [currentTime, setCurrentTime] = useState(0);
+  const [noteMomentSegmentId, setNoteMomentSegmentId] = useState<string | null>(null);
   const [duration, setDuration] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
   const [playbackRate, setPlaybackRate] = useState(1);
@@ -564,6 +570,30 @@ export function TranscriptViewer({
   const [returnToGalleryOverview, setReturnToGalleryOverview] =
     useState(false);
 
+  function scrollTranscriptToTime(timeSecond: number) {
+    const targetSegment = findNearestSegmentAtTime(
+      displaySegments,
+      timeSecond * 1000,
+    );
+    const targetNode = targetSegment
+      ? segmentRefs.current.get(targetSegment.id)
+      : null;
+
+    if (!targetNode) {
+      return;
+    }
+
+    const topOffset = 96;
+    const targetTop =
+      targetNode.getBoundingClientRect().top + window.scrollY - topOffset;
+
+    window.scrollTo({
+      behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth",
+      top: Math.max(0, targetTop),
+    });
+  }
+
+
   function openAssetFromGalleryOverview(assetIndex: number) {
     setIsGalleryOverviewOpen(false);
     setReturnToGalleryOverview(true);
@@ -661,8 +691,9 @@ export function TranscriptViewer({
 
   async function setPlaybackPosition(
     timeSeconds: number,
-    options: { preservePreview?: boolean; shouldPlay: boolean },
+    options: { preservePreview?: boolean; preserveNoteMoment?: boolean; shouldPlay: boolean },
   ) {
+    if (!options.preserveNoteMoment) setNoteMomentSegmentId(null);
     const position = getAudioPlaylistPosition(playbackParts, timeSeconds);
     const audio = audioRef.current;
 
@@ -675,6 +706,7 @@ export function TranscriptViewer({
     }
 
     setCurrentTime(position.globalTimeSeconds);
+    publishNotePlaybackPosition(position.globalTimeSeconds);
 
     if (position.partIndex !== activeAudioPartIndex) {
       pendingPlaybackRef.current = {
@@ -825,7 +857,9 @@ export function TranscriptViewer({
         activeAudioPartIndex,
       ) + audio.currentTime;
 
+    setNoteMomentSegmentId(null);
     setCurrentTime(nextTime);
+    publishNotePlaybackPosition(nextTime);
 
     const preview = speakerPreviewRef.current;
 
@@ -940,6 +974,9 @@ export function TranscriptViewer({
     setSavingSpeakerKey(speakerKey);
     setErrorSpeakerKey(null);
     setSegments(updatedSegments);
+    window.dispatchEvent(new CustomEvent(SPEAKER_LABELS_CHANGED, {
+      detail: updatedSegments.filter(segment => previousSpeakers.has(segment.id)).map(({ id, speaker }) => ({ id, speaker, participantEmail: email })),
+    }));
     setEditingSpeaker(null);
 
     try {
@@ -968,7 +1005,11 @@ export function TranscriptViewer({
         if (email) participantEmailsBySegmentId.current.set(id, email);
         else participantEmailsBySegmentId.current.delete(id);
       }
+      router.refresh();
     } catch {
+      window.dispatchEvent(new CustomEvent(SPEAKER_LABELS_CHANGED, {
+        detail: [...previousSpeakers].map(([id, speaker]) => ({ id, speaker, participantEmail: participantEmailsBySegmentId.current.get(id) ?? speaker })),
+      }));
       setSegments((currentSegments) => currentSegments.map((segment) =>
         previousSpeakers.has(segment.id)
           ? { ...segment, speaker: previousSpeakers.get(segment.id)! }
@@ -1190,6 +1231,26 @@ export function TranscriptViewer({
     );
   }
 
+  function publishNotePlaybackPosition(timeSeconds: number) {
+    if (navigationMeetingId) window.dispatchEvent(new CustomEvent(NOTE_PLAYBACK_POSITION, { detail: { meetingId: navigationMeetingId, timestampMs: Math.round(timeSeconds * 1000) } }));
+  }
+
+  const navigateNoteMoment = useEffectEvent((event: Event) => {
+    const detail = (event as CustomEvent<NoteMomentNavigation>).detail;
+    if (!navigationMeetingId || detail?.meetingId !== navigationMeetingId || !Number.isFinite(detail.timestampMs) || detail.timestampMs < 0) return;
+    const target = findNearestSegmentAtTime(displaySegments, detail.timestampMs);
+    if (!target) return;
+    detail.handled = true;
+    setNoteMomentSegmentId(target.id);
+    segmentRefs.current.get(target.id)?.focus({ preventScroll: true });
+    scrollTranscriptToTime(detail.timestampMs / 1000);
+    void setPlaybackPosition(detail.timestampMs / 1000, { shouldPlay: true, preserveNoteMoment: true });
+  });
+  useEffect(() => {
+    window.addEventListener(NOTE_MOMENT_NAVIGATE, navigateNoteMoment);
+    return () => window.removeEventListener(NOTE_MOMENT_NAVIGATE, navigateNoteMoment);
+  }, []);
+
   async function seekTo(startMs: number) {
     await setPlaybackPosition(startMs / 1000, { shouldPlay: true });
   }
@@ -1214,25 +1275,6 @@ export function TranscriptViewer({
     await seekTo(seekMs);
   }
 
-  function scrollTranscriptToTime(timeSecond: number) {
-    const targetSegment = findNearestSegmentAtTime(
-      displaySegments,
-      timeSecond * 1000,
-    );
-    const targetNode = targetSegment
-      ? segmentRefs.current.get(targetSegment.id)
-      : null;
-
-    if (!targetNode) {
-      return;
-    }
-
-    const topOffset = 96;
-    const targetTop =
-      targetNode.getBoundingClientRect().top + window.scrollY - topOffset;
-
-    window.scrollTo({ behavior: "smooth", top: Math.max(0, targetTop) });
-  }
 
   return (
     <>
@@ -1512,7 +1554,9 @@ export function TranscriptViewer({
                   editingSpeaker.segmentId === segment.id;
                 const isSaving = savingSpeakerKey === speakerKey;
                 const hasError = errorSpeakerKey === speakerKey;
-                const isActive = activeSegmentId === segment.id;
+                const isActive = noteMomentSegmentId
+                  ? noteMomentSegmentId === segment.id
+                  : activeSegmentId === segment.id;
                 const polishedText = segment.polishedText?.trim();
                 const translatedText = segment.translatedText?.trim();
                 const shouldShowTranslation =
@@ -1566,20 +1610,23 @@ export function TranscriptViewer({
                   <Fragment key={segment.id}>
                   <li
                     id={segment.id}
+                    tabIndex={-1}
+                    data-note-moment-active={noteMomentSegmentId === segment.id ? "true" : undefined}
                     ref={(node) => {
                       if (node) {
-                        segmentRefs.current.set(segment.id, node);
+                        for (const id of segment.sourceIds) segmentRefs.current.set(id, node);
                         return;
                       }
 
-                      segmentRefs.current.delete(segment.id);
+                      for (const id of segment.sourceIds) segmentRefs.current.delete(id);
                     }}
                     className={cn(
-                      "group/line grid grid-cols-[3rem_minmax(0,1fr)] gap-4 rounded-lg pr-3 transition-colors sm:-ml-16",
+                      "group/line relative has-[:target]:bg-primary/5 grid grid-cols-[3rem_minmax(0,1fr)] gap-4 rounded-lg pr-3 transition-colors sm:-ml-16",
                       isContinuation ? "py-0.5" : "mt-2 pt-2.5 pb-0.5",
                       isActive ? "bg-primary/5" : "hover:bg-muted/35",
                     )}
                   >
+                    {segment.sourceIds.filter(id => id !== segment.id).map(id => <span key={id} id={id} tabIndex={-1} className="absolute size-px" aria-label="Transcript source" />)}
                     {isContinuation ? (
                       <span
                         aria-hidden="true"
@@ -1808,7 +1855,7 @@ function TranscriptControlSelect({
 }
 
 function getTranscriptDisplaySegments(segments: TranscriptSegment[]) {
-  const displaySegments: TranscriptSegment[] = [];
+  const displaySegments: Array<TranscriptSegment & { sourceIds: string[] }> = [];
   const seenSegmentKeys = new Map<string, number>();
 
   for (const segment of segments) {
@@ -1822,11 +1869,12 @@ function getTranscriptDisplaySegments(segments: TranscriptSegment[]) {
         seenSegmentKeys.set(key, displaySegments.length);
       }
 
-      displaySegments.push(segment);
+      displaySegments.push({ ...segment, sourceIds: [segment.id] });
       continue;
     }
 
     const existing = displaySegments[existingIndex];
+    if (!existing.sourceIds.includes(segment.id)) existing.sourceIds.push(segment.id);
 
     for (const key of keys) {
       seenSegmentKeys.set(key, existingIndex);

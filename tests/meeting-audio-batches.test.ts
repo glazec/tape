@@ -179,19 +179,20 @@ describe("meeting audio batches", () => {
     });
 
     expect(result.transcriptions).toHaveLength(2);
-    expect(txn).toHaveBeenCalledTimes(8);
-    expect(txn.mock.calls[0]?.[0].join(" ")).toContain("delete from");
-    expect(txn.mock.calls[3]?.slice(1)).toContain("replace");
-    expect(txn.mock.calls[6]?.slice(1)).toContain("append");
-    const firstJobDate = txn.mock.calls[3]
+    expect(txn).toHaveBeenCalledTimes(9);
+    expect(txn.mock.calls[0]?.[0].join(" ")).toContain("pg_advisory_xact_lock");
+    expect(txn.mock.calls[1]?.[0].join(" ")).toContain("delete from");
+    expect(txn.mock.calls[4]?.slice(1)).toContain("replace");
+    expect(txn.mock.calls[7]?.slice(1)).toContain("append");
+    const firstJobDate = txn.mock.calls[4]
       ?.slice(1)
       .find((value) => value instanceof Date) as Date;
-    const secondJobDate = txn.mock.calls[6]
+    const secondJobDate = txn.mock.calls[7]
       ?.slice(1)
       .find((value) => value instanceof Date) as Date;
     expect(secondJobDate.getTime()).toBe(firstJobDate.getTime() + 1);
-    expect(txn.mock.calls[3]?.[5]).toBe(txn.mock.calls[6]?.[5]);
-    const meetingUpdate = txn.mock.calls[7]![0].join(" ");
+    expect(txn.mock.calls[4]?.[5]).toBe(txn.mock.calls[7]?.[5]);
+    const meetingUpdate = txn.mock.calls[8]![0].join(" ");
     expect(meetingUpdate).toContain("translation_status = null");
     expect(meetingUpdate).toContain("translation_error_message = null");
     expect(meetingUpdate).toContain("translation_started_at = null");
@@ -224,11 +225,12 @@ describe("meeting audio batches", () => {
       expect(result.transcriptions).toHaveLength(fileCount);
       expect(fetchQuery).toHaveBeenCalledOnce();
       const { queries } = JSON.parse(String(fetchQuery.mock.calls[0]![1].body));
-      expect(queries[0].query.replace(/\s+/g, " ").trim()).toBe(
+      expect(queries[1].query.replace(/\s+/g, " ").trim()).toBe(
         "delete from meeting_entities where meeting_id = $1::uuid",
       );
-      expect(queries[0].params).toEqual([meetingId]);
-      expect(queries).toHaveLength(2 + fileCount * 3);
+      expect(queries[0].query).toContain("pg_advisory_xact_lock");
+      expect(queries[1].params).toEqual([meetingId]);
+      expect(queries).toHaveLength(3 + fileCount * 3);
     } finally {
       neonConfig.fetchFunction = previousFetch;
     }

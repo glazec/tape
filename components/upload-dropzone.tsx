@@ -23,12 +23,18 @@ import {
   uploadMediaAccept,
 } from "@/lib/upload-media";
 
+import {
+  RecordingImportReview,
+  type RecordingImportSelection,
+} from "@/components/recording-import-review";
+
 import { organizationHeaders } from "@/lib/organization-request";
 
 type UploadState = "idle" | "uploading" | "complete" | "error";
 
 type UploadQueuedResponse = {
   redirectTo?: string;
+  meetingId?: string;
 };
 
 export function UploadDropzone({ teamId }: { teamId?: string }) {
@@ -40,10 +46,24 @@ export function UploadDropzone({ teamId }: { teamId?: string }) {
   const [isDragging, setIsDragging] = useState(false);
   const dragDepthRef = useRef(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const selectedDurationPromisesRef = useRef<
-    Promise<number | undefined>[]
-  >([]);
+  const selectedDurationPromisesRef = useRef<Promise<number | undefined>[]>([]);
   const [startTime, setStartTime] = useState("");
+  const [selection, setSelection] = useState<RecordingImportSelection | null>(
+    null,
+  );
+  const [selectionVersion, setSelectionVersion] = useState(0);
+  const attempt = useRef<{
+    uploadId: string;
+    uploadUrl: string;
+    uploaded: boolean;
+  } | null>(null);
+  const reviewFile =
+    selectedFiles.length === 1 &&
+    selectedFiles[0].size > 0 &&
+    isUploadMediaSizeAllowed(selectedFiles[0].size) &&
+    getUploadMediaFromFile(selectedFiles[0])
+      ? selectedFiles[0]
+      : null;
 
   function handleFileChange(event: ChangeEvent<HTMLInputElement>) {
     selectFiles(Array.from(event.currentTarget.files ?? []));
@@ -53,6 +73,9 @@ export function UploadDropzone({ teamId }: { teamId?: string }) {
     if (state === "uploading") return;
 
     setSelectedFiles(files);
+    setSelection(null);
+    setSelectionVersion((value) => value + 1);
+    attempt.current = null;
     selectedDurationPromisesRef.current = files.map((file) =>
       readMediaFileDurationMs(file),
     );
@@ -63,7 +86,8 @@ export function UploadDropzone({ teamId }: { teamId?: string }) {
 
   function handleDragEnter(event: DragEvent<HTMLDivElement>) {
     event.preventDefault();
-    if (!event.dataTransfer.types.includes("Files") || state === "uploading") return;
+    if (!event.dataTransfer.types.includes("Files") || state === "uploading")
+      return;
     dragDepthRef.current += 1;
     setIsDragging(true);
   }
@@ -85,11 +109,15 @@ export function UploadDropzone({ teamId }: { teamId?: string }) {
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (state === "uploading" || state === "complete") return;
     setState("uploading");
     setMessage(null);
     setSignInRequired(false);
 
-    if (selectedFiles.length === 0 || selectedFiles.some((file) => file.size === 0)) {
+    if (
+      selectedFiles.length === 0 ||
+      selectedFiles.some((file) => file.size === 0)
+    ) {
       setState("error");
       setMessage("Select a recording file first");
       return;
@@ -126,7 +154,14 @@ export function UploadDropzone({ teamId }: { teamId?: string }) {
       return;
     }
 
-    const startedAt = parseStartTimeInput(startTime);
+    if (reviewFile && !selection?.ready) {
+      setState("error");
+      setMessage("Review the recording time and choose a meeting first");
+      return;
+    }
+    const startedAt = reviewFile
+      ? selection?.startedAt
+      : parseStartTimeInput(startTime);
 
     if (startedAt === null) {
       setState("error");
@@ -136,7 +171,9 @@ export function UploadDropzone({ teamId }: { teamId?: string }) {
 
     try {
       if (selectedFiles.length > 1) {
-        const durations = await Promise.all(selectedDurationPromisesRef.current);
+        const durations = await Promise.all(
+          selectedDurationPromisesRef.current,
+        );
 
         if (durations.some((durationMs) => !durationMs)) {
           throw new Error("Recording duration unavailable");
@@ -164,41 +201,51 @@ export function UploadDropzone({ teamId }: { teamId?: string }) {
 
       const selectedFile = selectedFiles[0]!;
       const uploadMedia = selectedMedia[0]!;
-      const signResponse = await fetch("/api/upload", {
-        method: "POST",
-        headers: { "content-type": "application/json", ...organizationHeaders(teamId) },
-        body: JSON.stringify({
-          extension: uploadMedia.extension,
-          contentType: uploadMedia.contentType,
-          fileSize: selectedFile.size,
-        }),
-      });
+      if (!attempt.current) {
+        const signResponse = await fetch("/api/upload", {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            ...organizationHeaders(teamId),
+          },
+          body: JSON.stringify({
+            extension: uploadMedia.extension,
+            contentType: uploadMedia.contentType,
+            fileSize: selectedFile.size,
+          }),
+        });
 
-      if (signResponse.status === 401) {
-        setState("error");
-        setMessage("Sign in to upload recordings");
-        setSignInRequired(true);
-        return;
+        if (signResponse.status === 401) {
+          setState("error");
+          setMessage("Sign in to upload recordings");
+          setSignInRequired(true);
+          return;
+        }
+
+        if (!signResponse.ok) {
+          throw new Error("Upload URL request failed");
+        }
+
+        const { uploadId, uploadUrl } = (await signResponse.json()) as {
+          uploadId?: string;
+          uploadUrl?: string;
+        };
+
+        if (!uploadId || !uploadUrl) {
+          throw new Error("Upload URL missing");
+        }
+
+        attempt.current = { uploadId, uploadUrl, uploaded: false };
       }
-
-      if (!signResponse.ok) {
-        throw new Error("Upload URL request failed");
-      }
-
-      const { uploadId, uploadUrl } = (await signResponse.json()) as {
-        uploadId?: string;
-        uploadUrl?: string;
-      };
-
-      if (!uploadId || !uploadUrl) {
-        throw new Error("Upload URL missing");
-      }
-
-      const uploadedDirectly = await uploadDirectly(
-        uploadUrl,
-        selectedFile,
-        uploadMedia.contentType,
-      );
+      const { uploadId, uploadUrl } = attempt.current;
+      const uploadedDirectly =
+        attempt.current.uploaded ||
+        (await uploadDirectly(
+          uploadUrl,
+          selectedFile,
+          uploadMedia.contentType,
+        ));
+      attempt.current.uploaded = uploadedDirectly;
       const durationMs = await waitForRecordingDurationMs(
         selectedDurationPromisesRef.current[0] ?? null,
       );
@@ -206,14 +253,26 @@ export function UploadDropzone({ teamId }: { teamId?: string }) {
       let queuedResult: UploadQueuedResponse;
 
       if (!uploadedDirectly) {
-        queuedResult = await uploadViaServer(selectedFile, startedAt, durationMs, teamId);
+        queuedResult = await uploadViaServer(
+          selectedFile,
+          startedAt,
+          durationMs,
+          teamId,
+          selection,
+          uploadId,
+        );
       } else {
         const completeResponse = await fetch("/api/uploads/complete", {
           method: "POST",
-          headers: { "content-type": "application/json", ...organizationHeaders(teamId) },
+          headers: {
+            "content-type": "application/json",
+            ...organizationHeaders(teamId),
+          },
           body: JSON.stringify({
             uploadId,
             fileName: selectedFile.name,
+            ...(selection?.meetingId ? { meetingId: selection.meetingId } : {}),
+            ...(selection?.title ? { title: selection.title } : {}),
             extension: uploadMedia.extension,
             contentType: uploadMedia.contentType,
             ...(durationMs ? { durationMs } : {}),
@@ -222,7 +281,7 @@ export function UploadDropzone({ teamId }: { teamId?: string }) {
         });
 
         if (!completeResponse.ok) {
-          throw new Error("Upload completion failed");
+          throw await uploadResponseError(completeResponse);
         }
 
         queuedResult = await readUploadQueuedResponse(completeResponse);
@@ -230,7 +289,7 @@ export function UploadDropzone({ teamId }: { teamId?: string }) {
 
       setState("complete");
       setMessage("Upload complete. Transcription queued");
-      router.replace(getPostUploadPath(queuedResult.redirectTo));
+      router.replace(getPostUploadPath(queuedResult));
       router.refresh();
     } catch (error) {
       setState("error");
@@ -243,7 +302,11 @@ export function UploadDropzone({ teamId }: { teamId?: string }) {
       ) {
         setMessage("The length of every audio file must be readable");
       } else {
-        setMessage("Upload failed");
+        setMessage(
+          error instanceof UploadResponseError
+            ? error.message
+            : "Upload failed",
+        );
       }
     }
   }
@@ -253,40 +316,77 @@ export function UploadDropzone({ teamId }: { teamId?: string }) {
 
   return (
     <div>
-        <h2 className="sr-only">Upload recording</h2>
-        <form onSubmit={handleSubmit} className="flex flex-col gap-4">
-          <div
-            onDragEnter={handleDragEnter}
-            onDragOver={(event) => {
-              event.preventDefault();
-              event.dataTransfer.dropEffect = state === "uploading" ? "none" : "copy";
-            }}
-            onDragLeave={handleDragLeave}
-            onDrop={handleDrop}
-            className={`flex flex-col gap-2 rounded-lg border-2 border-dashed p-4 ${
-              isDragging ? "border-primary bg-primary/5" : "border-border"
-            }`}
+      <h2 className="sr-only">Upload recording</h2>
+      <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+        <div
+          onDragEnter={handleDragEnter}
+          onDragOver={(event) => {
+            event.preventDefault();
+            event.dataTransfer.dropEffect =
+              state === "uploading" ? "none" : "copy";
+          }}
+          onDragLeave={handleDragLeave}
+          onDrop={handleDrop}
+          className={
+            reviewFile && !isDragging
+              ? "flex justify-end"
+              : `flex flex-col gap-2 rounded-lg border-2 border-dashed p-4 ${isDragging ? "border-primary bg-primary/5" : "border-border"}`
+          }
+        >
+          <Label
+            htmlFor="meeting-audio"
+            className={reviewFile ? "sr-only" : undefined}
           >
-            <Label htmlFor="meeting-audio">Recording files</Label>
-            <p className="text-sm" aria-live="polite">
-              {isDragging ? "Drop recording files here" : "Drag and drop files here, or choose files below."}
-            </p>
-            <Input
-              ref={fileInputRef}
-              id="meeting-audio"
-              name="meeting-audio"
-              type="file"
-              multiple
-              accept={uploadMediaAccept}
-              onChange={handleFileChange}
-              disabled={state === "uploading"}
-              className="min-h-11 bg-background"
-              aria-invalid={state === "error" && !startTimeInvalid}
-            />
-            <p className="text-xs text-muted-foreground">
-              Choose one recording, or multiple audio files in playback order. 1 GB maximum per file.
-            </p>
-          </div>
+            Recording files
+          </Label>
+          <p
+            className={reviewFile && !isDragging ? "sr-only" : "text-sm"}
+            aria-live="polite"
+          >
+            {isDragging
+              ? "Drop recording files here"
+              : "Drag and drop files here, or choose files below."}
+          </p>
+          <Input
+            ref={fileInputRef}
+            id="meeting-audio"
+            name="meeting-audio"
+            type="file"
+            multiple
+            accept={uploadMediaAccept}
+            onChange={handleFileChange}
+            disabled={state === "uploading"}
+            className={reviewFile ? "sr-only" : "min-h-11 bg-background"}
+            tabIndex={reviewFile ? -1 : undefined}
+            aria-invalid={state === "error" && !startTimeInvalid}
+          />
+          {reviewFile ? (
+            <Button
+              type="button"
+              variant="link"
+              className="min-h-11 px-0"
+              disabled={state === "uploading" || state === "complete"}
+              onClick={() => fileInputRef.current?.click()}
+            >
+              Choose a different file
+            </Button>
+          ) : null}
+          <p
+            className={reviewFile ? "sr-only" : "text-xs text-muted-foreground"}
+          >
+            Choose one recording, or multiple audio files in playback order. 1
+            GB maximum per file.
+          </p>
+        </div>
+        {reviewFile ? (
+          <RecordingImportReview
+            key={`${selectionVersion}:${teamId ?? ""}`}
+            file={reviewFile}
+            teamId={teamId}
+            disabled={state === "uploading" || state === "complete"}
+            onChange={setSelection}
+          />
+        ) : (
           <details className="group rounded-lg border bg-muted/20">
             <summary className="flex min-h-11 cursor-pointer list-none items-center px-3 text-sm font-medium text-muted-foreground outline-none focus-visible:ring-3 focus-visible:ring-ring/50">
               Optional meeting time
@@ -303,52 +403,68 @@ export function UploadDropzone({ teamId }: { teamId?: string }) {
                 aria-invalid={startTimeInvalid}
               />
               <p className="text-xs leading-5 text-muted-foreground">
-                Add this only when the recording date matters in the meeting library.
+                Add this only when the recording date matters in the meeting
+                library.
               </p>
             </div>
           </details>
-          {selectedFiles.length > 0 ? (
-            <div className="rounded-md border bg-muted/45 px-3 py-2 text-sm text-muted-foreground">
-              <p className="font-medium text-foreground">Plays in this order</p>
-              <ol className="mt-1 list-decimal space-y-1 pl-5">
-                {selectedFiles.map((file, index) => (
-                  <li className="break-all" key={`${file.name}:${file.size}:${index}`}>
-                    {file.name}
-                  </li>
-                ))}
-              </ol>
-            </div>
-          ) : null}
-          <Button
-            type="submit"
-            disabled={state === "uploading"}
-            className="min-h-11 w-fit"
-          >
-            <UploadCloud data-icon="inline-start" />
-            {state === "uploading"
-              ? "Uploading recordings"
-              : selectedFiles.length > 1
-                ? "Upload recordings"
+        )}
+        {selectedFiles.length > 0 && !reviewFile ? (
+          <div className="rounded-md border bg-muted/45 px-3 py-2 text-sm text-muted-foreground">
+            <p className="font-medium text-foreground">Plays in this order</p>
+            <ol className="mt-1 list-decimal space-y-1 pl-5">
+              {selectedFiles.map((file, index) => (
+                <li
+                  className="break-all"
+                  key={`${file.name}:${file.size}:${index}`}
+                >
+                  {file.name}
+                </li>
+              ))}
+            </ol>
+          </div>
+        ) : null}
+        <Button
+          type="submit"
+          disabled={
+            state === "uploading" ||
+            state === "complete" ||
+            (!!reviewFile && !selection?.ready)
+          }
+          className="min-h-11 max-w-full w-fit whitespace-normal text-left"
+        >
+          <UploadCloud data-icon="inline-start" />
+          {state === "uploading"
+            ? "Uploading recordings"
+            : selectedFiles.length > 1
+              ? "Upload recordings"
+              : selection?.meetingId && selection.destinationTitle
+                ? `Upload to ${selection.destinationTitle}`
                 : "Upload recording"}
-          </Button>
-          {message ? (
-            <Alert variant={state === "error" ? "destructive" : "default"}>
-              {state === "error" ? <AlertCircle /> : <CheckCircle2 />}
-              <AlertTitle>
-                {state === "error" ? "Upload failed" : "Upload queued"}
-              </AlertTitle>
-              <AlertDescription>
-                {message}
-                {signInRequired ? (
-                  <>
-                    {" "}
-                    <a href="/auth/sign-in">Sign in</a>
-                  </>
-                ) : null}
-              </AlertDescription>
-            </Alert>
-          ) : null}
-        </form>
+        </Button>
+        {reviewFile && !selection?.ready && state === "idle" ? (
+          <p className="text-xs text-muted-foreground">
+            Choose a destination above to continue.
+          </p>
+        ) : null}
+        {message ? (
+          <Alert variant={state === "error" ? "destructive" : "default"}>
+            {state === "error" ? <AlertCircle /> : <CheckCircle2 />}
+            <AlertTitle>
+              {state === "error" ? "Upload failed" : "Upload queued"}
+            </AlertTitle>
+            <AlertDescription>
+              {message}
+              {signInRequired ? (
+                <>
+                  {" "}
+                  <a href="/auth/sign-in">Sign in</a>
+                </>
+              ) : null}
+            </AlertDescription>
+          </Alert>
+        ) : null}
+      </form>
     </div>
   );
 }
@@ -376,9 +492,14 @@ async function uploadViaServer(
   startedAt: string | undefined,
   durationMs: number | undefined,
   teamId?: string,
+  selection?: RecordingImportSelection | null,
+  uploadId?: string,
 ) {
   const formData = new FormData();
   formData.set("meeting-audio", file);
+  if (selection?.meetingId) formData.set("meetingId", selection.meetingId);
+  if (selection?.title) formData.set("title", selection.title);
+  if (uploadId) formData.set("uploadId", uploadId);
   if (startedAt) {
     formData.set("startedAt", startedAt);
   }
@@ -393,7 +514,7 @@ async function uploadViaServer(
   });
 
   if (!response.ok) {
-    throw new Error("Server upload failed");
+    throw await uploadResponseError(response);
   }
 
   return readUploadQueuedResponse(response);
@@ -403,8 +524,30 @@ async function readUploadQueuedResponse(response: Response) {
   return (await response.json().catch(() => ({}))) as UploadQueuedResponse;
 }
 
-function getPostUploadPath(path: string | undefined) {
-  return path === "/dashboard" ? path : "/dashboard";
+function getPostUploadPath(result: UploadQueuedResponse) {
+  if (
+    result.meetingId &&
+    /^[a-zA-Z0-9_-]+$/.test(result.meetingId) &&
+    result.meetingId !== "new"
+  )
+    return `/meetings/${result.meetingId}`;
+  if (
+    result.redirectTo &&
+    /^\/meetings\/[a-zA-Z0-9_-]+$/.test(result.redirectTo) &&
+    result.redirectTo !== "/meetings/new"
+  )
+    return result.redirectTo;
+  return "/dashboard";
+}
+
+class UploadResponseError extends Error {}
+async function uploadResponseError(response: Response) {
+  const payload = await response.json().catch(() => null);
+  return new UploadResponseError(
+    typeof payload?.error === "string"
+      ? payload.error
+      : "Upload failed. Your file and meeting selection are still here. Try again.",
+  );
 }
 
 function parseStartTimeInput(value: string) {
