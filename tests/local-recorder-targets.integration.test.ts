@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import type { SQL } from "drizzle-orm";
 import { PgDialect } from "drizzle-orm/pg-core";
-import { execFile } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import { promisify } from "node:util";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -30,6 +30,7 @@ const second = "00000000-0000-4000-8000-000000000005";
 const workspace = { teamId: team, userId: user, domain: "", canCreateMeetings: true };
 const input = { workspace, deviceId: "mac", now: new Date(), meetingId: first };
 const schema = `recorder_test_${process.pid}`;
+const psqlEnv = { ...process.env, PGAPPNAME: schema };
 
 function literal(value: unknown): string {
   if (value === null || value === undefined) return "null";
@@ -41,7 +42,7 @@ function statement(strings: TemplateStringsArray, ...values: unknown[]) {
   return strings.reduce((text, part, i) => text + (i ? literal(values[i - 1]) : "") + part, "");
 }
 async function sql(query: string) {
-  const result = await run("psql", [dsn!, "-X", "-q", "-t", "-A", "-F", "|", "-v", "ON_ERROR_STOP=1", "-c", `set search_path to ${schema}; ${query}`]);
+  const result = await run("psql", [dsn!, "-X", "-q", "-t", "-A", "-F", "|", "-v", "ON_ERROR_STOP=1", "-c", `set search_path to ${schema}; ${query}`], { env: psqlEnv });
   return result.stdout.trim().split("\n").filter(Boolean);
 }
 function targetRows(lines: string[]) {
@@ -94,8 +95,9 @@ describe.skipIf(!dsn)("recording target PostgreSQL transactions", () => {
     databaseSql.transaction.mockImplementation(async (build) => {
       const queryFunction = Object.assign(statement, { query: (query: string, values: unknown[]) => query.replace(/\$(\d+)/g, (_, i) => literal(values[Number(i) - 1])) });
       const queries = build(queryFunction);
-      const result = await run("psql", [dsn!, "-X", "-q", "-t", "-A", "-F", "|", "-v", "ON_ERROR_STOP=1", "-c", `set search_path to ${schema}`, "-c", "begin", ...queries.flatMap((query: string) => ["-c", query]), "-c", "commit"]);
+      const result = await run("psql", [dsn!, "-X", "-q", "-t", "-A", "-F", "|", "-v", "ON_ERROR_STOP=1", "-c", `set search_path to ${schema}`, "-c", "begin", ...queries.flatMap((query: string) => ["-c", query]), "-c", "commit"], { env: psqlEnv });
       const lines = result.stdout.trim().split("\n").filter(Boolean);
+      if (queries[1].includes("with frozen")) return [[], targetRows(lines)];
       if (queries[1].includes("as should_queue")) return [[], lines.map((line) => {
         const [transcript_job_id, recording_id, shouldQueue] = line.split("|");
         return { transcript_job_id, recording_id, should_queue: shouldQueue === "t" };
@@ -286,6 +288,48 @@ describe.skipIf(!dsn)("recording target PostgreSQL transactions", () => {
       expect(await sql("select meeting_id from local_recording_attempts")).toEqual([finishResult.value.meetingId]);
     }
   });
+
+  it("finishes with a fresh destination after waiting for an uncommitted switch", async () => {
+    const started = await setLocalRecorderRecordingTarget(input);
+    const deviceHash = createHash("sha256").update(input.deviceId).digest("base64url");
+    const switching = spawn("psql", [dsn!, "-X", "-q", "-t", "-A", "-v", "ON_ERROR_STOP=1"], {
+      env: { ...psqlEnv, PGAPPNAME: `${schema}_switch` },
+    });
+    let output = "";
+    switching.stdout.on("data", (chunk) => { output += String(chunk); });
+    const closed = new Promise<void>((resolve) => { switching.once("close", () => resolve()); });
+    let finishing: Promise<unknown> | undefined;
+    try {
+      // Hold both locks used by a destination switch until finish is demonstrably waiting.
+      switching.stdin.write(`set search_path to ${schema};
+        begin;
+        select pg_advisory_xact_lock(hashtextextended('${user}:${deviceHash}', 0));
+        update local_recording_attempts set meeting_id = '${second}' where meeting_id = '${first}';
+        \\echo switch-ready
+      `);
+      await vi.waitFor(() => {
+        expect(switching.exitCode).toBeNull();
+        expect(output).toContain("switch-ready");
+      }, { timeout: 3000, interval: 10 });
+      finishing = finishLocalRecorderRecordingTarget({ ...input, fallbackIntentId: started.fallbackIntentId })
+        .then((target) => ({ target }), (error: unknown) => ({ error }));
+      await vi.waitFor(async () => {
+        expect(await sql(`select count(*) from pg_stat_activity
+          where application_name = '${schema}' and cardinality(pg_blocking_pids(pid)) > 0`)).toEqual(["1"]);
+      }, { timeout: 3000, interval: 10 });
+      switching.stdin.end("commit;\n");
+      await closed;
+      expect(switching.exitCode).toBe(0);
+      expect(await finishing).toMatchObject({ target: { meetingId: second } });
+      expect(await sql("select meeting_id, attempt_state from local_recording_attempts")).toEqual([`${second}|sealed`]);
+    } finally {
+      if (switching.exitCode === null) {
+        switching.stdin.end("rollback;\n");
+        await closed;
+      }
+      await finishing;
+    }
+  }, 10000);
 
   it.each([false, true])("retains capture chronology and media with reversed completion %s", async (reversed) => {
     const complete = async (fallbackIntentId: string) => {

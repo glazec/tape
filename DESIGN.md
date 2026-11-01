@@ -68,7 +68,7 @@ Generated intelligence is supporting material, not source truth. Detected entiti
 
 Configured completion emails contain separate notes and original transcript TXT attachments. Label notes as AI generated and preserve speaker names and timestamps in the transcript. Send only to the meeting owner's login address. Email failure must not change the meeting's transcription or translation state; delivery diagnostics stay in the background job record.
 
-The recorder’s automatic event card and missed bot alerts follow personal ownership or active calendar participation with recording rights. Admin visibility alone must not put a colleague’s event on the personal recorder.
+The recorder’s automatic event card and missed bot alerts follow personal ownership or active calendar participation with recording rights. Admin visibility alone must not put a colleague’s event on the personal recorder. Stop and destination changes must serialize so Stop freezes the confirmed destination.
 
 Sharing suggestions show the email and organization. An unknown complete email gets a selectable “Share with …” option. Suggestions do not change the scope of Whole organization. Dashboard errors offer Try again without signing the user out. Desktop launch and sign in handoff show the recorder window, with one action for the next setup step.
 
