@@ -15,7 +15,9 @@ describe("recording targets", () => {
     const query = databaseSql.mock.calls[0][0].join("?");
     expect(query).toContain("m.owner_user_id = ");
     // Attended meetings count only through active participant access, never a bare admin role.
-    expect(query).toContain("ma.source = 'participant' and ma.revoked_at is null)\n        and exists");
+    expect(query).toContain("source.source = 'participant' and source.revoked_at is null)");
+    expect(query).toContain("ma.revoked_at is null");
+    expect(query).toContain("source.recipient_email = lower(u.email)");
     expect(query).not.toMatch(/or exists \(\s*select 1 from team_memberships/);
     expect(databaseSql.mock.calls[0]).toContain(100);
   });

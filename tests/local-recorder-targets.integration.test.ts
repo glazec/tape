@@ -1,10 +1,11 @@
 import { createHash, randomUUID } from "node:crypto";
+import type { SQL } from "drizzle-orm";
 import { PgDialect } from "drizzle-orm/pg-core";
-import { execFile } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import { promisify } from "node:util";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
-const { databaseSql, db } = vi.hoisted(() => ({ databaseSql: Object.assign(vi.fn(), { transaction: vi.fn() }), db: { select: vi.fn() } }));
+const { databaseSql, db } = vi.hoisted(() => ({ databaseSql: Object.assign(vi.fn(), { transaction: vi.fn() }), db: { insert: vi.fn(), select: vi.fn() } }));
 vi.mock("@/db/client", () => ({ databaseSql, db }));
 vi.mock("@/inngest/client", () => ({ inngest: { send: vi.fn() } }));
 vi.mock("@/lib/meeting-share-rules", () => ({ reconcileMeetingSharingForMeeting: vi.fn() }));
@@ -16,7 +17,7 @@ vi.mock("@/lib/provider-usage", () => ({ recordRecallRecordingUsage: vi.fn() }))
 vi.mock("@/lib/vendors/recall", () => ({ createRecallDesktopSdkUpload: vi.fn(), getRecallApiBaseUrl: vi.fn(), retrieveRecallBot: vi.fn() }));
 import { finalizeMeetingTranscriptGeneration } from "@/lib/transcript-job-failure";
 import { createRecallRecordingTranscription } from "@/lib/transcription-records";
-import { getLocalRecorderMonitoringWindowCondition, claimLocalRecorderIntent, completeLocalRecorderRecordingUpload, resolveLocalRecorderSdkMeeting, markLocalRecorderSdkIntentTerminal } from "@/lib/local-recorder-records";
+import { authorizeLocalRecorderNotification, getLocalRecorderMonitoringStatus, getLocalRecorderMonitoringWindowCondition, claimLocalRecorderIntent, completeLocalRecorderRecordingUpload, resolveLocalRecorderSdkMeeting, markLocalRecorderSdkIntentTerminal } from "@/lib/local-recorder-records";
 import { finishLocalRecorderRecordingTarget, getLocalRecorderRecordingTargetStatus, listLocalRecorderRecordingMeetings, setLocalRecorderRecordingTarget } from "@/lib/local-recorder-targets";
 
 const dsn = process.env.TAPE_RECORDER_TEST_DATABASE;
@@ -29,6 +30,7 @@ const second = "00000000-0000-4000-8000-000000000005";
 const workspace = { teamId: team, userId: user, domain: "", canCreateMeetings: true };
 const input = { workspace, deviceId: "mac", now: new Date(), meetingId: first };
 const schema = `recorder_test_${process.pid}`;
+const psqlEnv = { ...process.env, PGAPPNAME: schema };
 
 function literal(value: unknown): string {
   if (value === null || value === undefined) return "null";
@@ -40,7 +42,7 @@ function statement(strings: TemplateStringsArray, ...values: unknown[]) {
   return strings.reduce((text, part, i) => text + (i ? literal(values[i - 1]) : "") + part, "");
 }
 async function sql(query: string) {
-  const result = await run("psql", [dsn!, "-X", "-q", "-t", "-A", "-F", "|", "-v", "ON_ERROR_STOP=1", "-c", `set search_path to ${schema}; ${query}`]);
+  const result = await run("psql", [dsn!, "-X", "-q", "-t", "-A", "-F", "|", "-v", "ON_ERROR_STOP=1", "-c", `set search_path to ${schema}; ${query}`], { env: psqlEnv });
   return result.stdout.trim().split("\n").filter(Boolean);
 }
 function targetRows(lines: string[]) {
@@ -56,7 +58,10 @@ describe.skipIf(!dsn)("recording target PostgreSQL transactions", () => {
     if (url.hostname !== "127.0.0.1" || url.pathname !== "/tape_workflow_test") throw new Error("Use the isolated local tape_workflow_test database");
     await sql(`create schema ${schema};
       create table team_memberships (team_id uuid, user_id uuid, role text);
-      create table meetings (id uuid primary key default gen_random_uuid(), team_id uuid, owner_user_id uuid, platform text, status text, title text, started_at timestamptz, ended_at timestamptz, created_at timestamptz default now(), updated_at timestamptz default now(), recall_bot_id text);
+      create table meeting_access (meeting_id uuid, user_id uuid, source text, revoked_at timestamptz);
+      create table users (id uuid, email text);
+      create table meeting_access_sources (meeting_id uuid, recipient_email text, source text, source_id text, revoked_at timestamptz);
+      create table meetings (id uuid primary key default gen_random_uuid(), team_id uuid, owner_user_id uuid, platform text, status text, title text, started_at timestamptz, ended_at timestamptz, created_at timestamptz default now(), updated_at timestamptz default now(), recall_bot_id text, meeting_url text);
       create table local_recording_attempts (id uuid primary key default gen_random_uuid(), meeting_id uuid references meetings(id), user_id uuid, device_id_hash text, fallback_intent_id_hash text unique, attempt_state text, claimed_at timestamptz, expires_at timestamptz, notification_state text, updated_at timestamptz default now());
       create unique index local_recording_attempts_primary_active_unique on local_recording_attempts(meeting_id) where attempt_state in ('started', 'uploading', 'uploaded');
       create type meeting_status as enum ('scheduled', 'recording', 'processing', 'ready', 'failed', 'cancelled');
@@ -90,8 +95,9 @@ describe.skipIf(!dsn)("recording target PostgreSQL transactions", () => {
     databaseSql.transaction.mockImplementation(async (build) => {
       const queryFunction = Object.assign(statement, { query: (query: string, values: unknown[]) => query.replace(/\$(\d+)/g, (_, i) => literal(values[Number(i) - 1])) });
       const queries = build(queryFunction);
-      const result = await run("psql", [dsn!, "-X", "-q", "-t", "-A", "-F", "|", "-v", "ON_ERROR_STOP=1", "-c", `set search_path to ${schema}`, "-c", "begin", ...queries.flatMap((query: string) => ["-c", query]), "-c", "commit"]);
+      const result = await run("psql", [dsn!, "-X", "-q", "-t", "-A", "-F", "|", "-v", "ON_ERROR_STOP=1", "-c", `set search_path to ${schema}`, "-c", "begin", ...queries.flatMap((query: string) => ["-c", query]), "-c", "commit"], { env: psqlEnv });
       const lines = result.stdout.trim().split("\n").filter(Boolean);
+      if (queries[1].includes("with frozen")) return [[], targetRows(lines)];
       if (queries[1].includes("as should_queue")) return [[], lines.map((line) => {
         const [transcript_job_id, recording_id, shouldQueue] = line.split("|");
         return { transcript_job_id, recording_id, should_queue: shouldQueue === "t" };
@@ -105,13 +111,100 @@ describe.skipIf(!dsn)("recording target PostgreSQL transactions", () => {
   });
   beforeEach(async () => {
     db.select.mockReset();
-    await sql(`truncate transcript_segments, transcript_jobs, recordings, local_recordings, media_assets, local_recording_attempts, meetings, team_memberships;
+    await sql(`truncate users, meeting_access_sources, meeting_access, transcript_segments, transcript_jobs, recordings, local_recordings, media_assets, local_recording_attempts, meetings, team_memberships;
+      insert into users values ('${user}', 'recorder@example.com');
       insert into team_memberships values ('${team}', '${user}', 'member');
       insert into meetings(id, team_id, owner_user_id, title, platform, status, started_at) values
       ('${first}', '${team}', '${user}', 'First', 'google_meet', 'ready', '2020-01-01'),
       ('${second}', '${team}', '${user}', 'Second', 'zoom', 'scheduled', now());`);
   });
   afterAll(async () => { await sql(`drop schema ${schema} cascade`); });
+
+  it.each(["member", "admin", "owner"])("keeps unrelated colleagues out of automatic suggestions and alerts for a %s", async (role) => {
+    await sql(`update team_memberships set role = '${role}';
+      update meetings set status = 'scheduled', meeting_url = 'https://meet.google.com/abc-defg-hij',
+        started_at = '${input.now.toISOString()}'::timestamptz - interval '1 minute',
+        ended_at = '${input.now.toISOString()}'::timestamptz + interval '30 minutes';
+      update meetings set owner_user_id = '${other}' where id = '${second}'`);
+    const predicates = await automaticMeetingPredicates();
+    expect((await listLocalRecorderRecordingMeetings({ workspace })).meetings.map((m) => m.meetingId)).toEqual([first]);
+    for (const predicate of predicates) {
+      expect(await sql(`select id from meetings where ${predicate} order by id`)).toEqual([first]);
+    }
+  });
+
+  it.each([
+    ["admin", "participant", false, true],
+    ["owner", "participant", false, true],
+    ["member", "participant", false, false],
+    ["admin", "manual", false, false],
+    ["admin", "participant", true, false],
+  ])("respects %s access to %s grants revoked=%s in automatic monitoring", async (role, source, revoked, included) => {
+    await sql(`update team_memberships set role = '${role}';
+      update meetings set status = 'scheduled', meeting_url = 'https://meet.google.com/abc-defg-hij',
+        started_at = '${input.now.toISOString()}'::timestamptz - interval '1 minute',
+        ended_at = '${input.now.toISOString()}'::timestamptz + interval '30 minutes';
+      update meetings set owner_user_id = '${other}' where id = '${second}';
+      insert into meeting_access values ('${second}', '${user}', 'effective', null);
+      insert into meeting_access_sources values ('${second}', 'recorder@example.com', '${source}', 'calendar', ${revoked ? "now()" : "null"})`);
+    expect((await listLocalRecorderRecordingMeetings({ workspace })).meetings.map((m) => m.meetingId).sort()).toEqual(included ? [first, second] : [first]);
+    for (const predicate of await automaticMeetingPredicates()) {
+      expect(await sql(`select id from meetings where ${predicate} order by id`)).toEqual(included ? [first, second] : [first]);
+    }
+  });
+
+  it.each([
+    ["unrelated colleague", "participant", null, null, false, false],
+    ["calendar participant", "participant", null, null, true, true],
+    ["revoked participant", "participant", "now()", null, true, false],
+    ["revoked effective grant", "participant", null, "now()", true, false],
+    ["manual share", "manual", null, null, true, false],
+    ["another workspace", "participant", null, null, true, false],
+  ])("rechecks queued alerts for %s", async (name, source, revokedSource, revokedAccess, grant, allowed) => {
+    await sql(`update team_memberships set role = 'admin';
+      update meetings set owner_user_id = '${other}' where id = '${second}';
+      ${name === "another workspace" ? `update meetings set team_id = '${other}' where id = '${second}';` : ""}
+      ${grant ? `insert into meeting_access values ('${second}', '${user}', 'effective', ${revokedAccess ?? "null"});
+        insert into meeting_access_sources values ('${second}', 'recorder@example.com', '${source}', 'calendar', ${revokedSource ?? "null"});` : ""}
+      insert into local_recording_attempts(meeting_id, user_id, device_id_hash, fallback_intent_id_hash, attempt_state, expires_at)
+        values ('${second}', '${user}', '${createHash("sha256").update("mac").digest("base64url")}',
+          '${createHash("sha256").update("queued").digest("base64url")}', 'notified', now() + interval '1 hour')`);
+    let predicate = "";
+    const chain = {
+      from: () => chain, innerJoin: () => chain,
+      where: (condition: SQL) => {
+        const query = new PgDialect().sqlToQuery(condition);
+        predicate = query.sql.replace(/\$(\d+)/g, (_, i) => literal(query.params[Number(i) - 1]));
+        return chain;
+      },
+      limit: async () => [],
+    };
+    db.select.mockReturnValue(chain);
+    await authorizeLocalRecorderNotification({ ...input, fallbackIntentId: "queued" });
+    expect(predicate).not.toBe("");
+    expect(await sql(`select meetings.id from meetings join local_recording_attempts on local_recording_attempts.meeting_id = meetings.id where ${predicate}`)).toEqual(allowed ? [second] : []);
+  });
+
+  async function automaticMeetingPredicates() {
+    const predicates: string[] = [];
+    db.insert.mockReturnValue({ values: () => ({ onConflictDoUpdate: async () => undefined }) });
+    db.select.mockImplementation(() => {
+      const chain = {
+        from: () => chain,
+        where: (condition: SQL) => {
+          const query = new PgDialect().sqlToQuery(condition);
+          predicates.push(query.sql.replace(/\$(\d+)/g, (_, i) => literal(query.params[Number(i) - 1])));
+          return chain;
+        },
+        orderBy: () => chain,
+        limit: async () => [],
+      };
+      return chain;
+    });
+    await getLocalRecorderMonitoringStatus(input);
+    expect(predicates).toHaveLength(2);
+    return predicates;
+  }
 
   it("excludes an old recording with no end from idle suggestions while retaining the upcoming event", async () => {
     await sql(`update meetings set status = 'recording', started_at = '${input.now.toISOString()}'::timestamptz - interval '1 day', ended_at = null where id = '${first}';
@@ -195,6 +288,48 @@ describe.skipIf(!dsn)("recording target PostgreSQL transactions", () => {
       expect(await sql("select meeting_id from local_recording_attempts")).toEqual([finishResult.value.meetingId]);
     }
   });
+
+  it("finishes with a fresh destination after waiting for an uncommitted switch", async () => {
+    const started = await setLocalRecorderRecordingTarget(input);
+    const deviceHash = createHash("sha256").update(input.deviceId).digest("base64url");
+    const switching = spawn("psql", [dsn!, "-X", "-q", "-t", "-A", "-v", "ON_ERROR_STOP=1"], {
+      env: { ...psqlEnv, PGAPPNAME: `${schema}_switch` },
+    });
+    let output = "";
+    switching.stdout.on("data", (chunk) => { output += String(chunk); });
+    const closed = new Promise<void>((resolve) => { switching.once("close", () => resolve()); });
+    let finishing: Promise<unknown> | undefined;
+    try {
+      // Hold both locks used by a destination switch until finish is demonstrably waiting.
+      switching.stdin.write(`set search_path to ${schema};
+        begin;
+        select pg_advisory_xact_lock(hashtextextended('${user}:${deviceHash}', 0));
+        update local_recording_attempts set meeting_id = '${second}' where meeting_id = '${first}';
+        \\echo switch-ready
+      `);
+      await vi.waitFor(() => {
+        expect(switching.exitCode).toBeNull();
+        expect(output).toContain("switch-ready");
+      }, { timeout: 3000, interval: 10 });
+      finishing = finishLocalRecorderRecordingTarget({ ...input, fallbackIntentId: started.fallbackIntentId })
+        .then((target) => ({ target }), (error: unknown) => ({ error }));
+      await vi.waitFor(async () => {
+        expect(await sql(`select count(*) from pg_stat_activity
+          where application_name = '${schema}' and cardinality(pg_blocking_pids(pid)) > 0`)).toEqual(["1"]);
+      }, { timeout: 3000, interval: 10 });
+      switching.stdin.end("commit;\n");
+      await closed;
+      expect(switching.exitCode).toBe(0);
+      expect(await finishing).toMatchObject({ target: { meetingId: second } });
+      expect(await sql("select meeting_id, attempt_state from local_recording_attempts")).toEqual([`${second}|sealed`]);
+    } finally {
+      if (switching.exitCode === null) {
+        switching.stdin.end("rollback;\n");
+        await closed;
+      }
+      await finishing;
+    }
+  }, 10000);
 
   it.each([false, true])("retains capture chronology and media with reversed completion %s", async (reversed) => {
     const complete = async (fallbackIntentId: string) => {

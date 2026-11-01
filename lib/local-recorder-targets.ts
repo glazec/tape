@@ -54,9 +54,12 @@ export async function listLocalRecorderRecordingMeetings(input: {
       -- attend when they may record into them (only owners and admins may). Other
       -- teammates' meetings stay out even though admins can target them by id.
       and (m.owner_user_id = ${input.workspace.userId}::uuid or (
-        exists (select 1 from meeting_access ma where ma.meeting_id = m.id
-          and ma.user_id = ${input.workspace.userId}::uuid
-          and ma.source = 'participant' and ma.revoked_at is null)
+        exists (select 1 from meeting_access ma
+          join users u on u.id = ma.user_id
+          join meeting_access_sources source on source.meeting_id = ma.meeting_id
+            and source.recipient_email = lower(u.email)
+          where ma.meeting_id = m.id and ma.user_id = ${input.workspace.userId}::uuid
+            and ma.revoked_at is null and source.source = 'participant' and source.revoked_at is null)
         and exists (select 1 from team_memberships membership where membership.team_id = m.team_id
           and membership.user_id = ${input.workspace.userId}::uuid and membership.role in ('owner', 'admin'))
       ))
@@ -213,7 +216,10 @@ export async function finishLocalRecorderRecordingTarget(input: {
   fallbackIntentId: string;
   workspace: WorkspaceContext;
 }) {
-  const rows = await databaseSql`
+  // Match destination changes, then read the destination with a fresh snapshot.
+  const results = await databaseSql.transaction((tx) => [
+    tx`select pg_advisory_xact_lock(hashtextextended(${`${input.workspace.userId}:${hash(input.deviceId)}`}, 0))`,
+    tx`
     with frozen as (
       update local_recording_attempts a set
         attempt_state = case when a.attempt_state = 'started' then 'sealed' else a.attempt_state end,
@@ -228,7 +234,9 @@ export async function finishLocalRecorderRecordingTarget(input: {
     )
     select m.id as "meetingId", m.title as "meetingTitle", m.started_at as "startsAt", m.ended_at as "endsAt"
     from meetings m join frozen on frozen.meeting_id = m.id
-  ` as RecordingTarget[];
+    `,
+  ]);
+  const rows = results[1] as RecordingTarget[];
   if (!rows[0]) throw new LocalRecorderTargetError("Recording target unavailable");
   return { ...rows[0], fallbackIntentId: input.fallbackIntentId };
 }

@@ -20,6 +20,8 @@ import {
   localRecordingAttempts,
   localRecordings,
   mediaAssets,
+  meetingAccess,
+  meetingAccessSources,
   meetings,
   teamMemberships,
   teams,
@@ -302,7 +304,7 @@ export async function listMissedLocalRecorderMeetings(input: {
     .where(
       and(
         eq(meetings.teamId, input.workspace.teamId),
-        getMeetingManagerCondition(input.workspace),
+        getLocalRecorderAutomaticMeetingCondition(input.workspace),
         isNotNull(meetings.meetingUrl),
         isNotNull(meetings.startedAt),
         lte(meetings.startedAt, input.now),
@@ -381,6 +383,28 @@ export async function listMissedLocalRecorderMeetings(input: {
   return items;
 }
 
+// Automatic monitoring follows personal participation, not workspace admin visibility.
+function getLocalRecorderAutomaticMeetingCondition(workspace: WorkspaceContext) {
+  return and(
+    getMeetingManagerCondition(workspace),
+    or(
+      eq(meetings.ownerUserId, workspace.userId),
+      sql`exists (
+        select 1 from ${meetingAccess}
+        join ${users} on ${users.id} = ${meetingAccess.userId}
+        join ${meetingAccessSources}
+          on ${meetingAccessSources.meetingId} = ${meetingAccess.meetingId}
+          and ${meetingAccessSources.recipientEmail} = lower(${users.email})
+        where ${meetingAccess.meetingId} = ${meetings.id}
+          and ${meetingAccess.userId} = ${workspace.userId}
+          and ${meetingAccessSources.source} = 'participant'
+          and ${meetingAccessSources.revokedAt} is null
+          and ${meetingAccess.revokedAt} is null
+      )`,
+    ),
+  );
+}
+
 export function getLocalRecorderMonitoringWindowCondition(now: Date) {
   return or(
     gte(meetings.startedAt, now),
@@ -416,7 +440,7 @@ export async function getLocalRecorderMonitoringStatus(input: {
     .where(
       and(
         eq(meetings.teamId, input.workspace.teamId),
-        getMeetingManagerCondition(input.workspace),
+        getLocalRecorderAutomaticMeetingCondition(input.workspace),
         isNotNull(meetings.startedAt),
         inArray(meetings.status, ["scheduled", "recording"]),
         getLocalRecorderMonitoringWindowCondition(input.now),
@@ -857,6 +881,8 @@ export async function authorizeLocalRecorderNotification(input: {
     .innerJoin(meetings, eq(meetings.id, localRecordingAttempts.meetingId))
     .where(
       and(
+        eq(meetings.teamId, input.workspace.teamId),
+        getLocalRecorderAutomaticMeetingCondition(input.workspace),
         eq(localRecordingAttempts.userId, input.workspace.userId),
         eq(localRecordingAttempts.deviceIdHash, deviceIdHash),
         eq(localRecordingAttempts.fallbackIntentIdHash, fallbackIntentIdHash),
