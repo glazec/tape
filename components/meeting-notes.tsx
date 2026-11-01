@@ -27,7 +27,23 @@ import {
   noteQuestion,
   type NoteAnswer,
   type NoteBlock,
+  type NoteMoment,
 } from "@/lib/meeting-note-document";
+
+import {
+  explicitMomentTarget,
+  formatNoteMoment,
+  NOTE_MOMENT_NAVIGATE,
+  NOTE_PLAYBACK_POSITION,
+  parseNoteMoments,
+  reconcileNoteMoments,
+  resolveNoteMoment,
+  type NoteMomentSource,
+  type NotePlaybackPosition,
+  type NoteMomentNavigation,
+} from "@/lib/note-moments";
+
+const emptyMomentSources: NoteMomentSource[] = [];
 
 // Enter after a question starts a new writing block. Preserve the exact text.
 function splitAfterQuestions(text: string) {
@@ -50,12 +66,28 @@ function splitAfterQuestions(text: string) {
 export function MeetingNotes({
   meetingId,
   userId,
+  momentSources = emptyMomentSources,
 }: {
   meetingId: string;
   userId: string;
+  momentSources?: NoteMomentSource[];
 }) {
   const { blocks, change, status, loaded, save, reload, retry } =
     useMeetingNote(meetingId, userId);
+  const [editingMoments, setEditingMoments] = useState(false);
+  const [momentMessage, setMomentMessage] = useState("");
+  const lastEditor = useRef<string | null>(null);
+  const pastedCommand = useRef<string | null>(null);
+  const playbackPosition = useRef<NotePlaybackPosition | null>(null);
+  useEffect(() => {
+    const receive = (event: Event) => {
+      const detail = (event as CustomEvent<NotePlaybackPosition>).detail;
+      if (momentSources.some((source) => source.id === detail.meetingId))
+        playbackPosition.current = detail;
+    };
+    window.addEventListener(NOTE_PLAYBACK_POSITION, receive);
+    return () => window.removeEventListener(NOTE_PLAYBACK_POSITION, receive);
+  }, [momentSources]);
   const [replaceOpen, setReplaceOpen] = useState(false);
   const [copyStatus, setCopyStatus] = useState<"idle" | "copied" | "error">(
     "idle",
@@ -80,7 +112,28 @@ export function MeetingNotes({
   const hasAnswer = blocks.some((block) => block.answer);
   const canEnhance = loaded && status !== "conflict" && status !== "error";
   const copyText = blocks
-    .map((block) => [block.text, block.answer?.text].filter(Boolean).join("\n"))
+    .map((block) => {
+      let text = block.text;
+      for (const moment of [...(block.moments ?? [])].sort(
+        (a, b) => b.start - a.start,
+      )) {
+        const source = momentSources.find(
+          (source) => source.id === moment.sourceMeetingId,
+        );
+        const resolved = source
+          ? resolveNoteMoment(moment, source.recordings)
+          : null;
+        const marker =
+          resolved === null
+            ? `[Moment captured ${moment.capturedAt ?? "during playback"}]`
+            : `[${formatNoteMoment(resolved)}]`;
+        text =
+          text.slice(0, moment.start) +
+          marker +
+          text.slice(moment.start + moment.text.length);
+      }
+      return [text, block.answer?.text].filter(Boolean).join("\n");
+    })
     .join("\n");
 
   useLayoutEffect(() => {
@@ -151,7 +204,7 @@ export function MeetingNotes({
       editor?.scrollIntoView?.({ block: "nearest" });
       pendingFocus.current = null;
     }
-  }, [blocks, loaded, resizeEditors]);
+  }, [blocks, loaded, editingMoments, resizeEditors]);
   useEffect(() => {
     window.addEventListener("resize", resizeEditors);
     return () => window.removeEventListener("resize", resizeEditors);
@@ -199,7 +252,7 @@ export function MeetingNotes({
       change((current) =>
         current.map((block) =>
           block.id === id && !noteQuestion(block.text)
-            ? { id: block.id, text: block.text }
+            ? { ...block, answer: undefined }
             : block,
         ),
       );
@@ -212,6 +265,7 @@ export function MeetingNotes({
     text: string,
     cursor: number,
     isComposing = false,
+    insertedMoments?: NoteMoment[],
   ) {
     const current = blocksRef.current;
     const block = current.find((item) => item.id === id);
@@ -230,13 +284,28 @@ export function MeetingNotes({
           ),
         )
       : -1;
-    const next: NoteBlock[] = parts.map((part, index) => ({
-      id: index === Math.max(0, answerIndex) ? id : crypto.randomUUID(),
-      text: part,
-      ...(index === answerIndex && block.answer
-        ? { answer: block.answer }
-        : {}),
-    }));
+    const moments =
+      insertedMoments ??
+      reconcileNoteMoments(block.text, text, block.moments, cursor);
+    let partOffset = 0;
+    const next: NoteBlock[] = parts.map((part, index) => {
+      const partMoments = moments
+        .filter(
+          (moment) =>
+            moment.start >= partOffset &&
+            moment.start + moment.text.length <= partOffset + part.length,
+        )
+        .map((moment) => ({ ...moment, start: moment.start - partOffset }));
+      partOffset += part.length + 1;
+      return {
+        id: index === Math.max(0, answerIndex) ? id : crypto.randomUUID(),
+        text: part,
+        ...(partMoments.length ? { moments: partMoments } : {}),
+        ...(index === answerIndex && block.answer
+          ? { answer: block.answer }
+          : {}),
+      };
+    });
     if (parts.length > 1) {
       let offset = 0;
       for (let index = 0; index < parts.length; index++) {
@@ -259,6 +328,154 @@ export function MeetingNotes({
     setCopyStatus("idle");
   }
 
+  function captureMoment(id: string, command = false) {
+    const editor = editors.current.get(id);
+    const block = blocksRef.current.find((item) => item.id === id);
+    if (!editor || !block || composing === id) return;
+    const start = command ? editor.selectionStart - 4 : editor.selectionStart;
+    const end = editor.selectionEnd;
+    const active = momentSources.filter((source) => source.recording);
+    const playback = playbackPosition.current;
+    const captureSource =
+      active.length === 1
+        ? active[0]
+        : active.length === 0 && !playback
+          ? momentSources.find((source) => source.id === meetingId)
+          : undefined;
+    let token: string;
+    let anchor: NoteMoment | undefined;
+    if (captureSource) {
+      token = "[Moment]";
+      anchor = {
+        start,
+        text: token,
+        sourceMeetingId: captureSource.id,
+        capturedAt: new Date().toISOString(),
+      };
+      setMomentMessage(
+        "Moment saved. It will link if this time is covered by a recording.",
+      );
+    } else if (playback) {
+      let offset = 0;
+      for (const source of momentSources) {
+        if (source.id === playback.meetingId) break;
+        if (source.durationMs === null) {
+          setMomentMessage(
+            "Current recording time is unavailable. Type a timestamp such as [12:34].",
+          );
+          return;
+        }
+        offset += source.durationMs;
+      }
+      token = `[${formatNoteMoment(offset + playback.timestampMs)}]`;
+      anchor = {
+        start,
+        text: token,
+        sourceMeetingId: playback.meetingId,
+        playbackMs: playback.timestampMs,
+      };
+      setMomentMessage("");
+    } else {
+      setMomentMessage(
+        "Current recording time is unavailable. Type a timestamp such as [12:34].",
+      );
+      return;
+    }
+    const text =
+      block.text.slice(0, start) + token + " " + block.text.slice(end);
+    // This insertion has an exact selection range. A text diff cannot tell
+    // identical markers apart, especially when replacing one with another.
+    const delta = token.length + 1 - (end - start);
+    const moments = (block.moments ?? []).flatMap((moment) => {
+      if (moment.start + moment.text.length <= start) return [moment];
+      if (moment.start >= end)
+        return [{ ...moment, start: moment.start + delta }];
+      return [];
+    });
+    if (anchor) moments.push(anchor);
+    setEditingMoments(true);
+    pendingFocus.current = { id, position: start + token.length + 1 };
+    updateText(id, text, start + token.length + 1, false, moments);
+  }
+
+  function renderMomentText(block: NoteBlock) {
+    const tokens = [
+      ...parseNoteMoments(block.text),
+      ...(block.moments ?? [])
+        .filter(
+          (moment) =>
+            moment.text === "[Moment]" &&
+            block.text.slice(
+              moment.start,
+              moment.start + moment.text.length,
+            ) === moment.text,
+        )
+        .map((moment) => ({
+          start: moment.start,
+          text: moment.text,
+          timestampMs: 0,
+        })),
+    ].sort((a, b) => a.start - b.start);
+    let offset = 0;
+    const nodes = tokens.flatMap((token) => {
+      const anchor = block.moments?.find(
+        (moment) => moment.start === token.start && moment.text === token.text,
+      );
+      const source = anchor
+        ? momentSources.find((source) => source.id === anchor.sourceMeetingId)
+        : null;
+      const resolved =
+        anchor && source ? resolveNoteMoment(anchor, source.recordings) : null;
+      const target = anchor
+        ? resolved === null
+          ? null
+          : { meetingId: anchor.sourceMeetingId, timestampMs: resolved }
+        : explicitMomentTarget(token.timestampMs, momentSources);
+      const label = anchor
+        ? resolved === null
+          ? "Moment"
+          : formatNoteMoment(resolved)
+        : formatNoteMoment(token.timestampMs);
+      const before = block.text.slice(offset, token.start);
+      offset = token.start + token.text.length;
+      return [
+        before,
+        <button
+          key={token.start}
+          type="button"
+          className="mx-0.5 inline-flex min-h-11 items-center rounded bg-muted/60 px-2 text-sm font-medium tabular-nums text-foreground underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          aria-label={
+            target
+              ? `Go to ${label} in transcript`
+              : "Moment waiting for recording"
+          }
+          onClick={() => {
+            if (!target) {
+              setMomentMessage(
+                anchor
+                  ? "This moment will link when its recording timing is available."
+                  : "This timestamp is outside the available recording timeline.",
+              );
+              return;
+            }
+            const detail: NoteMomentNavigation = { ...target };
+            window.dispatchEvent(
+              new CustomEvent(NOTE_MOMENT_NAVIGATE, { detail }),
+            );
+            setMomentMessage(
+              detail.handled
+                ? ""
+                : "The transcript is not ready yet. Your moment is saved.",
+            );
+          }}
+        >
+          {label}
+        </button>,
+      ];
+    });
+    return [...nodes, block.text.slice(offset)];
+  }
+
   async function copyEdits() {
     const captured = JSON.stringify(blocks);
     try {
@@ -271,13 +488,13 @@ export function MeetingNotes({
   }
 
   return (
-    <section
-      aria-labelledby={headingId}
-      className="group/notes mb-10"
-    >
+    <section aria-labelledby={headingId} className="group/notes mb-10">
       <div className="mb-2 flex items-center justify-between gap-3">
         <div className="flex min-w-0 items-center gap-2">
-          <h2 id={headingId} className="text-xs font-medium text-muted-foreground">
+          <h2
+            id={headingId}
+            className="text-xs font-medium text-muted-foreground"
+          >
             My notes
           </h2>
           <p
@@ -312,6 +529,48 @@ export function MeetingNotes({
           )}
         </span>
       </div>
+      {loaded ? (
+        <div className="mb-2 flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            className="min-h-11 rounded px-2 text-xs text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            onMouseDown={(event) => event.preventDefault()}
+            onClick={() =>
+              captureMoment(lastEditor.current ?? blocks.at(-1)!.id)
+            }
+          >
+            Add timestamp
+          </button>
+          {blocks.some(
+            (block) =>
+              parseNoteMoments(block.text).length || block.moments?.length,
+          ) ? (
+            <button
+              type="button"
+              className="min-h-11 rounded px-2 text-xs text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              onClick={() => {
+                const id = lastEditor.current ?? blocks[0].id;
+                setEditingMoments(true);
+                pendingFocus.current = {
+                  id,
+                  position:
+                    blocks.find((block) => block.id === id)?.text.length ?? 0,
+                };
+              }}
+            >
+              Edit notes
+            </button>
+          ) : null}
+        </div>
+      ) : null}
+      {momentMessage ? (
+        <p
+          role="status"
+          className="mb-2 text-xs leading-5 text-muted-foreground"
+        >
+          {momentMessage}
+        </p>
+      ) : null}
       <div className="relative max-h-[min(32rem,65dvh)] overflow-y-auto overscroll-contain pr-1">
         {status === "loading" ? (
           <div
@@ -325,7 +584,21 @@ export function MeetingNotes({
         ) : null}
         {blocks.map((block, index) => (
           <div key={block.id}>
+            {loaded &&
+            !editingMoments &&
+            (parseNoteMoments(block.text).length > 0 ||
+              Boolean(block.moments?.length)) ? (
+              <p className="whitespace-pre-wrap break-words text-base leading-7">
+                {renderMomentText(block)}
+              </p>
+            ) : null}
             <textarea
+              hidden={
+                loaded &&
+                !editingMoments &&
+                (parseNoteMoments(block.text).length > 0 ||
+                  Boolean(block.moments?.length))
+              }
               ref={(node) => {
                 if (node) editors.current.set(block.id, node);
                 else editors.current.delete(block.id);
@@ -333,10 +606,21 @@ export function MeetingNotes({
               aria-label={index === 0 ? "My notes" : `Note ${index + 1}`}
               aria-describedby={`${privacyId} ${hintId}`}
               aria-busy={status === "loading"}
-              className={`block max-h-[min(24rem,60dvh)] w-full resize-none border-0 bg-transparent p-0 text-base leading-7 outline-none placeholder:text-muted-foreground disabled:text-muted-foreground ${blocks.length === 1 && !hasQuestions ? "min-h-16 focus:min-h-36" : "min-h-7"}`}
+              className={`${loaded && !editingMoments && (parseNoteMoments(block.text).length > 0 || Boolean(block.moments?.length)) ? "hidden" : "block"} max-h-[min(24rem,60dvh)] w-full resize-none border-0 bg-transparent p-0 text-base leading-7 outline-none placeholder:text-muted-foreground disabled:text-muted-foreground ${blocks.length === 1 && !hasQuestions ? "min-h-16 focus:min-h-36" : "min-h-7"}`}
               disabled={!loaded}
               maxLength={20_000 - content.length + block.text.length}
-              onBlur={() => void save()}
+              onFocus={() => {
+                lastEditor.current = block.id;
+                setEditingMoments(true);
+              }}
+              onBlur={(event) => {
+                void save();
+                if (!(event.relatedTarget instanceof HTMLTextAreaElement))
+                  setEditingMoments(false);
+              }}
+              onPaste={() => {
+                pastedCommand.current = block.id;
+              }}
               onCompositionStart={() => setComposing(block.id)}
               onCompositionEnd={(event) => {
                 setComposing(null);
@@ -359,6 +643,19 @@ export function MeetingNotes({
                   return;
                 const editor = event.currentTarget;
                 if (
+                  event.key === " " &&
+                  pastedCommand.current !== block.id &&
+                  editor.selectionStart === editor.selectionEnd &&
+                  /(?:^|\s)@now$/.test(
+                    editor.value.slice(0, editor.selectionStart),
+                  )
+                ) {
+                  event.preventDefault();
+                  captureMoment(block.id, true);
+                  return;
+                }
+                pastedCommand.current = null;
+                if (
                   event.key === "Backspace" &&
                   editor.selectionStart === 0 &&
                   editor.selectionEnd === 0 &&
@@ -378,6 +675,22 @@ export function MeetingNotes({
                               {
                                 ...previous,
                                 text: previous.text + block.text,
+                                ...(previous.moments?.length ||
+                                block.moments?.length
+                                  ? {
+                                      moments: [
+                                        ...(previous.moments ?? []),
+                                        ...(block.moments ?? []).map(
+                                          (moment) => ({
+                                            ...moment,
+                                            start:
+                                              moment.start +
+                                              previous.text.length,
+                                          }),
+                                        ),
+                                      ],
+                                    }
+                                  : {}),
                                 ...(block.answer
                                   ? { answer: block.answer }
                                   : {}),
@@ -450,7 +763,8 @@ export function MeetingNotes({
             : "mt-2 text-xs leading-5 text-muted-foreground opacity-0 transition-opacity group-focus-within/notes:opacity-100 motion-reduce:transition-none"
         }
       >
-        End a question with ? to find an answer in this transcript.
+        Type @now then Space to mark a moment, or use [12:34]. End a question
+        with ? to find an answer in this transcript.
       </p>
       {content.length >= 19_000 ? (
         <p
@@ -504,7 +818,9 @@ export function MeetingNotes({
                 Could not copy automatically. Your edits are selected so you can
                 copy them.
               </p>
-              {blocks.length > 1 || hasAnswer ? (
+              {blocks.length > 1 ||
+              hasAnswer ||
+              blocks.some((block) => block.moments?.length) ? (
                 <textarea
                   ref={copyFallback}
                   aria-label="Copy your notes"

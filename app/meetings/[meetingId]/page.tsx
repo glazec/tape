@@ -255,6 +255,13 @@ export default async function MeetingPage({
               key={`${workspace.userId}:${meetingId}`}
               meetingId={meetingId}
               userId={workspace.userId}
+              momentSources={(isComposed ? parts : [meeting]).map(source => ({
+                id: source.id,
+                durationMs: source.durationMs,
+                recordings: source.recordingParts ?? [],
+                hasTranscript: source.segments.length > 0,
+                recording: source.status === "recording",
+              }))}
             />
             {isFollowupReady(followupMeeting) ? (
               <MeetingFollowup
@@ -339,6 +346,7 @@ export default async function MeetingPage({
                     translationStatus: meeting.translationSummary.status,
                   })}
                   meetingId={canManage ? meetingId : null}
+                  navigationMeetingId={meetingId}
                   mobileAfterSpeakers={
                     <MeetingEntityLinks entities={meeting.entities} />
                   }
