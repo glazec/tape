@@ -133,7 +133,15 @@ export async function generateMeetingFollowup(
   if (transcript.length > FOLLOWUP_SOURCE_LIMIT) {
     throw new Error("Transcript is too long for followup generation");
   }
+  const schema = z.toJSONSchema(meetingFollowupSchema.required({ connections: true }));
+  // Google's structured output rejects this large nested array bound. Keep
+  // the 80 item limit in the prompt and local validator, not provider grammar.
+  const connectionSchema = schema.properties?.connections;
+  if (connectionSchema && typeof connectionSchema === "object") {
+    delete connectionSchema.maxItems;
+  }
   let validationError = "";
+  let previousContent = "";
   for (let attempt = 0; attempt < 2; attempt += 1) {
     const content = await createOpenRouterChatCompletion({
       attempts: 1,
@@ -148,8 +156,12 @@ export async function generateMeetingFollowup(
               : ""),
         },
         { role: "user", content: transcript },
+        ...(previousContent ? [
+          { role: "assistant" as const, content: previousContent },
+          { role: "user" as const, content: `Correct the validation errors throughout this result: ${validationError}. Preserve all supported entries and return the complete corrected JSON.` },
+        ] : []),
       ],
-      maxTokens: 8000,
+      maxTokens: 16000,
       temperature: 0.2,
       provider: { require_parameters: true },
       responseFormat: {
@@ -157,7 +169,7 @@ export async function generateMeetingFollowup(
         json_schema: {
           name: "meeting_followup",
           strict: true,
-          schema: z.toJSONSchema(meetingFollowupSchema),
+          schema,
         },
       },
       usageContext: { category: "assistant", meetingId },
@@ -166,6 +178,7 @@ export async function generateMeetingFollowup(
     try {
       return parseMeetingFollowup(content, source, { lenient: finalAttempt });
     } catch (error) {
+      previousContent = content;
       validationError = error instanceof Error ? error.message : "Invalid followup";
       console.warn("meeting_followup_validation_failed", { attempt, meetingId, validationError });
     }
@@ -656,7 +669,7 @@ async function createOpenRouterChatCompletion(input: {
   attempts?: number;
   timeoutMs?: number;
   model?: string;
-  messages: Array<{ role: "system" | "user"; content: string }>;
+  messages: Array<{ role: "system" | "user" | "assistant"; content: string }>;
   maxTokens: number;
   plugins?: Array<{ id: string }>;
   provider?: { require_parameters: boolean };

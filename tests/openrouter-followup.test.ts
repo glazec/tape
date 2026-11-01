@@ -57,6 +57,10 @@ describe("followup provider", () => {
     expect(request.reasoning).toEqual({ effort: "low" });
     expect(request.response_format.json_schema.strict).toBe(true);
     expect(request.response_format.json_schema.schema.required).toContain("research");
+    expect(request.response_format.json_schema.schema.required).toContain("connections");
+    expect(request.response_format.json_schema.schema.properties.connections.maxItems).toBeUndefined();
+    expect(request.messages[0].content).toContain("debt financing, private credit sales");
+    expect(request.messages[0].content).toContain("talked to, reviewed or invested in");
     expect(request.response_format.json_schema.schema.properties.research.items.required).toEqual(
       expect.arrayContaining(["question", "context", "evidenceToCollect", "evidence"]),
     );

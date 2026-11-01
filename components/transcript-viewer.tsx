@@ -31,6 +31,7 @@ import {
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { SPEAKER_LABELS_CHANGED } from "@/lib/meeting-connections";
 import { normalizeAudioPeaks, resampleAudioPeaks } from "@/lib/audio-waveform";
 import {
   getAudioPlaylistDurationSeconds,
@@ -975,15 +976,20 @@ export function TranscriptViewer({
       setSavingSpeakerKey(null);
     }
 
-    setSegments((currentSegments) =>
-      applySpeakerUpdateToSegments(
-        currentSegments,
-        editingSpeaker,
-        speakerApplyScope,
-        speaker,
-      ),
-    );
+    const updatedSegments = applySpeakerUpdateToSegments(segments, editingSpeaker, speakerApplyScope, speaker);
+    const affectedIds = new Set(segments.filter(segment => speakerApplyScope === "segment"
+      ? segment.id === editingSpeaker.segmentId
+      : getSpeakerKey(segment.speaker) === getSpeakerKey(editingSpeaker.currentSpeaker) ||
+        Boolean(segment.speaker && editingSpeaker.speakerAliases.includes(segment.speaker))).map(segment => segment.id));
+    setSegments(currentSegments => applySpeakerUpdateToSegments(currentSegments, editingSpeaker, speakerApplyScope, speaker));
+    window.dispatchEvent(new CustomEvent(SPEAKER_LABELS_CHANGED, {
+      detail: updatedSegments.filter(segment => affectedIds.has(segment.id)).map(({ id, speaker }) => ({
+        id, speaker,
+        ...(speakerApplyScope === "matching_speaker" && participantEmail ? { participantEmail } : {}),
+      })),
+    }));
     setEditingSpeaker(null);
+    router.refresh();
   }
 
   async function requestTranslation() {
@@ -1555,18 +1561,19 @@ export function TranscriptViewer({
                     data-note-moment-active={noteMomentSegmentId === segment.id ? "true" : undefined}
                     ref={(node) => {
                       if (node) {
-                        segmentRefs.current.set(segment.id, node);
+                        for (const id of segment.sourceIds) segmentRefs.current.set(id, node);
                         return;
                       }
 
-                      segmentRefs.current.delete(segment.id);
+                      for (const id of segment.sourceIds) segmentRefs.current.delete(id);
                     }}
                     className={cn(
-                      "group/line grid grid-cols-[3rem_minmax(0,1fr)] gap-4 rounded-lg pr-3 transition-colors sm:-ml-16",
+                      "group/line relative has-[:target]:bg-primary/5 grid grid-cols-[3rem_minmax(0,1fr)] gap-4 rounded-lg pr-3 transition-colors sm:-ml-16",
                       isContinuation ? "py-0.5" : "mt-2 pt-2.5 pb-0.5",
                       isActive ? "bg-primary/5" : "hover:bg-muted/35",
                     )}
                   >
+                    {segment.sourceIds.filter(id => id !== segment.id).map(id => <span key={id} id={id} tabIndex={-1} className="absolute size-px" aria-label="Transcript source" />)}
                     {isContinuation ? (
                       <span
                         aria-hidden="true"
@@ -1793,7 +1800,7 @@ function TranscriptControlSelect({
 }
 
 function getTranscriptDisplaySegments(segments: TranscriptSegment[]) {
-  const displaySegments: TranscriptSegment[] = [];
+  const displaySegments: Array<TranscriptSegment & { sourceIds: string[] }> = [];
   const seenSegmentKeys = new Map<string, number>();
 
   for (const segment of segments) {
@@ -1807,11 +1814,12 @@ function getTranscriptDisplaySegments(segments: TranscriptSegment[]) {
         seenSegmentKeys.set(key, displaySegments.length);
       }
 
-      displaySegments.push(segment);
+      displaySegments.push({ ...segment, sourceIds: [segment.id] });
       continue;
     }
 
     const existing = displaySegments[existingIndex];
+    if (!existing.sourceIds.includes(segment.id)) existing.sourceIds.push(segment.id);
 
     for (const key of keys) {
       seenSegmentKeys.set(key, existingIndex);

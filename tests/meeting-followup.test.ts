@@ -77,6 +77,16 @@ describe("compact followup grounding", () => {
     expect(getCurrentMeetingFollowup({ ...meeting, aiFollowup: { ...meeting.aiFollowup, result: { ...legacy, research: [research] } } })).toBeNull();
   });
 
+  it("preserves deployed version 2 actions and research after the connections prompt upgrade", () => {
+    const storedResult = { ...result, research: [research] };
+    const meeting = {
+      ...researchSource, status: "ready", transcriptJobStatus: "completed",
+      aiFollowup: { sourceHash: createHash("sha256").update(JSON.stringify([2, researchSource])).digest("hex"), result: storedResult },
+    };
+    expect(getCurrentMeetingFollowup(meeting)).toEqual(storedResult);
+    expect(getCurrentMeetingFollowup({ ...meeting, title: "Changed" })).toBeNull();
+  });
+
   it("matches quotes despite curly apostrophes and spacing", () => {
     const curly = {
       ...source,
