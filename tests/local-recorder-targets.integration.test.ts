@@ -61,12 +61,12 @@ describe.skipIf(!dsn)("recording target PostgreSQL transactions", () => {
       create table meeting_access (meeting_id uuid, user_id uuid, source text, revoked_at timestamptz);
       create table users (id uuid, email text);
       create table meeting_access_sources (meeting_id uuid, recipient_email text, source text, source_id text, revoked_at timestamptz);
-      create table meetings (id uuid primary key default gen_random_uuid(), team_id uuid, owner_user_id uuid, platform text, status text, title text, started_at timestamptz, ended_at timestamptz, created_at timestamptz default now(), updated_at timestamptz default now(), recall_bot_id text, meeting_url text);
+      create table meetings (id uuid primary key default gen_random_uuid(), team_id uuid, owner_user_id uuid, platform text, status text, title text, started_at timestamptz, ended_at timestamptz, created_at timestamptz default now(), updated_at timestamptz default now(), recall_bot_id text, recall_recording_id text, meeting_url text);
       create table local_recording_attempts (id uuid primary key default gen_random_uuid(), meeting_id uuid references meetings(id), user_id uuid, device_id_hash text, fallback_intent_id_hash text unique, attempt_state text, claimed_at timestamptz, expires_at timestamptz, notification_state text, updated_at timestamptz default now());
       create unique index local_recording_attempts_primary_active_unique on local_recording_attempts(meeting_id) where attempt_state in ('started', 'uploading', 'uploaded');
       create type meeting_status as enum ('scheduled', 'recording', 'processing', 'ready', 'failed', 'cancelled');
       create type transcript_mode as enum ('replace', 'append');
-      create type asset_type as enum ('computer_audio', 'microphone_audio', 'synthesized_audio');
+      create type asset_type as enum ('computer_audio', 'microphone_audio', 'synthesized_audio', 'audio');
       create table media_assets (id uuid primary key, meeting_id uuid references meetings(id), source text, type asset_type, bucket text, object_key text, mime_type text, file_size_bytes integer);
       create table local_recordings (id uuid primary key default gen_random_uuid(), local_recording_attempt_id uuid unique references local_recording_attempts(id), meeting_id uuid references meetings(id), is_primary boolean, owner_user_id uuid, client_recording_id text, recording_started_at timestamptz, recording_stopped_at timestamptz, computer_audio_asset_id uuid references media_assets(id), microphone_audio_asset_id uuid references media_assets(id), synthesized_audio_asset_id uuid references media_assets(id), manifest jsonb, synthesis_status text, updated_at timestamptz, unique(owner_user_id, client_recording_id));
       create unique index local_recordings_meeting_primary_unique on local_recordings(meeting_id) where is_primary = true;
@@ -98,6 +98,9 @@ describe.skipIf(!dsn)("recording target PostgreSQL transactions", () => {
       const result = await run("psql", [dsn!, "-X", "-q", "-t", "-A", "-F", "|", "-v", "ON_ERROR_STOP=1", "-c", `set search_path to ${schema}`, "-c", "begin", ...queries.flatMap((query: string) => ["-c", query]), "-c", "commit"], { env: psqlEnv });
       const lines = result.stdout.trim().split("\n").filter(Boolean);
       if (queries[1].includes("with frozen")) return [[], targetRows(lines)];
+      if (queries[1].includes("update local_recording_attempts a") && queries[1].includes("returning a.id")) {
+        return [[], lines.map((id) => ({ id }))];
+      }
       if (queries[1].includes("as should_queue")) return [[], lines.map((line) => {
         const [transcript_job_id, recording_id, shouldQueue] = line.split("|");
         return { transcript_job_id, recording_id, should_queue: shouldQueue === "t" };
@@ -106,7 +109,7 @@ describe.skipIf(!dsn)("recording target PostgreSQL transactions", () => {
         const [local_recording_id, transcript_job_id, meeting_id, media_asset_id] = line.split("|");
         return { local_recording_id, transcript_job_id, meeting_id, media_asset_id };
       })];
-      return [[], [], targetRows(lines)];
+      return [[], [], [], targetRows(lines)];
     });
   });
   beforeEach(async () => {

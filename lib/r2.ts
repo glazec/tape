@@ -39,6 +39,7 @@ type DeleteObjectInput = {
 };
 
 type PutObjectInput = {
+  onlyIfAbsent?: boolean;
   key: string;
   body: Uint8Array;
   contentType: string;
@@ -50,6 +51,8 @@ export class UnsafeObjectKeySegmentError extends Error {
     this.name = "UnsafeObjectKeySegmentError";
   }
 }
+
+export class ObjectAlreadyExistsError extends Error {}
 
 export class ObjectNotFoundError extends Error {
   constructor(key: string) {
@@ -175,9 +178,18 @@ export async function putObject(input: PutObjectInput) {
     Key: input.key,
     Body: input.body,
     ContentType: input.contentType,
+    ...(input.onlyIfAbsent ? { IfNoneMatch: "*" } : {}),
   });
 
-  await client.send(command);
+  try {
+    await client.send(command);
+  } catch (error) {
+    const candidate = error as { name?: string; $metadata?: { httpStatusCode?: number } } | null;
+    if (input.onlyIfAbsent && (candidate?.name === "PreconditionFailed" || candidate?.$metadata?.httpStatusCode === 412)) {
+      throw new ObjectAlreadyExistsError("This recording upload already exists");
+    }
+    throw error;
+  }
 }
 
 function isNotFoundError(error: unknown) {

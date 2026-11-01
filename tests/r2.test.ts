@@ -156,6 +156,12 @@ describe("R2 operations", () => {
     await expect(getObjectMetadata({ key: "key" })).rejects.toThrow("network");
   });
 
+  it("protects an existing object when an upload is retried", async () => {
+    aws.send.mockRejectedValueOnce({ $metadata: { httpStatusCode: 412 } });
+    await expect(putObject({ key: "same.mp3", body: new Uint8Array([1]), contentType: "audio/mpeg", onlyIfAbsent: true })).rejects.toThrow("already exists");
+    expect(aws.send.mock.calls[0][0].input).toMatchObject({ IfNoneMatch: "*" });
+  });
+
   it("deletes and writes objects", async () => {
     aws.send.mockResolvedValue(undefined);
     await deleteObject({ key: "old.mp3" });

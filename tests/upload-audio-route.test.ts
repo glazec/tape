@@ -13,6 +13,7 @@ const getCurrentUser = vi.fn();
 const getWorkspace = vi.fn();
 const assertCanCreateMeetings = vi.fn();
 const putObject = vi.fn();
+const getObjectMetadata = vi.fn();
 const createUploadedAudioTranscription = vi.fn();
 const createUploadedVideoTranscription = vi.fn();
 const revalidatePath = vi.fn();
@@ -33,6 +34,7 @@ vi.mock("@/lib/r2", async (importOriginal) => {
   return {
     ...actual,
     putObject,
+    getObjectMetadata,
   };
 });
 
@@ -53,14 +55,12 @@ vi.mock("@/lib/transcription-records", () => ({
 
 async function postAudioUpload(
   file: File,
-  fields: { startedAt?: string } = {},
+  fields: Record<string, string | undefined> = {},
 ) {
   const { POST } = await import("@/app/api/uploads/audio/route");
   const formData = new FormData();
   formData.set("meeting-audio", file);
-  if (fields.startedAt) {
-    formData.set("startedAt", fields.startedAt);
-  }
+  for (const [key, value] of Object.entries(fields)) if (value !== undefined) formData.set(key, value);
 
   return POST(
     new Request("https://app.example.com/api/uploads/audio", {
@@ -86,11 +86,64 @@ describe("POST /api/uploads/audio", () => {
     getCurrentUser.mockReset();
     getWorkspace.mockReset();
     putObject.mockReset();
+    getObjectMetadata.mockReset();
     createUploadedAudioTranscription.mockReset();
     createUploadedVideoTranscription.mockReset();
     revalidatePath.mockReset();
     send.mockReset();
     vi.resetModules();
+  });
+
+  it.each(["audio", "video"])("preserves %s destination, title, interval and upload identity on fallback", async (kind) => {
+    getCurrentUser.mockResolvedValue({ id: "user_123", email: "user@example.com", name: null });
+    const create = kind === "audio" ? createUploadedAudioTranscription : createUploadedVideoTranscription;
+    create.mockResolvedValue({ meetingId: "22222222-2222-4222-8222-222222222222", transcriptJobId: "job" });
+    const response = await postAudioUpload(new File(["recording"], kind === "audio" ? "sample.mp3" : "sample.mp4", { type: kind === "audio" ? "audio/mpeg" : "video/mp4" }), {
+      uploadId: "same-upload", meetingId: "22222222-2222-4222-8222-222222222222", title: "  Chosen title  ", startedAt: "2026-10-19T15:41:00Z", durationMs: "5127900",
+    });
+    expect(response.status).toBe(202);
+    expect(create).toHaveBeenCalledWith(expect.objectContaining({
+      meetingId: "22222222-2222-4222-8222-222222222222", title: "Chosen title", startedAt: new Date("2026-10-19T15:41:00Z"), durationMs: 5127900,
+      objectKey: `users/user_123/uploads/same-upload.${kind === "audio" ? "mp3" : "mp4"}`,
+    }));
+    expect(putObject).toHaveBeenCalledWith(expect.objectContaining({ onlyIfAbsent: true }));
+  });
+
+  it("reuses an existing matching object without overwriting it", async () => {
+    const { ObjectAlreadyExistsError } = await import("@/lib/r2");
+    getCurrentUser.mockResolvedValue({ id: "user_123", email: "user@example.com", name: null });
+    putObject.mockRejectedValue(new ObjectAlreadyExistsError());
+    getObjectMetadata.mockResolvedValue({ contentLength: 3, contentType: "audio/mpeg" });
+    createUploadedAudioTranscription.mockResolvedValue({ meetingId: "meeting", transcriptJobId: "job" });
+    const response = await postAudioUpload(new File(["abc"], "sample.mp3", { type: "audio/mpeg" }), { uploadId: "same-upload" });
+    expect(response.status).toBe(202);
+    expect(createUploadedAudioTranscription).toHaveBeenCalledOnce();
+  });
+
+  it("rejects a reused upload id with mismatched media", async () => {
+    const { ObjectAlreadyExistsError } = await import("@/lib/r2");
+    getCurrentUser.mockResolvedValue({ id: "user_123", email: "user@example.com", name: null });
+    putObject.mockRejectedValue(new ObjectAlreadyExistsError());
+    getObjectMetadata.mockResolvedValue({ contentLength: 99, contentType: "audio/mpeg" });
+    const response = await postAudioUpload(new File(["abc"], "sample.mp3", { type: "audio/mpeg" }), { uploadId: "same-upload" });
+    expect(response.status).toBe(409);
+    expect(createUploadedAudioTranscription).not.toHaveBeenCalled();
+  });
+
+  it.each([403, 409] as const)("retains actionable fallback target failure %s", async (status) => {
+    const { RecordingImportError } = await import("@/lib/recording-import-error");
+    getCurrentUser.mockResolvedValue({ id: "user_123", email: "user@example.com", name: null });
+    createUploadedAudioTranscription.mockRejectedValue(new RecordingImportError("Choose another meeting", status));
+    const response = await postAudioUpload(new File(["abc"], "sample.mp3", { type: "audio/mpeg" }));
+    expect(response.status).toBe(status);
+    expect(await response.json()).toEqual({ error: "Choose another meeting" });
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it.each([{ title: " " }, { title: "x".repeat(301) }, { meetingId: "invalid" }, { durationMs: "-1" }])("rejects invalid fallback fields %j", async (fields) => {
+    getCurrentUser.mockResolvedValue({ id: "user_123", email: "user@example.com", name: null });
+    expect((await postAudioUpload(new File(["abc"], "sample.mp3", { type: "audio/mpeg" }), fields)).status).toBe(400);
+    expect(putObject).not.toHaveBeenCalled();
   });
 
   it("returns 401 when the request is unauthenticated", async () => {
@@ -162,7 +215,7 @@ describe("POST /api/uploads/audio", () => {
       queued: true,
       key: "users/user_123/uploads/11111111-1111-4111-8111-111111111111.mp3",
       meetingId: "22222222-2222-4222-8222-222222222222",
-      redirectTo: "/dashboard",
+      redirectTo: "/meetings/22222222-2222-4222-8222-222222222222",
     });
     expect(putObject).toHaveBeenCalledWith({
       key: "users/user_123/uploads/11111111-1111-4111-8111-111111111111.mp3",
@@ -336,7 +389,7 @@ describe("POST /api/uploads/audio", () => {
       queued: true,
       key: "users/user_123/uploads/66666666-6666-4666-8666-666666666666.m4a",
       meetingId: "22222222-2222-4222-8222-222222222222",
-      redirectTo: "/dashboard",
+      redirectTo: "/meetings/22222222-2222-4222-8222-222222222222",
     });
     expect(putObject).toHaveBeenCalledWith({
       key: "users/user_123/uploads/66666666-6666-4666-8666-666666666666.m4a",
@@ -412,7 +465,7 @@ describe("POST /api/uploads/audio", () => {
       queued: true,
       key: "users/user_123/uploads/11111111-1111-4111-8111-111111111111.mp4",
       meetingId: "22222222-2222-4222-8222-222222222222",
-      redirectTo: "/dashboard",
+      redirectTo: "/meetings/22222222-2222-4222-8222-222222222222",
     });
     expect(putObject).toHaveBeenCalledWith({
       key: "users/user_123/uploads/11111111-1111-4111-8111-111111111111.mp4",

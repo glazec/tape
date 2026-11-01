@@ -90,6 +90,8 @@ describe("queued upload transcription dispatch", () => {
       '"transcript_jobs"."media_asset_id" is not null',
     );
     expect(selection.params).toContain("upload");
+    expect(selection.sql).toContain('"media_assets"."source" =');
+    expect(selection.params).toContain("transcript_source");
     expect(send).toHaveBeenNthCalledWith(1, {
       id: "upload-transcription:55555555-5555-4555-8555-555555555555",
       name: "meeting/transcribe.audio",

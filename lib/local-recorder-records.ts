@@ -804,15 +804,26 @@ export async function claimLocalRecorderIntent(input: {
   }
 
   try {
-    const claimed = await databaseSql`
-      update local_recording_attempts
-      set attempt_state = 'started', claimed_at = ${input.now}, updated_at = ${input.now}
-      where id = ${attempt.id}::uuid
-        and meeting_id = ${attempt.meetingId}::uuid
-        and attempt_state in ('notified', 'started')
-        and expires_at >= ${input.now}
-      returning id
-    `;
+    const [, claimed] = await databaseSql.transaction((tx) => [
+      tx`select pg_advisory_xact_lock(hashtextextended(${`recording-timeline:${attempt.meetingId}`}, 0))`,
+      tx`update local_recording_attempts a
+        set attempt_state = 'started', claimed_at = ${input.now}, updated_at = ${input.now}
+        from meetings m
+        where a.id = ${attempt.id}::uuid and a.meeting_id = ${attempt.meetingId}::uuid
+          and a.user_id = ${input.workspace.userId}::uuid
+          and a.device_id_hash = ${deviceIdHash} and a.fallback_intent_id_hash = ${fallbackIntentIdHash}
+          and a.attempt_state in ('notified', 'started') and a.expires_at >= ${input.now}
+          and m.id = a.meeting_id and m.team_id = ${input.workspace.teamId}::uuid
+          and (m.owner_user_id = ${input.workspace.userId}::uuid or exists (
+            select 1 from team_memberships membership where membership.team_id = m.team_id
+              and membership.user_id = ${input.workspace.userId}::uuid and membership.role in ('owner', 'admin')
+          ))
+          and (m.status in ('scheduled', 'missed', 'failed') or (m.status = 'processing'
+            and not exists (select 1 from transcript_jobs j where j.meeting_id = m.id and j.status in ('queued', 'running', 'completed'))))
+          and m.recall_recording_id is null
+          and not exists (select 1 from media_assets asset where asset.meeting_id = m.id and asset.source = 'recall' and asset.type = 'audio')
+        returning a.id`,
+    ]);
     if (!claimed.length) {
       return { claimed: false, reason: "expired_or_missing" as const };
     }

@@ -3,9 +3,9 @@ import { eq } from "drizzle-orm";
 import { databaseSql, db } from "@/db/client";
 import { PgDialect } from "drizzle-orm/pg-core";
 import { recordingTimelineRebaseQuery } from "@/lib/recording-timeline";
-import { mediaAssets, meetings, recordings, transcriptJobs } from "@/db/schema";
+import { mediaAssets, transcriptJobs } from "@/db/schema";
 import type { SessionUser } from "@/lib/auth";
-import { reconcileMeetingSharingForMeeting } from "@/lib/meeting-share-rules";
+import { importUploadedRecording } from "@/lib/upload-recording-import";
 import { recordRecallRecordingUsage } from "@/lib/provider-usage";
 import {
   buildMeetingObjectKey,
@@ -20,6 +20,7 @@ import {
 type CreateUploadedAudioTranscriptionInput = {
   sessionUser: SessionUser;
   objectKey: string;
+  meetingId?: string;
   title?: string;
   startedAt?: Date;
   durationMs?: number;
@@ -41,145 +42,27 @@ type CompleteUploadedVideoConversionInput = {
 export async function createUploadedAudioTranscription(
   input: CreateUploadedAudioTranscriptionInput,
 ) {
-  const env = parseR2Env(process.env);
   const workspace = await getOrCreateWorkspaceForSessionUser(input.sessionUser);
   await assertCanCreateMeetings(workspace);
-
-  const [meeting] = await db
-    .insert(meetings)
-    .values({
-      teamId: workspace.teamId,
-      ownerUserId: workspace.userId,
-      title: input.title?.trim() || "Uploaded audio",
-      platform: "upload",
-      status: "processing",
-      startedAt: input.startedAt ?? new Date(),
-    })
-    .returning({ id: meetings.id });
-
-  await reconcileMeetingSharingForMeeting(meeting.id);
-
-  const [recording] = await db
-    .insert(recordings)
-    .values({
-      durationMs: input.durationMs,
-      endedAt:
-        input.startedAt && input.durationMs
-          ? new Date(input.startedAt.getTime() + input.durationMs)
-          : undefined,
-      meetingId: meeting.id,
-      source: "upload",
-      startedAt: input.startedAt,
-    })
-    .returning({ id: recordings.id });
-
-  const [asset] = await db
-    .insert(mediaAssets)
-    .values({
-      meetingId: meeting.id,
-      recordingId: recording.id,
-      source: "upload",
-      type: "audio",
-      bucket: env.R2_BUCKET,
-      objectKey: input.objectKey,
-      mimeType: input.mimeType ?? "audio/mpeg",
-      fileSizeBytes: input.fileSizeBytes,
-    })
-    .returning({ id: mediaAssets.id });
-
-  const [job] = await db
-    .insert(transcriptJobs)
-    .values({
-      meetingId: meeting.id,
-      mediaAssetId: asset.id,
-      recordingId: recording.id,
-      provider: "elevenlabs",
-      status: "queued",
-    })
-    .returning({ id: transcriptJobs.id });
-
-  return {
-    meetingId: meeting.id,
-    mediaAssetId: asset.id,
-    recordingId: recording.id,
-    transcriptJobId: job.id,
-  };
+  return importUploadedRecording({ ...input, workspace, kind: "audio" });
 }
 
 export async function createUploadedVideoTranscription(
   input: CreateUploadedVideoTranscriptionInput,
 ) {
-  const env = parseR2Env(process.env);
   const workspace = await getOrCreateWorkspaceForSessionUser(input.sessionUser);
   await assertCanCreateMeetings(workspace);
-
-  const [meeting] = await db
-    .insert(meetings)
-    .values({
-      teamId: workspace.teamId,
-      ownerUserId: workspace.userId,
-      title: input.title?.trim() || "Uploaded video",
-      platform: "upload",
-      status: "processing",
-      startedAt: input.startedAt ?? new Date(),
-    })
-    .returning({ id: meetings.id });
-
-  await reconcileMeetingSharingForMeeting(meeting.id);
-
-  const [recording] = await db
-    .insert(recordings)
-    .values({
-      durationMs: input.durationMs,
-      endedAt:
-        input.startedAt && input.durationMs
-          ? new Date(input.startedAt.getTime() + input.durationMs)
-          : undefined,
-      meetingId: meeting.id,
-      source: "upload",
-      startedAt: input.startedAt,
-    })
-    .returning({ id: recordings.id });
-
-  const [sourceAsset] = await db
-    .insert(mediaAssets)
-    .values({
-      meetingId: meeting.id,
-      recordingId: recording.id,
-      source: "upload",
-      type: "transcript_source",
-      bucket: env.R2_BUCKET,
-      objectKey: input.objectKey,
-      mimeType: input.mimeType ?? "video/mp4",
-      fileSizeBytes: input.fileSizeBytes,
-    })
-    .returning({ id: mediaAssets.id });
-
-  const [job] = await db
-    .insert(transcriptJobs)
-    .values({
-      meetingId: meeting.id,
-      mediaAssetId: null,
-      recordingId: recording.id,
-      provider: "elevenlabs",
-      status: "queued",
-    })
-    .returning({ id: transcriptJobs.id });
-  const audioMediaAssetId = job.id;
-  const audioObjectKey = buildMeetingObjectKey({
-    teamId: workspace.teamId,
-    meetingId: meeting.id,
-    assetId: audioMediaAssetId,
-    extension: "mp3",
-  });
-
+  const imported = await importUploadedRecording({ ...input, workspace, kind: "video" });
   return {
-    meetingId: meeting.id,
-    sourceMediaAssetId: sourceAsset.id,
-    audioMediaAssetId,
-    audioObjectKey,
-    recordingId: recording.id,
-    transcriptJobId: job.id,
+    meetingId: imported.meetingId,
+    sourceMediaAssetId: imported.mediaAssetId,
+    audioMediaAssetId: imported.transcriptJobId,
+    audioObjectKey: buildMeetingObjectKey({
+      teamId: workspace.teamId, meetingId: imported.meetingId,
+      assetId: imported.transcriptJobId, extension: "mp3",
+    }),
+    recordingId: imported.recordingId,
+    transcriptJobId: imported.transcriptJobId,
   };
 }
 

@@ -128,6 +128,7 @@ export async function attachUploadedAudioBatch(input: {
   const now = new Date();
 
   await databaseSql.transaction((txn) => [
+    txn`select pg_advisory_xact_lock(hashtextextended(${`recording-timeline:${input.meetingId}`}, 0))`,
     txn`
       delete from meeting_entities
       where meeting_id = ${input.meetingId}::uuid
