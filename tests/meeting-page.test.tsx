@@ -112,6 +112,7 @@ vi.mock("@/components/transcript-viewer", () => ({
     audioUrl,
     meetingId,
     mobileAfterSpeakers,
+    afterSpeakers,
     preferredTranslationLanguage,
     segments,
     translationLanguage,
@@ -120,6 +121,7 @@ vi.mock("@/components/transcript-viewer", () => ({
     audioUrl?: string | null;
     meetingId: string | null;
     mobileAfterSpeakers?: React.ReactNode;
+    afterSpeakers?: React.ReactNode;
     preferredTranslationLanguage: string;
     segments: Array<{ startMs: number }>;
     translationLanguage: string;
@@ -132,6 +134,7 @@ vi.mock("@/components/transcript-viewer", () => ({
         {audioParts?.map((part) => part.audioUrl).join(",") ?? "single"}
       </span>
       <span>speaker summary</span>
+      {afterSpeakers}
       {mobileAfterSpeakers}
       <span>transcript lines</span>
     </div>
@@ -191,7 +194,7 @@ describe("meeting page", () => {
     expect(html).toContain("recovery panel");
     expect(html).toContain("Google Meet:Failed");
     expect(html).toContain("transcript:meeting_1");
-    expect(html).toContain("flex w-full min-w-0 flex-col gap-8");
+    expect(html).toContain("flex w-full min-w-0 flex-col gap-10");
     expect(html.indexOf("speaker summary")).toBeLessThan(
       html.indexOf("entity links"),
     );
@@ -313,7 +316,7 @@ describe("meeting page", () => {
     expect(html).toContain("Record this Teams meeting locally");
     expect(html).toContain("Open Tape for Mac");
     expect(html).toContain("recovery panel");
-    expect(html).toContain("flex w-full min-w-0 flex-col gap-8");
+    expect(html).toContain("flex w-full min-w-0 flex-col gap-10");
   });
 
   it("offers uploads when a manageable meeting has no recording", async () => {
@@ -336,7 +339,7 @@ describe("meeting page", () => {
     expect(html).not.toContain("transcript:missed_meeting");
     expect(html).toContain("meeting actions:delete only");
     expect(html).not.toContain("share dialog");
-    expect(html).toContain("flex w-full min-w-0 flex-col gap-8");
+    expect(html).toContain("flex w-full min-w-0 flex-col gap-10");
   });
 
   it("offers bot recovery and keeps existing content uploads available", async () => {
@@ -559,7 +562,8 @@ describe("meeting page", () => {
     const before = await MeetingPage({ params: Promise.resolve({ meetingId: "meeting_1" }) });
     const beforeHtml = renderToStaticMarkup(before);
     // The summary layer leads; the raw transcript follows it.
-    expect(beforeHtml.indexOf("AI followup")).toBeLessThan(beforeHtml.indexOf("transcript lines"));
+    expect(beforeHtml.indexOf("From the transcript")).toBeGreaterThan(-1);
+    expect(beforeHtml.indexOf("From the transcript")).toBeLessThan(beforeHtml.indexOf("transcript lines"));
     const result = { todos: [{ person: "Alice", text: "Alice will send the deck.", timing: null, evidence: [{ segmentId: "seg", quote: "I will send the deck." }] }], dynamics: [], research: [] };
     mocks.getMeeting.mockResolvedValue({ ...current, aiFollowup: { sourceHash: getFollowupSourceHash(source), result } });
     const after = await MeetingPage({ params: Promise.resolve({ meetingId: "meeting_1" }) });

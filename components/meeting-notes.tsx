@@ -493,7 +493,7 @@ export function MeetingNotes({
         <div className="flex min-w-0 items-center gap-2">
           <h2
             id={headingId}
-            className="text-xs font-medium text-muted-foreground"
+            className="text-base font-semibold"
           >
             My notes
           </h2>
@@ -506,10 +506,45 @@ export function MeetingNotes({
             <span className="sr-only">Only visible to you</span>
           </p>
         </div>
+        <div className="flex shrink-0 flex-wrap items-center justify-end gap-1">
+        {loaded ? (
+          <>
+          <button
+            type="button"
+            className="min-h-11 rounded px-2 text-xs text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:min-h-8"
+            onMouseDown={(event) => event.preventDefault()}
+            onClick={() =>
+              captureMoment(lastEditor.current ?? blocks.at(-1)!.id)
+            }
+          >
+            Add timestamp
+          </button>
+          {blocks.some(
+            (block) =>
+              parseNoteMoments(block.text).length || block.moments?.length,
+          ) ? (
+            <button
+              type="button"
+              className="min-h-11 rounded px-2 text-xs text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:min-h-8"
+              onClick={() => {
+                const id = lastEditor.current ?? blocks[0].id;
+                setEditingMoments(true);
+                pendingFocus.current = {
+                  id,
+                  position:
+                    blocks.find((block) => block.id === id)?.text.length ?? 0,
+                };
+              }}
+            >
+              Edit notes
+            </button>
+          ) : null}
+          </>
+        ) : null}
         <span
           aria-live="polite"
           role="status"
-          className="flex min-h-6 min-w-16 shrink-0 items-center justify-end gap-1.5 text-xs text-muted-foreground"
+          className="flex min-h-6 min-w-16 shrink-0 items-center justify-end gap-1.5 pl-2 text-xs text-muted-foreground"
         >
           {answerDrafts.size > 0 ? (
             "Editing answer…"
@@ -528,41 +563,8 @@ export function MeetingNotes({
             ""
           )}
         </span>
-      </div>
-      {loaded ? (
-        <div className="mb-2 flex flex-wrap items-center gap-2">
-          <button
-            type="button"
-            className="min-h-11 rounded px-2 text-xs text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            onMouseDown={(event) => event.preventDefault()}
-            onClick={() =>
-              captureMoment(lastEditor.current ?? blocks.at(-1)!.id)
-            }
-          >
-            Add timestamp
-          </button>
-          {blocks.some(
-            (block) =>
-              parseNoteMoments(block.text).length || block.moments?.length,
-          ) ? (
-            <button
-              type="button"
-              className="min-h-11 rounded px-2 text-xs text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              onClick={() => {
-                const id = lastEditor.current ?? blocks[0].id;
-                setEditingMoments(true);
-                pendingFocus.current = {
-                  id,
-                  position:
-                    blocks.find((block) => block.id === id)?.text.length ?? 0,
-                };
-              }}
-            >
-              Edit notes
-            </button>
-          ) : null}
         </div>
-      ) : null}
+      </div>
       {momentMessage ? (
         <p
           role="status"
@@ -606,7 +608,7 @@ export function MeetingNotes({
               aria-label={index === 0 ? "My notes" : `Note ${index + 1}`}
               aria-describedby={`${privacyId} ${hintId}`}
               aria-busy={status === "loading"}
-              className={`${loaded && !editingMoments && (parseNoteMoments(block.text).length > 0 || Boolean(block.moments?.length)) ? "hidden" : "block"} max-h-[min(24rem,60dvh)] w-full resize-none border-0 bg-transparent p-0 text-base leading-7 outline-none placeholder:text-muted-foreground disabled:text-muted-foreground ${blocks.length === 1 && !hasQuestions ? "min-h-16 focus:min-h-36" : "min-h-7"}`}
+              className={`${loaded && !editingMoments && (parseNoteMoments(block.text).length > 0 || Boolean(block.moments?.length)) ? "hidden" : "block"} max-h-[min(24rem,60dvh)] w-full resize-none border-0 bg-transparent p-0 text-base leading-7 outline-none placeholder:text-muted-foreground disabled:text-muted-foreground ${blocks.length === 1 && !hasQuestions ? "min-h-14 focus:min-h-36" : "min-h-7"}`}
               disabled={!loaded}
               maxLength={20_000 - content.length + block.text.length}
               onFocus={() => {
