@@ -63,24 +63,24 @@ export function MeetingEntityLinks({
   }
 
   return (
-    <div className="mt-8">
-      <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
-        Detected entities
-      </p>
-      <div className="mt-3 space-y-3">
+    <div>
+      <h3 className="text-xs font-semibold uppercase tracking-[0.06em] text-muted-foreground">
+        Mentioned
+      </h3>
+      <dl className="mt-1.5 grid gap-y-1 sm:grid-cols-[8rem_minmax(0,1fr)] sm:gap-x-4">
         {sections.map((section) => (
-          <div key={section.type}>
-            <p className="text-xs font-medium text-muted-foreground">
+          <div className="contents" key={section.type}>
+            <dt className="pt-0.5 text-sm text-muted-foreground">
               {section.label}
-            </p>
-            <div className="mt-1 flex flex-wrap items-center gap-x-1.5 gap-y-1 text-sm leading-6 text-foreground">
+            </dt>
+            <dd className="mb-1 flex flex-wrap items-center gap-x-1.5 gap-y-1 text-sm leading-6 text-foreground sm:mb-0">
               {section.entities.map((entity, index) => (
                 <span
                   className="inline-flex h-6 items-center gap-0.5"
                   key={`${entity.type}:${entity.normalizedValue}`}
                 >
                   <Link
-                    className="inline-flex h-6 items-center gap-1.5 font-medium text-foreground underline decoration-border underline-offset-4 hover:text-primary hover:decoration-primary focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+                    className="inline-flex h-6 items-center gap-1.5 text-foreground underline decoration-transparent underline-offset-4 hover:text-primary hover:decoration-primary focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
                     href={getEntityDashboardHref(entity.normalizedValue)}
                   >
                     {section.type === "organization" ? (
@@ -93,10 +93,10 @@ export function MeetingEntityLinks({
                   ) : null}
                 </span>
               ))}
-            </div>
+            </dd>
           </div>
         ))}
-      </div>
+      </dl>
     </div>
   );
 }
