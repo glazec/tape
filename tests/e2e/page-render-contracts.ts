@@ -1,7 +1,7 @@
 import { authenticatedDashboardFixture } from "./authenticated-dashboard-fixture";
 
 export const publicPageRenderHeadings = {
-  "/": "Every conversation, on the record.",
+  "/": "It’s all on Tape.",
   "/auth/sign-in": "Sign in to Tape.",
   "/blog": "Notes for meetings that keep working.",
   "/privacy": "Your meetings remain your record.",

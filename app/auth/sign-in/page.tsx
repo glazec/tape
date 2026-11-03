@@ -36,8 +36,7 @@ export default async function SignInPage({
             Meeting intelligence, owned by you
           </p>
           <h2 className="font-display mt-5 max-w-[16ch] text-display-2 tracking-[-0.02em] text-balance">
-            Every conversation,{" "}
-            <em className="italic text-paper/55">on the record.</em>
+            It&rsquo;s all on <em className="italic text-paper/55">Tape.</em>
           </h2>
           <ul className="mt-11 flex max-w-[36ch] flex-col gap-4">
             {PANEL_POINTS.map((point) => (

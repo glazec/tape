@@ -1,45 +1,61 @@
 "use client";
 
-import { Container, FadeIn, SectionHeading } from "./landing-section";
+import Image from "next/image";
+
+import {
+  Container,
+  FadeIn,
+  Lede,
+  NoteLine,
+  SectionHeading,
+  TrackLabel,
+} from "./landing-section";
 import { SideBySideTranscriptMockup } from "./mockups";
 
-const NOTES = [
-  {
-    title: "Nothing to set before the call",
-    body: "Tape hears the language from the audio, so a sentence that starts in English and finishes in Mandarin still arrives as one clean line.",
-  },
-  {
-    title: "Original beside translation",
-    body: "Read at speed in either language and still check exactly what was said.",
-  },
-  {
-    title: "Fix a word and it stays fixed",
-    body: "Correct a name once. The edit holds for everyone who reads the meeting after you.",
-  },
-];
-
+/**
+ * The one full-bleed band among the tracks, after Granola's poster sections:
+ * the bilingual transcript is the claim nobody else can show, so it gets the
+ * whole width and a single line of support instead of a caption grid.
+ */
 export function LandingLanguages() {
   return (
-    <section id="languages" className="border-b border-ink/8 bg-paper">
-      <Container className="py-20 lg:py-28">
-        <FadeIn className="max-w-[40rem]">
-          <SectionHeading className="mt-0">
+    <section id="languages" className="scroll-mt-20 bg-paper">
+      <Container className="pt-20 lg:pt-28">
+        <FadeIn className="mx-auto flex max-w-[44rem] flex-col items-center text-center">
+          <TrackLabel track="A2">Languages</TrackLabel>
+          <SectionHeading className="mt-6">
             Two languages, <em className="italic">one transcript.</em>
           </SectionHeading>
+          <Lede className="mx-auto">
+            Teams switch languages mid-sentence. Tape keeps every line in the
+            language it was said, with the translation right beside it.
+          </Lede>
         </FadeIn>
-        <FadeIn delay={0.1} className="mt-12">
-          <SideBySideTranscriptMockup />
-        </FadeIn>
-        <FadeIn delay={0.15}>
-          <dl className="mt-10 grid gap-x-12 gap-y-6 text-[0.875rem] leading-[1.6] md:grid-cols-3">
-            {NOTES.map((note) => (
-              <div key={note.title}>
-                <dt className="font-medium text-ink">{note.title}</dt>
-                <dd className="mt-1 text-pretty text-graphite">{note.body}</dd>
-              </div>
-            ))}
-          </dl>
-        </FadeIn>
+      </Container>
+      <FadeIn delay={0.1} className="mt-12 lg:mt-16">
+        <div className="relative isolate overflow-hidden">
+          <Image
+            src="/media/art/braid.webp"
+            alt=""
+            fill
+            sizes="100vw"
+            className="-z-10 object-cover"
+          />
+          <Container className="py-14 sm:py-20 lg:py-28">
+            <div className="mx-auto w-full max-w-[60rem] shadow-[0_30px_80px_-30px_oklch(0.19_0.007_30/0.45)]">
+              <SideBySideTranscriptMockup />
+            </div>
+          </Container>
+        </div>
+      </FadeIn>
+      <Container className="pb-20 pt-10 lg:pb-28">
+        <NoteLine
+          notes={[
+            "No language to pick before the call",
+            "Original beside translation",
+            "Fix a name once and it stays fixed",
+          ]}
+        />
       </Container>
     </section>
   );

@@ -31,6 +31,8 @@
   --font-mono: var(--font-ibm-plex-mono), ui-monospace, monospace;
 
   /* Public-site display scale. Fluid, and monotonic across every viewport. */
+  --text-display-hero: clamp(3.25rem, 1.9rem + 4.2vw, 5.75rem);
+  --text-display-hero--line-height: 0.98;
   --text-display-1: clamp(2.5rem, 1.35rem + 4.6vw, 4.5rem);
   --text-display-1--line-height: 1.02;
   --text-display-2: clamp(2.125rem, 1.45rem + 2.7vw, 3.375rem);

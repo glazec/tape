@@ -14,9 +14,14 @@ export const FAQ_ITEMS: readonly { question: string; answer: string }[] = [
       "You never tell Tape what language a meeting will be in. It is detected from the audio, so a sentence that starts in English and finishes in Mandarin comes back as one clean line instead of phonetic guesswork. Transcripts can then be read with Chinese and English side by side, line for line.",
   },
   {
+    question: "What does Tape write after a meeting?",
+    answer:
+      "A follow-up in four parts: a to-do list with a name on every action, the dynamic of the call (who offered what and who needs what), potential connections grouped by the person who mentioned them, and up to five open research questions. Every item links to the line of transcript it came from, and any research question copies out as a ready prompt for your own research tool.",
+  },
+  {
     question: "Can my own AI assistant read my meetings?",
     answer:
-      "Yes. Tape publishes your archive over MCP, so Claude, Cursor, or whatever you already work in can query it directly instead of you copying transcripts around. Access is read only, and the permission boundary is enforced by the database rather than by the wording of a prompt: an assistant reaches exactly the meetings you could open by hand.",
+      "Yes, all of them at once. Tape publishes your meeting database over MCP, so Claude, Cursor, or any MCP client can look up the schema and run read only queries across meetings, speakers, transcripts, and follow-ups, instead of you copying transcripts around. Every query is scoped to your access by the database rather than by the wording of a prompt: an assistant reaches exactly the meetings you could open by hand.",
   },
   {
     question: "Who can see a meeting I record?",
@@ -27,6 +32,11 @@ export const FAQ_ITEMS: readonly { question: string; answer: string }[] = [
     question: "Can I get my transcripts out again?",
     answer:
       "Any meeting exports as plain text, and its audio as an mp3, whenever you want it. Tape is open source and runs on infrastructure you choose, so the recordings and the database stay on your side of the line and are never handed to third parties to train on.",
+  },
+  {
+    question: "Can we change how Tape works?",
+    answer:
+      "Yes, that is the point of the code being public. The prompts that write notes, to-dos, and research questions live in the repository, summaries run through OpenRouter so the model is a setting, and the setup guide covers running your own copy. Tape is released under the Functional Source License (FSL-1.1-ALv2): any team can use, modify, and self-host it, including for work, but not resell it as a competing product or hosted service. Each release becomes Apache 2.0 two years after it ships.",
   },
   {
     question: "How is Tape priced?",

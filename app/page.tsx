@@ -5,13 +5,15 @@ import { FAQ_ITEMS } from "@/components/landing/faq-items";
 import { LandingAgents } from "@/components/landing/landing-agents";
 import { LandingCapture } from "@/components/landing/landing-capture";
 import { LandingCta } from "@/components/landing/landing-cta";
-import { LandingEnterprise } from "@/components/landing/landing-enterprise";
 import { LandingFaq } from "@/components/landing/landing-faq";
+import { LandingFollowup } from "@/components/landing/landing-followup";
 import { LandingHero } from "@/components/landing/landing-hero";
 import { LandingLanguages } from "@/components/landing/landing-languages";
-import { LandingMemory } from "@/components/landing/landing-memory";
 import { LandingNav } from "@/components/landing/landing-nav";
 import { LandingPricing } from "@/components/landing/landing-pricing";
+import { LandingOpenSource } from "@/components/landing/landing-open-source";
+import { LandingThesis } from "@/components/landing/landing-thesis";
+import { readGithubActivity } from "@/lib/github-activity";
 import { getAuthenticatedUser } from "@/lib/auth";
 import { readPricingCalendarEstimate } from "@/lib/pricing-calendar-server";
 import { REPOSITORY_URL, SITE_NAME, siteUrl } from "@/lib/site";
@@ -19,7 +21,7 @@ import { REPOSITORY_URL, SITE_NAME, siteUrl } from "@/lib/site";
 export const dynamic = "force-dynamic";
 
 const DESCRIPTION =
-  "Bilingual meeting notes for Chinese–English teams. Auto-threaded recurring meetings and an AI assistant that queries your full archive via MCP.";
+  "Open source meeting memory for bilingual teams. Records calls and rooms in Chinese and English, then writes to-dos, connections, and research your AI can read.";
 const SOCIAL_IMAGE = {
   url: "/og-image.png",
   width: 1200,
@@ -28,7 +30,7 @@ const SOCIAL_IMAGE = {
 };
 
 export const metadata: Metadata = {
-  title: "Tape — Every conversation, on the record",
+  title: "It’s all on Tape — bilingual meeting memory",
   description: DESCRIPTION,
   alternates: { canonical: "/" },
   openGraph: {
@@ -36,13 +38,13 @@ export const metadata: Metadata = {
     url: siteUrl("/"),
     siteName: SITE_NAME,
     locale: "en_US",
-    title: "Tape — Every conversation, on the record",
+    title: "It’s all on Tape — bilingual meeting memory",
     description: DESCRIPTION,
     images: [SOCIAL_IMAGE],
   },
   twitter: {
     card: "summary_large_image",
-    title: "Tape — Every conversation, on the record",
+    title: "It’s all on Tape — bilingual meeting memory",
     description: DESCRIPTION,
     images: [SOCIAL_IMAGE],
   },
@@ -67,9 +69,10 @@ function structuredData() {
         featureList: [
           "Automatic language detection with no language to select before a meeting",
           "Chinese and English transcripts side by side, line for line",
-          "Recurring meetings grouped into a single running thread",
-          "Speaker separation with named speakers",
-          "Read only MCP access for your own AI assistant",
+          "Follow-ups with connections, room dynamic, to-dos, and open research questions",
+          "macOS recorder for in-person meetings with no bot",
+          "Whole meeting database queryable by your own AI assistant over MCP",
+          "Open source, self-hostable on your own infrastructure",
           "Plain text and mp3 export of any meeting",
         ],
         offers: {
@@ -113,10 +116,12 @@ export default async function LandingPage({
     typeof calendarStatus === "string" ? calendarStatus : null;
   // Building the estimate here means the browser never handles the token or a
   // loading state; it receives finished aggregates or an error message.
-  const calendarEstimate =
+  const [calendarEstimate, githubActivity] = await Promise.all([
     normalizedCalendarStatus === "connected"
-      ? await readPricingCalendarEstimate()
-      : null;
+      ? readPricingCalendarEstimate()
+      : null,
+    readGithubActivity(),
+  ]);
 
   return (
     <main className="min-h-screen bg-paper font-landing text-ink antialiased">
@@ -126,12 +131,13 @@ export default async function LandingPage({
         dangerouslySetInnerHTML={{ __html: JSON.stringify(structuredData()) }}
       />
       <LandingNav />
-      <LandingHero />
-      <LandingMemory />
+      <LandingHero activity={githubActivity} />
+      <LandingThesis />
+      <LandingFollowup />
       <LandingLanguages />
-      <LandingAgents />
       <LandingCapture />
-      <LandingEnterprise />
+      <LandingAgents />
+      <LandingOpenSource activity={githubActivity} />
       <LandingPricing
         calendarStatus={normalizedCalendarStatus}
         calendarEstimate={calendarEstimate}

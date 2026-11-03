@@ -1,6 +1,7 @@
 "use client";
 
 import { useRef } from "react";
+import Image from "next/image";
 import { Play, X } from "lucide-react";
 
 /**
@@ -29,12 +30,21 @@ export function LaunchFilmButton() {
         onClick={open}
         className="group inline-flex items-center gap-3 rounded-full text-[0.9375rem] text-graphite transition-colors hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-4"
       >
-        <span className="flex size-9 items-center justify-center rounded-full border border-ink/15 transition-colors group-hover:border-ink/40">
-          <Play aria-hidden className="ml-0.5 size-3.5 fill-current" />
+        <span className="relative flex aspect-video w-24 items-center justify-center overflow-hidden rounded-lg bg-mist ring-1 ring-ink/10">
+          <Image
+            src="/media/tape-launch-v5-thumb.webp"
+            alt=""
+            fill
+            sizes="96px"
+            className="object-cover transition-transform duration-500 group-hover:scale-105"
+          />
+          <span className="relative flex size-6 items-center justify-center rounded-full bg-paper/90 text-ink">
+            <Play aria-hidden className="ml-px size-2.5 fill-current" />
+          </span>
         </span>
         Watch the film
         <span className="font-mono text-[0.75rem] tabular-nums text-ash">
-          0:30
+          0:24
         </span>
       </button>
       <dialog
@@ -53,15 +63,15 @@ export function LaunchFilmButton() {
             className="aspect-video w-full"
             controls
             playsInline
-            poster="/media/tape-launch-v4-poster.jpg"
+            poster="/media/tape-launch-v5-poster.jpg"
             preload="none"
           >
-            <source src="/media/tape-launch-v4.mp4" type="video/mp4" />
+            <source src="/media/tape-launch-v5.mp4" type="video/mp4" />
             <track
               default
               kind="captions"
               label="English"
-              src="/media/tape-launch-v4-en.vtt"
+              src="/media/tape-launch-v5-en.vtt"
               srcLang="en"
             />
           </video>

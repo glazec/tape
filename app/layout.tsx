@@ -41,7 +41,7 @@ export const viewport: Viewport = {
 export const metadata: Metadata = {
   metadataBase: new URL(siteOrigin()),
   title: {
-    default: "Tape — Every conversation, on the record",
+    default: "Tape — Bilingual meeting memory",
     template: "%s · Tape",
   },
   description:

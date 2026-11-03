@@ -67,7 +67,7 @@ export function BlogShell({ children }: { children: ReactNode }) {
           <div className="flex flex-col gap-2">
             <ProductLogo />
             <p className="font-mono text-label uppercase tracking-[0.16em] text-ash">
-              Every conversation, on the record
+              It&rsquo;s all on Tape
             </p>
           </div>
           <nav

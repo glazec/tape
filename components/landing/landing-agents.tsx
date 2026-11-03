@@ -1,91 +1,74 @@
 "use client";
 
 import {
+  ArtPanel,
   Container,
   FadeIn,
   Lede,
   SectionHeading,
+  TrackLabel,
   type Point,
 } from "./landing-section";
+import { AgentQueryMockup } from "./mockups";
 
 const POINTS: readonly Point[] = [
   {
-    title: "Your assistant, not ours",
-    body: "Tape publishes your archive over MCP, so Claude, Cursor, or whatever you already work in can query it directly. Read only, and no chatbot of ours to learn.",
+    title: "The whole archive, not a search box",
+    body: "Meetings, speakers, transcripts, connections, and to-dos are tables your assistant can query, so a question that spans a year is one question.",
+  },
+  {
+    title: "Ask in English, find it in Mandarin",
+    body: "Every word and speaker in either language is searchable, and every answer links back to the second it was said.",
   },
   {
     title: "It only sees what you can see",
-    body: "The permission boundary is enforced by the database itself, not by the wording of a prompt. An assistant connected to Tape reaches exactly the meetings you could open by hand, and nothing beyond them.",
-  },
-  {
-    title: "Search that reaches every word",
-    body: "Full text across transcripts, speakers, titles, and detected entities, with the recording one click from any result.",
+    body: "Queries are read only and scoped to your access by the database itself, not by the wording of a prompt.",
   },
 ];
 
-const RESULTS = [
-  { title: "Weekly partner sync", when: "Jul 16", at: "12:04" },
-  { title: "Platform design review", when: "Jul 09", at: "27:41" },
-  { title: "Security questionnaire walkthrough", when: "Jun 30", at: "08:15" },
-];
-
+/**
+ * The split track: copy and a numbered list on one side, the painted panel on
+ * the other, so A4 does not repeat the stacked shape of A1 and A3.
+ */
 export function LandingAgents() {
   return (
-    <section id="agents" className="border-b border-ink/8 bg-mist/70">
-      <Container className="py-20 lg:py-28">
-        <div className="grid items-end gap-x-16 gap-y-10 [&>*]:min-w-0 lg:grid-cols-[minmax(0,30rem)_minmax(0,1fr)]">
-          <FadeIn>
-            <SectionHeading className="mt-0">
-              Your archive,
-              <br />
-              <em className="italic">in your assistant.</em>
-            </SectionHeading>
-            <Lede>
-              Every notetaker now has a chatbot of its own. Tape takes the other
-              route: it hands the whole archive to the assistant you already
-              trust, and keeps the data on your side of the line.
-            </Lede>
-          </FadeIn>
-          <FadeIn delay={0.1}>
-            <div className="rounded-xl border border-ink/10 bg-paper p-6 font-mono text-[0.8125rem] leading-6 sm:p-7">
-              <p className="text-graphite">
-                <span className="text-brand-ink">you</span> · ask your assistant
-              </p>
-              <p className="mt-2 text-ink">
-                Where did we agree the security review lands?
-              </p>
-              <p className="mt-6 text-ash">
-                <span className="text-brand-ink">tape</span> · 3 meetings
-                matched
-              </p>
-              <ul className="mt-2 flex flex-col gap-1.5 tabular-nums">
-                {RESULTS.map((result) => (
-                  <li
-                    key={result.title}
-                    className="flex items-baseline justify-between gap-4 text-ink"
-                  >
-                    <span className="min-w-0 truncate">{result.title}</span>
-                    <span className="shrink-0 text-graphite">
-                      {result.when} · {result.at}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          </FadeIn>
-        </div>
-        <dl className="mt-16 grid gap-x-14 gap-y-10 border-t border-ink/8 pt-10 md:grid-cols-3">
-          {POINTS.map((point, index) => (
-            <FadeIn key={point.title} delay={index * 0.08}>
-              <dt className="text-[0.9375rem] font-medium leading-6 text-ink">
-                {point.title}
-              </dt>
-              <dd className="mt-2 max-w-[42ch] text-[0.9375rem] leading-[1.7] text-pretty text-graphite">
-                {point.body}
-              </dd>
-            </FadeIn>
-          ))}
-        </dl>
+    <section id="agents" className="scroll-mt-20 bg-paper">
+      <Container className="grid gap-x-16 gap-y-12 py-20 [&>*]:min-w-0 lg:grid-cols-[minmax(0,26rem)_minmax(0,1fr)] lg:items-center lg:py-28">
+        <FadeIn>
+          <TrackLabel track="A4">Agents</TrackLabel>
+          <SectionHeading className="mt-6">
+            Every meeting,
+            <br />
+            <em className="italic">one question away.</em>
+          </SectionHeading>
+          <Lede>
+            Tape opens your whole meeting database to the AI you already use,
+            over MCP. Ask in plain words; it writes the query and brings back
+            the moments.
+          </Lede>
+          <ol className="mt-10 flex flex-col gap-6">
+            {POINTS.map((point, index) => (
+              <li key={point.title} className="flex gap-5">
+                <span className="font-mono text-label tabular-nums leading-7 text-brand-ink">
+                  0{index + 1}
+                </span>
+                <div>
+                  <p className="text-[1.125rem] font-semibold leading-7 tracking-[-0.01em] text-ink">
+                    {point.title}
+                  </p>
+                  <p className="mt-1.5 max-w-[40ch] text-[1rem] leading-[1.65] text-pretty text-graphite">
+                    {point.body}
+                  </p>
+                </div>
+              </li>
+            ))}
+          </ol>
+        </FadeIn>
+        <FadeIn delay={0.1}>
+          <ArtPanel src="/media/art/assistant.webp" className="min-h-[34rem]">
+            <AgentQueryMockup />
+          </ArtPanel>
+        </FadeIn>
       </Container>
     </section>
   );

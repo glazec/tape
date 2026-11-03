@@ -34,7 +34,13 @@ import {
 import { Plus } from "lucide-react";
 
 import { cn } from "@/lib/utils";
-import { Container, FadeIn, Lede, SectionHeading } from "./landing-section";
+import {
+  Container,
+  FadeIn,
+  Lede,
+  SectionHeading,
+  TrackLabel,
+} from "./landing-section";
 
 // Same formatting as lib/provider-usage-queries.ts:formatUsdMicros, inlined
 // to keep this client section free of the DB-importing queries module.
@@ -555,11 +561,12 @@ export function LandingPricing({
   }
 
   return (
-    <section id="pricing" className="border-b border-ink/8 bg-paper">
+    <section id="pricing" className="scroll-mt-20 bg-paper">
       <Container className="py-20 lg:py-28">
         <div className="grid items-start gap-x-16 gap-y-12 [&>*]:min-w-0 lg:grid-cols-[minmax(0,1fr)_minmax(0,26rem)]">
           <FadeIn>
-            <SectionHeading className="mt-0">
+            <TrackLabel track="B2">Pricing</TrackLabel>
+            <SectionHeading className="mt-6">
               Pay for compute,
               <br />
               <em className="italic">not seats.</em>
@@ -569,6 +576,11 @@ export function LandingPricing({
               transcribe, and store your meetings, at their list price. For a
               team of {effectiveTeamSize}, the estimate is on the right.
             </Lede>
+            <p className="mt-4 max-w-[52ch] text-[0.9375rem] leading-[1.65] text-pretty text-ink">
+              Per-seat notetakers charge for every chair at the table. Tape
+              charges nothing for the chair and passes through the cost of the
+              meeting itself.
+            </p>
             <p className="mt-8 text-[0.8125rem] text-ash">List prices from</p>
             <ul className="mt-2 flex flex-wrap gap-x-6 gap-y-2 font-mono text-label uppercase tracking-[0.14em] text-graphite">
               {STACK.map((name) => (
@@ -587,9 +599,47 @@ export function LandingPricing({
                   ? "Calendar assisted estimate"
                   : "Monthly infrastructure"}
               </p>
-              <div className="mt-5 flex flex-col gap-3">
+              <div className="mt-4">
+                <p className="font-display text-display-2 tracking-[-0.02em] text-ink tabular-nums">
+                  {formatUsdMicros(breakdown.perPersonUsdMicros)}
+                </p>
+                <p className="mt-1 text-[0.8125rem] leading-5 text-graphite">
+                  per person per month, all in
+                  {usingCalendar && effectiveTeamSize > 0
+                    ? ` across ${effectiveTeamSize} people`
+                    : ""}
+                </p>
+                {comparisonQuotes.length > 0 ? (
+                  <p className="mt-3 text-[0.875rem] leading-5 text-ink">
+                    Per-seat notetakers:{" "}
+                    <span className="tabular-nums">
+                      {formatUsdMicros(
+                        Math.min(
+                          ...comparisonQuotes.map(
+                            (quote) => quote.perSeatMonthlyUsdMicros,
+                          ),
+                        ),
+                      )}
+                      {" to "}
+                      {formatUsdMicros(
+                        Math.max(
+                          ...comparisonQuotes.map(
+                            (quote) => quote.perSeatMonthlyUsdMicros,
+                          ),
+                        ),
+                      )}
+                    </span>{" "}
+                    per person
+                  </p>
+                ) : null}
+              </div>
+              <div className="mt-6 flex flex-col gap-3">
                 <BreakdownRow
-                  label="Recording"
+                  label={
+                    breakdown.recordingUsdMicros === 0
+                      ? "Recording (self-hosted)"
+                      : "Recording"
+                  }
                   value={formatUsdMicros(breakdown.recordingUsdMicros)}
                 />
                 <BreakdownRow
@@ -615,17 +665,6 @@ export function LandingPricing({
                   label="Total"
                   value={formatUsdMicros(breakdown.totalUsdMicros)}
                 />
-                <div className="mt-6">
-                  <p className="font-display text-display-2 tracking-[-0.02em] text-ink tabular-nums">
-                    {formatUsdMicros(breakdown.perPersonUsdMicros)}
-                  </p>
-                  <p className="mt-1 text-[0.8125rem] leading-5 text-graphite">
-                    per person per month, all in
-                    {usingCalendar && effectiveTeamSize > 0
-                      ? ` across ${effectiveTeamSize} people`
-                      : ""}
-                  </p>
-                </div>
               </div>
             </div>
           </FadeIn>
@@ -697,7 +736,7 @@ export function LandingPricing({
           <details
             open={assumptionsOpen}
             onToggle={(event) => setAssumptionsOpen(event.currentTarget.open)}
-            className="group mt-10 border-y border-ink/10"
+            className="group mt-10 rounded-xl bg-mist/60 px-5"
           >
             <summary className="flex cursor-pointer list-none items-center justify-between gap-6 py-5 text-[1rem] font-medium text-ink transition-colors hover:text-graphite focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand [&::-webkit-details-marker]:hidden">
               <span>

@@ -5,30 +5,32 @@ test("shows the Tape landing page", async ({ page }) => {
 
   await expect(
     page.getByRole("heading", {
-      name: "Every conversation, on the record.",
+      name: "It’s all on Tape.",
     }),
   ).toBeVisible();
   await expect(
-    page.getByRole("link", { name: "Sign in to Tape" }).first(),
+    page.getByRole("link", { name: "Start for free" }).first(),
   ).toHaveAttribute("href", "/auth/sign-in");
   await page.getByRole("button", { name: /Watch the film/ }).click();
   const launchFilm = page.getByLabel("Tape product launch film");
   await expect(launchFilm).toBeVisible();
   await expect(launchFilm).toHaveAttribute(
     "poster",
-    "/media/tape-launch-v4-poster.jpg",
+    "/media/tape-launch-v5-poster.jpg",
   );
   await expect(launchFilm.locator("source")).toHaveAttribute(
     "src",
-    "/media/tape-launch-v4.mp4",
+    "/media/tape-launch-v5.mp4",
   );
   await expect(launchFilm.locator("track")).toHaveAttribute(
     "src",
-    "/media/tape-launch-v4-en.vtt",
+    "/media/tape-launch-v5-en.vtt",
   );
   await page.getByRole("button", { name: "Close film" }).click();
   await expect(launchFilm).toBeHidden();
-  await expect(page.getByText("Google Meet", { exact: true })).toBeVisible();
+  await expect(
+    page.getByText("Google Meet", { exact: true }).first(),
+  ).toBeVisible();
   await expect(
     page.getByRole("heading", { name: "Two languages, one transcript." }),
   ).toBeVisible();
@@ -53,9 +55,8 @@ test("publishes complete search and social metadata on mobile", async ({
     twitterImage: document.querySelector<HTMLMetaElement>(
       'meta[name="twitter:image"]',
     )?.content,
-    viewport: document.querySelector<HTMLMetaElement>(
-      'meta[name="viewport"]',
-    )?.content,
+    viewport: document.querySelector<HTMLMetaElement>('meta[name="viewport"]')
+      ?.content,
     clientWidth: document.documentElement.clientWidth,
     scrollWidth: document.documentElement.scrollWidth,
   }));

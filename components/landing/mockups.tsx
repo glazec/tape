@@ -12,7 +12,7 @@
  * attributed to real people.
  */
 
-import { Check, ChevronDown, Languages, Play } from "lucide-react";
+import { Check, Languages, Play } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 
@@ -81,7 +81,28 @@ export function SideBySideTranscriptMockup() {
         </span>
       }
     >
-      <div className="overflow-x-auto">
+      <ul className="flex flex-col sm:hidden">
+        {LINES.map((line) => (
+          <li
+            key={line.at}
+            className={cn("px-5 py-4", line.playing && "bg-brand/[0.05]")}
+          >
+            <p className="flex items-baseline gap-2 text-[0.8125rem] font-medium text-ink">
+              {line.speaker}
+              <span className="font-mono text-[0.6875rem] font-normal tabular-nums text-ash">
+                {line.at}
+              </span>
+            </p>
+            <p className="mt-1.5 text-[0.9375rem] leading-[1.6] text-ink">
+              {line.source}
+            </p>
+            <p className="mt-1 text-[0.875rem] leading-[1.6] text-graphite">
+              {line.translation}
+            </p>
+          </li>
+        ))}
+      </ul>
+      <div className="hidden overflow-x-auto sm:block">
         <table className="w-full min-w-[40rem] border-collapse text-left">
           <thead>
             <tr className="border-b border-ink/8 font-mono text-[0.6875rem] uppercase tracking-[0.12em] text-ash">
@@ -139,99 +160,6 @@ export function SideBySideTranscriptMockup() {
   );
 }
 
-const SERIES = [
-  {
-    title: "Weekly partner sync",
-    count: "14 in series",
-    children: [
-      { when: "Jul 16", length: "48m", entities: ["Scheduler", "$40k"] },
-      { when: "Jul 09", length: "52m", entities: ["Scheduler", "Rollback"] },
-      { when: "Jul 02", length: "45m", entities: ["Pricing"] },
-    ],
-  },
-  {
-    title: "Design review",
-    count: "6 in series",
-    children: [
-      { when: "Jul 14", length: "31m", entities: ["Onboarding"] },
-      { when: "Jul 07", length: "28m", entities: ["Onboarding", "Mobile"] },
-    ],
-  },
-];
-
-export function MeetingSeriesMockup() {
-  return (
-    <Chrome
-      title="Meeting library"
-      action={
-        <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-ink/12 bg-paper px-2.5 py-1 font-mono text-[0.625rem] uppercase tracking-[0.12em] text-graphite">
-          Grouped
-          <ChevronDown aria-hidden className="size-3" />
-        </span>
-      }
-    >
-      <div className="divide-y divide-ink/8">
-        {SERIES.map((series) => (
-          <div key={series.title} className="px-5 py-4">
-            <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
-              <ChevronDown aria-hidden className="size-3.5 text-graphite" />
-              <p className="text-[0.875rem] font-medium text-ink">
-                {series.title}
-              </p>
-              <span className="rounded-full bg-brand/12 px-2 py-0.5 font-mono text-[0.625rem] uppercase tracking-[0.1em] text-brand-ink">
-                {series.count}
-              </span>
-              <span className="ml-auto font-mono text-[0.625rem] uppercase tracking-[0.1em] text-ash">
-                Context carried
-              </span>
-            </div>
-            <ul className="mt-3 ml-[1.4rem] flex flex-col gap-2.5 border-l border-ink/10 pl-4">
-              {series.children.map((child) => (
-                <li
-                  key={child.when}
-                  className="flex flex-wrap items-center gap-x-3 gap-y-1.5"
-                >
-                  <span className="inline-flex size-5 shrink-0 items-center justify-center rounded-full bg-mist text-graphite">
-                    <Play aria-hidden className="size-2.5" />
-                  </span>
-                  <span className="font-mono text-[0.6875rem] tabular-nums text-graphite">
-                    {child.when}
-                  </span>
-                  <span className="font-mono text-[0.6875rem] tabular-nums text-ash">
-                    {child.length}
-                  </span>
-                  <span className="flex flex-wrap gap-1.5">
-                    {child.entities.map((entity) => (
-                      <span
-                        key={entity}
-                        className="rounded border border-ink/10 px-1.5 py-px font-mono text-[0.625rem] text-graphite"
-                      >
-                        {entity}
-                      </span>
-                    ))}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          </div>
-        ))}
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 px-5 py-4">
-          <ChevronDown
-            aria-hidden
-            className="size-3.5 -rotate-90 text-graphite"
-          />
-          <p className="text-[0.875rem] font-medium text-ink">
-            Investor update
-          </p>
-          <span className="rounded-full bg-mist px-2 py-0.5 font-mono text-[0.625rem] uppercase tracking-[0.1em] text-graphite">
-            9 in series
-          </span>
-        </div>
-      </div>
-    </Chrome>
-  );
-}
-
 const LEVELS = [
   3, 5, 8, 6, 11, 14, 9, 12, 16, 10, 7, 13, 15, 9, 6, 10, 12, 8, 5, 4,
 ];
@@ -250,7 +178,7 @@ export function RecorderMockup() {
         <p className="ml-2 text-[0.75rem] font-medium text-graphite">Tape</p>
       </div>
       <div className="px-5 pt-5">
-        <p className="text-[0.75rem] text-ash">Next meeting · in 4 min</p>
+        <p className="text-[0.75rem] text-ash">In this room · started 11:02</p>
         <p className="mt-1 text-[0.9375rem] font-medium text-ink">
           Platform planning
         </p>
@@ -298,5 +226,265 @@ export function RecorderMockup() {
         </span>
       </div>
     </div>
+  );
+}
+
+const AGENDA = [
+  { at: "09:30", title: "Founder intro call", via: "Zoom", state: "Joined" },
+  {
+    at: "11:00",
+    title: "Weekly partner sync",
+    via: "Google Meet",
+    state: "Joining",
+  },
+  {
+    at: "14:00",
+    title: "Portfolio review",
+    via: "Teams",
+    state: "Record on Mac",
+  },
+];
+
+/**
+ * A day from the calendar as Tape sees it: the bot takes the Zoom and Meet
+ * calls, and anything it cannot attend is handed to the Mac recorder.
+ */
+export function CalendarJoinMockup() {
+  return (
+    <Chrome
+      title="Today"
+      className="w-full max-w-[26rem]"
+      action={
+        <span className="font-mono text-[0.625rem] uppercase tracking-[0.12em] text-ash">
+          Calendar connected
+        </span>
+      }
+    >
+      <ul className="flex flex-col gap-1 p-2.5">
+        {AGENDA.map((item) => (
+          <li
+            key={item.title}
+            className="flex items-center gap-4 rounded-lg px-3 py-3 odd:bg-mist/50"
+          >
+            <span className="w-11 shrink-0 font-mono text-[0.75rem] tabular-nums text-graphite">
+              {item.at}
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="block truncate text-[0.8125rem] font-medium text-ink">
+                {item.title}
+              </span>
+              <span className="block text-[0.75rem] text-ash">{item.via}</span>
+            </span>
+            <span
+              className={cn(
+                "shrink-0 rounded-full px-2.5 py-1 text-[0.6875rem] font-medium",
+                item.state === "Joining"
+                  ? "bg-brand/12 text-brand-ink"
+                  : "bg-mist text-graphite",
+              )}
+            >
+              {item.state}
+            </span>
+          </li>
+        ))}
+      </ul>
+    </Chrome>
+  );
+}
+
+const ANSWERS = [
+  {
+    speaker: "Marco",
+    title: "Weekly partner sync",
+    when: "Oct 14",
+    at: "18:52",
+  },
+  { speaker: "Lin", title: "产品路线图评审", when: "Sep 09", at: "27:41" },
+  {
+    speaker: "Priya",
+    title: "Pipeline migration sync",
+    when: "Aug 21",
+    at: "08:15",
+  },
+];
+
+/**
+ * An outside assistant asking Tape a question over MCP, in English, and
+ * getting cited moments back from meetings held in either language.
+ */
+export function AgentQueryMockup() {
+  return (
+    <div className="w-full max-w-[34rem] overflow-hidden rounded-xl bg-paper">
+      <div className="flex items-center gap-1.5 bg-mist/70 px-4 py-3">
+        <span aria-hidden className="size-2.5 rounded-full bg-ink/15" />
+        <span aria-hidden className="size-2.5 rounded-full bg-ink/15" />
+        <span aria-hidden className="size-2.5 rounded-full bg-ink/15" />
+        <p className="ml-2 text-[0.75rem] font-medium text-graphite">
+          Your assistant
+        </p>
+      </div>
+      <div className="px-6 py-6 sm:px-7">
+        <p className="ml-auto w-fit max-w-[85%] rounded-2xl rounded-br-md bg-ink px-4 py-2.5 text-[0.875rem] leading-6 text-paper">
+          Who has offered us an intro to a payments team since August?
+        </p>
+        <p className="mt-6 inline-flex items-center gap-2 font-mono text-[0.6875rem] uppercase tracking-[0.12em] text-ash">
+          <span aria-hidden className="size-1.5 rounded-full bg-brand" />
+          tape.execute_meeting_sql · 3 rows from 41 meetings
+        </p>
+        <ul className="mt-3 flex flex-col gap-1.5">
+          {ANSWERS.map((answer) => (
+            <li
+              key={answer.title}
+              className="flex items-baseline justify-between gap-4 rounded-lg bg-mist/60 px-3.5 py-2.5 text-[0.8125rem]"
+            >
+              <span className="min-w-0 truncate text-ink">
+                <span className="hidden sm:inline">{answer.speaker} · </span>
+                {answer.title}
+              </span>
+              <span className="shrink-0 font-mono text-[0.6875rem] tabular-nums text-graphite">
+                {answer.when} · {answer.at}
+              </span>
+            </li>
+          ))}
+        </ul>
+        <p className="mt-5 text-[0.875rem] leading-6 text-pretty text-graphite">
+          Three people offered. Lin made the warmest one, in Mandarin, at 27:41
+          of the roadmap review: she worked with their head of partnerships.
+        </p>
+      </div>
+    </div>
+  );
+}
+
+const FOLLOWUP = {
+  todo: [
+    { owner: "Lin", task: "Send Marco the budget breakdown", at: "04:41" },
+    {
+      owner: "Marco",
+      task: "Write the rollback plan before cutover",
+      at: "04:26",
+    },
+  ],
+  dynamic: [
+    {
+      kind: "Offers",
+      text: "Marco can lend two engineers for the cutover week",
+      at: "12:08",
+    },
+    {
+      kind: "Needs",
+      text: "Lin needs a second reviewer on the scheduler change",
+      at: "13:30",
+    },
+  ],
+  connection: {
+    speaker: "Marco",
+    relation: "Worked with",
+    who: "Priya, who ran the last scheduler migration at a logistics firm",
+    at: "18:52",
+  },
+  research:
+    "What does a one week slip in the migration cost the Q3 reporting deadline?",
+};
+
+function FollowupHeading({ children }: { children: React.ReactNode }) {
+  return (
+    <p className="font-mono text-[0.625rem] uppercase tracking-[0.16em] text-ash">
+      {children}
+    </p>
+  );
+}
+
+function At({ at }: { at: string }) {
+  return (
+    <span className="shrink-0 font-mono text-[0.6875rem] tabular-nums text-brand-ink">
+      {at}
+    </span>
+  );
+}
+
+/**
+ * The follow-up Tape writes after a call, redrawn with the four parts the
+ * product generates: to-dos, the dynamic, connections, and open questions.
+ * Every item carries the moment it was said, as the real panel does.
+ */
+export function FollowupMockup() {
+  return (
+    <Chrome
+      title="Pipeline migration sync · Follow-up"
+      action={
+        <span className="shrink-0 font-mono text-[0.625rem] uppercase tracking-[0.12em] text-graphite">
+          Linked to transcript
+        </span>
+      }
+    >
+      <div className="grid gap-x-8 gap-y-6 px-5 py-5 [&>*]:min-w-0 sm:grid-cols-2 sm:px-6 sm:py-6">
+        <div className="order-3">
+          <FollowupHeading>To do</FollowupHeading>
+          <ul className="mt-3 flex flex-col gap-2.5">
+            {FOLLOWUP.todo.map((item) => (
+              <li
+                key={item.task}
+                className="flex items-start gap-2.5 text-[0.8125rem] leading-5"
+              >
+                <span
+                  aria-hidden
+                  className="mt-0.5 inline-flex size-4 shrink-0 items-center justify-center rounded-[0.3rem] bg-mist"
+                />
+                <span className="min-w-0 flex-1 text-ink">
+                  <span className="font-medium">{item.owner}</span> ·{" "}
+                  {item.task}
+                </span>
+                <At at={item.at} />
+              </li>
+            ))}
+          </ul>
+        </div>
+        <div className="order-2">
+          <FollowupHeading>Room dynamic</FollowupHeading>
+          <ul className="mt-3 flex flex-col gap-2.5">
+            {FOLLOWUP.dynamic.map((item) => (
+              <li
+                key={item.text}
+                className="flex items-start gap-2.5 text-[0.8125rem] leading-5"
+              >
+                <span className="mt-px shrink-0 rounded-full bg-mist px-2 py-px font-mono text-[0.5625rem] uppercase leading-4 tracking-[0.1em] text-graphite">
+                  {item.kind}
+                </span>
+                <span className="min-w-0 flex-1 text-ink">{item.text}</span>
+                <At at={item.at} />
+              </li>
+            ))}
+          </ul>
+        </div>
+        <div className="order-1">
+          <FollowupHeading>Potential connections</FollowupHeading>
+          <div className="mt-3 rounded-lg bg-mist/70 px-3.5 py-3 text-[0.8125rem] leading-5">
+            <p className="flex items-center gap-2 text-graphite">
+              <span className="font-medium text-ink">
+                {FOLLOWUP.connection.speaker}
+              </span>
+              <span className="rounded-full bg-brand/12 px-2 py-px font-mono text-[0.5625rem] uppercase leading-4 tracking-[0.1em] text-brand-ink">
+                {FOLLOWUP.connection.relation}
+              </span>
+              <span className="ml-auto">
+                <At at={FOLLOWUP.connection.at} />
+              </span>
+            </p>
+            <p className="mt-1.5 text-ink">{FOLLOWUP.connection.who}</p>
+          </div>
+        </div>
+        <div className="order-4">
+          <FollowupHeading>Potential research</FollowupHeading>
+          <p className="mt-3 text-[0.8125rem] leading-5 text-pretty text-ink">
+            {FOLLOWUP.research}
+          </p>
+          <span className="mt-3 inline-flex h-8 items-center gap-2 rounded-full bg-ink px-3.5 text-[0.75rem] font-medium text-paper">
+            <Check aria-hidden className="size-3.5" />
+            Copied as a research prompt
+          </span>
+        </div>
+      </div>
+    </Chrome>
   );
 }

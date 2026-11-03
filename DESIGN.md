@@ -124,31 +124,29 @@ Two contrast rules follow from those tokens:
 
 The landing page (`app/page.tsx`, `components/landing/*`) is the expressive brand surface, in the same calm editorial register as Granola-tier product sites: warm paper canvas, generous whitespace, Fraunces serif headlines with a coral italic accent word, Space Grotesk body, and IBM Plex Mono uppercase microcopy. No brutalist borders, hard shadows, metric grids, or dashboard screenshots inside the hero.
 
-Shared primitives live in `components/landing/landing-section.tsx`: `Container` sets the single site measure and gutters, `SplitSection` is the copy-and-still shape, and `PointList` renders feature points as a definition list with no rules and no cards. Sections must use these rather than repeating grid and measure classes, so every section edge lines up.
+The page is built as one cassette. The slogan is **It’s all on Tape.**, with a line directly under it that states the thesis and the category (conversation is where the best thinking happens; Tape records every call and every room, in Chinese and English, and turns it into what happens next). The page argues one thesis, that conversation is the richest record a team makes, and then serves four kinds of team: bilingual, AI-native, privacy-first, and engineering. Sections are numbered like tracks: Side A carries the product (A1 After the call, A2 Languages, A3 In the room, A4 Agents) and Side B carries ownership and buying (B1 Open source, B2 Pricing, B3 Liner notes for the FAQ, B4 Press record for the closing call to action). Every section opens with a `TrackLabel`.
 
-`SplitSection` takes `flip` and `stillWidth`. The wide grid track always follows whichever column needs the room, so the copy measure stays constant whichever side the still is on. A full application capture takes the wide track; a small application window takes the narrow one.
+Shared primitives live in `components/landing/landing-section.tsx`: `Container` sets the single site measure and gutters, `TrackLabel` renders the coral track pill and label, `ArtPanel` is a rounded painted plate with an HTML product window floating on it, and `TrackSection` is the stacked shape (label and heading left, lede right, full-width panel, three points). Sections must use these rather than repeating grid and measure classes, so every section edge lines up.
 
-The hero is a scroll-driven three.js scene (`components/landing/hero-scene.tsx`): abstract graphite tape spools with a glossy coral tape ribbon that winds from the supply reel onto the take-up reel as you scroll — the recording metaphor. Rules for the scene:
+Art panels are fal generated gouache and risograph plates in one series: warm paper ground, coral tape accents, sage, ochre, and ink. They live in `public/media/art/` as webp. New plates must match that series; a digital or cold palette breaks it. The art carries mood and the window on top carries the claim, so a panel never appears without a mockup except the hero and the trust band.
 
-1. Geometry and light only. No text cards, no UI mockups, no particle fields inside the 3D scene
-2. The scroll scrubs the animation; it never autoplays beyond the gentle ambient float
-3. Tape ends join the reels tangentially through the flange gap and wrap on the winding surface; reel windings are tape-colored so ribbon and reel read as one object
-4. Tape color transitions with scroll — vivid coral at the top, dimmed and desaturated toward the close-up — so the page stays balanced
-5. Respect reduced motion with a static composed frame and no scroll pinning; pause on tab hide; dispose all WebGL resources on unmount; clamp DPR at 2
+The hero is a painted coral tape ribbon on paper, animated into a seamless 16 second loop (`public/media/hero-loop.mp4`, an 8 second clip played forward then reversed) with `hero-loop-poster.webp` as its poster. From `lg` up it runs full-bleed behind the copy with a paper gradient on the left; below `lg` it sits under the copy as its own plate. It pauses under reduced motion. There is no WebGL on the page. The H1 uses the `text-display-hero` token and stays on one line at 1440px.
 
-The tape scene is the only WebGL layer in the hero. A second pointer-driven fluid layer was tried and removed: it competed with the spools for attention without earning it.
+Transcription is no longer a differentiator, and neither is bot-free capture on its own. The section order follows the thesis, then each audience's track:
 
-Transcription is no longer a differentiator, and neither is bot-free capture. The section order reflects what the category does not yet cover, strongest claim first:
+1. Thesis band, warm walnut: “Your team says more in one call than it writes all week.” with four audience cards that link to the track written for each team. It stands in for a customer logo wall until real logos exist; never fabricate logos or quotes
+2. `A1 · After the call` (AI-native teams) — the follow-up mockup with its four real parts (To do, Dynamic, Potential connections, Potential research), a four column explainer, the connections figure, and the auto research card marked as next, never as shipped
+3. `A2 · Languages` (bilingual teams) — the one full-bleed band: the bilingual transcript on the braided ribbon plate, with a single line of support
+4. `A3 · In the room` (privacy-first teams) — the local macOS recorder first, calendar bots for Zoom and Meet second, as two panels side by side
+5. `A4 · Agents` — split layout with a numbered list; the whole meeting database queryable over MCP by the assistant the team already uses, read only and scoped to the caller's access
+6. `B1 · Open source` (engineering teams) — the only ink section, headed “Don’t like how it works? Fork it.”: a terminal window with the real first run from the README beside a card of the two reasons the code is public (make it yours, own your data), with the license and live GitHub activity above the fork button
+7. `B2 Pricing`, `B3 Liner notes`, `B4 Press record`, then the footer with the giant cropped `tape.` wordmark
 
-1. `01 · Capture` — calendar bots for scheduled Zoom and Meet calls, calendar backed local recording for Microsoft Teams, *and* a local macOS recorder for the room, with speaker separation. Competitors offer one or the other, not both
-2. `02 · Every language` — 30+ languages with the translation kept beside the original line. The bot-free tools are weakest here
-3. `03 · Memory` — recurring calls grouped into one series, detected entities, talk metrics beside the transcript
-4. `04 · Agents` — the archive and local meeting upload flow published over MCP to the assistant the team already uses, rather than another vendor chatbot. Reads stay scoped to the caller's access and uploads keep the same creation policy as Tape
-5. `05 · Enterprise` — dark section: workspaces per team, sharing a future meeting series so nobody wonders what they missed, access that matches the room, expiring share links
+Section grammar alternates on purpose: centered showcase, full-bleed band, stacked track, split, dark grid. Do not add another stacked `TrackSection` in a row. Partner logos live in `public/brand/partners/` as monochrome graphite SVGs.
 
-Section grammar alternates on purpose: three copy-and-still splits, then the agents section with a mono result panel and a three-column row, then the dark enterprise spec grid. Do not add a fourth identical split. Partner logos live in `public/brand/partners/` as monochrome graphite SVGs.
+The launch film (`public/media/tape-launch-v5.mp4`, 24 seconds) is generated from `scripts/launch-film/film.html`, a deterministic timeline rendered frame by frame by `scripts/launch-film/render.mjs` and muxed with a fal generated music bed. Edit the HTML and re-render rather than editing video.
 
-The stills in the languages, memory, and enterprise sections are interface mockups drawn in HTML (`components/landing/mockups.tsx`), not screenshots. Prefer that for anything the page needs to *argue*: a 1440px application capture scaled into a 640px column is unreadable, and raster captures drift out of brand as the product changes. Each mockup shows one idea, uses the live brand tokens, and stays crisp at any size. Keep the content generic: no real customer names and no quotes attributed to real people. The macOS recorder still stays a real capture, because it is a native window rather than something the web app renders.
+The windows in the follow-up, capture, languages, and agents panels are interface mockups drawn in HTML (`components/landing/mockups.tsx`), not screenshots. Prefer that for anything the page needs to *argue*: a 1440px application capture scaled into a 640px column is unreadable, and raster captures drift out of brand as the product changes. Each mockup shows one idea, uses the live brand tokens, and stays crisp at any size. Keep the content generic: no real customer names and no quotes attributed to real people.
 
 Use `ProductLogo` with `variant="light"` on dark backgrounds. Never apply a CSS `invert` filter to the logo.
 
@@ -156,7 +154,7 @@ Use `ProductLogo` with `variant="light"` on dark backgrounds. Never apply a CSS 
 
 Use Geist for the application interface. Use Fraunces, Space Grotesk, and IBM Plex Mono only on the public site and sign in surfaces where the editorial brand voice is intentional.
 
-The public site has one display scale, defined as font-size tokens in `app/globals.css`: `text-display-1` for the hero, `text-display-2` for section headings, `text-display-3` for sub-display lines, `text-lede` for opening paragraphs, and `text-label` for mono microcopy. Each step is fluid through `clamp()` and monotonic, so a heading never shrinks as the viewport grows. Never hand-write a landing font size; add a token if a step is missing.
+The public site has one display scale, defined as font-size tokens in `app/globals.css`: `text-display-hero` for the hero H1, `text-display-1` for large section headings, `text-display-2` for section headings, `text-display-3` for sub-display lines, `text-lede` for opening paragraphs, and `text-label` for mono microcopy. Each step is fluid through `clamp()` and monotonic, so a heading never shrinks as the viewport grows. Never hand-write a landing font size; add a token if a step is missing.
 
 Those custom sizes are registered with tailwind-merge in `lib/utils.ts`. Without that registration `cn()` reads `text-display-2` as a text color and silently drops it whenever a real color follows.
 
@@ -172,7 +170,7 @@ Use the existing four pixel scale, with eight pixels as the common spacing step.
 
 Cards should represent a meaningful group, not every section. Avoid card inside card. Keep borders quiet and shadows subtle. Use a maximum content width that supports scanning, while long transcript text should use a narrower reading measure.
 
-The public site paces sections rather than repeating one padding value: the partner strip is tight, content sections use the standard step, the dark enterprise section is more generous, and the closing call to action is the most generous of all. Split sections align their columns to the top. Centering columns of unequal height leaves matching voids above and below and reads as a mistake.
+The public site paces sections rather than repeating one padding value: the thesis band is tight, content sections use the standard step, the dark open source section is more generous, and the closing call to action is the most generous of all. Split sections align their columns to the top. Centering columns of unequal height leaves matching voids above and below and reads as a mistake.
 
 Any grid whose children can hold long unbreakable content needs `[&>*]:min-w-0`. A grid item keeps a content-based minimum width otherwise, and it will push past its track and scroll the page sideways on small viewports.
 

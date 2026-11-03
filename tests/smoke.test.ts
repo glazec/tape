@@ -12,6 +12,9 @@ const { getAuthenticatedUser, redirect } = vi.hoisted(() => ({
 
 vi.mock("@/lib/auth", () => ({ getAuthenticatedUser }));
 vi.mock("next/navigation", () => ({ redirect }));
+vi.mock("@/lib/github-activity", () => ({
+  readGithubActivity: async () => null,
+}));
 vi.mock("next/image", async () => {
   const { createElement } = await import("react");
 
@@ -20,9 +23,7 @@ vi.mock("next/image", async () => {
       createElement("img", {
         alt,
         src:
-          typeof src === "string"
-            ? src
-            : (src as { src?: string } | null)?.src,
+          typeof src === "string" ? src : (src as { src?: string } | null)?.src,
       }),
   };
 });
@@ -33,15 +34,15 @@ describe("landing page smoke test", () => {
     const html = renderToStaticMarkup(await Home({}));
 
     expect(html).toContain("tape-lockup.svg");
-    expect(html).toContain("Every conversation,");
-    expect(html).toContain("/media/tape-launch-v4.mp4");
-    expect(html).toContain("/media/tape-launch-v4-en.vtt");
+    expect(html).toContain("all on");
+    expect(html).toContain("/media/tape-launch-v5.mp4");
+    expect(html).toContain("/media/tape-launch-v5-en.vtt");
     for (const id of [
-      "memory",
       "languages",
       "agents",
       "capture",
-      "enterprise",
+      "open-source",
+      "followup",
       "pricing",
       "faq",
     ]) {
@@ -49,14 +50,15 @@ describe("landing page smoke test", () => {
     }
     expect(html).toContain("Google Meet");
     expect(html).toContain("ElevenLabs");
-    expect(html).toContain("Every team gets its own workspace.");
-    expect(html).toContain("Share a series once");
+    expect(html).toContain("Fork it.");
+    expect(html).toContain("Who owes what.");
+    expect(html).toContain("Skip the bot.");
     expect(html).toContain('href="/auth/sign-in"');
     expect(html).toContain('href="/blog"');
     expect(html).toContain(
       'href="https://github.com/glazec/tape/releases/latest/download/Tape-Desktop.zip"',
     );
-    expect(html).toContain('href="https://github.com/glazec/tape"');
+    expect(html).toContain('href="https://github.com/glazec/tape/fork"');
   });
 
   it("redirects signed in users to the dashboard", async () => {
