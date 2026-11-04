@@ -8,7 +8,7 @@ import { loadIntelMeetings, saveIntelHistory } from "@/lib/intel/store";
 import { searchIntel } from "@/lib/intel/search";
 import { IntelInputError } from "@/lib/intel/content";
 export const runtime = "nodejs";
-export const maxDuration = 240;
+export const maxDuration = 600;
 export async function POST(request: Request) {
   const origin = request.headers.get("origin");
   if (origin && origin !== new URL(process.env.NEXT_PUBLIC_APP_URL || request.url).origin) return Response.json({ error: "Forbidden" }, { status: 403 });

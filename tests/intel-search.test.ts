@@ -39,3 +39,40 @@ describe("Intel matching boundaries", () => {
   await expect(searchIntel(workspace, { kind: "content", text: "Inference" }, [m])).rejects.toThrow("access or content changed");
  });
 });
+it("searches all batches and rechecks the full archive after verification", async () => {
+ const corpus = Array.from({ length: 3 }, (_,i) => ({ ...m, id: `m${i}`, segments: [{ ...m.segments[0], id: `s${i}`, speaker: `Person ${i}`, text: "Inference evidence ".repeat(20000) }] }));
+ mocks.loadIntelMeetings.mockResolvedValue(corpus);
+ const result = await searchIntel(workspace, { kind: "content", text: "Inference" }, corpus);
+ expect(mocks.createOpenRouterChatCompletion).toHaveBeenCalledTimes(3);
+ expect(mocks.verifyIntelClaims).toHaveBeenCalledTimes(3);
+ expect(result.catalog.people).toHaveLength(3);
+ const searched = mocks.createOpenRouterChatCompletion.mock.calls.flatMap(([call]) => JSON.parse(call.messages[1].content).meetings.map((meeting: { id: string }) => meeting.id));
+ expect(searched).toEqual(["m0", "m1", "m2"]);
+});
+it("ranks verified candidates across batches without rewriting their claims", async () => {
+ const corpus = Array.from({ length: 3 }, (_, i) => ({ ...m, id: `m${i}`, segments: Array.from({ length: 6 }, (_, j) => ({ id: `s${i}-${j}`, speaker: `Person ${i}-${j}`, text: "Inference evidence ".repeat(3300), startMs: j })) }));
+ mocks.loadIntelMeetings.mockResolvedValue(corpus);
+ mocks.verifyIntelClaims.mockImplementation(async claims => claims);
+ mocks.createOpenRouterChatCompletion.mockImplementation(async call => {
+   const payload = JSON.parse(call.messages[1].content);
+   if (payload.candidates) return JSON.stringify({ indices: [17, 0] });
+   return JSON.stringify({ matches: payload.people.map((p: { id: string; sourceSegmentId: string }) => ({ id: p.id, type: "person", relevance: "related_focus", reason: "Supported interest", caveat: "", segmentIds: [p.sourceSegmentId], counterEvidenceIds: [] })) });
+ });
+ const result = await searchIntel(workspace, { kind: "content", text: "Inference" }, corpus);
+ expect(result.matches.map(m => m.title)).toEqual(["Person 2-5", "Person 0-0"]);
+ expect(result.matches.every(m => m.reason === "Supported interest")).toBe(true);
+ expect(mocks.createOpenRouterChatCompletion).toHaveBeenCalledTimes(4);
+});
+it("drops unsupported attribution before independently verifying valid candidates", async () => {
+ const corpus = [m, { ...m, id: "m2", segments: [{ ...m.segments[0], id: "s2", speaker: "Maya" }] }];
+ const people = buildCatalog(corpus).people;
+ mocks.loadIntelMeetings.mockResolvedValue(corpus);
+ mocks.verifyIntelClaims.mockImplementation(async claims => claims);
+ mocks.createOpenRouterChatCompletion.mockResolvedValue(JSON.stringify({ matches: [
+   { id: people[0].id, type: "person", relevance: "related_focus", reason: "Wrong attribution", caveat: "", segmentIds: ["s2"], counterEvidenceIds: [] },
+   { id: people[1].id, type: "person", relevance: "related_focus", reason: "Supported interest", caveat: "", segmentIds: ["s2"], counterEvidenceIds: [] },
+ ] }));
+ const result = await searchIntel(workspace, { kind: "content", text: "Inference" }, corpus);
+ expect(result.matches.map(m => m.title)).toEqual(["Maya"]);
+ expect(mocks.verifyIntelClaims.mock.calls[0][0]).toHaveLength(1);
+});
