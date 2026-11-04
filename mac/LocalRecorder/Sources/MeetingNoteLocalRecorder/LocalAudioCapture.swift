@@ -3,7 +3,7 @@ import CoreAudio
 import CoreMedia
 import Foundation
 import LocalRecorderCore
-import ScreenCaptureKit
+@preconcurrency import ScreenCaptureKit
 
 struct AudioInputDevice: Equatable, Identifiable, Sendable {
     var name: String
