@@ -228,9 +228,12 @@ final class RecorderAppModel: NSObject, ObservableObject, UNUserNotificationCent
     @Published var isRecording = false {
         didSet {
             recordingStartedAt = isRecording ? (recordingStartedAt ?? Date()) : nil
+            if !isRecording { recordingStoppedAt = nil }
         }
     }
     @Published var recordingStartedAt: Date?
+    /// When Stop was pressed, so the clock freezes while the file is saved.
+    @Published var recordingStoppedAt: Date?
     @Published var isTestingLevels = false
     @Published var isRequestingPermissions = false
     @Published var isRestarting = false
@@ -238,7 +241,12 @@ final class RecorderAppModel: NSObject, ObservableObject, UNUserNotificationCent
     @Published var selectedMicrophoneUID: String?
     @Published var microphoneLevel: Float = 0
     @Published var systemAudioLevel: Float = 0
-    @Published var isFinishingRecording = false
+    @Published var isFinishingRecording = false {
+        didSet {
+            if isFinishingRecording, isRecording, recordingStoppedAt == nil { recordingStoppedAt = Date() }
+            if !isFinishingRecording, isRecording { recordingStoppedAt = nil }
+        }
+    }
     @Published var isRefreshingSchedule = false
     @Published var isAdvancedExpanded = false
     @Published var nextScheduleMeeting: LocalRecorderMonitoringMeeting? {

@@ -164,7 +164,10 @@ struct RecorderMenuView: View {
                 if let tone = state.tone {
                     StatusDot(tone: tone, isLive: model.isRecording)
                 }
-                if model.isRecording, let startedAt = model.recordingStartedAt {
+                if model.isRecording, let startedAt = model.recordingStartedAt, let stoppedAt = model.recordingStoppedAt {
+                    Text("\(state.eyebrow ?? "") · \(elapsedText(from: startedAt, to: stoppedAt))")
+                        .monospacedDigit()
+                } else if model.isRecording, let startedAt = model.recordingStartedAt {
                     TimelineView(.periodic(from: startedAt, by: 1)) { context in
                         Text("\(state.eyebrow ?? "") · \(elapsedText(from: startedAt, to: context.date))")
                             .monospacedDigit()
@@ -185,11 +188,19 @@ struct RecorderMenuView: View {
                     .padding(.top, 10)
                     .padding(.trailing, showsWindowChrome ? 0 : 24)
 
-                RecordingLevelsView(
-                    microphoneLevel: model.microphoneLevel,
-                    systemAudioLevel: model.systemAudioLevel
-                )
-                .padding(.top, 14)
+                if model.isFinishingRecording {
+                    SavingProgressView(
+                        step: model.statusText,
+                        stoppedAt: model.recordingStoppedAt ?? Date()
+                    )
+                    .padding(.top, 14)
+                } else {
+                    RecordingLevelsView(
+                        microphoneLevel: model.microphoneLevel,
+                        systemAudioLevel: model.systemAudioLevel
+                    )
+                    .padding(.top, 14)
+                }
             } else {
                 Text(state.title)
                     .lineLimit(2)
@@ -869,7 +880,7 @@ struct RecordingLevelsView: View {
     @State private var lastHeard = Date()
 
     var body: some View {
-        HStack(spacing: 18) {
+        HStack(spacing: 14) {
             SourceLevel(title: "Mic", level: microphoneLevel)
             SourceLevel(title: "Mac sound", level: systemAudioLevel)
             Spacer(minLength: 0)
@@ -878,6 +889,8 @@ struct RecordingLevelsView: View {
                     Text("No sound yet")
                         .font(TapeType.sans(11))
                         .foregroundStyle(TapePalette.ash)
+                        .lineLimit(1)
+                        .fixedSize()
                         .transition(.opacity)
                 }
             }
@@ -885,6 +898,54 @@ struct RecordingLevelsView: View {
         .onChange(of: max(microphoneLevel, systemAudioLevel)) { _, level in
             if level > 0.02 { lastHeard = Date() }
         }
+    }
+}
+
+/// Shown in place of the live meters after Stop: capture is over, so the row
+/// reports which save step is running and how long it has taken.
+struct SavingProgressView: View {
+    var step: String
+    var stoppedAt: Date
+
+    private static let steps = ["Stopping capture", "Saving audio to this Mac"]
+
+    private var stepNumber: Int? {
+        Self.steps.firstIndex(of: step).map { $0 + 1 }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
+                ProgressView().controlSize(.small)
+                Text(step.isEmpty ? "Saving recording" : step)
+                    .font(TapeType.sans(12, .medium))
+                    .foregroundStyle(TapePalette.ink)
+                    .lineLimit(1)
+                Spacer(minLength: 8)
+                TimelineView(.periodic(from: stoppedAt, by: 1)) { context in
+                    Text(savingText(context.date))
+                        .font(TapeType.sans(11))
+                        .monospacedDigit()
+                        .foregroundStyle(TapePalette.ash)
+                        .lineLimit(1)
+                        .fixedSize()
+                }
+            }
+            ProgressView(value: stepNumber.map { Double($0 - 1) + 0.5 } ?? 1, total: Double(Self.steps.count + 1))
+                .progressViewStyle(.linear)
+                .tint(TapePalette.ink.opacity(0.65))
+            Text("Upload starts as soon as the file is saved. Keep Tape open.")
+                .font(TapeType.sans(11))
+                .foregroundStyle(TapePalette.muted)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .accessibilityElement(children: .combine)
+    }
+
+    private func savingText(_ now: Date) -> String {
+        let seconds = max(0, Int(now.timeIntervalSince(stoppedAt)))
+        let prefix = stepNumber.map { "Step \($0) of \(Self.steps.count + 1) · " } ?? ""
+        return prefix + String(format: "%d:%02d", seconds / 60, seconds % 60)
     }
 }
 
@@ -897,8 +958,10 @@ struct SourceLevel: View {
             Text(title)
                 .font(TapeType.sans(11.5))
                 .foregroundStyle(TapePalette.muted)
+                .lineLimit(1)
+                .fixedSize()
             AudioLevelBar(level: level, inkOpacity: 0.65, height: 6)
-                .frame(width: 64)
+                .frame(minWidth: 32, maxWidth: 64)
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("\(title) level")
