@@ -14,6 +14,7 @@ import { cn } from "@/lib/utils";
 type AppShellProps = {
   children: ReactNode;
   activeHref?: string;
+  wide?: boolean;
   amplitudeTeamId?: string;
   canCreateMeetings?: boolean;
   oneSignalExternalId?: string;
@@ -21,26 +22,28 @@ type AppShellProps = {
 
 const navItems = [
   { href: "/dashboard", label: "Meetings" },
+  { href: "/intel", label: "Intel" },
   { href: "/settings/team", label: "Settings" },
 ];
 
 export function AppShell({
   children,
   activeHref,
+  wide = false,
   amplitudeTeamId,
   canCreateMeetings = true,
   oneSignalExternalId,
 }: AppShellProps) {
   const visibleNavItems = canCreateMeetings
     ? navItems
-    : navItems.filter((item) => item.href === "/dashboard");
+    : navItems.filter((item) => item.href === "/dashboard" || item.href === "/intel");
   const newMeetingActive = activeHref === "/meetings/new";
   const oneSignalAllowedOrigins = getOneSignalAllowedOrigins();
 
   return (
     <div className="min-h-screen bg-background text-foreground">
       <header className="sticky top-0 z-30 border-b border-border/70 bg-background/90 backdrop-blur-md">
-        <div className="mx-auto flex h-14 w-full max-w-4xl items-center gap-4 px-4 sm:gap-8 sm:px-6">
+        <div className={cn("mx-auto flex h-14 w-full items-center gap-4 px-4 sm:gap-8 sm:px-6", wide ? "max-w-6xl" : "max-w-4xl")}>
           <Link
             href="/dashboard"
             aria-label="Tape home"
@@ -77,7 +80,7 @@ export function AppShell({
           <div className="ml-auto flex items-center gap-1">
             {oneSignalExternalId ? <OrganizationSwitcher /> : null}
             {canCreateMeetings ? (
-              <NewMeetingMenu active={newMeetingActive} />
+              <div className={cn(wide && "max-sm:hidden")}><NewMeetingMenu active={newMeetingActive} /></div>
             ) : null}
             <details className="group relative ml-1">
               <summary
@@ -102,7 +105,7 @@ export function AppShell({
           </div>
         </div>
       </header>
-      <main className="mx-auto w-full max-w-4xl px-4 py-8 sm:px-6 sm:py-10">
+      <main className={cn("mx-auto w-full px-4 py-8 sm:px-6 sm:py-10", wide ? "max-w-6xl" : "max-w-4xl")}>
         {children}
       </main>
       {oneSignalExternalId ? (

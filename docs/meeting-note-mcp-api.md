@@ -385,3 +385,7 @@ Meeting reads evaluate administrator membership against each meeting’s workspa
 ## Combined meetings in the web application
 
 The web application can compose source meetings with Merge meetings and Continue recording. The original meeting IDs, media, private notes, and permissions remain independent. Existing MCP read and export operations continue to address the original source records; they do not flatten the web application's combined view. Use each accessible source ID when retrieving all parts through MCP.
+
+## Intel web workspace
+
+Intel search and private search history are web features at `/intel`, `/api/intel/search`, and `/api/intel/history`. No Intel matching tool is added to MCP. The new history table has no `tape_mcp` grant. Existing transcript tools and their caller permissions remain unchanged.

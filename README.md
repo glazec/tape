@@ -224,3 +224,7 @@ Continue recording accepts a Zoom or Google Meet link for one hour after the las
 Combined meetings show chronological recording parts with separate audio and transcript controls. Note questions, text and image exports, and completed followups include readable parts. Sharing a combined meeting does not grant access to its original sources. Speaker corrections can explicitly remember a verified participant email for future meetings in the workspace.
 
 Recall recording recovery checks started bot meetings every five minutes, independently of webhooks. Missing completion notifications and queued transcription dispatches are retried without creating another job. Started and unfinished meetings remain visible in the library.
+
+### Intel search
+
+`/intel` turns meeting intelligence into people matches. The left sidebar contains private search history; Intel and People sit beneath the search bar. Choose intel or paste text or a public HTTPS link to find interested people. Choose a person to find relevant intel and connections. Unconfirmed names remain separate by meeting, with an explicit identity selection step. Results and intel cards expose original transcript evidence. Extraction runs in the background without adding another meeting page section. See `docs/setup.md` for migration and provider requirements.

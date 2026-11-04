@@ -296,3 +296,15 @@ Web session persistence is covered by `tests/auth-server.test.ts` against a disp
 Desktop session lifetime is checked by `tests/local-recorder-auth.test.ts` at credential issuance. `tests/local-recorder-session-lifetime.sql` replays migration `0064` twice and checks active session extension, retained token and device hashes, unchanged login date, and preservation of expired, revoked, and longer sessions. CI runs this SQL on its disposable PostgreSQL database.
 
 Astra review on 2026-10-31 also checks conflict recovery after reordered entries, manual-only Mutual confirmation, source anchors after deduplication, and truthful share-access copy. Remaining acceptance gaps include per-meeting speaker identity after an unremembered nickname and full reload, and delayed automatic followup visibility after transcription is ready. Local component fixtures do not establish production persistence or multi-account permissions.
+
+## Intel verification
+
+Run `npx vitest run tests/intel-*.test.ts tests/migrations.test.ts`, `npx tsc --noEmit`, and `npx drizzle-kit check`. The focused suite covers scoped identities, canonical composed sources, inaccessible source rejection, replaced transcripts, fabricated references, claim verification failure, URL substitution, source speaker exclusion, authorization changes during matching, and retry checkpoint persistence.
+
+Run `node tests/fixtures/intel/serve.mjs`, then `node tests/fixtures/intel/verify.mjs` to exercise the real React component with explicitly fictional fixtures on desktop and mobile. The check covers source disclosure, Intel to People to Intel navigation, identity confirmation, link failure recovery, dialog dismissal and horizontal overflow. It does not prove deployed authentication or production meeting data.
+
+Optional live synthetic model verification: load valid OpenRouter environment variables and run `node --import tsx scripts/verify-intel-model.ts`. It checks eight adversarial claims covering invented numbers, negation, attribution, timing and stale intent, with no real transcript data or database writes. Passing this small suite is not a measured comparison with Granola or Otter.
+
+The Intel database integration suite is opt in. Apply the repository SQL migrations to an isolated local PostgreSQL database, then set `INTEL_TEST_DATABASE_URL` to its localhost URL and run `npx vitest run tests/intel-database.integration.test.ts`. The test seeds synthetic data in a transaction and rolls it back. It exercises real corpus SQL, JSONB extraction readback, history pruning and row level security under `tape_authenticated`. Remote database URLs are rejected. Add `INTEL_LIVE_MODEL_CHECK=1` and valid OpenRouter credentials to exercise matching and independent verification against that synthetic corpus with the real model.
+
+Additional regressions cover oversized links, bounded provider reads, history storage failure after successful matching, newly indexed result continuation, and deduplication and source dates for merged contacts.

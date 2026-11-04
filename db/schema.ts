@@ -378,6 +378,7 @@ export const meetings = pgTable(
     title: text("title").notNull(),
     titleSource: text("title_source").notNull().default("calendar"),
     aiFollowup: jsonb("ai_followup"),
+    aiIntel: jsonb("ai_intel"),
     platform: meetingPlatform("platform").notNull(),
     status: meetingStatus("status").notNull().default("scheduled"),
     meetingUrl: text("meeting_url"),
@@ -1207,3 +1208,11 @@ export const requestRateLimits = pgTable(
     ),
   ],
 );
+
+export const intelSearches = pgTable("intel_searches", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  teamId: uuid("team_id").notNull().references(() => teams.id, { onDelete: "cascade" }),
+  userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  input: jsonb("input").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, table => [index("intel_searches_owner_index").on(table.teamId, table.userId, table.createdAt)]);

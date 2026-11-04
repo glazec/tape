@@ -55,3 +55,7 @@ Meeting reads evaluate administrator membership against each meeting’s workspa
 ## Web meeting combinations
 
 Merge meetings and Continue recording in the web application retain independent source records. MCP tools still read the requested source meeting ID; they do not flatten the combined web view. Source permissions remain authoritative. See `docs/meeting-note-mcp-api.md` for this boundary.
+
+## Intel
+
+The Intel matching interface and private search history are available in the web application, not through an additional MCP tool. No `tape_mcp` grant is provided for `intel_searches`.

@@ -1,0 +1,77 @@
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+const state = vi.hoisted(() => ({ client: null as import("pg").Client | null }));
+const enabled = Boolean(process.env.INTEL_TEST_DATABASE_URL);
+vi.mock("@/db/client", async () => {
+  const url = process.env.INTEL_TEST_DATABASE_URL;
+  if (!url) return { db: {} };
+  if (!["127.0.0.1", "localhost"].includes(new URL(url).hostname)) throw new Error("This test only runs against an isolated local database");
+  const { Client } = await import("pg");
+  const { drizzle } = await import("drizzle-orm/node-postgres");
+  const schema = await import("@/db/schema");
+  state.client = new Client({ connectionString: url });
+  await state.client.connect();
+  return { db: drizzle(state.client, { schema }) };
+});
+import { loadIntelMeetings, loadIntelHistory, saveIntelHistory } from "@/lib/intel/store";
+import { searchIntel } from "@/lib/intel/search";
+import { buildCatalog, intelSourceHash, currentIntel } from "@/lib/intel/provenance";
+const team = "11111111-1111-4111-8111-111111111111";
+const a = "22222222-2222-4222-8222-222222222222";
+const b = "33333333-3333-4333-8333-333333333333";
+const m = "44444444-4444-4444-8444-444444444444";
+const privateMeeting = "55555555-5555-4555-8555-555555555555";
+const oldJob = "66666666-6666-4666-8666-666666666666";
+const currentJob = "77777777-7777-4777-8777-777777777777";
+const segment = "88888888-8888-4888-8888-888888888888";
+const workspace = { teamId: team, userId: a, domain: "example.test" };
+async function asUser(id: string) {
+  await state.client!.query("SET LOCAL ROLE tape_authenticated");
+  await state.client!.query("SELECT set_config('request.jwt.claims',$1,true)", [JSON.stringify({ sub: id, email: `${id}@example.test` })]);
+}
+describe.skipIf(!enabled)("Intel with real PostgreSQL and caller RLS", () => {
+  beforeAll(async () => {
+    const client = state.client!;
+    await client.query("BEGIN");
+    await client.query("INSERT INTO teams(id,name) VALUES($1,'Intel integration')", [team]);
+    for (const id of [a,b]) {
+      await client.query("INSERT INTO users(id,auth_user_id,email) VALUES($1,$3,$2)", [id,`${id}@example.test`,id]);
+      await client.query("INSERT INTO team_memberships(team_id,user_id) VALUES($1,$2)", [team,id]);
+    }
+    for (const [id,owner] of [[m,a],[privateMeeting,b]]) await client.query("INSERT INTO meetings(id,team_id,owner_user_id,title,platform,status) VALUES($1,$2,$3,'Intel source','google_meet','ready')", [id,team,owner]);
+    await client.query("INSERT INTO transcript_jobs(id,meeting_id,status,created_at) VALUES($1,$3,'completed',now()-interval '1 day'),($2,$3,'completed',now())", [oldJob,currentJob,m]);
+    await client.query("INSERT INTO transcript_segments(meeting_id,job_id,speaker,start_ms,text) VALUES($1,$2,'Alex',0,'Obsolete content')", [m,oldJob]);
+    await client.query("INSERT INTO transcript_segments(id,meeting_id,job_id,speaker,start_ms,text) VALUES($1,$2,$3,'Alex',1000,'We need inference partners')", [segment,m,currentJob]);
+    await asUser(a);
+  });
+  afterAll(async () => { if (state.client) { await state.client.query("ROLLBACK"); await state.client.end(); } });
+  it("reads personally accessible current transcripts through the actual SQL", async () => {
+    const corpus = await loadIntelMeetings(workspace);
+    expect(corpus.map(m => m.id)).toEqual([m]);
+    expect(corpus[0].segments.map(s => s.text)).toEqual(["We need inference partners"]);
+  });
+  it("roundtrips generated intel through JSONB without changing its identity", async () => {
+    const [meeting] = await loadIntelMeetings(workspace);
+    const stored = { sourceHash: intelSourceHash(meeting), result: { items: [{ kind: "plan", text: "Alex needs inference partners", importance: "normal", speakerSegmentId: segment, segmentIds: [segment] }] } };
+    await state.client!.query("UPDATE meetings SET ai_intel=$1::jsonb WHERE id=$2", [JSON.stringify(stored),m]);
+    const [readback] = await loadIntelMeetings(workspace);
+    expect(currentIntel(readback)?.items).toHaveLength(1);
+    expect(buildCatalog([readback]).intel[0].text).toBe("Alex needs inference partners");
+  });
+  it("persists private history and blocks another member at the database boundary", async () => {
+    await saveIntelHistory(workspace, { kind: "content", text: "Inference partners" });
+    expect(await loadIntelHistory(workspace, await loadIntelMeetings(workspace))).toHaveLength(1);
+    await asUser(b);
+    expect((await state.client!.query("SELECT * FROM intel_searches")).rows).toHaveLength(0);
+    await asUser(a);
+  });
+  it.skipIf(!process.env.INTEL_LIVE_MODEL_CHECK)("matches through the live model and verifier against the real authorized corpus", async () => {
+    const corpus = await loadIntelMeetings(workspace);
+    const result = await searchIntel(workspace, { kind: "content", text: "An inference infrastructure provider is looking for partners. Who has expressed a need for inference partners?" }, corpus);
+    expect(result.matches.some(match => match.title === "Alex" && match.evidence.some(e => e.id === segment))).toBe(true);
+    expect(result.catalog.people).toHaveLength(1);
+  }, 180000);
+  it("limits history to fifty entries using the real pruning query", async () => {
+    for (let i=0; i<51; i++) await saveIntelHistory(workspace, { kind: "content", text: `Idea number ${i}` });
+    expect((await state.client!.query("SELECT count(*)::int AS count FROM intel_searches")).rows[0].count).toBe(50);
+  });
+});
