@@ -3,6 +3,8 @@ import { db } from "@/db/client";
 import { intelSearches } from "@/db/schema";
 import { getCurrentUser } from "@/lib/auth";
 import { getOrCreateWorkspaceForSessionUser } from "@/lib/workspace";
+export const runtime = "nodejs";
+
 export async function DELETE(request: Request) {
   const origin = request.headers.get("origin");
   if (origin && origin !== new URL(process.env.NEXT_PUBLIC_APP_URL || request.url).origin) return Response.json({ error: "Forbidden" }, { status: 403 });
