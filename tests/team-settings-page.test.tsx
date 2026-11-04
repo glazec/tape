@@ -33,6 +33,7 @@ const {
   requireCurrentUser: vi.fn(),
 }));
 
+vi.mock("@/lib/user-language", () => ({ getUserLanguage: (_id: string, fallback: string) => Promise.resolve(fallback ?? "en") }));
 vi.mock("next/navigation", () => ({
   redirect,
   useRouter: () => ({ refresh: vi.fn() }),
@@ -94,7 +95,7 @@ describe("TeamSettingsPage", () => {
     vi.resetModules();
   });
 
-  it("redirects shared only users away from creator settings", async () => {
+  it("shows shared readers only their personal settings", async () => {
     requireCurrentUser.mockResolvedValue({
       id: "auth_user_123",
       email: "reader@partner.com",
@@ -117,10 +118,11 @@ describe("TeamSettingsPage", () => {
     const { default: TeamSettingsPage } =
       await import("@/app/settings/team/page");
 
-    await expect(TeamSettingsPage({})).rejects.toThrow(
-      "NEXT_REDIRECT:/dashboard",
-    );
-    expect(redirect).toHaveBeenCalledWith("/dashboard");
+    getTeamConfiguration.mockResolvedValue({ translationLanguage: "en" });
+    const html = renderToStaticMarkup(await TeamSettingsPage({}));
+    expect(html).toContain("Default language");
+    expect(html).not.toContain("Sharing group");
+    expect(redirect).not.toHaveBeenCalled();
   });
 
   it("shows shared team vocabulary for transcription", async () => {
@@ -230,7 +232,7 @@ describe("TeamSettingsPage", () => {
     expect(html).toContain("9 members");
     expect(html).not.toContain("max-h-80");
     expect(html).not.toContain("overflow-y-auto");
-    expect(html).toContain("Only team administrators can edit these settings");
+    expect(html).toContain("Only team administrators can edit workspace settings");
     expect(html).toContain("Billing");
     expect(html).toContain("Credit remaining");
     expect(html).toContain("$12.00");
@@ -238,7 +240,7 @@ describe("TeamSettingsPage", () => {
     expect(html).toContain("$1.25");
     expect(html).toContain('href="/usage"');
     expect(
-      html.match(/Only team administrators can edit these settings/g),
+      html.match(/Only team administrators can edit workspace settings/g),
     ).toHaveLength(1);
     expect(html).not.toContain('action="/api/team/bot-profile"');
     expect(html).not.toContain('action="/api/team/vocabulary"');
@@ -295,7 +297,7 @@ describe("TeamSettingsPage", () => {
 
     expect(html).toContain("Default avatar");
     expect(html).toContain("data:image/jpeg;base64,default-avatar");
-    expect(html).toContain("Translate transcripts to");
+    expect(html).toContain("Workspace language");
     expect(html).toContain("Simplified Chinese");
     expect(html).toContain('name="translationLanguage"');
     expect(html).toContain("No limit");

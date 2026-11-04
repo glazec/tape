@@ -1,3 +1,5 @@
+import { acquireFollowupLease, releaseFollowupLease } from "@/lib/meeting-followup-lease";
+import { getRecentMeetingCompanies } from "@/lib/recent-meeting-companies";
 import { and, eq, isNull } from "drizzle-orm";
 
 import { db } from "@/db/client";
@@ -30,6 +32,7 @@ type ComposedFollowupMeeting = NonNullable<
 
 export type MeetingFollowupGenerationOutcome =
   | { status: "saved"; result: MeetingFollowup; connectionsRevision: string; connectionIds: string[] }
+  | { status: "in_progress" }
   | { status: "not_found" }
   | { status: "not_ready" }
   | { status: "too_long" }
@@ -44,14 +47,16 @@ export type MeetingFollowupGenerationOutcome =
  *
  * Provider and credit errors are thrown for the caller to report.
  */
-export async function generateAndSaveMeetingFollowup({
+async function generateLockedMeetingFollowup({
   expectedSourceHash,
   meeting,
   meetingId,
   workspace,
+  leaseToken,
 }: {
   /** When set, generation stops if the transcript no longer matches it. */
   expectedSourceHash?: string;
+  leaseToken: string;
   meeting: ComposedFollowupMeeting;
   meetingId: string;
   workspace: WorkspaceContext;
@@ -71,8 +76,12 @@ export async function generateAndSaveMeetingFollowup({
     return { status: "too_long" };
   }
 
+  const existing = getCurrentMeetingFollowup(meeting);
+  if (existing) return { status: "saved", result: existing, connectionsRevision: getConnectionsRevision(meeting), connectionIds: getCurrentMeetingConnectionIds(meeting) };
+
   await assertWorkspaceHasProviderCredit(workspace);
-  const result = await generateMeetingFollowup(source, meetingId);
+  const recentCompanies = await getRecentMeetingCompanies(workspace.userId);
+  const result = await generateMeetingFollowup(source, meetingId, recentCompanies);
   const current = await getComposedMeetingForFollowup(workspace, meetingId);
 
   if (!current?.canManage) {
@@ -95,6 +104,7 @@ export async function generateAndSaveMeetingFollowup({
       and(
         getManageableMeetingCondition(workspace, meetingId),
         eq(meetings.status, "ready"),
+        eq(meetings.followupLeaseToken, leaseToken),
         eq(meetings.updatedAt, new Date(current.updatedAt)),
         current.aiFollowup == null ? isNull(meetings.aiFollowup) : eq(meetings.aiFollowup, current.aiFollowup),
       ),
@@ -165,4 +175,21 @@ export async function autoGenerateMeetingFollowup(
   }
 
   return generateAndSaveMeetingFollowup({ meeting, meetingId, workspace });
+}
+
+export async function generateAndSaveMeetingFollowup(input: Omit<Parameters<typeof generateLockedMeetingFollowup>[0], "leaseToken">): Promise<MeetingFollowupGenerationOutcome> {
+  if (!input.meeting.canManage) return { status: "not_found" };
+  const token = await acquireFollowupLease(input.meetingId);
+  if (!token) return { status: "in_progress" };
+  try {
+    // Always generate from the owner's composition, not a viewer's aliases or
+    // a subset of shared parts. Refresh after claiming to reuse a racing save.
+    const workspace = await getMeetingOwnerWorkspace(input.meetingId);
+    if (!workspace) return { status: "not_found" };
+    const meeting = await getComposedMeetingForFollowup(workspace, input.meetingId);
+    if (!meeting?.canManage) return { status: "not_found" };
+    return await generateLockedMeetingFollowup({ ...input, workspace, meeting, leaseToken: token });
+  } finally {
+    await releaseFollowupLease(input.meetingId, token);
+  }
 }

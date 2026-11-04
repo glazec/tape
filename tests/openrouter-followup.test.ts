@@ -67,7 +67,7 @@ describe("followup provider", () => {
     expect(request.messages[0].content).toContain(
       "Replace ALL personal and possessive pronouns",
     );
-    expect(JSON.parse(request.messages[1].content)).toEqual(source);
+    expect(JSON.parse(request.messages[1].content)).toEqual({ transcript: source, recentCompanyHints: [] });
     expect(recordUsage).toHaveBeenCalledWith(
       expect.objectContaining({
         meetingId: "meeting-id",

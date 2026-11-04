@@ -82,6 +82,7 @@ export function MeetingComposedTranscripts({
                   translationStatus: meeting.translationSummary.status,
                 })}
                 meetingId={meeting.canManage ? meeting.id : null}
+                translationMeetingId={meeting.id}
                 navigationMeetingId={meeting.id}
                 audioParts={parts.length > 1 ? parts : undefined}
                 audioUrl={meeting.audioUrl}

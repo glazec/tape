@@ -1437,6 +1437,7 @@ export async function getMeetingTranscriptForWorkspace(
         text: transcriptSegments.text,
         polishedText: transcriptSegments.polishedText,
         translatedText: transcriptSegments.translatedText,
+        translationCopies: transcriptSegments.translationCopies,
         emotionLabel: transcriptSegments.emotionLabel,
         emotionReason: transcriptSegments.emotionReason,
       })

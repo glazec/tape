@@ -79,6 +79,6 @@ describe("AppShell", () => {
     expect(html).toContain("Meetings");
     expect(html).not.toContain("New meeting");
     expect(html).not.toContain("Setup guide");
-    expect(html).not.toContain('href="/settings/team"');
+    expect(html).toContain('href="/settings/team"');
   });
 });

@@ -237,11 +237,13 @@ export const users = pgTable(
   {
     id: uuid("id").primaryKey().defaultRandom(),
     authUserId: text("auth_user_id").notNull(),
+    defaultLanguage: text("default_language"),
     email: text("email").notNull(),
     name: text("name"),
     ...timestamps,
   },
   (table) => [
+    check("users_default_language_check", sql`${table.defaultLanguage} in ('zh-CN', 'en')`),
     uniqueIndex("users_auth_user_id_unique").on(table.authUserId),
     uniqueIndex("users_email_unique").on(table.email),
   ],
@@ -378,6 +380,8 @@ export const meetings = pgTable(
     title: text("title").notNull(),
     titleSource: text("title_source").notNull().default("calendar"),
     aiFollowup: jsonb("ai_followup"),
+    followupLeaseToken: uuid("followup_lease_token"),
+    followupLeaseExpiresAt: timestamp("followup_lease_expires_at", { withTimezone: true }),
     aiIntel: jsonb("ai_intel"),
     platform: meetingPlatform("platform").notNull(),
     status: meetingStatus("status").notNull().default("scheduled"),
@@ -1014,6 +1018,7 @@ export const transcriptSegments = pgTable(
     text: text("text").notNull(),
     polishedText: text("polished_text"),
     translatedText: text("translated_text"),
+    translationCopies: jsonb("translation_copies").$type<Partial<Record<"en" | "zh-CN", string>>>(),
     translationEditedAt: timestamp("translation_edited_at", {
       withTimezone: true,
     }),

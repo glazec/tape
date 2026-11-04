@@ -17,7 +17,7 @@ const READY_CHECKS = 30;
 // while the followup is generating, so a lost save is retried on the fresh row,
 // backing off (20s, 40s, 80s, 160s) so a long translation can finish first.
 const CHANGED_RETRIES = 4;
-const RETRYABLE = new Set(["not_ready", "meeting_changed", "transcript_changed"]);
+const RETRYABLE = new Set(["not_ready", "in_progress", "meeting_changed", "transcript_changed"]);
 
 export const generateMeetingFollowupOnTranscript = inngest.createFunction(
   {
@@ -52,7 +52,7 @@ export const generateMeetingFollowupOnTranscript = inngest.createFunction(
         return { status: outcome.status };
       }
 
-      if (outcome.status !== "not_ready") {
+      if (outcome.status !== "not_ready" && outcome.status !== "in_progress") {
         changedRetries += 1;
         if (changedRetries > CHANGED_RETRIES) {
           return { status: outcome.status };
@@ -61,10 +61,24 @@ export const generateMeetingFollowupOnTranscript = inngest.createFunction(
 
       await step.sleep(
         `wait-for-ready-${check}`,
-        outcome.status === "not_ready" ? "1m" : `${20 * 2 ** (changedRetries - 1)}s`,
+        (outcome.status === "not_ready" || outcome.status === "in_progress") ? "1m" : `${20 * 2 ** (changedRetries - 1)}s`,
       );
     }
 
     return { status: "skipped", reason: "meeting_never_ready" };
   },
 );
+
+export const translateSharedFollowup = inngest.createFunction({
+  id: "translate-shared-followup",
+  triggers: [{ event: "meeting/translate.followup" }],
+  concurrency: { limit: 1, key: "event.data.meetingId" },
+}, async ({ event }) => {
+  const data = z.object({ meetingId: z.uuid(), language: z.enum(["en", "zh-CN"]), sourceHash: z.string().length(64),
+    workspace: z.object({ userId: z.uuid(), teamId: z.uuid(), domain: z.string() }),
+  }).parse(event.data);
+  const { getOrTranslateFollowupCopy } = await import("@/lib/meeting-followup-translation");
+  const result = await getOrTranslateFollowupCopy(data.workspace, data.meetingId, data.language, data.sourceHash);
+  if (result === "in_progress") throw new Error("Followup translation is already running");
+  return { saved: !!result };
+});

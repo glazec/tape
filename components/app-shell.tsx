@@ -36,7 +36,7 @@ export function AppShell({
 }: AppShellProps) {
   const visibleNavItems = canCreateMeetings
     ? navItems
-    : navItems.filter((item) => item.href === "/dashboard" || item.href === "/intel");
+    : navItems.filter((item) => item.href === "/dashboard" || item.href === "/intel" || item.href === "/settings/team");
   const newMeetingActive = activeHref === "/meetings/new";
   const oneSignalAllowedOrigins = getOneSignalAllowedOrigins();
 

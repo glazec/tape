@@ -128,6 +128,7 @@ type TranscriptSegment = { id: string; text: string };
 export async function generateMeetingFollowup(
   source: FollowupSource,
   meetingId?: string,
+  recentCompanies: string[] = [],
 ) {
   const transcript = JSON.stringify(source);
   if (transcript.length > FOLLOWUP_SOURCE_LIMIT) {
@@ -155,7 +156,7 @@ export async function generateMeetingFollowup(
               ? `\nCorrect the previous validation failure: ${validationError}`
               : ""),
         },
-        { role: "user", content: transcript },
+        { role: "user", content: JSON.stringify({ transcript: source, recentCompanyHints: recentCompanies }) },
         ...(previousContent ? [
           { role: "assistant" as const, content: previousContent },
           { role: "user" as const, content: `Correct the validation errors throughout this result: ${validationError}. Preserve all supported entries and return the complete corrected JSON.` },

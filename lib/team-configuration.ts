@@ -2,7 +2,7 @@ import { eq } from "drizzle-orm";
 import { z } from "zod";
 
 import { db } from "@/db/client";
-import { meetings, teams } from "@/db/schema";
+import { meetings, teams, users } from "@/db/schema";
 import { normalizeEmail } from "@/lib/access";
 import {
   normalizeTranslationLanguage,
@@ -77,9 +77,10 @@ export async function getTeamConfiguration(
 
 export async function getMeetingTranslationLanguage(meetingId: string) {
   const [team] = await db
-    .select({ translationLanguage: teams.translationLanguage })
+    .select({ translationLanguage: teams.translationLanguage, defaultLanguage: users.defaultLanguage })
     .from(meetings)
     .innerJoin(teams, eq(teams.id, meetings.teamId))
+    .innerJoin(users, eq(users.id, meetings.ownerUserId))
     .where(eq(meetings.id, meetingId))
     .limit(1);
 
@@ -87,7 +88,7 @@ export async function getMeetingTranslationLanguage(meetingId: string) {
     throw new Error("Meeting team not found");
   }
 
-  return normalizeTranslationLanguage(team.translationLanguage);
+  return normalizeTranslationLanguage(team.defaultLanguage ?? team.translationLanguage);
 }
 
 export async function updateTeamConfiguration(

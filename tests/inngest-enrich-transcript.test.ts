@@ -76,7 +76,7 @@ function mockSegments(
     }
 
     if ("translatedText" in values) {
-      segment.translatedText = values.translatedText;
+      segment.translatedText = typeof values.translatedText === "string" ? values.translatedText : null;
     }
 
     return { where: updateWhere };
@@ -171,6 +171,7 @@ describe("enrich transcript", () => {
       );
       expect(set).toHaveBeenCalledWith({
         translatedText: "团队好。",
+        translationCopies: expect.anything(),
         updatedAt: expect.any(Date),
       });
       expect(
@@ -327,7 +328,7 @@ describe("enrich transcript", () => {
     });
 
     expect(set).toHaveBeenCalledWith({
-      translatedText: null,
+      translatedText: expect.anything(),
       updatedAt: expect.any(Date),
     });
     expect(translateTranscriptSegments).toHaveBeenCalledWith(

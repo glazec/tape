@@ -6,12 +6,17 @@ const mocks = vi.hoisted(() => ({
   workspace: vi.fn(),
   meeting: vi.fn(),
   credit: vi.fn(),
+  language: vi.fn(),
+  send: vi.fn(),
   creditResponse: vi.fn(),
   generate: vi.fn(),
   set: vi.fn(),
   where: vi.fn(),
   returning: vi.fn(),
 }));
+vi.mock("@/lib/user-language", () => ({ getUserLanguage: mocks.language }));
+vi.mock("@/lib/team-configuration", () => ({ getTeamConfiguration: () => Promise.resolve({ translationLanguage: "en" }) }));
+vi.mock("@/inngest/client", () => ({ inngest: { send: mocks.send } }));
 vi.mock("@/lib/auth", () => ({ getCurrentUser: mocks.user }));
 vi.mock("@/lib/workspace", () => ({
   getOrCreateWorkspaceForSessionUser: mocks.workspace,
@@ -26,7 +31,9 @@ vi.mock("@/lib/provider-credit", () => ({
 vi.mock("@/lib/vendors/openrouter", () => ({
   generateMeetingFollowup: mocks.generate,
 }));
-vi.mock("@/db/client", () => ({ db: { update: () => ({ set: mocks.set }) } }));
+vi.mock("@/lib/recent-meeting-companies", () => ({ getRecentMeetingCompanies: () => Promise.resolve([]) }));
+vi.mock("@/lib/meeting-followup-lease", () => ({ acquireFollowupLease: vi.fn(() => Promise.resolve("lease")), releaseFollowupLease: vi.fn() }));
+vi.mock("@/db/client", () => ({ db: { select: () => ({ from: () => ({ innerJoin: () => ({ where: () => ({ limit: () => Promise.resolve([{ email: "owner@example.com", teamId: "team", userId: "user" }]) }) }) }) }), update: () => ({ set: mocks.set }) } }));
 
 import { POST } from "@/app/api/meetings/[meetingId]/followup/route";
 import { getFollowupSourceHash, getConnectionsSourceHash, getCurrentMeetingConnections } from "@/lib/meeting-followup-source";
@@ -53,12 +60,17 @@ const request = (sourceHash = getFollowupSourceHash(meeting)) =>
 beforeEach(() => {
   vi.resetAllMocks();
   mocks.user.mockResolvedValue({ id: "user" });
+  mocks.language.mockResolvedValue("en");
   mocks.workspace.mockResolvedValue({ userId: "user", teamId: "team" });
   mocks.meeting.mockResolvedValue(meeting);
-  mocks.generate.mockResolvedValue({ todos: [], dynamics: [] });
+  mocks.generate.mockResolvedValue({ todos: [], dynamics: [], research: [] });
   mocks.set.mockReturnValue({ where: mocks.where });
   mocks.where.mockReturnValue({ returning: mocks.returning });
-  mocks.returning.mockResolvedValue([{ id: meetingId }]);
+  mocks.returning.mockImplementation(async () => {
+    const source = await mocks.meeting();
+    mocks.meeting.mockResolvedValue({ ...source, aiFollowup: mocks.set.mock.calls.at(-1)![0].aiFollowup });
+    return [{ id: meetingId }];
+  });
 });
 
 describe("meeting followup API", () => {
@@ -76,7 +88,7 @@ describe("meeting followup API", () => {
     expect(getCurrentMeetingConnections({ ...source, aiFollowup: persisted, segments: [{ ...source.segments[0], speaker: "Alex Chen" }] })).toEqual(result.connections);
   });
 
-  it("retains manual corrections across regeneration and compares the previous JSON before saving", async () => {
+  it("returns current manual corrections without spending another generation", async () => {
     const original = { kind: "team", name: null, company: null, title: null, relationship: "knows", context: "Knows the team.", speakerSegmentId: "one", evidence: [{ segmentId: "one" }] };
     const changes = { kind: "person", name: "Corrected name", company: null, title: "Director", relationship: "knows", context: "Corrected description", speakerSegmentId: "one", mutual: true };
     const editable = { ...meeting, aiFollowup: { sourceHash: getFollowupSourceHash(meeting), connectionsSourceHash: getConnectionsSourceHash(meeting), result: { todos: [], dynamics: [], research: [], connections: [original] }, connectionEdits: [{ original, changes }] } };
@@ -85,8 +97,8 @@ describe("meeting followup API", () => {
     const response = await POST(request(), context);
     expect(response.status).toBe(200);
     expect((await response.json()).result.connections).toEqual([{ ...original, ...changes }]);
-    expect(mocks.set.mock.calls[0][0].aiFollowup.connectionEdits).toEqual(editable.aiFollowup.connectionEdits);
-    expect(new PgDialect().sqlToQuery(mocks.where.mock.calls[0][0]).sql).toContain('"ai_followup" =');
+    expect(mocks.set).not.toHaveBeenCalled();
+    expect(mocks.generate).not.toHaveBeenCalled();
   });
 
   it("rejects unauthenticated and invalid meeting requests", async () => {
@@ -156,7 +168,7 @@ describe("meeting followup API", () => {
       aiFollowup: {
         sourceHash: getFollowupSourceHash(meeting),
         connectionsSourceHash: getConnectionsSourceHash(meeting),
-        result: { todos: [], dynamics: [] },
+        result: { todos: [], dynamics: [], research: [] },
       },
     });
     const query = new PgDialect().sqlToQuery(mocks.where.mock.calls[0][0]);
@@ -200,4 +212,22 @@ describe("meeting followup API", () => {
     expect((await POST(request(), context)).status).toBe(502);
     expect(mocks.set).not.toHaveBeenCalled();
   });
+});
+
+it("lets shared readers request only a translation and reuse the saved copy", async () => {
+  const result = { todos: [], dynamics: [], research: [] };
+  const aiFollowup = { sourceHash: getFollowupSourceHash(meeting), result };
+  const shared = { ...meeting, canManage: false, aiFollowup };
+  mocks.meeting.mockResolvedValue(shared);
+  mocks.language.mockResolvedValue("zh-CN");
+  expect((await POST(request(), context)).status).toBe(202);
+  expect(mocks.send).toHaveBeenCalledWith(expect.objectContaining({ name: "meeting/translate.followup" }));
+  expect(mocks.generate).not.toHaveBeenCalled();
+  expect(mocks.set).not.toHaveBeenCalled();
+  mocks.meeting.mockResolvedValue({ ...shared, aiFollowup: { ...aiFollowup, translations: { "zh-CN": result } } });
+  const cached = await POST(request(), context);
+  expect(cached.status).toBe(200);
+  expect((await cached.json()).language).toBe("zh-CN");
+  expect(mocks.send).toHaveBeenCalledTimes(1);
+  expect((await POST(request("0".repeat(64)), context)).status).toBe(409);
 });

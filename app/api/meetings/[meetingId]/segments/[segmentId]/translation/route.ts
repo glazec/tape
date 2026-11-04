@@ -1,4 +1,4 @@
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import { z } from "zod";
 
 import { db } from "@/db/client";
@@ -42,7 +42,7 @@ export async function PATCH(
 
   const workspace = await getOrCreateWorkspaceForSessionUser(user, { meetingId });
   const [segment] = await db
-    .select({ id: transcriptSegments.id })
+    .select({ id: transcriptSegments.id, language: meetings.translationLanguage })
     .from(transcriptSegments)
     .innerJoin(meetings, eq(transcriptSegments.meetingId, meetings.id))
     .where(
@@ -65,6 +65,7 @@ export async function PATCH(
     .update(transcriptSegments)
     .set({
       translatedText: parsedBody.data.translatedText,
+      translationCopies: sql`coalesce(${transcriptSegments.translationCopies}, '{}'::jsonb) || jsonb_build_object(${segment.language}::text, ${parsedBody.data.translatedText}::text)`,
       translationEditedAt: new Date(),
       updatedAt: new Date(),
     })

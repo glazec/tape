@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
-import { applyConnectionEdits, isOrganizationSpeaker } from "@/lib/meeting-connections";
+import { applyConnectionEdits, isOrganizationSpeaker, parseMeetingConnections } from "@/lib/meeting-connections";
 import { parseMeetingFollowup, type FollowupSource } from "@/lib/meeting-followup";
 import { getCurrentMeetingConnections, getConnectionsRevision, getCurrentMeetingFollowup, getConnectionsSourceHash, getFollowupSourceHash } from "@/lib/meeting-followup-source";
 
@@ -169,4 +169,10 @@ describe("connection corrections", () => {
     expect(isOrganizationSpeaker("Yiping", people, ["iosg.vc", "iosf.vc"])).toBe(false);
     expect(isOrganizationSpeaker("Yiping Lu", [...people, { name: "Yiping Lu", email: "other@external.com" }], ["iosf.vc"])).toBe(false);
   });
+});
+
+it("keeps a supported organization spelling without adding an unrelated history hint", () => {
+  const source = { title: "Discussion", startedAt: null, segments: [{ id: "seg", speaker: "Jane", startMs: 0, text: "I met North Star Labs." }] };
+  const lead = { kind: "organization", name: "NorthStar Labs", company: "Unrelated Corp", title: null, relationship: "met", context: "Met at the event.", evidence: [{ segmentId: "seg" }], speakerSegmentId: "seg" };
+  expect(parseMeetingConnections([lead], source)[0]).toMatchObject({ kind: "organization", name: "NorthStar Labs", company: null });
 });

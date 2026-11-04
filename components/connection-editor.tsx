@@ -47,7 +47,7 @@ export function ConnectionEditor({ connection, speakers, onSave, onReload, onClo
             </label>)}
             <label className="block text-sm font-medium">Type
               <select className={fieldClass} value={draft.kind} onChange={event => setDraft({ ...draft, kind: event.target.value as ConnectionChanges["kind"] })}>
-                <option value="person">Person</option><option value="team">Team</option><option value="project">Project</option>
+                <option value="person">Person</option><option value="team">Team</option><option value="project">Project</option><option value="organization">Organization</option>
               </select>
             </label>
           </div>

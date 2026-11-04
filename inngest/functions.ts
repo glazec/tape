@@ -7,7 +7,7 @@ import { db } from "@/db/client";
 import { transcriptJobs, transcriptSegments } from "@/db/schema";
 import { inngest } from "./client";
 import { reconcileMeetingEmails, sendMeetingEmail } from "./meeting-email";
-import { generateMeetingFollowupOnTranscript } from "./meeting-followup";
+import { generateMeetingFollowupOnTranscript, translateSharedFollowup } from "./meeting-followup";
 import { shareMeetingWithParticipantsOnTranscript } from "./meeting-participant-sharing";
 import { currentTranscriptJobIdsSubquery } from "@/lib/current-transcript-job";
 import { convertVideoObjectToAudio } from "@/lib/media-conversion";
@@ -341,6 +341,7 @@ export const convertVideoToAudio = inngest.createFunction(
 export const enrichTranscript = inngest.createFunction(
   {
     id: "enrich-transcript",
+    concurrency: { limit: 1, key: "event.data.meetingId" },
     onFailure: async ({ event, error }) => {
       const data = enrichTranscriptDataSchema.parse(event.data.event.data);
       const shouldTranslate =
@@ -417,7 +418,7 @@ export const enrichTranscript = inngest.createFunction(
           if (storedTranslationLanguage !== translationLanguage) {
             await db
               .update(transcriptSegments)
-              .set({ translatedText: null, updatedAt: new Date() })
+              .set({ translatedText: sql`${transcriptSegments.translationCopies}->>${translationLanguage}`, updatedAt: new Date() })
               .where(
                 and(
                   eq(transcriptSegments.meetingId, data.meetingId),
@@ -520,6 +521,7 @@ export const enrichTranscript = inngest.createFunction(
                         .update(transcriptSegments)
                         .set({
                           translatedText: translation.text,
+                          translationCopies: sql`coalesce(${transcriptSegments.translationCopies}, '{}'::jsonb) || jsonb_build_object(${translationLanguage}::text, ${translation.text}::text)`,
                           updatedAt: new Date(),
                         })
                         .where(
@@ -845,6 +847,7 @@ export const functions = [
   sendMeetingEmail,
   reconcileMeetingEmails,
   generateMeetingFollowupOnTranscript,
+  translateSharedFollowup,
   shareMeetingWithParticipantsOnTranscript,
   sendLocationReminder,
   reconcileLocationReminderSchedules,

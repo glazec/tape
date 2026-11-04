@@ -679,7 +679,7 @@ describe("TranscriptViewer", () => {
 
     expect(html).toContain("Translation language changed");
     expect(html).toContain(
-      "This meeting is translated into Simplified Chinese. The team default is now English.",
+      "This meeting is translated into Simplified Chinese. Your default is now English.",
     );
     expect(html).toContain("Translate to English");
   });

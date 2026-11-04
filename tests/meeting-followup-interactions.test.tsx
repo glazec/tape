@@ -302,7 +302,7 @@ describe("meeting followup interaction", () => {
     expect(transcriptLink.getAttribute("href")).toBe("#one");
     fireEvent.click(transcriptLink);
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
-    expect(screen.getByRole("button", { name: "Regenerate" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Regenerate" })).toBeNull();
     expect(JSON.parse(fetch.mock.calls[0][1].body)).toEqual({
       sourceHash: props.sourceHash,
     });
@@ -320,9 +320,7 @@ describe("meeting followup interaction", () => {
     expect(screen.getByText("“We will discuss at IC tomorrow.”")).toBeTruthy();
     fireEvent.keyDown(screen.getByRole("dialog"), { key: "Escape" });
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
-    const regenerate = screen.getByRole("button", { name: "Regenerate" });
-    expect(regenerate.getAttribute("title")).toBe("Regenerate followup");
-    expect(regenerate.querySelector("span")?.className).toBe("sr-only");
+    expect(screen.queryByRole("button", { name: "Regenerate" })).toBeNull();
   });
 
   it("shows saved results to readers without generation controls", () => {
@@ -354,9 +352,8 @@ describe("meeting followup interaction", () => {
           ),
         ),
     );
-    render(<MeetingFollowup {...props} initialResult={result} />);
+    render(<MeetingFollowup {...props} autoGenerate needsTranslation initialResult={result} />);
     open();
-    fireEvent.click(screen.getByRole("button", { name: "Regenerate" }));
     expect((await screen.findByRole("alert")).textContent).toContain(
       "try again",
     );
@@ -373,9 +370,8 @@ describe("meeting followup interaction", () => {
           Response.json({ error: "The transcript changed." }, { status: 409 }),
         ),
     );
-    render(<MeetingFollowup {...props} initialResult={result} />);
+    render(<MeetingFollowup {...props} autoGenerate needsTranslation initialResult={result} />);
     open();
-    fireEvent.click(screen.getByRole("button", { name: "Regenerate" }));
     await screen.findByRole("alert");
     expect(screen.queryByText("@Momir Amidzic")).toBeNull();
     expect(refresh).toHaveBeenCalled();
@@ -398,7 +394,7 @@ describe("meeting followup interaction", () => {
     expect(fetch).toHaveBeenCalledTimes(1);
     expect(
       screen
-        .getByRole("button", { name: "Generating followup…" })
+        .getByRole("button", { name: "Preparing followup…" })
         .hasAttribute("disabled"),
     ).toBe(true);
     unmount();
