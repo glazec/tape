@@ -104,6 +104,8 @@ export type LocalRecorderMonitoringStatus = {
 };
 
 export type LocalRecorderUploadAssetIds = {
+  audioFormat?: "wav" | "m4a";
+  screenshots?: Array<{ assetId: string; timestampMs: number }>;
   computerAudioAssetId: string;
   microphoneAudioAssetId: string;
   synthesizedAudioAssetId: string;
@@ -1180,6 +1182,20 @@ export async function completeLocalRecorderRecordingUpload(input: {
   ]).catch(() => {
     throw new LocalRecorderUploadError("Uploaded local recording audio not found");
   });
+  const screenshotAssets: Array<{ id: string; object_key: string; timestamp_ms: number; file_size_bytes: number }> = [];
+  const screenshots = input.assets.screenshots ?? [];
+  for (let index = 0; index < screenshots.length; index += 8) {
+    screenshotAssets.push(...await Promise.all(screenshots.slice(index, index + 8).map(async (image) => {
+      const key = buildMeetingObjectKey({ teamId: input.workspace.teamId, meetingId: attempt.meetingId, assetId: image.assetId, extension: "jpg" });
+      const metadata = await getObjectMetadata({ key }).catch(() => {
+        throw new LocalRecorderUploadError("Uploaded meeting screenshot not found");
+      });
+      if (metadata.contentType !== "image/jpeg" || !metadata.contentLength || metadata.contentLength > 8 * 1024 * 1024) {
+        throw new LocalRecorderUploadError("Invalid uploaded meeting screenshot");
+      }
+      return { id: image.assetId, object_key: key, timestamp_ms: image.timestampMs, file_size_bytes: metadata.contentLength };
+    })));
+  }
   const env = parseR2Env(process.env);
   const localRecordingId = crypto.randomUUID();
   const transcriptJobId = crypto.randomUUID();
@@ -1300,6 +1316,16 @@ export async function completeLocalRecorderRecordingUpload(input: {
         ended_at = excluded.ended_at,
         started_at = excluded.started_at,
         updated_at = ${now}
+      returning id
+    ), screenshot_assets as (
+      insert into media_assets (id, meeting_id, recording_id, source, type, bucket, object_key, mime_type, file_size_bytes, timestamp_ms, captured_at)
+      select image.id, ${attempt.meetingId}::uuid, canonical_recording.id,
+        'local_recorder', 'screenshot', ${env.R2_BUCKET}, image.object_key,
+        'image/jpeg', image.file_size_bytes, image.timestamp_ms,
+        ${input.recordingStartedAt}::timestamptz + image.timestamp_ms * interval '1 millisecond'
+      from canonical_recording cross join jsonb_to_recordset(${JSON.stringify(screenshotAssets)}::jsonb)
+        as image(id uuid, object_key text, timestamp_ms integer, file_size_bytes integer)
+      on conflict do nothing
       returning id
     ), meeting_update as (
       update meetings
@@ -1682,19 +1708,19 @@ function buildLocalRecorderObjectKeys(input: {
   return {
     computerAudioKey: buildMeetingObjectKey({
       assetId: input.assetIds.computerAudioAssetId,
-      extension: "wav",
+      extension: input.assetIds.audioFormat ?? "wav",
       meetingId: input.meetingId,
       teamId: input.teamId,
     }),
     microphoneAudioKey: buildMeetingObjectKey({
       assetId: input.assetIds.microphoneAudioAssetId,
-      extension: "wav",
+      extension: input.assetIds.audioFormat ?? "wav",
       meetingId: input.meetingId,
       teamId: input.teamId,
     }),
     synthesizedAudioKey: buildMeetingObjectKey({
       assetId: input.assetIds.synthesizedAudioAssetId,
-      extension: "wav",
+      extension: input.assetIds.audioFormat ?? "wav",
       meetingId: input.meetingId,
       teamId: input.teamId,
     }),
@@ -1773,4 +1799,22 @@ export async function markLocalRecorderSdkIntentTerminal(
       and attempt_state in ('sealed', 'uploading', 'uploaded')
       and notification_state <> 'recall_sdk_fallback'
   `;
+}
+
+// Seal the destination before issuing any resumable upload URLs. Every request
+// rechecks the authenticated device and owner against the recording intent.
+export async function authorizeLocalRecorderMultipartUpload(
+  input: Parameters<typeof getUploadableLocalRecorderAttempt>[0],
+) {
+  const attempt = await getUploadableLocalRecorderAttempt(input);
+  const [sealed] = await db.update(localRecordingAttempts)
+    .set({ attemptState: "sealed", updatedAt: new Date() })
+    .where(and(
+      eq(localRecordingAttempts.id, attempt.id),
+      eq(localRecordingAttempts.meetingId, attempt.meetingId),
+      inArray(localRecordingAttempts.attemptState, ["started", "sealed", "uploading"]),
+    ))
+    .returning({ id: localRecordingAttempts.id });
+  if (!sealed) throw new LocalRecorderUploadError("Recording destination changed; retry upload");
+  return attempt;
 }

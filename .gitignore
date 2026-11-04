@@ -23,3 +23,6 @@ pnpm-workspace.yaml
 .inngest/
 /output/
 /granola.png
+
+# Dependency directories may be symlinked in worktrees
+/node_modules

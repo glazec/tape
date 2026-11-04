@@ -69,8 +69,7 @@ struct RecorderMeetingPicker: View {
                 }
             }
 
-            Divider().overlay(TapePalette.hairline)
-            footer.padding(.horizontal, 8).padding(.vertical, 6)
+            footer.padding(.horizontal, 8).padding(.top, 4).padding(.bottom, 6)
         }
         .frame(maxWidth: .infinity)
         .background(TapePalette.paper)
@@ -127,8 +126,8 @@ struct RecorderMeetingPicker: View {
             } else {
                 ForEach(sections, id: \.title) { section in
                     Text(section.title)
-                        .font(TapeType.sans(11, .medium))
-                        .tracking(0.7)
+                        .font(TapeType.mono(11))
+                        .tracking(TapeType.eyebrowTracking(11))
                         .textCase(.uppercase)
                         .foregroundStyle(TapePalette.ash)
                         .padding(.horizontal, 8)
@@ -450,8 +449,7 @@ struct RecorderEndPromptView: View {
         }
         .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(TapePalette.surface, in: RoundedRectangle(cornerRadius: 8))
-        .overlay(RoundedRectangle(cornerRadius: 8).stroke(TapePalette.border, lineWidth: 1))
+        .background(TapePalette.mist, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
     }
     private func respond(stop: Bool) {
         model.respondToEndPrompt(sessionID: prompt.sessionID, promptID: prompt.id, stop: stop)

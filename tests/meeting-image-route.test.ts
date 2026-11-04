@@ -144,9 +144,13 @@ describe("GET /api/meetings/[meetingId]/images/[assetId]", () => {
     expect(query.sql).not.toContain('"meetings"."team_id" =');
     expect(query.sql).toContain('"meeting_access"');
     expect(query.sql).toContain("active_audio.source = 'upload'");
+    expect(query.sql).toContain('case when "media_assets"."recording_id" is not null then exists');
+    expect(query.sql).toContain('visual_job.recording_id = "media_assets"."recording_id"');
     expect(query.params).toEqual([
       "11111111-1111-4111-8111-111111111111",
       "22222222-2222-4222-8222-222222222222",
+      "11111111-1111-4111-8111-111111111111",
+      "11111111-1111-4111-8111-111111111111",
       "11111111-1111-4111-8111-111111111111",
       "11111111-1111-4111-8111-111111111111",
       "11111111-1111-4111-8111-111111111111",

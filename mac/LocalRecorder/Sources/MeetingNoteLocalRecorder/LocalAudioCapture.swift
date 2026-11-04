@@ -167,16 +167,20 @@ final class LocalRecordingCaptureController {
         fallbackIntentId: String,
         appVersion: String,
         microphoneDeviceUID: String? = nil,
+        onScreenshotStatus: @escaping @Sendable (String?) -> Void = { _ in },
         onAudioLevel: @escaping @Sendable (LocalRecorderAudioSource, Float) -> Void = { _, _ in }
     ) async throws {
         if activeSession != nil {
             throw LocalRecordingCaptureError.alreadyRecording
         }
 
+        let filter = try await MeetingWindowPicker().select().filter
         let session = try LocalRecordingCaptureSession(
             fallbackIntentId: fallbackIntentId,
             appVersion: appVersion,
             microphoneDeviceUID: microphoneDeviceUID,
+            windowFilter: filter,
+            onScreenshotStatus: onScreenshotStatus,
             onAudioLevel: onAudioLevel
         )
         try await session.start()
@@ -195,6 +199,8 @@ final class LocalRecordingCaptureController {
 
 @MainActor
 final class LocalRecordingCaptureSession {
+    private let screenshots: MeetingWindowScreenshots
+    private let windowFilter: SCContentFilter
     private let appVersion: String
     private let activitySampler: LocalRecorderActivitySampler
     private let clientRecordingId: String
@@ -211,6 +217,8 @@ final class LocalRecordingCaptureSession {
         fallbackIntentId: String,
         appVersion: String,
         microphoneDeviceUID: String?,
+        windowFilter: SCContentFilter,
+        onScreenshotStatus: @escaping @Sendable (String?) -> Void,
         onAudioLevel: @escaping @Sendable (LocalRecorderAudioSource, Float) -> Void
     ) throws {
         let directoryURL = LocalRecorderFileLocations.recordingsDirectoryURL()
@@ -220,16 +228,18 @@ final class LocalRecordingCaptureSession {
             withIntermediateDirectories: true
         )
 
+        self.windowFilter = windowFilter
         self.appVersion = appVersion
         self.clientRecordingId = UUID().uuidString
-        self.computerAudioURL = directoryURL.appending(path: "computer.wav")
+        self.computerAudioURL = directoryURL.appending(path: "computer.m4a")
         self.fallbackIntentId = fallbackIntentId
-        self.microphoneAudioURL = directoryURL.appending(path: "microphone.wav")
+        self.microphoneAudioURL = directoryURL.appending(path: "microphone.m4a")
         let startedAt = Date()
         let activitySampler = LocalRecorderActivitySampler(startedAt: startedAt)
         self.activitySampler = activitySampler
         self.startedAt = startedAt
-        self.synthesizedAudioURL = directoryURL.appending(path: "synthesized.wav")
+        self.screenshots = MeetingWindowScreenshots(filter: windowFilter, directory: directoryURL, startedAt: startedAt, onStatus: onScreenshotStatus)
+        self.synthesizedAudioURL = directoryURL.appending(path: "synthesized.m4a")
         self.microphoneRecorder = try MicrophoneTrackRecorder(
             outputURL: microphoneAudioURL,
             deviceUID: microphoneDeviceUID,
@@ -248,12 +258,13 @@ final class LocalRecordingCaptureSession {
     }
 
     func start() async throws {
-        try microphoneRecorder.start()
-
         do {
-            try await systemRecorder.start()
+            try await screenshots.start()
+            try microphoneRecorder.start()
+            try await systemRecorder.start(filter: windowFilter)
             isSystemAudioRecording = true
         } catch {
+            _ = await screenshots.stop()
             microphoneRecorder.stop()
             await systemRecorder.stop()
             throw error
@@ -262,10 +273,13 @@ final class LocalRecordingCaptureSession {
 
     func stop() async throws -> LocalRecordingCaptureResult {
         let stoppedAt = Date()
+        let capturedScreenshots = await screenshots.stop()
         if isSystemAudioRecording {
             await systemRecorder.stop()
         }
         microphoneRecorder.stop()
+        try systemRecorder.finish()
+        try microphoneRecorder.finish()
         let computerAudioURL = computerAudioURL
         let microphoneAudioURL = microphoneAudioURL
         let synthesizedAudioURL = synthesizedAudioURL
@@ -284,8 +298,8 @@ final class LocalRecordingCaptureSession {
                 captureStoppedAt: stoppedAt,
                 sampleRate: LocalTrackAudioFormat.sampleRate,
                 channelCount: LocalTrackAudioFormat.channelCount,
-                codec: "pcm_s16le",
-                container: "wav",
+                codec: "aac",
+                container: "m4a",
                 firstSampleTime: 0
             ),
             microphoneAudio: TrackMetadata(
@@ -293,8 +307,8 @@ final class LocalRecordingCaptureSession {
                 captureStoppedAt: stoppedAt,
                 sampleRate: LocalTrackAudioFormat.sampleRate,
                 channelCount: LocalTrackAudioFormat.channelCount,
-                codec: "pcm_s16le",
-                container: "wav",
+                codec: "aac",
+                container: "m4a",
                 firstSampleTime: 0
             ),
             activityWindows: activitySampler.snapshot(stoppedAt: stoppedAt)
@@ -307,7 +321,8 @@ final class LocalRecordingCaptureSession {
             computerAudioURL: computerAudioURL,
             microphoneAudioURL: microphoneAudioURL,
             synthesizedAudioURL: synthesizedAudioURL,
-            manifest: manifest
+            manifest: manifest,
+            screenshots: capturedScreenshots
         )
 
         return LocalRecordingCaptureResult(
@@ -382,7 +397,7 @@ enum LocalRecorderFileLocations {
 
 enum LocalTrackAudioFormat {
     static let sampleRate = 48_000.0
-    static let channelCount = 2
+    static let channelCount = 1
 
     static var avFormat: AVAudioFormat {
         AVAudioFormat(
@@ -417,7 +432,7 @@ enum LocalTrackSynthesizer {
 
         let computerFile = try AVAudioFile(forReading: computerAudioURL)
         let microphoneFile = try AVAudioFile(forReading: microphoneAudioURL)
-        let writer = try PCM16WavWriter(outputURL: outputURL)
+        let writer = try CompressedAudioWriter(outputURL: outputURL)
         defer {
             writer.close()
         }
@@ -552,7 +567,7 @@ final class MicrophoneTrackRecorder {
     private let engine = AVAudioEngine()
     private let fallsBackToDefaultDevice: Bool
     private let onAudioLevel: @Sendable (Float) -> Void
-    private let writer: PCM16WavWriter?
+    private let writer: CompressedAudioWriter?
 
     init(
         outputURL: URL,
@@ -563,7 +578,7 @@ final class MicrophoneTrackRecorder {
         self.deviceUID = deviceUID
         self.fallsBackToDefaultDevice = fallsBackToDefaultDevice
         self.onAudioLevel = onAudioLevel
-        self.writer = try PCM16WavWriter(outputURL: outputURL)
+        self.writer = try CompressedAudioWriter(outputURL: outputURL)
     }
 
     /// Meter-only mode: reports levels without writing audio to disk.
@@ -588,6 +603,17 @@ final class MicrophoneTrackRecorder {
                     "Selected microphone is unavailable"
                 )
             }
+        }
+
+        if writer != nil {
+            try input.setVoiceProcessingEnabled(true)
+            if let deviceUID, !applyInputDevice(uid: deviceUID, to: input) {
+                throw LocalRecordingCaptureError.writerFailed("Could not use the selected microphone with noise suppression")
+            }
+            input.isVoiceProcessingAGCEnabled = false
+            input.voiceProcessingOtherAudioDuckingConfiguration = .init(
+                enableAdvancedDucking: false, duckingLevel: .min
+            )
         }
 
         let inputFormat = input.outputFormat(forBus: 0)
@@ -615,6 +641,8 @@ final class MicrophoneTrackRecorder {
         writer?.close()
     }
 
+    func finish() throws { try writer?.finish() }
+
     private func applyInputDevice(uid: String, to input: AVAudioInputNode) -> Bool {
         guard let deviceID = AudioInputDeviceList.deviceID(forUID: uid),
               let audioUnit = input.audioUnit else {
@@ -637,7 +665,7 @@ final class MicrophoneTrackRecorder {
 final class SystemAudioTrackRecorder: NSObject, @unchecked Sendable, SCStreamOutput, SCStreamDelegate {
     private let onAudioLevel: @Sendable (Float) -> Void
     private let queue = DispatchQueue(label: "tech.inevitable.meeting-note.local-recorder.system-audio")
-    private let writer: PCM16WavWriter?
+    private let writer: CompressedAudioWriter?
     private var stream: SCStream?
 
     init(
@@ -645,7 +673,7 @@ final class SystemAudioTrackRecorder: NSObject, @unchecked Sendable, SCStreamOut
         onAudioLevel: @escaping @Sendable (Float) -> Void
     ) throws {
         self.onAudioLevel = onAudioLevel
-        self.writer = try PCM16WavWriter(outputURL: outputURL)
+        self.writer = try CompressedAudioWriter(outputURL: outputURL)
         super.init()
     }
 
@@ -656,7 +684,8 @@ final class SystemAudioTrackRecorder: NSObject, @unchecked Sendable, SCStreamOut
         super.init()
     }
 
-    func start() async throws {
+    @MainActor
+    func start(filter selectedFilter: SCContentFilter? = nil) async throws {
         let content = try await SCShareableContent.excludingDesktopWindows(
             false,
             onScreenWindowsOnly: true
@@ -675,7 +704,7 @@ final class SystemAudioTrackRecorder: NSObject, @unchecked Sendable, SCStreamOut
         configuration.channelCount = LocalTrackAudioFormat.channelCount
         configuration.excludesCurrentProcessAudio = true
 
-        let filter = SCContentFilter(display: display, excludingWindows: [])
+        let filter = selectedFilter ?? SCContentFilter(display: display, excludingWindows: [])
         let stream = SCStream(filter: filter, configuration: configuration, delegate: self)
         try stream.addStreamOutput(self, type: .audio, sampleHandlerQueue: queue)
         try await stream.startCapture()
@@ -711,48 +740,36 @@ final class SystemAudioTrackRecorder: NSObject, @unchecked Sendable, SCStreamOut
         }
     }
 
+    func finish() throws { try writer?.finish() }
+
     nonisolated func stream(_ stream: SCStream, didStopWithError error: Error) {
         writer?.record(error)
     }
 }
 
-final class PCM16WavWriter: @unchecked Sendable {
-    private let fileHandle: FileHandle
+final class CompressedAudioWriter: @unchecked Sendable {
+    private var file: AVAudioFile?
     private let lock = NSLock()
-    private let outputFormat = LocalTrackAudioFormat.processingFormat
-    private var dataByteCount: UInt32 = 0
     private var error: Error?
-    private var isClosed = false
 
     init(outputURL: URL) throws {
-        if FileManager.default.fileExists(atPath: outputURL.path) {
-            try FileManager.default.removeItem(at: outputURL)
-        }
-
-        FileManager.default.createFile(
-            atPath: outputURL.path,
-            contents: Self.wavHeader(dataByteCount: 0),
-        )
-        self.fileHandle = try FileHandle(forWritingTo: outputURL)
-        try fileHandle.seekToEnd()
+        file = try AVAudioFile(forWriting: outputURL, settings: [
+            AVFormatIDKey: kAudioFormatMPEG4AAC,
+            AVSampleRateKey: LocalTrackAudioFormat.sampleRate,
+            AVNumberOfChannelsKey: LocalTrackAudioFormat.channelCount,
+            AVEncoderBitRateKey: 64_000,
+            AVEncoderBitRateStrategyKey: AVAudioBitRateStrategy_VariableConstrained,
+            AVEncoderAudioQualityKey: AVAudioQuality.high.rawValue,
+        ], commonFormat: .pcmFormatFloat32, interleaved: false)
     }
 
     func write(_ buffer: AVAudioPCMBuffer) {
         lock.lock()
-        defer {
-            lock.unlock()
-        }
-
-        guard !isClosed, error == nil else {
-            return
-        }
-
+        defer { lock.unlock() }
+        guard let file, error == nil else { return }
         do {
-            guard let converted = try convert(buffer) else {
-                return
-            }
-
-            try writePCM(converted)
+            let converted = try LocalAudioBufferConverter.convert(buffer, to: file.processingFormat)
+            try file.write(from: converted)
         } catch {
             self.error = error
             LocalRecorderTelemetry.capture(error, operation: .audioWrite)
@@ -764,115 +781,21 @@ final class PCM16WavWriter: @unchecked Sendable {
         let firstFailure = self.error == nil
         self.error = error
         lock.unlock()
-        if firstFailure {
-            LocalRecorderTelemetry.capture(error, operation: .audioStream)
-        }
+        if firstFailure { LocalRecorderTelemetry.capture(error, operation: .audioStream) }
     }
 
     func close() {
         lock.lock()
-        closeLocked()
+        file = nil
         lock.unlock()
     }
 
     func finish() throws {
         lock.lock()
-        closeLocked()
+        file = nil
         let recordedError = error
         lock.unlock()
-
-        if let recordedError {
-            throw recordedError
-        }
-    }
-
-    private func convert(_ buffer: AVAudioPCMBuffer) throws -> AVAudioPCMBuffer? {
-        try LocalAudioBufferConverter.convert(buffer, to: outputFormat)
-    }
-
-    private func writePCM(_ buffer: AVAudioPCMBuffer) throws {
-        guard buffer.frameLength > 0,
-              let channels = buffer.floatChannelData else {
-            return
-        }
-
-        let frameLength = Int(buffer.frameLength)
-        let channelCount = Int(outputFormat.channelCount)
-        var data = Data()
-        data.reserveCapacity(frameLength * channelCount * MemoryLayout<Int16>.size)
-
-        for frame in 0..<frameLength {
-            for channel in 0..<channelCount {
-                let sample = channels[channel][frame]
-                var pcm = Int16(
-                    max(
-                        Double(Int16.min),
-                        min(Double(Int16.max), Double(sample) * Double(Int16.max))
-                    )
-                ).littleEndian
-                withUnsafeBytes(of: &pcm) { bytes in
-                    data.append(contentsOf: bytes)
-                }
-            }
-        }
-
-        try fileHandle.write(contentsOf: data)
-        dataByteCount = dataByteCount &+ UInt32(data.count)
-    }
-
-    private func closeLocked() {
-        guard !isClosed else {
-            return
-        }
-
-        isClosed = true
-        do {
-            try fileHandle.seek(toOffset: 0)
-            try fileHandle.write(contentsOf: Self.wavHeader(dataByteCount: dataByteCount))
-            try fileHandle.close()
-        } catch {
-            self.error = error
-        }
-    }
-
-    private static func wavHeader(dataByteCount: UInt32) -> Data {
-        var data = Data()
-        data.append(contentsOf: [0x52, 0x49, 0x46, 0x46])
-        appendUInt32(36 &+ dataByteCount, to: &data)
-        data.append(contentsOf: [0x57, 0x41, 0x56, 0x45])
-        data.append(contentsOf: [0x66, 0x6d, 0x74, 0x20])
-        appendUInt32(16, to: &data)
-        appendUInt16(1, to: &data)
-        appendUInt16(UInt16(LocalTrackAudioFormat.channelCount), to: &data)
-        appendUInt32(UInt32(LocalTrackAudioFormat.sampleRate), to: &data)
-        appendUInt32(
-            UInt32(LocalTrackAudioFormat.sampleRate) *
-                UInt32(LocalTrackAudioFormat.channelCount) *
-                UInt32(MemoryLayout<Int16>.size),
-            to: &data
-        )
-        appendUInt16(
-            UInt16(LocalTrackAudioFormat.channelCount * MemoryLayout<Int16>.size),
-            to: &data
-        )
-        appendUInt16(16, to: &data)
-        data.append(contentsOf: [0x64, 0x61, 0x74, 0x61])
-        appendUInt32(dataByteCount, to: &data)
-        return data
-    }
-
-    private static func appendUInt16(_ value: UInt16, to data: inout Data) {
-        var littleEndian = value.littleEndian
-        withUnsafeBytes(of: &littleEndian) { bytes in
-            data.append(contentsOf: bytes)
-        }
-    }
-
-    private static func appendUInt32(_ value: UInt32, to data: inout Data) {
-        var littleEndian = value.littleEndian
-        withUnsafeBytes(of: &littleEndian) { bytes in
-            data.append(contentsOf: bytes)
-        }
+        if let recordedError { throw recordedError }
     }
 }
 
@@ -889,8 +812,7 @@ enum LocalAudioBufferConverter {
             throw LocalRecordingCaptureError.audioFormatUnavailable
         }
 
-        let ratio = outputFormat.sampleRate / buffer.format.sampleRate
-        let frameCapacity = AVAudioFrameCount(Double(buffer.frameLength) * ratio) + 1
+        let frameCapacity = AVAudioFrameCount(ceil(Double(buffer.frameLength) * outputFormat.sampleRate / buffer.format.sampleRate))
         guard let converted = AVAudioPCMBuffer(
             pcmFormat: outputFormat,
             frameCapacity: frameCapacity
@@ -898,6 +820,11 @@ enum LocalAudioBufferConverter {
             throw LocalRecordingCaptureError.audioBufferUnavailable
         }
 
+        if buffer.format.sampleRate == outputFormat.sampleRate {
+            try converter.convert(to: converted, from: buffer)
+            return converted
+        }
+        converter.primeMethod = .none
         let input = AudioConverterInput(buffer: buffer)
         var conversionError: NSError?
         converter.convert(to: converted, error: &conversionError) { _, status in
@@ -928,7 +855,7 @@ final class AudioConverterInput: @unchecked Sendable {
         }
 
         if didProvideBuffer {
-            status.pointee = .noDataNow
+            status.pointee = .endOfStream
             return nil
         }
 

@@ -562,3 +562,5 @@ Configure the Recall dashboard endpoint against the current production `NEXT_PUB
 Register `reconcile-recall-meetings` with Inngest after deployment. It runs every five minutes and accepts `meeting/reconcile.recall` for an immediate recovery pass. It checks up to 100 oldest-updated unresolved bot meetings from the past 30 days, verifies recording readiness, and reuses the recording and transcription job. Inngest event IDs deduplicate interrupted queued dispatches. Per-meeting durable steps isolate failures; failed steps retry and surface a failed run rather than silently reporting success.
 
 A provider 404 is treated as an unavailable bot and marks the unresolved meeting failed, preserving its provider identity and any running or completed transcript work. Permanent missing bots do not hold up subsequent recovery steps.
+
+Local media upload recovery uses authenticated multipart requests; deploy the server before distributing the updated recorder. See [recorder upload recovery](recorder-upload-recovery.md) for scope and storage lifecycle requirements.

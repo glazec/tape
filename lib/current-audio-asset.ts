@@ -29,12 +29,16 @@ export function currentRecordingCondition(meetingId: unknown) {
 
 // Uploaded replacement audio has no images; historical capture images belong to the old recording.
 export function currentVisualAssetCondition(meetingId: unknown) {
-  return sql`not exists (
+  return sql`case when ${mediaAssets.recordingId} is not null then exists (
+    select 1 from transcript_jobs visual_job
+    where visual_job.recording_id = ${mediaAssets.recordingId}
+      and visual_job.id in ${activeTranscriptJobIdsSubquery(meetingId)}
+  ) else not exists (
     select 1 from transcript_jobs active_audio_job
     inner join media_assets active_audio on active_audio.id = active_audio_job.media_asset_id
     where active_audio_job.meeting_id = ${meetingId}
       and active_audio_job.id in ${activeTranscriptJobIdsSubquery(meetingId)}
       and active_audio.source = 'upload'
       and active_audio.type = 'audio'
-  )`;
+  ) end`;
 }

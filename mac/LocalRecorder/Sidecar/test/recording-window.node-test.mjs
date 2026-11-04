@@ -28,7 +28,7 @@ test("uses a detected meeting window for participant speaker metadata", async ()
   });
 });
 
-test("falls back to whole desktop audio when no meeting window is detected", async () => {
+test("requests native window selection instead of silently recording audio only", async () => {
   const sdk = {
     addEventListener() {},
     removeEventListener() {},
@@ -38,8 +38,5 @@ test("falls back to whole desktop audio when no meeting window is detected", asy
   };
   const selector = createRecordingWindowSelector(sdk);
 
-  assert.deepEqual(await selector.select({ timeoutMs: 0 }), {
-    captureMode: "desktop-audio",
-    windowId: "desktop-audio",
-  });
+  await assert.rejects(selector.select({ timeoutMs: 0 }), /Choose a meeting window/);
 });

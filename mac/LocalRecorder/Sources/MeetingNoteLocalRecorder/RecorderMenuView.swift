@@ -17,8 +17,8 @@ enum TapePalette {
     static let border = dynamic(light: 0xE4E0DC, dark: 0x403B39)
     static let coral = dynamic(light: 0xEC4F44, dark: 0xEF6157)
     static let coralInk = dynamic(light: 0xC23A30, dark: 0xF5978E)
-    /// Text on a coral fill, in both appearances.
-    static let onCoral = dynamic(light: 0xFEFEFD, dark: 0xFEFEFD)
+    /// Text on an ink fill. Ink inverts in dark mode, so this follows the paper.
+    static let onInk = dynamic(light: 0xF9F8F6, dark: 0x1C1918)
     static let amber = dynamic(light: 0xC98A1B, dark: 0xE0A93F)
     static let green = dynamic(light: 0x3E9B5F, dark: 0x5DBB7E)
 
@@ -42,7 +42,8 @@ enum TapePalette {
     }
 }
 
-/// Brand type shared with the web workspace: Geist for interface text, Fraunces for titles.
+/// Brand type shared with the web workspace: Geist for interface text, Fraunces for titles,
+/// IBM Plex Mono for small uppercase eyebrows.
 enum TapeType {
     @MainActor private static var isRegistered = false
 
@@ -84,6 +85,15 @@ enum TapeType {
 
     static func serif(_ size: CGFloat) -> Font {
         .custom("Fraunces-Regular", fixedSize: size)
+    }
+
+    static func mono(_ size: CGFloat) -> Font {
+        .custom("IBMPlexMono-Medium", fixedSize: size)
+    }
+
+    /// Eyebrow tracking matching the web `AppLabel` (about 0.2em).
+    static func eyebrowTracking(_ size: CGFloat) -> CGFloat {
+        size * 0.2
     }
 }
 
@@ -164,7 +174,10 @@ struct RecorderMenuView: View {
                 if let tone = state.tone {
                     StatusDot(tone: tone, isLive: model.isRecording)
                 }
-                if model.isRecording, let startedAt = model.recordingStartedAt {
+                if model.isRecording, let startedAt = model.recordingStartedAt, let stoppedAt = model.recordingStoppedAt {
+                    Text("\(state.eyebrow ?? "") · \(elapsedText(from: startedAt, to: stoppedAt))")
+                        .monospacedDigit()
+                } else if model.isRecording, let startedAt = model.recordingStartedAt {
                     TimelineView(.periodic(from: startedAt, by: 1)) { context in
                         Text("\(state.eyebrow ?? "") · \(elapsedText(from: startedAt, to: context.date))")
                             .monospacedDigit()
@@ -173,8 +186,8 @@ struct RecorderMenuView: View {
                     Text(state.eyebrow ?? "")
                 }
             }
-            .font(TapeType.sans(11, .medium))
-            .tracking(0.7)
+            .font(TapeType.mono(11))
+            .tracking(TapeType.eyebrowTracking(11))
             .textCase(.uppercase)
             .foregroundStyle(TapePalette.ash)
             .frame(height: 14)
@@ -185,11 +198,19 @@ struct RecorderMenuView: View {
                     .padding(.top, 10)
                     .padding(.trailing, showsWindowChrome ? 0 : 24)
 
-                RecordingLevelsView(
-                    microphoneLevel: model.microphoneLevel,
-                    systemAudioLevel: model.systemAudioLevel
-                )
-                .padding(.top, 14)
+                if model.isFinishingRecording {
+                    SavingProgressView(
+                        step: model.statusText,
+                        stoppedAt: model.recordingStoppedAt ?? Date()
+                    )
+                    .padding(.top, 14)
+                } else {
+                    RecordingLevelsView(
+                        microphoneLevel: model.microphoneLevel,
+                        systemAudioLevel: model.systemAudioLevel
+                    )
+                    .padding(.top, 14)
+                }
             } else {
                 Text(state.title)
                     .lineLimit(2)
@@ -343,6 +364,8 @@ struct RecorderMenuView: View {
     /// A failed upload gets a card with recovery actions instead of a status line.
     private var uploadProblem: String? {
         guard isSignedIn, !model.isRecording else { return nil }
+        // A failed receipt card already shows this failure with the same actions.
+        guard !model.visibleUploadReceipts.contains(where: \.needsAttention) else { return nil }
         let text = model.uploadStatusText ?? model.statusText
         guard text.localizedCaseInsensitiveContains("upload"),
               ["could not", "stopped", "failed"].contains(where: { text.localizedCaseInsensitiveContains($0) })
@@ -686,12 +709,12 @@ struct RecorderActionButtonStyle: ButtonStyle {
             configuration.label
         }
         .font(TapeType.sans(height < 30 ? 12 : 13, .medium))
-        .foregroundStyle(isQuiet ? TapePalette.ink : TapePalette.onCoral)
+        .foregroundStyle(isQuiet ? TapePalette.ink : TapePalette.onInk)
         .padding(.horizontal, height < 30 ? 11 : 14)
         .frame(height: height)
         .background(
-            // Coral is the brand's primary action color (DESIGN.md).
-            Capsule().fill(isQuiet ? TapePalette.surface : TapePalette.coral)
+            // Primary actions are ink pills, as on the web; coral stays on the Stop square.
+            Capsule().fill(isQuiet ? TapePalette.surface : TapePalette.ink)
         )
         .overlay(
             Capsule().inset(by: 0.5).stroke(isQuiet ? TapePalette.border : Color.clear, lineWidth: 1)
@@ -869,7 +892,7 @@ struct RecordingLevelsView: View {
     @State private var lastHeard = Date()
 
     var body: some View {
-        HStack(spacing: 18) {
+        HStack(spacing: 14) {
             SourceLevel(title: "Mic", level: microphoneLevel)
             SourceLevel(title: "Mac sound", level: systemAudioLevel)
             Spacer(minLength: 0)
@@ -878,6 +901,8 @@ struct RecordingLevelsView: View {
                     Text("No sound yet")
                         .font(TapeType.sans(11))
                         .foregroundStyle(TapePalette.ash)
+                        .lineLimit(1)
+                        .fixedSize()
                         .transition(.opacity)
                 }
             }
@@ -885,6 +910,54 @@ struct RecordingLevelsView: View {
         .onChange(of: max(microphoneLevel, systemAudioLevel)) { _, level in
             if level > 0.02 { lastHeard = Date() }
         }
+    }
+}
+
+/// Shown in place of the live meters after Stop: capture is over, so the row
+/// reports which save step is running and how long it has taken.
+struct SavingProgressView: View {
+    var step: String
+    var stoppedAt: Date
+
+    private static let steps = ["Stopping capture", "Saving audio to this Mac"]
+
+    private var stepNumber: Int? {
+        Self.steps.firstIndex(of: step).map { $0 + 1 }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
+                ProgressView().controlSize(.small)
+                Text(step.isEmpty ? "Saving recording" : step)
+                    .font(TapeType.sans(12, .medium))
+                    .foregroundStyle(TapePalette.ink)
+                    .lineLimit(1)
+                Spacer(minLength: 8)
+                TimelineView(.periodic(from: stoppedAt, by: 1)) { context in
+                    Text(savingText(context.date))
+                        .font(TapeType.mono(11))
+                        .monospacedDigit()
+                        .foregroundStyle(TapePalette.ash)
+                        .lineLimit(1)
+                        .fixedSize()
+                }
+            }
+            ProgressView(value: stepNumber.map { Double($0 - 1) + 0.5 } ?? 1, total: Double(Self.steps.count + 1))
+                .progressViewStyle(.linear)
+                .tint(TapePalette.ink.opacity(0.65))
+            Text("Upload starts as soon as the file is saved. Keep Tape open.")
+                .font(TapeType.sans(11))
+                .foregroundStyle(TapePalette.muted)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .accessibilityElement(children: .combine)
+    }
+
+    private func savingText(_ now: Date) -> String {
+        let seconds = max(0, Int(now.timeIntervalSince(stoppedAt)))
+        let prefix = stepNumber.map { "Step \($0) of \(Self.steps.count + 1) · " } ?? ""
+        return prefix + String(format: "%d:%02d", seconds / 60, seconds % 60)
     }
 }
 
@@ -897,8 +970,10 @@ struct SourceLevel: View {
             Text(title)
                 .font(TapeType.sans(11.5))
                 .foregroundStyle(TapePalette.muted)
+                .lineLimit(1)
+                .fixedSize()
             AudioLevelBar(level: level, inkOpacity: 0.65, height: 6)
-                .frame(width: 64)
+                .frame(minWidth: 32, maxWidth: 64)
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("\(title) level")
@@ -1084,8 +1159,8 @@ struct RecorderSettingsView: View {
     private func section<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             Text(title)
-                .font(TapeType.sans(11, .medium))
-                .tracking(0.7)
+                .font(TapeType.mono(11))
+                .tracking(TapeType.eyebrowTracking(11))
                 .textCase(.uppercase)
                 .foregroundStyle(TapePalette.ash)
             content()
@@ -1133,8 +1208,8 @@ struct RecordingReceiptCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text("Last recording")
-                .font(TapeType.sans(11, .medium))
-                .tracking(0.7)
+                .font(TapeType.mono(11))
+                .tracking(TapeType.eyebrowTracking(11))
                 .textCase(.uppercase)
                 .foregroundStyle(TapePalette.ash)
             Text(title)

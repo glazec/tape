@@ -355,6 +355,7 @@ extension RecorderAppModel {
         var sdkRecordingID: String?
         var sdkHadCapture = true
         var stoppedLocally = false
+        if !continueNatively { statusText = "Stopping capture" }
         do {
             await stopRecallSDKLevelMetering()
             switch backend {
@@ -366,6 +367,7 @@ extension RecorderAppModel {
                 let payload: LocalRecordingUploadPayload
                 if let retainedStoppedPayload { payload = retainedStoppedPayload }
                 else {
+                    if !continueNatively { statusText = "Saving audio to this Mac" }
                     let result = try await captureController.stop()
                     payload = result.payload
                     retainedStoppedPayload = payload

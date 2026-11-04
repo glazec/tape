@@ -324,6 +324,41 @@ describe("local recorder records", () => {
     expect(inngestSend).toHaveBeenCalledOnce();
   });
 
+  it("registers compressed tracks and timed screenshots in the same completion transaction", async () => {
+    db.select.mockReturnValueOnce(selectRows([])).mockReturnValueOnce(selectRows([uploadableAttempt()]));
+    databaseSql.mockResolvedValue([{ local_recording_id: "recording_1", media_asset_id: "asset_3", meeting_id: "meeting_1", transcript_job_id: "job_1" }]);
+    getObjectMetadata.mockImplementation(async ({ key }: { key: string }) => ({ contentLength: 1000, contentType: key.endsWith(".jpg") ? "image/jpeg" : "audio/mp4" }));
+    const input = recordingUploadInput();
+    await completeLocalRecorderRecordingUpload({ ...input, assets: { ...input.assets,
+      audioFormat: "m4a", screenshots: [{ assetId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", timestampMs: 5000 }],
+    } });
+    expect(getObjectMetadata.mock.calls.map(call => call[0].key)).toEqual([
+      "teams/team_123/meetings/meeting_1/assets/asset_1.m4a",
+      "teams/team_123/meetings/meeting_1/assets/asset_2.m4a",
+      "teams/team_123/meetings/meeting_1/assets/asset_3.m4a",
+      "teams/team_123/meetings/meeting_1/assets/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa.jpg",
+    ]);
+    const statement = databaseSql.mock.calls[1];
+    expect(statement[0].join(" ")).toContain("screenshot_assets as");
+    expect(statement[0].join(" ")).toContain("from canonical_recording cross join jsonb_to_recordset");
+    const images = statement.find((value: unknown) => typeof value === "string" && value.startsWith('[{"id":'));
+    expect(JSON.parse(images)).toEqual([expect.objectContaining({ timestamp_ms: 5000, file_size_bytes: 1000 })]);
+    expect(inngestSend.mock.calls[0][0].data.objectKey).toMatch(/\.m4a$/);
+  });
+
+  it("does not register the recording when a screenshot is missing", async () => {
+    db.select.mockReturnValueOnce(selectRows([])).mockReturnValueOnce(selectRows([uploadableAttempt()]));
+    getObjectMetadata.mockImplementation(async ({ key }: { key: string }) => {
+      if (key.endsWith(".jpg")) throw new Error("not found");
+      return { contentLength: 1000, contentType: "audio/mp4" };
+    });
+    const input = recordingUploadInput();
+    await expect(completeLocalRecorderRecordingUpload({ ...input, assets: { ...input.assets,
+      audioFormat: "m4a", screenshots: [{ assetId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", timestampMs: 5000 }],
+    } })).rejects.toThrow("screenshot not found");
+    expect(databaseSql.transaction).not.toHaveBeenCalled();
+  });
+
   it("retries transcription dispatch after the atomic completion committed", async () => {
     db.select
       .mockReturnValueOnce(selectRows([]))

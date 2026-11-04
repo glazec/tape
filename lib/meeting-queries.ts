@@ -1478,7 +1478,12 @@ export async function getMeetingTranscriptForWorkspace(
       .select({
         id: mediaAssets.id,
         capturedAt: mediaAssets.capturedAt,
-        timestampMs: mediaAssets.timestampMs,
+        timestampMs: sql<number | null>`${mediaAssets.timestampMs} + case when ${mediaAssets.source} = 'local_recorder' then coalesce((
+          select recording_offset_ms from transcript_jobs visual_job
+          where visual_job.recording_id = ${mediaAssets.recordingId}
+            and visual_job.id in ${activeTranscriptJobIdsSubquery(meeting.id)}
+          order by visual_job.created_at desc limit 1
+        ), 0) else 0 end`.as("timeline_timestamp_ms"),
       })
       .from(mediaAssets)
       .where(
@@ -1491,7 +1496,7 @@ export async function getMeetingTranscriptForWorkspace(
           ),
         ),
       )
-      .orderBy(asc(mediaAssets.timestampMs), asc(mediaAssets.createdAt)),
+      .orderBy(sql`timeline_timestamp_ms`, asc(mediaAssets.createdAt)),
     accessScope === "workspace"
       ? listMeetingSpeakerAliases(meeting.teamId, meeting.id)
       : Promise.resolve([]),
