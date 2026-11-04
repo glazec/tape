@@ -88,8 +88,10 @@ export function MeetingViewTabs({
     tabRefs.current.get(next)?.focus();
   }
 
+  // Only the visible notes panel clears the fixed player: padding on the
+  // hidden one would still hold open a gap above the transcript.
   return (
-    <div className="[&:has(audio)_[data-view-panel=notes]]:pb-40">
+    <div className="[&:has(audio)_[data-view-panel=notes][data-state=active]]:pb-40">
       <div
         aria-label="Meeting view"
         className="mb-8 inline-flex items-center gap-0.5 rounded-full bg-muted/60 p-1"

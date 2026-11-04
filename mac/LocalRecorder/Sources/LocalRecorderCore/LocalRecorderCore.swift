@@ -1239,6 +1239,8 @@ public struct LocalRecordingUploadPayload: Codable, Equatable, Sendable {
     public var synthesizedAudioURL: URL
     public var uploadAssets: LocalRecordingUploadAssetIds?
     public var uploadCompleted: Bool?
+
+    public var screenshots: [LocalRecordingScreenshot]?
     public var manifest: RecordingManifest
 
     public init(
@@ -1250,7 +1252,8 @@ public struct LocalRecordingUploadPayload: Codable, Equatable, Sendable {
         microphoneAudioURL: URL,
         synthesizedAudioURL: URL,
         uploadAssets: LocalRecordingUploadAssetIds? = nil,
-        manifest: RecordingManifest
+        manifest: RecordingManifest,
+        screenshots: [LocalRecordingScreenshot]? = nil
     ) {
         self.fallbackIntentId = fallbackIntentId
         self.clientRecordingId = clientRecordingId
@@ -1261,6 +1264,7 @@ public struct LocalRecordingUploadPayload: Codable, Equatable, Sendable {
         self.synthesizedAudioURL = synthesizedAudioURL
         self.uploadAssets = uploadAssets
         self.manifest = manifest
+        self.screenshots = screenshots
     }
 }
 
@@ -1367,6 +1371,8 @@ public struct LocalRecordingUploadResponse: Codable, Equatable, Sendable {
 }
 
 public struct LocalRecordingUploadAssetIds: Codable, Equatable, Sendable {
+    public var audioFormat: String?
+    public var screenshots: [LocalRecordingScreenshotAsset]?
     public var computerAudioAssetId: String
     public var microphoneAudioAssetId: String
     public var synthesizedAudioAssetId: String
@@ -1374,11 +1380,13 @@ public struct LocalRecordingUploadAssetIds: Codable, Equatable, Sendable {
     public init(
         computerAudioAssetId: String,
         microphoneAudioAssetId: String,
-        synthesizedAudioAssetId: String
+        synthesizedAudioAssetId: String,
+        audioFormat: String? = nil
     ) {
         self.computerAudioAssetId = computerAudioAssetId
         self.microphoneAudioAssetId = microphoneAudioAssetId
         self.synthesizedAudioAssetId = synthesizedAudioAssetId
+        self.audioFormat = audioFormat
     }
 }
 

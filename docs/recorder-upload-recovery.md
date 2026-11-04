@@ -1,0 +1,27 @@
+# Recorder upload recovery
+
+Status: implemented and tested locally; deployment and installed app verification are pending.
+
+The native fallback uploads the computer, microphone, and mixed tracks in 8 MiB parts after capture stops. A checkpoint beside each sealed file stores its storage upload ID and file size before any bytes are sent. A retry or app restart lists completed storage parts and sends only missing or incorrectly sized parts. If a successful completion response was lost, the completed object is recognized without sending the file again. Only the interrupted part needs retransmission.
+
+Every server request authenticates the paired device and checks the recording intent's owner and state. The destination is sealed before issuing URLs. Storage object identities derive from the authorized intent, client recording, and track; callers cannot supply arbitrary storage keys. Completion checks the part numbers, sizes, and storage ETags before finalizing the object. Existing recording completion still performs registration and transcription dispatch.
+
+The native fallback records AAC in M4A containers directly, using mono 48 kHz audio and a 64 kbps constrained variable bitrate target. The nominal size is about 29 MB per hour per track, or 86 MB for the computer, microphone, and mixed tracks together, plus screenshots and container overhead. Actual bitrate varies with content. Mixing retains the separate source tracks. Old queued WAV files remain supported.
+
+Microphone capture enables Apple's voice processing for noise suppression and echo cancellation. Automatic gain control is disabled to avoid raising quiet background sounds, and other audio ducking is set to its minimum. The selected input device is reapplied after enabling processing. SDK metering does not enable a competing voice processor. Physical microphone tests are still required to evaluate typing noise, quiet speech, and interaction with meeting playback. This configuration is a conservative native default, not a benchmark proving superiority over every noise suppression model.
+
+If the SDK detects no supported meeting window, it requests native window selection instead of silently capturing only desktop audio. The native fallback uses the macOS picker restricted to one window. It saves an initial JPEG, then checks every five seconds and saves meaningful changes. Images have a maximum long edge of 1600 pixels and JPEG quality 0.75. A grayscale comparison ignores cursor sized changes and minor rendering noise. This is sampled visual history, not continuous video: brief changes between samples and small edits can be missed. Animated participant tiles can produce more images.
+
+Keep the meeting tab visible in a dedicated browser window. Window capture follows the selected window, not a hidden tab; switching tabs changes its captured content. Cancellation prevents native capture from starting. A failure during screenshot capture displays a warning and retries while audio continues. Screenshots use the same recoverable upload path and are registered atomically with audio. Their recording relative timestamps are translated to the active meeting timeline, including appended segments.
+
+Uploads begin after capture stops. This change does not change the Recall SDK's own upload lifecycle. Meeting SDK capture and native fallback remain separate paths.
+
+Deploy the server route before distributing the updated desktop app. The existing prepare and complete routes remain available to older apps. No database migration or new credentials are required.
+
+R2 expires incomplete multipart sessions after seven days by default. Check the actual bucket lifecycle policy before release. If a session has expired, the app starts a new one using the retained local recording. Do not delete local files while uploads remain pending. Abandoned sessions, including a start response lost before its upload ID can be saved, are cleaned up by the storage lifecycle policy.
+
+Local verification includes actual AAC encoding and mixing at both 48 kHz and 44.1 kHz input, duration preservation, screenshot change detection and timestamps, compressed audio and image completion, server recovery, incomplete completion rejection, scope and request validation, paired device authorization, and native recovery from a persisted session. Before release, interrupt a real upload after several parts, restart the app, reconnect, and verify that transferred bytes resume at the missing part. Also interrupt the completion response, verify one recording registration, and play the resulting audio. Automated tests do not establish live storage or installed app behavior.
+
+The AAC conversion test reproduces a sample loss bug in the previous one shot converter: 48 kHz stereo input became 8.53 seconds instead of ten. Same rate channel conversion now uses the synchronous PCM conversion API. Resampling explicitly drains its input and uses the expected output capacity. The regression runs through the production writer and synthesizer without recording a microphone.
+
+Before release, also verify the macOS window picker, screenshots after a slide change, minimized and closed windows, browser tab changes, and a real microphone with typing during quiet and normal speech. Confirm the meeting's playback volume remains usable with voice processing active. Build and synthetic audio checks do not prove these physical capture paths.

@@ -1089,10 +1089,20 @@ final class RecorderAppModel: NSObject, ObservableObject, UNUserNotificationCent
         recordingAudioGeneration += 1
         let audioGeneration = recordingAudioGeneration
         let captureID = captureSessionID
+        statusText = "Choose the meeting window. Keep the meeting tab visible for screenshots."
         try await captureController.start(
             fallbackIntentId: fallbackIntentId,
             appVersion: appVersion,
             microphoneDeviceUID: selectedMicrophoneUID,
+            onScreenshotStatus: { [weak self] warning in
+                Task { @MainActor in
+                    guard self?.captureSessionID == captureID else { return }
+                    if let warning { self?.statusText = warning }
+                    else if self?.statusText.hasPrefix("Screenshots paused.") == true {
+                        self?.statusText = "Recording \(self?.activeRecordingTitle ?? "meeting")"
+                    }
+                }
+            },
             onAudioLevel: { [weak self] source, level in
                     let observedAt = Date()
                 Task { @MainActor in
@@ -1732,13 +1742,8 @@ final class RecorderAppModel: NSObject, ObservableObject, UNUserNotificationCent
             }
         }
 
-        let preparedUpload = try await client.prepareRecordingUpload(payload: payload)
-        payload.uploadAssets = preparedUpload.assets.assetIds
+        payload.uploadAssets = try await client.uploadResumableRecordingAssets(payload: payload)
         try uploadQueue.save(payload)
-        try await client.uploadPreparedRecordingAssets(
-            payload: payload,
-            preparedUpload: preparedUpload
-        )
 
         do {
             _ = try await client.completeRecordingUpload(payload: payload)

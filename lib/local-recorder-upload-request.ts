@@ -12,6 +12,11 @@ const uploadMetadataSchema = z.strictObject({
 
 const uploadCompletionSchema = uploadMetadataSchema.extend({
   assets: z.strictObject({
+    audioFormat: z.enum(["wav", "m4a"]).optional(),
+    screenshots: z.array(z.strictObject({
+      assetId: z.uuid(),
+      timestampMs: z.number().int().nonnegative().max(2_147_483_647),
+    })).max(20_000).optional(),
     computerAudioAssetId: requiredString,
     microphoneAudioAssetId: requiredString,
     synthesizedAudioAssetId: requiredString,
@@ -39,6 +44,11 @@ export function parseLocalRecorderUploadCompletionRequest(body: unknown) {
 
   if (!metadata.ok) {
     return metadata;
+  }
+  const screenshots = parsed.data.assets.screenshots ?? [];
+  const durationMs = metadata.value.recordingStoppedAt.getTime() - metadata.value.recordingStartedAt.getTime();
+  if (screenshots.some(image => image.timestampMs > durationMs) || new Set(screenshots.map(image => image.assetId)).size !== screenshots.length) {
+    return { ok: false as const };
   }
 
   return {

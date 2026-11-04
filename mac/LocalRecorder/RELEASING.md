@@ -100,3 +100,5 @@ Desktop builds discard saved credentials that point to the invalid `0.0.0.0` pro
 ## Organization pairing
 
 The browser login asks users with multiple memberships which organization should receive recordings. Device sessions remain bound to that workspace when the web workspace changes. Pair the recorder again to select another organization. Verify this prompt before publishing a recorder release against the updated web service.
+
+Before releasing the resumable media uploader, deploy `/api/local-recorder/recordings/multipart` and complete the live interruption checks in [recorder upload recovery](../../docs/recorder-upload-recovery.md). Older apps retain their existing whole file upload route.

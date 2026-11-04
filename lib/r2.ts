@@ -209,7 +209,7 @@ function isNotFoundError(error: unknown) {
   );
 }
 
-function createR2Client() {
+export function createR2Client() {
   const env = parseR2Env(process.env);
 
   return new S3Client({

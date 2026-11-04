@@ -31,10 +31,7 @@ export function createRecordingWindowSelector(sdk) {
         return { captureMode: "meeting", windowId: meetingWindowId };
       }
 
-      return {
-        captureMode: "desktop-audio",
-        windowId: String(await sdk.prepareDesktopAudioRecording()),
-      };
+      throw new Error("No meeting window detected. Choose a meeting window for local capture.");
     },
   };
 }
