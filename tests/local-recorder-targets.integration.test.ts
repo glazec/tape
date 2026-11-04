@@ -10,8 +10,8 @@ vi.mock("@/db/client", () => ({ databaseSql, db }));
 vi.mock("@/inngest/client", () => ({ inngest: { send: vi.fn() } }));
 vi.mock("@/lib/meeting-share-rules", () => ({ reconcileMeetingSharingForMeeting: vi.fn() }));
 vi.mock("@/lib/r2", () => ({
-  buildMeetingObjectKey: ({ meetingId, assetId }: { meetingId: string; assetId: string }) => `${meetingId}/${assetId}`,
-  createUploadUrl: vi.fn(), getObjectMetadata: vi.fn(async () => ({ contentLength: 100, contentType: "audio/wav" })), parseR2Env: () => ({ R2_BUCKET: "test" }),
+  buildMeetingObjectKey: ({ meetingId, assetId, extension }: { meetingId: string; assetId: string; extension: string }) => `${meetingId}/${assetId}.${extension}`,
+  createUploadUrl: vi.fn(), getObjectMetadata: vi.fn(async ({ key }: { key: string }) => ({ contentLength: 100, contentType: key.endsWith(".jpg") ? "image/jpeg" : "audio/wav" })), parseR2Env: () => ({ R2_BUCKET: "test" }),
 }));
 vi.mock("@/lib/provider-usage", () => ({ recordRecallRecordingUsage: vi.fn() }));
 vi.mock("@/lib/vendors/recall", () => ({ createRecallDesktopSdkUpload: vi.fn(), getRecallApiBaseUrl: vi.fn(), retrieveRecallBot: vi.fn() }));
@@ -66,8 +66,8 @@ describe.skipIf(!dsn)("recording target PostgreSQL transactions", () => {
       create unique index local_recording_attempts_primary_active_unique on local_recording_attempts(meeting_id) where attempt_state in ('started', 'uploading', 'uploaded');
       create type meeting_status as enum ('scheduled', 'recording', 'processing', 'ready', 'failed', 'cancelled');
       create type transcript_mode as enum ('replace', 'append');
-      create type asset_type as enum ('computer_audio', 'microphone_audio', 'synthesized_audio', 'audio');
-      create table media_assets (id uuid primary key, meeting_id uuid references meetings(id), source text, type asset_type, bucket text, object_key text, mime_type text, file_size_bytes integer);
+      create type asset_type as enum ('computer_audio', 'microphone_audio', 'synthesized_audio', 'audio', 'screenshot');
+      create table media_assets (id uuid primary key, meeting_id uuid references meetings(id), source text, type asset_type, bucket text, object_key text, mime_type text, file_size_bytes integer, recording_id uuid, timestamp_ms integer, captured_at timestamptz);
       create table local_recordings (id uuid primary key default gen_random_uuid(), local_recording_attempt_id uuid unique references local_recording_attempts(id), meeting_id uuid references meetings(id), is_primary boolean, owner_user_id uuid, client_recording_id text, recording_started_at timestamptz, recording_stopped_at timestamptz, computer_audio_asset_id uuid references media_assets(id), microphone_audio_asset_id uuid references media_assets(id), synthesized_audio_asset_id uuid references media_assets(id), manifest jsonb, synthesis_status text, updated_at timestamptz, unique(owner_user_id, client_recording_id));
       create unique index local_recordings_meeting_primary_unique on local_recordings(meeting_id) where is_primary = true;
       create table recordings (id uuid primary key default gen_random_uuid(), meeting_id uuid references meetings(id), source text, external_id text, external_bot_id text, started_at timestamptz, ended_at timestamptz, duration_ms integer, updated_at timestamptz);
@@ -345,7 +345,7 @@ describe.skipIf(!dsn)("recording target PostgreSQL transactions", () => {
         return chain;
       };
       db.select.mockReturnValueOnce(rows([])).mockReturnValueOnce(rows([{ id, meetingId, attemptState, expiresAt: new Date(expiresAt) }]));
-      return completeLocalRecorderRecordingUpload({ ...input, fallbackIntentId, clientRecordingId: randomUUID(), manifest: {}, recordingStartedAt, recordingStoppedAt: new Date(recordingStartedAt.getTime() + 1000), assets: { computerAudioAssetId: randomUUID(), microphoneAudioAssetId: randomUUID(), synthesizedAudioAssetId: randomUUID() } });
+      return completeLocalRecorderRecordingUpload({ ...input, fallbackIntentId, clientRecordingId: randomUUID(), manifest: {}, recordingStartedAt, recordingStoppedAt: new Date(recordingStartedAt.getTime() + 1000), assets: { computerAudioAssetId: randomUUID(), microphoneAudioAssetId: randomUUID(), synthesizedAudioAssetId: randomUUID(), screenshots: [{ assetId: randomUUID(), timestampMs: 250 }] } });
     };
     const a = await setLocalRecorderRecordingTarget(input);
     await finishLocalRecorderRecordingTarget({ ...input, fallbackIntentId: a.fallbackIntentId });
@@ -370,7 +370,8 @@ describe.skipIf(!dsn)("recording target PostgreSQL transactions", () => {
     expect(await sql("select id from recordings order by started_at")).toEqual(reversed
       ? [secondCompleted.localRecordingId, firstCompleted.localRecordingId]
       : [firstCompleted.localRecordingId, secondCompleted.localRecordingId]);
-    expect(await sql("select count(*) from media_assets")).toEqual(["6"]);
+    expect(await sql("select count(*) from media_assets")).toEqual(["8"]);
+    expect(await sql("select count(*) from media_assets image join recordings recording on recording.id = image.recording_id where image.type = 'screenshot' and image.timestamp_ms = 250 and image.captured_at = recording.started_at + interval '250 milliseconds'")).toEqual(["2"]);
     expect(await sql("select count(*) from recordings")).toEqual(["2"]);
     expect(await sql("select count(*) from local_recordings where is_primary")).toEqual(["1"]);
     expect(await sql("select mode from transcript_jobs order by created_at")).toEqual(["replace", "append"]);
