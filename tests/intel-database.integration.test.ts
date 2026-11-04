@@ -71,7 +71,9 @@ describe.skipIf(!enabled)("Intel with real PostgreSQL and caller RLS", () => {
     expect(result.catalog.people).toHaveLength(1);
   }, 180000);
   it("limits history to fifty entries using the real pruning query", async () => {
-    for (let i=0; i<51; i++) await saveIntelHistory(workspace, { kind: "content", text: `Idea number ${i}` });
+    await state.client!.query("INSERT INTO intel_searches(team_id,user_id,input,created_at) SELECT $1,$2,jsonb_build_object('kind','content','text','Older idea ' || n),now()-interval '1 day' FROM generate_series(1,51) n", [team,a]);
+    const newest = await saveIntelHistory(workspace, { kind: "content", text: "Newest idea" });
+    expect((await state.client!.query("SELECT id FROM intel_searches WHERE id=$1", [newest])).rows).toHaveLength(1);
     expect((await state.client!.query("SELECT count(*)::int AS count FROM intel_searches")).rows[0].count).toBe(50);
   });
 });
