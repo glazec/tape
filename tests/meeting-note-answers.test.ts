@@ -10,7 +10,7 @@ const segments = [{ id: "s1", text: "We invest $2 million in fintech.", startMs:
 const transcript = { segments, transcriptRevision: noteTranscriptRevision(segments), hasTranscript: true };
 const supported = { items: [{ text: "Check size: $2 million.", sources: [{ segmentId: "s1", quote: "$2 million" }] }], missing: ["Stage"] };
 
-beforeEach(() => { vi.clearAllMocks(); mocks.where.mockReturnValue({ orderBy: mocks.orderBy }); mocks.orderBy.mockResolvedValue(segments); });
+beforeEach(() => { vi.resetAllMocks(); mocks.where.mockReturnValue({ orderBy: mocks.orderBy }); mocks.orderBy.mockResolvedValue(segments); });
 
 describe("transcript grounded note answers", () => {
   it("loads any available segments in the meeting's active generation", async () => {
@@ -53,6 +53,39 @@ describe("transcript grounded note answers", () => {
   it("uses only the supplied transcript and validates the generated answer", async () => {
     mocks.generate.mockResolvedValue(JSON.stringify(supported));
     await expect(answerMeetingNoteQuestion("meeting", "Check size?", transcript)).resolves.toMatchObject({ sources: [{ segmentId: "s1", quote: "$2 million", startMs: 42_000, speaker: "Sam" }] });
-    expect(mocks.generate).toHaveBeenCalledWith({ meetingId: "meeting", question: "Check size?", segments: [{ id: "s1", text: segments[0].text }] });
+    expect(mocks.generate).toHaveBeenCalledWith(expect.objectContaining({ meetingId: "meeting", question: "Check size?", segments: [{ id: "s1", text: segments[0].text }] }));
   });
+  it("corrects a quote spanning segments without weakening citation validation", async () => {
+    const crossed = JSON.stringify({ items: [{ text: "Goal", sources: [{ segmentId: "s1", quote: "We invest $2 million in fintech. We want more people to know us." }] }], missing: [] });
+    mocks.generate.mockResolvedValueOnce(crossed).mockResolvedValueOnce(JSON.stringify(supported));
+    await expect(answerMeetingNoteQuestion("meeting", "Goal?", transcript)).resolves.toMatchObject({ sources: [{ segmentId: "s1", quote: "$2 million" }] });
+    expect(mocks.generate).toHaveBeenCalledTimes(2);
+    expect(mocks.generate.mock.calls[1][0]).toMatchObject({ correction: crossed });
+    expect(mocks.generate.mock.calls[1][0].timeoutMs).toBeLessThanOrEqual(30_000);
+  });
+  it("rejects invalid citations after one correction attempt", async () => {
+    mocks.generate.mockResolvedValue(JSON.stringify({ items: [{ text: "Goal", sources: [{ segmentId: "s1", quote: "Invented quote" }] }], missing: [] }));
+    await expect(answerMeetingNoteQuestion("meeting", "Goal?", transcript)).rejects.toThrow("unsupported transcript citation");
+    expect(mocks.generate).toHaveBeenCalledTimes(2);
+  });
+  it("does not retry provider errors", async () => {
+    mocks.generate.mockRejectedValue(new Error("provider unavailable"));
+    await expect(answerMeetingNoteQuestion("meeting", "Goal?", transcript)).rejects.toThrow("provider unavailable");
+    expect(mocks.generate).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not start a correction after the request deadline", async () => {
+    const clock = vi.spyOn(Date, "now").mockReturnValue(0);
+    mocks.generate.mockImplementation(async () => {
+      clock.mockReturnValue(30_000);
+      return "invalid JSON";
+    });
+    try {
+      await expect(answerMeetingNoteQuestion("meeting", "Goal?", transcript)).rejects.toThrow();
+      expect(mocks.generate).toHaveBeenCalledTimes(1);
+    } finally {
+      clock.mockRestore();
+    }
+  });
+
 });

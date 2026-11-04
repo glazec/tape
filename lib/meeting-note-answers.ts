@@ -137,10 +137,24 @@ export async function answerMeetingNoteQuestion(
   if (JSON.stringify(transcript.segments).length > 180_000) {
     throw new NoteTranscriptTooLongError();
   }
-  const response = await generateMeetingNoteAnswer({
-    meetingId,
-    question,
-    segments: transcript.segments.map(({ id, text }) => ({ id, text })),
-  });
-  return parseNoteAnswer(response, question, transcript);
+  const deadline = Date.now() + 30_000;
+  let correction: string | undefined;
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const response = await generateMeetingNoteAnswer({
+      meetingId,
+      question,
+      segments: transcript.segments.map(({ id, text }) => ({ id, text })),
+      timeoutMs: Math.max(1, deadline - Date.now()),
+      ...(correction ? { correction } : {}),
+    });
+    try {
+      return parseNoteAnswer(response, question, transcript);
+    } catch (error) {
+      // Repair model output only; never loosen the exact source checks or retry
+      // provider failures. Both attempts share the original request deadline.
+      if (attempt === 1 || Date.now() >= deadline) throw error;
+      correction = response;
+    }
+  }
+  throw new Error("Could not generate a grounded note answer");
 }

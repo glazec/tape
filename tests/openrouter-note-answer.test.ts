@@ -7,7 +7,7 @@ import { generateMeetingNoteAnswer } from "@/lib/vendors/openrouter";
 
 const input = { meetingId: "meeting", question: "Check size?", segments: [{ id: "segment", text: "We invest $2m." }] };
 beforeEach(() => { vi.stubEnv("OPENROUTER_API_KEY", "test-key"); vi.stubEnv("OPENROUTER_MODEL", "test-model"); });
-afterEach(() => { vi.resetAllMocks(); vi.unstubAllGlobals(); vi.unstubAllEnvs(); });
+afterEach(() => { vi.restoreAllMocks(); vi.resetAllMocks(); vi.unstubAllGlobals(); vi.unstubAllEnvs(); });
 
 describe("note question model request", () => {
   it("requests a strict transcript-only answer with usage accounting and a deadline", async () => {
@@ -34,4 +34,15 @@ describe("note question model request", () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(Response.json({ choices: [{ finish_reason: "length", message: { content: "{}" } }] })));
     await expect(generateMeetingNoteAnswer(input)).rejects.toThrow("token limit");
   });
+  it("sends validation feedback with the remaining deadline", async () => {
+    const fetch = vi.fn().mockResolvedValue(Response.json({ choices: [{ message: { content: "{}" } }] }));
+    vi.stubGlobal("fetch", fetch);
+    const timeout = vi.spyOn(AbortSignal, "timeout");
+    await generateMeetingNoteAnswer({ ...input, correction: "previous invalid answer", timeoutMs: 12_000 });
+    const body = JSON.parse(fetch.mock.calls[0][1].body);
+    expect(timeout).toHaveBeenCalledWith(12_000);
+    expect(body.messages[2]).toEqual({ role: "assistant", content: "previous invalid answer" });
+    expect(body.messages[3].content).toContain("Do not combine adjacent segments");
+  });
+
 });
