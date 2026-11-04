@@ -56,7 +56,7 @@ describe("MeetingEntityLinks", () => {
       />,
     );
 
-    expect(html).toContain("Detected entities");
+    expect(html).toContain("Mentioned");
     expect(html.indexOf("Organizations")).toBeLessThan(html.indexOf("Money"));
     expect(html.indexOf("Money")).toBeLessThan(html.indexOf("Names"));
     expect(html).toContain("Babylon");

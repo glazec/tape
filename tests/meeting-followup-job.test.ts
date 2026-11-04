@@ -52,6 +52,29 @@ describe("automatic meeting followup", () => {
     expect(sleep).toHaveBeenCalledTimes(1);
   });
 
+  it("retries when enrichment changes the meeting during generation", async () => {
+    mocks.autoGenerateMeetingFollowup
+      .mockResolvedValueOnce({ status: "meeting_changed" })
+      .mockResolvedValueOnce({ status: "transcript_changed" })
+      .mockResolvedValueOnce({ status: "saved" });
+
+    expect(await execute({ meetingId, sendCompletionEmail: true })).toEqual({
+      status: "saved",
+    });
+    expect(sleep).toHaveBeenCalledTimes(2);
+    expect(sleep).toHaveBeenNthCalledWith(1, expect.any(String), "20s");
+    expect(sleep).toHaveBeenNthCalledWith(2, expect.any(String), "40s");
+  });
+
+  it("gives up after repeated concurrent changes", async () => {
+    mocks.autoGenerateMeetingFollowup.mockResolvedValue({ status: "meeting_changed" });
+
+    expect(await execute({ meetingId, sendCompletionEmail: true })).toEqual({
+      status: "meeting_changed",
+    });
+    expect(mocks.autoGenerateMeetingFollowup).toHaveBeenCalledTimes(5);
+  });
+
   it("stops without failing when the workspace is out of credit", async () => {
     mocks.autoGenerateMeetingFollowup.mockRejectedValue(
       new ProviderCreditExhaustedError(0),
