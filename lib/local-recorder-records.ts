@@ -1498,8 +1498,11 @@ async function getUploadableLocalRecorderAttempt(input: {
       meetingId: localRecordingAttempts.meetingId,
     })
     .from(localRecordingAttempts)
+    .innerJoin(meetings, eq(meetings.id, localRecordingAttempts.meetingId))
     .where(
       and(
+        eq(meetings.teamId, input.workspace.teamId),
+        getMeetingManagerCondition(input.workspace),
         eq(localRecordingAttempts.userId, input.workspace.userId),
         eq(localRecordingAttempts.deviceIdHash, deviceIdHash),
         eq(localRecordingAttempts.fallbackIntentIdHash, fallbackIntentIdHash),
@@ -1574,8 +1577,11 @@ async function getRetryableLocalRecorderAttempt(input: {
       meetingId: localRecordingAttempts.meetingId,
     })
     .from(localRecordingAttempts)
+    .innerJoin(meetings, eq(meetings.id, localRecordingAttempts.meetingId))
     .where(
       and(
+        eq(meetings.teamId, input.workspace.teamId),
+        getMeetingManagerCondition(input.workspace),
         eq(localRecordingAttempts.userId, input.workspace.userId),
         eq(localRecordingAttempts.deviceIdHash, deviceIdHash),
         eq(localRecordingAttempts.fallbackIntentIdHash, fallbackIntentIdHash),
