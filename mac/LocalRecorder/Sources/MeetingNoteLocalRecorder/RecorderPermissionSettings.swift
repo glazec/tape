@@ -5,6 +5,7 @@ struct PermissionList: View {
     var checklist: PermissionChecklist
     var requestPermission: (OperationalPermission) -> Void
     var setStartAtLoginEnabled: @MainActor @Sendable (Bool) -> Void
+    var restartApp: () -> Void
     var repairPermission: (RecorderSystemActions.RepairPermission) -> Void
     var showAppInFinder: () -> Void
     var isBusy: Bool
@@ -46,37 +47,53 @@ struct PermissionList: View {
             }
             if !checklist.allSetupGranted {
                 DisclosureGroup("Access still blocked?", isExpanded: $showsRecovery) {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("An older copy may have the saved permission. Choose the affected permission to repair access and restart, then enable this copy in System Settings.")
-                            .font(TapeType.sans(11.5))
-                            .foregroundStyle(TapePalette.muted)
-                            .fixedSize(horizontal: false, vertical: true)
-                        VStack(alignment: .leading, spacing: 8) {
-                            if checklist.microphone != .granted {
-                                Button("Repair microphone…") { repairPermission(.microphone) }
-                            }
-                            if checklist.notifications != .granted {
-                                Button("Repair notifications…") { repairPermission(.notifications) }
-                            }
-                            if checklist.accessibility != .granted {
-                                Button("Repair Accessibility…") { repairPermission(.accessibility) }
-                            }
-                            if checklist.screenCapture != .granted {
-                                Button("Repair screen and system audio…") { repairPermission(.screenCapture) }
-                            }
-                            Button("Show this app", action: showAppInFinder)
-                        }
-                        .buttonStyle(.plain)
-                        .font(TapeType.sans(12, .medium))
-                        .foregroundStyle(TapePalette.coralInk)
-                    }
-                    .padding(.top, 6)
+                    PermissionRecovery(
+                        checklist: checklist,
+                        restartApp: restartApp,
+                        repairPermission: repairPermission,
+                        showAppInFinder: showAppInFinder
+                    )
                 }
                 .font(TapeType.sans(11.5))
                 .padding(.top, 6)
             }
         }
         .disabled(isBusy)
+    }
+}
+
+struct PermissionRecovery: View {
+    var checklist: PermissionChecklist
+    var restartApp: () -> Void
+    var repairPermission: (RecorderSystemActions.RepairPermission) -> Void
+    var showAppInFinder: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Settings may show a saved approval that this running copy cannot use. Quit other copies, then restart this app to check again. Restart keeps your permissions.")
+                .foregroundStyle(TapePalette.muted)
+            Button("Restart to check access", action: restartApp)
+            Text("Still blocked? Repair only the affected permission below, then follow the prompt or enable access in System Settings. If an old entry remains enabled, remove it in Settings where available and add the app shown in Finder.")
+                .foregroundStyle(TapePalette.muted)
+            if checklist.microphone != .granted {
+                Button("Repair microphone…") { repairPermission(.microphone) }
+            }
+            if checklist.notifications != .granted {
+                Button("Repair notifications…") { repairPermission(.notifications) }
+            }
+            if checklist.accessibility != .granted {
+                Button("Repair Accessibility…") { repairPermission(.accessibility) }
+            }
+            if checklist.screenCapture != .granted {
+                Button("Repair screen and system audio…") { repairPermission(.screenCapture) }
+            }
+            Button("Show this app in Finder", action: showAppInFinder)
+        }
+        .font(TapeType.sans(11.5))
+        .buttonStyle(.plain)
+        .foregroundStyle(TapePalette.coralInk)
+        .fixedSize(horizontal: false, vertical: true)
+        .padding(.top, 6)
     }
 }
 

@@ -38,6 +38,19 @@ ADHOC_APP_ENTITLEMENTS="$ROOT_DIR/Resources/AdHocApp.entitlements"
 SIDECAR_SOURCE="$ROOT_DIR/Sidecar"
 SIDECAR_DEST="$APP_RESOURCES/RecallDesktopSDKSidecar"
 
+# Check identity before stopping an app or replacing a bundle. The certificate
+# name is insufficient: a newly created certificate can reuse that name.
+RELEASE_CERT_SHA1="$(sed -n 's/.*certificate leaf = H"\([^" ]*\)".*/\1/p' "$ROOT_DIR/Resources/Release.requirement" | tr '[:lower:]' '[:upper:]')"
+CODESIGN_IDENTITY="$(printf '%s' "${CODESIGN_IDENTITY:-$RELEASE_CERT_SHA1}" | tr '[:lower:]' '[:upper:]')"
+if [[ "$CODESIGN_IDENTITY" != "$RELEASE_CERT_SHA1" ]]; then
+  echo "Refusing a different signing identity for the production app. Use the existing release certificate fingerprint." >&2
+  exit 1
+fi
+if ! security find-identity -v -p codesigning | grep -qF "$RELEASE_CERT_SHA1"; then
+  echo "The existing release certificate and private key are required. No app or permission was changed." >&2
+  exit 1
+fi
+
 cd "$ROOT_DIR"
 if [[ "$MODE" != "--package" && "$MODE" != "package" ]]; then
   pkill -x "$APP_NAME" >/dev/null 2>&1 || true
@@ -131,28 +144,11 @@ PLIST
 /usr/libexec/PlistBuddy -c "Add :SentryDSN string $SENTRY_DSN" "$INFO_PLIST"
 /usr/libexec/PlistBuddy -c "Add :SentryEnvironment string $SENTRY_ENVIRONMENT" "$INFO_PLIST"
 
-# Prefer a stable signing certificate: TCC pins grants to the certificate,
-# so microphone and screen capture stay granted across rebuilds. Create one
-# with script/create_signing_cert.sh. Ad-hoc fallback pins grants to the
-# per-build cdhash, which invalidates them silently on every binary change.
-LOCAL_CERT_NAME="Meeting Note Local Dev"
-if [[ -z "${CODESIGN_IDENTITY:-}" ]]; then
-  if security find-identity -v -p codesigning 2>/dev/null | grep -qF "$LOCAL_CERT_NAME"; then
-    CODESIGN_IDENTITY="$LOCAL_CERT_NAME"
-  else
-    CODESIGN_IDENTITY="-"
-    echo "No signing certificate found; using ad-hoc signing." >&2
-    echo "Run script/create_signing_cert.sh once to stop macOS from dropping mic/screen permissions on every rebuild." >&2
-  fi
-fi
 
 sign_code() {
   local target="$1"
   shift
-  local arguments=(--force --options runtime --sign "$CODESIGN_IDENTITY")
-  if [[ "$CODESIGN_IDENTITY" != "-" ]]; then
-    arguments+=(--timestamp)
-  fi
+  local arguments=(--force --options runtime --timestamp --sign "$CODESIGN_IDENTITY")
   codesign "${arguments[@]}" "$@" "$target"
 }
 
@@ -169,59 +165,24 @@ while IFS= read -r -d '' target; do
   fi
 done < <(find "$APP_RESOURCES" -type f -print0)
 
-if [[ "$CODESIGN_IDENTITY" == "-" ]]; then
-  codesign \
-    --force \
-    --deep \
-    --options runtime \
-    --entitlements "$ADHOC_APP_ENTITLEMENTS" \
-    --sign "$CODESIGN_IDENTITY" \
-    "$APP_BUNDLE"
-elif [[ "$CODESIGN_IDENTITY" == "$LOCAL_CERT_NAME" ]]; then
-  codesign \
-    --force \
-    --deep \
-    --options runtime \
-    --timestamp \
-    --entitlements "$ADHOC_APP_ENTITLEMENTS" \
-    --sign "$CODESIGN_IDENTITY" \
-    "$APP_BUNDLE"
-else
-  codesign \
-    --force \
-    --deep \
-    --options runtime \
-    --timestamp \
-    --entitlements "$ADHOC_APP_ENTITLEMENTS" \
-    --sign "$CODESIGN_IDENTITY" \
-    "$APP_BUNDLE"
-fi
-codesign --verify --deep --strict --verbose=2 "$APP_BUNDLE"
+codesign \
+  --force \
+  --deep \
+  --options runtime \
+  --timestamp \
+  --entitlements "$ADHOC_APP_ENTITLEMENTS" \
+  --sign "$CODESIGN_IDENTITY" \
+  "$APP_BUNDLE"
+"$ROOT_DIR/script/verify_release_identity.sh" "$APP_BUNDLE"
 
 if [[ "$MODE" == "--package" || "$MODE" == "package" ]]; then
   printf '%s\n' "$APP_BUNDLE"
   exit 0
 fi
 
-# Reset stale TCC grants when the signature identity changes, or on every
-# binary change while ad-hoc signed. Otherwise macOS keeps the old grant for
-# the bundle id and silently denies capture when the user requests access.
-SIGNATURE_CACHE="$ROOT_DIR/.build/last-app-signature"
-NEW_CDHASH="$(codesign --display -vvv "$APP_BUNDLE" 2>&1 | awk -F= '/^CDHash=/ { print $2 }')"
-if [[ "$CODESIGN_IDENTITY" == "-" ]]; then
-  NEW_SIGNATURE="adhoc:$NEW_CDHASH"
-else
-  NEW_SIGNATURE="cert:$CODESIGN_IDENTITY"
-fi
-OLD_SIGNATURE="$(cat "$SIGNATURE_CACHE" 2>/dev/null || true)"
-if [[ -n "$NEW_SIGNATURE" && "$NEW_SIGNATURE" != "$OLD_SIGNATURE" ]]; then
-  echo "App signature changed; resetting microphone, screen capture, and accessibility permissions so their buttons can prompt again."
-  tccutil reset Microphone "$BUNDLE_ID" >/dev/null 2>&1 || true
-  tccutil reset ScreenCapture "$BUNDLE_ID" >/dev/null 2>&1 || true
-  tccutil reset Accessibility "$BUNDLE_ID" >/dev/null 2>&1 || true
-fi
-mkdir -p "$(dirname "$SIGNATURE_CACHE")"
-printf '%s' "$NEW_SIGNATURE" >"$SIGNATURE_CACHE"
+# Never reset macOS permissions as a side effect of building or launching.
+# A missing worktree cache does not mean the installed app identity changed.
+# Explicit recovery in the app resets only the permission the user selects.
 
 open_app() {
   /usr/bin/open -n "$APP_BUNDLE"
