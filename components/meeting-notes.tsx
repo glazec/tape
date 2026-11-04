@@ -113,7 +113,6 @@ export function MeetingNotes({
   const [transcriptError, setTranscriptError] = useState(false);
   const headingId = useId();
   const privacyId = useId();
-  const hintId = useId();
   const editors = useRef(new Map<string, HTMLTextAreaElement>());
   const copyFallback = useRef<HTMLTextAreaElement>(null);
   const pendingFocus = useRef<{ id: string; position: number } | null>(null);
@@ -506,7 +505,7 @@ export function MeetingNotes({
   }
 
   return (
-    <section aria-labelledby={headingId} className="group/notes mb-10">
+    <section aria-labelledby={headingId} className="mb-10">
       <div className="mb-2 flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
         <div className="flex shrink-0 items-center gap-2">
           <h2
@@ -545,6 +544,7 @@ export function MeetingNotes({
           <button
             type="button"
             className="min-h-11 rounded px-2 text-xs text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:min-h-8"
+            title="Type @now then Space, or [12:34]"
             onMouseDown={(event) => event.preventDefault()}
             onClick={() => {
               setPreview(false);
@@ -643,7 +643,7 @@ export function MeetingNotes({
                 else editors.current.delete(block.id);
               }}
               aria-label={index === 0 ? "My notes" : `Note ${index + 1}`}
-              aria-describedby={`${privacyId} ${hintId}`}
+              aria-describedby={privacyId}
               aria-busy={status === "loading"}
               className={`${preview || (loaded && !editingMoments && (parseNoteMoments(block.text).length > 0 || Boolean(block.moments?.length))) ? "hidden" : "block"} max-h-[min(24rem,60dvh)] w-full resize-none border-0 bg-transparent p-0 text-base leading-7 outline-none placeholder:text-muted-foreground disabled:text-muted-foreground ${blocks.length === 1 && !hasQuestions ? "min-h-14 focus:min-h-36" : "min-h-7"}`}
               disabled={!loaded}
@@ -819,17 +819,6 @@ export function MeetingNotes({
           </button>
         ) : null}
       </div>
-      <p
-        id={hintId}
-        className={
-          hasAnswer
-            ? "sr-only"
-            : "mt-2 text-xs leading-5 text-muted-foreground opacity-0 transition-opacity group-focus-within/notes:opacity-100 motion-reduce:transition-none"
-        }
-      >
-        Markdown supported, including pasted tables. Use Preview to see formatting. Type @now then Space to mark a moment, or use [12:34]. End a question
-        with ? to find an answer in this transcript.
-      </p>
       {content.length >= 19_000 ? (
         <p
           className="mt-3 text-right text-xs tabular-nums text-muted-foreground"

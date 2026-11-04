@@ -438,10 +438,7 @@ export function MeetingFollowup({
               </div>
               {result.research?.length ? (
                 <div>
-                  <h3 className={`${SUBHEAD} mb-0.5`}>Potential research</h3>
-                  <p className="mb-3 text-xs leading-5 text-muted-foreground">
-                    Copy a question with meeting context for AI research.
-                  </p>
+                  <h3 className={SUBHEAD}>Potential research</h3>
                   <ul role="list" className="max-w-[60ch] space-y-3 text-sm">
                     {result.research.map((item, index) => (
                       <li className="-mx-3 min-w-0 rounded-lg px-3 pt-2 pb-1 transition-colors hover:bg-muted/40" key={index}>
@@ -449,6 +446,7 @@ export function MeetingFollowup({
                           type="button"
                           onClick={() => void copyResearch(item)}
                           aria-label={`Copy research prompt: ${item.question}`}
+                          title="Copy question and meeting context"
                           aria-describedby={`${headingId}-research-${index}`}
                           className="flex min-h-11 w-full cursor-pointer items-start gap-3 rounded-md text-left leading-6 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                         >
