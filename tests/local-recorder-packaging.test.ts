@@ -1,4 +1,4 @@
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import {
   chmodSync,
   mkdtempSync,
@@ -105,19 +105,31 @@ describe("local recorder app packaging", () => {
     );
   });
 
-  it("disables library validation for the local development certificate", () => {
-    const buildScript = readFileSync(
-      join(packageRoot, "script", "build_and_run.sh"),
-      "utf8",
-    );
-
-    expect(buildScript).toMatch(
-      /elif \[\[ "\$CODESIGN_IDENTITY" == "\$LOCAL_CERT_NAME" \]\]; then[\s\S]*?--entitlements "\$ADHOC_APP_ENTITLEMENTS"[\s\S]*?else/,
-    );
-    expect(buildScript).toMatch(
-      /else\s+codesign[\s\S]*?--entitlements "\$ADHOC_APP_ENTITLEMENTS"[\s\S]*?--sign "\$CODESIGN_IDENTITY"/,
-    );
+  it("rejects production bundles with a different permission identity", () => {
+    const buildScript = readFileSync(join(packageRoot, "script", "build_and_run.sh"), "utf8");
+    const verifier = readFileSync(join(packageRoot, "script", "verify_release_identity.sh"), "utf8");
+    const requirement = readFileSync(join(packageRoot, "Resources", "Release.requirement"), "utf8");
+    expect(requirement).toContain('identifier "tech.inevitable.meeting-note.local-recorder"');
+    expect(requirement).toContain('certificate leaf = H"e4f95f1c739561ab5e86758f54d9488bc8c1c5c0"');
+    expect(buildScript).toContain('"$ROOT_DIR/script/verify_release_identity.sh" "$APP_BUNDLE"');
+    expect(buildScript).not.toContain('CODESIGN_IDENTITY="-"');
+    expect(buildScript).not.toContain("Meeting Note Local Dev");
+    expect(verifier).toContain('--test-requirement "=$REQUIREMENT"');
+    expect(verifier).toContain('"$ACTUAL_REQUIREMENT" != "$REQUIREMENT"');
   });
+
+  it.each(["-", "Tape Desktop Release", "32C5927B5DF05F13B90001DE1C2069A810346524"])(
+    "rejects incompatible signing identity %s before building or launching",
+    (identity) => {
+      const result = spawnSync("bash", [join(packageRoot, "script", "build_and_run.sh"), "--package"], {
+        encoding: "utf8",
+        env: { ...process.env, BUILD_CONFIGURATION: "debug", CODESIGN_IDENTITY: identity },
+      });
+      expect(result.status).toBe(1);
+      expect(result.stderr).toContain("Refusing a different signing identity");
+      expect(result.stdout).toBe("");
+    },
+  );
 
   it("requires the stable certificate for release builds", () => {
     const workflow = readFileSync(
@@ -222,21 +234,13 @@ describe("local recorder app packaging", () => {
     );
   });
 
-  it("resets every signature bound permission when the app signature changes", () => {
+  it("preserves permissions when building or launching from a fresh worktree", () => {
     const buildScript = readFileSync(
       join(packageRoot, "script", "build_and_run.sh"),
       "utf8",
     );
-
-    expect(buildScript).toContain(
-      'tccutil reset Microphone "$BUNDLE_ID"',
-    );
-    expect(buildScript).toContain(
-      'tccutil reset ScreenCapture "$BUNDLE_ID"',
-    );
-    expect(buildScript).toContain(
-      'tccutil reset Accessibility "$BUNDLE_ID"',
-    );
+    expect(buildScript).not.toContain("tccutil reset");
+    expect(buildScript).not.toContain("last-app-signature");
   });
 
   it("requests operational permissions only after the user presses the button", () => {

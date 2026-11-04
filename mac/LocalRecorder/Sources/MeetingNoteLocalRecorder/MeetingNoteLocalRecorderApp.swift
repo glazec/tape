@@ -1395,7 +1395,7 @@ final class RecorderAppModel: NSObject, ObservableObject, UNUserNotificationCent
         alert.messageText = "Repair \(permission.title) access?"
         alert.informativeText = permission.resetService == nil
             ? "This refreshes the app registration and restarts Tape Desktop. Enable notifications for this copy in System Settings. Your existing notification choice is preserved."
-            : "This removes the old permission entry and restarts Tape Desktop to request access for this copy. Enable Tape Desktop again in System Settings."
+            : "This resets the selected permission and restarts Tape Desktop to request access again. macOS may keep the old entry visible in Settings. If it still appears enabled but access is blocked, remove that entry where available and add the app shown by Show this app in Finder."
         alert.addButton(withTitle: "Repair access")
         alert.addButton(withTitle: "Cancel")
         guard alert.runModal() == .alertFirstButtonReturn else { return }
@@ -1424,7 +1424,7 @@ final class RecorderAppModel: NSObject, ObservableObject, UNUserNotificationCent
         }
 
         // Request from a new process so an earlier prompt or trust decision
-        // in this process cannot be reused after the saved entry is removed.
+        // in this process cannot be reused after authorization is reset.
         switch permission {
         case .microphone: permissionChecklist.microphone = .unknown
         case .notifications: break

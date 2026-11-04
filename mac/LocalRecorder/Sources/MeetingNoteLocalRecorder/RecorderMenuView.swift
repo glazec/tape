@@ -121,6 +121,7 @@ struct RecorderMenuView: View {
     @ObservedObject var model: RecorderAppModel
     @FocusState private var isTitleFocused: Bool
     @State private var panelWindow = PanelWindowFitter()
+    @State private var showsPermissionRecovery = false
     /// The setup window shares its titlebar row with the settings control;
     /// the menu bar panel has no titlebar and keeps the control beside the status line.
     var showsWindowChrome = false
@@ -248,6 +249,17 @@ struct RecorderMenuView: View {
                 if model.nextPermissionStep != nil {
                     SetupChecklist(checklist: model.permissionChecklist)
                         .padding(.top, 12)
+                    DisclosureGroup("Already enabled in Settings?", isExpanded: $showsPermissionRecovery) {
+                        PermissionRecovery(
+                            checklist: model.permissionChecklist,
+                            restartApp: model.restartApp,
+                            repairPermission: model.repairPermission,
+                            showAppInFinder: model.showAppInFinder
+                        )
+                    }
+                    .font(TapeType.sans(11.5))
+                    .padding(.top, 6)
+                    .disabled(model.isRequestingPermissions || model.isRestarting)
                 }
 
                 if showsDestinationChip {
@@ -1130,6 +1142,7 @@ struct RecorderSettingsView: View {
             checklist: model.permissionChecklist,
             requestPermission: model.requestPermission,
             setStartAtLoginEnabled: model.setStartAtLoginEnabled,
+            restartApp: model.restartApp,
             repairPermission: model.repairPermission,
             showAppInFinder: model.showAppInFinder,
             isBusy: model.isRequestingPermissions || model.isRestarting || model.isRecording || model.isFinishingRecording

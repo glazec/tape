@@ -54,9 +54,32 @@ enum PermissionGrant: Sendable { case unknown, granted, denied }
 enum RecorderPermissionStep { case microphone, accessibility, screenAndSystemAudio, alerts }
 struct Checklist {
   var microphone = PermissionGrant.unknown
-  var accessibility = PermissionGrant.unknown
   var screenCapture = PermissionGrant.unknown
+  var accessibility = PermissionGrant.unknown
   var notifications = PermissionGrant.unknown
+  var startAtLogin = PermissionGrant.unknown
+}
+typealias PermissionChecklist = Checklist
+func CGPreflightScreenCaptureAccess() -> Bool { CommandLine.arguments.contains("screen-granted") }
+func AXIsProcessTrusted() -> Bool { CommandLine.arguments.contains("accessibility-granted") }
+struct NotificationSettings {
+  enum Status { case authorized, provisional, ephemeral, notDetermined, denied }
+  var authorizationStatus: Status
+}
+struct NotificationCenterStub {
+  func notificationSettings() async -> NotificationSettings {
+    NotificationSettings(authorizationStatus: CommandLine.arguments.contains("notifications-granted") ? .authorized : .notDetermined)
+  }
+}
+@MainActor final class RefreshProbe {
+  var permissionChecklist = Checklist()
+  let notificationCenter = NotificationCenterStub()
+  func currentStartAtLoginPermission() -> PermissionGrant { .unknown }
+${method("refreshPermissions()", "private func refreshPermissionsAndStartIfReady()")}
+${method("currentScreenCapturePermission()", "private func currentAccessibilityPermission()")}
+${method("currentAccessibilityPermission()", "private func currentMicrophonePermission()")}
+${method("currentMicrophonePermission()", "private func currentNotificationPermission()")}
+${method("currentNotificationPermission()", "private func currentStartAtLoginPermission()")}
 }
 @MainActor enum RecorderSystemActions {
 ${repairPermissionEnum}
@@ -139,7 +162,16 @@ ${method("observeAudioLevel(source:", "func toggleLevelTest()")}
   @MainActor static func main() async {
     installMicrophoneMock()
     let probe = Probe()
-    if CommandLine.arguments.contains("repair") {
+    if CommandLine.arguments.contains("refresh") {
+      let refresh = RefreshProbe()
+      // Simulate stale UI state from an older process. Live checks must replace it.
+      refresh.permissionChecklist = Checklist(microphone: .granted, screenCapture: .granted, accessibility: .granted, notifications: .granted)
+      await refresh.refreshPermissions()
+      let state = refresh.permissionChecklist
+      precondition(RecorderSystemActions.resets == 0)
+      precondition(RecorderSystemActions.launches == 0)
+      print("microphone=\\(state.microphone);screen=\\(state.screenCapture);accessibility=\\(state.accessibility);notifications=\\(state.notifications)")
+    } else if CommandLine.arguments.contains("repair") {
       probe.permissionChecklist.accessibility = .denied
       await probe.repairPermissionAndRelaunch(RecorderSystemActions.selected, bundleIdentifier: "test.tape")
       precondition(!probe.isRestarting)
@@ -255,4 +287,21 @@ for (const [name, args, expected] of [
   ["Fresh process requests microphone", ["resume", "--repair-Microphone"], /accessibility=0;screen=0;notifications=0;notificationSettings=false;microphone=denied/],
 ]) {
   test(name, () => assert.match(run(args, 0, 0).stdout, expected));
+}
+
+for (const [name, args, micStatus, expected] of [
+  ["fresh install checks real access without prompting or resetting", [], 0,
+    "microphone=unknown;screen=denied;accessibility=denied;notifications=unknown"],
+  ["updated app keeps existing grants without prompting or resetting", ["screen-granted", "accessibility-granted", "notifications-granted"], 3,
+    "microphone=granted;screen=granted;accessibility=granted;notifications=granted"],
+  ["stale Accessibility approval cannot make setup ready", ["screen-granted", "notifications-granted"], 3,
+    "microphone=granted;screen=granted;accessibility=denied;notifications=granted"],
+  ["stale screen approval cannot make setup ready", ["accessibility-granted", "notifications-granted"], 3,
+    "microphone=granted;screen=denied;accessibility=granted;notifications=granted"],
+]) {
+  test(name, () => {
+    const result = run(["refresh", ...args], micStatus, 0);
+    assert.equal(result.stdout.trim(), expected);
+    assert.equal(result.stderr.trim(), "");
+  });
 }
