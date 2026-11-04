@@ -35,7 +35,13 @@ const TEAMS = [
 const ENDS = [
   {
     label: "Records",
-    items: ["Zoom", "Google Meet", "Microsoft Teams", "The room you are in"],
+    items: [
+      "Zoom",
+      "Google Meet",
+      "Microsoft Teams",
+      "The room you are in",
+      "Voice recorder files",
+    ],
   },
   {
     label: "Read by",

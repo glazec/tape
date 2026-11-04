@@ -71,6 +71,8 @@ function structuredData() {
           "Chinese and English transcripts side by side, line for line",
           "Follow-ups with connections, room dynamic, to-dos, and open research questions",
           "macOS recorder for in-person meetings with no bot",
+          "Meeting bots, local Mac recording, and voice recorder uploads in one app",
+          "Multi-tenant workspaces on one self-hosted deployment",
           "Whole meeting database queryable by your own AI assistant over MCP",
           "Open source, self-hostable on your own infrastructure",
           "Plain text and mp3 export of any meeting",
