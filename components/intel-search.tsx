@@ -6,7 +6,7 @@ import { connectionRelationshipLabels } from "@/lib/meeting-connections";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogTitle, DialogClose } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
-import { kindLabels, relevanceLabels, type Evidence, type HistoryEntry, type IntelCatalog, type Person, type SearchInput, type SearchResult } from "@/lib/intel/types";
+import { kindLabels, relevanceLabels, type Evidence, type HistoryEntry, type IntelBrowserCatalog as IntelCatalog, type IntelBrowserPerson as Person, type SearchInput, type SearchResult } from "@/lib/intel/types";
 
 function dateLabel(date: string) { return new Date(date).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" }); }
 function timestamp(ms: number) { const s = Math.floor(ms / 1000); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`; }
@@ -111,7 +111,7 @@ export function IntelSearch({ catalog: initialCatalog, initialHistory }: { catal
         <div className="mb-5 flex items-center justify-between"><h2 className="text-sm font-medium">{result.matches.length ? `${result.matches.length} possible ${result.matches.length === 1 ? "match" : "matches"}` : "No supported matches"}</h2><Button variant="ghost" onClick={reset}>New search</Button></div>
         {result.historyWarning && <p role="status" className="mb-5 text-sm text-muted-foreground">{result.historyWarning}</p>}
         {result.source.url && <details className="mb-6 text-sm"><summary className="cursor-pointer text-muted-foreground">Content read from the link</summary><a href={result.source.url} target="_blank" rel="noreferrer" className="mt-2 block break-all underline">{result.source.url}</a><p className="mt-2 max-h-48 overflow-auto whitespace-pre-wrap leading-6">{result.source.text}</p></details>}
-        {!result.matches.length && <p className="text-sm leading-6 text-muted-foreground">The available meetings do not provide enough evidence for a useful match. Try a more specific idea or another person.</p>}
+        {!result.matches.length && <p className="text-sm leading-6 text-muted-foreground">No supported matches found. Try a more specific idea or another person.</p>}
         <div className="space-y-2">{result.matches.map(match => <article key={match.id} className="py-6 first:pt-0">
           <div className="mb-2 flex items-center gap-2 text-xs text-muted-foreground"><span>{relevanceLabels[match.relevance]}</span><span aria-hidden="true">·</span><span>{dateLabel(match.evidence.reduce((date,e) => e.date > date ? e.date : date, match.evidence[0].date))}</span></div>
           <h3 className="text-lg font-medium leading-7"><button type="button" className="text-left underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" onClick={() => {

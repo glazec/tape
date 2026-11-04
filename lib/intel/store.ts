@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gt, inArray, or, sql } from "drizzle-orm";
 import { db } from "@/db/client";
 import { meetings, meetingParts, transcriptSegments, intelSearches } from "@/db/schema";
 import { getComposedMeetingForFollowup } from "@/lib/meeting-composition";
@@ -18,13 +18,25 @@ export async function loadIntelMeetings(workspace: WorkspaceContext, meetingId?:
   )).orderBy(desc(meetings.startedAt), desc(meetings.createdAt), asc(meetings.id)).limit(1001);
   if (rows.length > 1000) throw new IntelCapacityError("Intel currently supports up to 1,000 accessible meetings. This workspace exceeds that limit.");
   if (!rows.length) return [];
-  const segments = await db.select({ id: transcriptSegments.id, meetingId: transcriptSegments.meetingId,
-    speaker: transcriptSegments.speaker, text: transcriptSegments.text, startMs: transcriptSegments.startMs,
-  }).from(transcriptSegments).innerJoin(meetings, eq(meetings.id, transcriptSegments.meetingId))
-    .where(and(inArray(meetings.id, rows.map(m => m.id)), getPersonalReadableMeetingsCondition(workspace),
-      inArray(transcriptSegments.jobId, currentTranscriptJobIdsSubquery(meetings.id))))
-    .orderBy(asc(transcriptSegments.startMs), asc(transcriptSegments.id)).limit(100001);
-  if (segments.length > 100000) throw new IntelCapacityError("Intel currently supports up to 100,000 transcript segments. This workspace exceeds that limit.");
+  // Page the transcript rows so large archives do not hit a response-size limit.
+  // Keep the existing chronological order: stored extraction hashes depend on it.
+  const segments: { id: string; meetingId: string; speaker: string | null; text: string; startMs: number }[] = [];
+  const pageSize = 10000;
+  let cursor: { id: string; startMs: number } | undefined;
+  while (true) {
+    const page = await db.select({ id: transcriptSegments.id, meetingId: transcriptSegments.meetingId,
+      speaker: transcriptSegments.speaker, text: transcriptSegments.text, startMs: transcriptSegments.startMs,
+    }).from(transcriptSegments).innerJoin(meetings, eq(meetings.id, transcriptSegments.meetingId))
+      .where(and(eq(meetings.teamId, workspace.teamId),
+        inArray(meetings.id, rows.map(m => m.id)), getPersonalReadableMeetingsCondition(workspace),
+        inArray(transcriptSegments.jobId, currentTranscriptJobIdsSubquery(meetings.id)),
+        cursor ? or(gt(transcriptSegments.startMs, cursor.startMs),
+          and(eq(transcriptSegments.startMs, cursor.startMs), gt(transcriptSegments.id, cursor.id))) : undefined))
+      .orderBy(asc(transcriptSegments.startMs), asc(transcriptSegments.id)).limit(pageSize);
+    segments.push(...page);
+    if (page.length < pageSize) break;
+    cursor = page[page.length - 1];
+  }
   const byMeeting = new Map<string, typeof segments>();
   for (const segment of segments) {
     const group = byMeeting.get(segment.meetingId) ?? []; group.push(segment); byMeeting.set(segment.meetingId, group);

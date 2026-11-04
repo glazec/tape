@@ -119,3 +119,12 @@ export function validateMatches(value: unknown, input: SearchInput, meetings: In
       evidence: match.segmentIds.map(id => evidence.get(id)!), counterEvidence: match.counterEvidenceIds.map(id => evidence.get(id)!) };
   });
 }
+
+// Evidence membership is needed only on the server, not by the browsing UI.
+export function browserCatalog(catalog: ReturnType<typeof buildCatalog>) {
+  return { ...catalog, people: catalog.people.map(person => {
+    const { segmentIds, ...visible } = person;
+    void segmentIds;
+    return visible;
+  }) };
+}

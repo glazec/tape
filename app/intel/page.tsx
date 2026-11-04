@@ -3,7 +3,7 @@ import { IntelSearch } from "@/components/intel-search";
 import { requireCurrentUser } from "@/lib/auth-guards";
 import { getOrCreateWorkspaceForSessionUser } from "@/lib/workspace";
 import { IntelCapacityError } from "@/lib/intel/content";
-import { buildCatalog } from "@/lib/intel/provenance";
+import { browserCatalog, buildCatalog } from "@/lib/intel/provenance";
 import { loadIntelMeetings, loadIntelHistory } from "@/lib/intel/store";
 export const dynamic = "force-dynamic";
 export default async function IntelPage() {
@@ -24,6 +24,6 @@ export default async function IntelPage() {
   const catalog = buildCatalog(corpus);
   const history = await loadIntelHistory(workspace, corpus);
   return <AppShell activeHref="/intel" wide amplitudeTeamId={workspace.teamId} oneSignalExternalId={workspace.userId} canCreateMeetings={workspace.canCreateMeetings !== false}>
-    <IntelSearch catalog={catalog} initialHistory={history} />
+    <IntelSearch catalog={browserCatalog(catalog)} initialHistory={history} />
   </AppShell>;
 }

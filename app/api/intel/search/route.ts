@@ -1,3 +1,4 @@
+import { browserCatalog } from "@/lib/intel/provenance";
 import { getCurrentUser } from "@/lib/auth";
 import { getOrCreateWorkspaceForSessionUser } from "@/lib/workspace";
 import { assertRequestRateLimit, RequestRateLimitError } from "@/lib/request-rate-limit";
@@ -28,7 +29,7 @@ export async function POST(request: Request) {
     let historyWarning: string | undefined;
     try { historyId = await saveIntelHistory(workspace, parsed.data); }
     catch { historyWarning = "Matches are ready, but this search could not be saved to history."; }
-    return Response.json({ ...result, historyId, historyWarning }, { headers: { "Cache-Control": "private, no-store" } });
+    return Response.json({ ...result, catalog: browserCatalog(result.catalog), historyId, historyWarning }, { headers: { "Cache-Control": "private, no-store" } });
   } catch (error) {
     const credit = providerCreditErrorResponse(error); if (credit) return credit;
     if (error instanceof RequestRateLimitError) return Response.json({ error: error.message }, { status: 429, headers: { "Retry-After": String(error.retryAfterSeconds) } });

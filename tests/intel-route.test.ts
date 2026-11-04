@@ -20,7 +20,7 @@ describe("Intel search route", () => {
     expect(mocks.searchIntel).not.toHaveBeenCalled();
   });
   it("persists input only after successful search and prohibits caching", async () => {
-    mocks.searchIntel.mockResolvedValue({ matches: [], source: { text: "hello" }, coverage: "0 meetings" }); mocks.saveIntelHistory.mockResolvedValue("h1");
+    mocks.searchIntel.mockResolvedValue({ matches: [], catalog: { people: [], intel: [], pending: 0, coverage: "test" }, source: { text: "hello" }, coverage: "0 meetings" }); mocks.saveIntelHistory.mockResolvedValue("h1");
     const response = await POST(request({ kind: "content", text: "hello" }));
     expect(response.status).toBe(200); expect(response.headers.get("cache-control")).toBe("private, no-store");
     expect(mocks.saveIntelHistory).toHaveBeenCalledWith({ userId: "user", teamId: "team" }, { kind: "content", text: "hello" });
@@ -32,7 +32,7 @@ describe("Intel search route", () => {
   });
 });
 it("returns completed matches even when history persistence fails", async () => {
-  mocks.searchIntel.mockResolvedValue({ matches: [], source: { text: "hello" }, coverage: "0 meetings" });
+  mocks.searchIntel.mockResolvedValue({ matches: [], catalog: { people: [], intel: [], pending: 0, coverage: "test" }, source: { text: "hello" }, coverage: "0 meetings" });
   mocks.saveIntelHistory.mockRejectedValue(new Error("Storage unavailable"));
   const response = await POST(request({ kind: "content", text: "hello" }));
   expect(response.status).toBe(200);

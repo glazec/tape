@@ -50,3 +50,21 @@ describe("authorized Intel corpus", () => {
   await expect(loadIntelMeetings(workspace)).rejects.toThrow("1,000"); expect(mocks.select).toHaveBeenCalledTimes(1);
  });
 });
+
+it("loads more than 100,000 segments without losing equal-timestamp page boundaries", async () => {
+ const all = Array.from({ length: 100001 }, (_, i) => ({ ...segments[0], id: String(i).padStart(8, "0"), startMs: 0 }));
+ mocks.select.mockReturnValueOnce(query([row("m1")]));
+ const pages = [];
+ for (let i = 0; i < all.length; i += 10000) {
+   const page = query(all.slice(i, i + 10000)); pages.push(page); mocks.select.mockReturnValueOnce(page);
+ }
+ mocks.select.mockReturnValueOnce(query([]));
+ const corpus = await loadIntelMeetings(workspace);
+ expect(corpus[0].segments).toHaveLength(100001);
+ expect(new Set(corpus[0].segments.map(s => s.id)).size).toBe(100001);
+ const next = new PgDialect().sqlToQuery(pages[1].where.mock.calls[0][0]);
+ expect(next.sql).toContain('"transcript_segments"."id" >');
+ expect(next.params).toContain(all[9999].id);
+ expect(next.sql).toContain('"meetings"."team_id"');
+ expect(next.sql).toContain("latest_replace");
+});

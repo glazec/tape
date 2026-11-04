@@ -76,4 +76,19 @@ describe.skipIf(!enabled)("Intel with real PostgreSQL and caller RLS", () => {
     expect((await state.client!.query("SELECT id FROM intel_searches WHERE id=$1", [newest])).rows).toHaveLength(1);
     expect((await state.client!.query("SELECT count(*)::int AS count FROM intel_searches")).rows[0].count).toBe(50);
   });
+  it("pages a large transcript through real SQL without dropping equal timestamps", async () => {
+    const client = state.client!;
+    await client.query("SAVEPOINT large_intel_archive");
+    try {
+      await client.query("RESET ROLE");
+      await client.query("INSERT INTO transcript_segments(meeting_id,job_id,speaker,start_ms,text) SELECT $1,$2,'Alex',1000,'Page boundary evidence ' || n FROM generate_series(1,10005) n", [m,currentJob]);
+      await asUser(a);
+      const corpus = await loadIntelMeetings(workspace);
+      expect(corpus.map(m => m.id)).toEqual([m]);
+      expect(corpus[0].segments).toHaveLength(10006);
+      expect(new Set(corpus[0].segments.map(s => s.id)).size).toBe(10006);
+      expect(corpus[0].segments.some(s => s.text === "Obsolete content")).toBe(false);
+    } finally { await client.query("ROLLBACK TO SAVEPOINT large_intel_archive"); }
+  });
+
 });
