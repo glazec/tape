@@ -31,3 +31,11 @@ describe("Intel search route", () => {
     expect(mocks.saveIntelHistory).not.toHaveBeenCalled();
   });
 });
+it("returns completed matches even when history persistence fails", async () => {
+  mocks.searchIntel.mockResolvedValue({ matches: [], source: { text: "hello" }, coverage: "0 meetings" });
+  mocks.saveIntelHistory.mockRejectedValue(new Error("Storage unavailable"));
+  const response = await POST(request({ kind: "content", text: "hello" }));
+  expect(response.status).toBe(200);
+  expect((await response.json()).historyWarning).toContain("Matches are ready");
+  expect(mocks.searchIntel).toHaveBeenCalledOnce();
+});

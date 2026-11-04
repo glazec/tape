@@ -14,7 +14,7 @@ export async function loadIntelMeetings(workspace: WorkspaceContext, meetingId?:
   }).from(meetings).where(and(
     eq(meetings.teamId, workspace.teamId), getPersonalReadableMeetingsCondition(workspace),
     eq(meetings.status, "ready"), meetingId ? eq(meetings.id, meetingId) : undefined,
-  )).orderBy(desc(meetings.startedAt), desc(meetings.createdAt)).limit(1001);
+  )).orderBy(desc(meetings.startedAt), desc(meetings.createdAt), asc(meetings.id)).limit(1001);
   if (rows.length > 1000) throw new Error("Intel currently supports up to 1,000 accessible meetings in a workspace.");
   if (!rows.length) return [];
   const segments = await db.select({ id: transcriptSegments.id, meetingId: transcriptSegments.meetingId,
@@ -48,8 +48,7 @@ export async function loadIntelMeetings(workspace: WorkspaceContext, meetingId?:
   }
   return corpus;
 }
-export function resolveInputLabel(input: SearchInput, corpus: IntelMeeting[]) {
-  const catalog = buildCatalog(corpus);
+export function resolveInputLabel(input: SearchInput, corpus: IntelMeeting[], catalog = buildCatalog(corpus)) {
   if (input.kind === "content") return input.text.slice(0, 100);
   if (input.kind === "intel") return catalog.intel.find(i => i.id === input.id)?.text ?? null;
   const people = input.ids.map(id => catalog.people.find(p => p.id === id));
@@ -58,10 +57,11 @@ export function resolveInputLabel(input: SearchInput, corpus: IntelMeeting[]) {
 export async function loadIntelHistory(workspace: WorkspaceContext, corpus: IntelMeeting[]): Promise<HistoryEntry[]> {
   const rows = await db.select().from(intelSearches).where(and(eq(intelSearches.teamId, workspace.teamId), eq(intelSearches.userId, workspace.userId)))
     .orderBy(desc(intelSearches.createdAt)).limit(50);
+  const catalog = buildCatalog(corpus);
   return rows.flatMap(row => {
     const input = searchInputSchema.safeParse(row.input);
     if (!input.success) return [];
-    const label = resolveInputLabel(input.data, corpus);
+    const label = resolveInputLabel(input.data, corpus, catalog);
     // Selection labels are always rebuilt from currently authorized sources.
     return label ? [{ id: row.id, input: input.data, label, createdAt: row.createdAt.toISOString() }] : [];
   });

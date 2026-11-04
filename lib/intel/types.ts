@@ -41,7 +41,7 @@ export const rankingSchema = z.strictObject({
 export type Match = z.infer<typeof rankingSchema>["matches"][number] & {
   title: string; detail: string; evidence: Evidence[]; counterEvidence: Evidence[];
 };
-export type SearchResult = { matches: Match[]; source: { text: string; url?: string }; coverage: string; historyId?: string };
+export type SearchResult = { matches: Match[]; source: { text: string; url?: string }; coverage: string; historyId?: string; historyWarning?: string; catalog?: IntelCatalog };
 export type HistoryEntry = { id: string; input: SearchInput; label: string; createdAt: string };
 export type IntelCatalog = { intel: IntelCard[]; people: Person[]; coverage: string; pending: number };
 export const relevanceLabels = { expressed_interest: "Expressed interest", related_focus: "Related focus", possible_synergy: "Possible synergy" };

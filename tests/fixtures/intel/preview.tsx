@@ -17,10 +17,16 @@ const catalog: IntelCatalog = { people, pending: 0, coverage: "Fictional fixture
  { id: "i3", kind: "opinion", importance: "normal", text: "Distribution is becoming a more durable advantage than model performance.", speaker: "Alex Chen", date: "2026-10-28T12:00:00Z", evidence: [evidence], speakerSegmentId: "s1", segmentIds: ["s1"] },
 ] };
 const history: HistoryEntry[] = [{ id: "h0", label: "Enterprise inference", input: { kind: "content", text: "Enterprise inference" }, createdAt: evidence.date }, { id: "h2", label: "Who is building in Japan?", input: { kind: "content", text: "Who is building in Japan?" }, createdAt: evidence.date }];
+let currentCatalog = catalog;
+const newPerson: Person = { ...people[2], id: "new-person", name: "Jordan Lee", detail: "Newly indexed meeting" };
+const newIntel = { ...catalog.intel[0], id: "new-intel", text: "A newly indexed opportunity for enterprise inference." };
 window.fetch = async (_url, init) => {
  if (init?.method === "DELETE") return Response.json({ cleared: true });
  const input = JSON.parse(String(init?.body));
  if (input.text?.includes("fail")) return Response.json({ error: "Could not read this link. Paste the content to find interested people." }, { status: 422 });
- return Response.json({ historyId: crypto.randomUUID(), source: { text: input.text ?? "Selected intel" }, coverage: catalog.coverage, matches: [{ id: input.kind === "person" ? "i1" : "maya", type: input.kind === "person" ? "intel" : "person", title: input.kind === "person" ? catalog.intel[0].text : "Maya Patel", detail: "Infrastructure roundtable", relevance: "possible_synergy", reason: "Maya described security reviews as a barrier to enterprise adoption. Alex’s search for enterprise inference partners could be relevant to that problem.", caveat: "This is a suggested connection. Willingness to collaborate is unknown.", segmentIds: ["s1"], counterEvidenceIds: [], evidence: [mayaEvidence, evidence], counterEvidence: [] }] });
+ if (input.text === "newly indexed") currentCatalog = { ...catalog, people: [...people, newPerson], intel: [...catalog.intel, newIntel] };
+ const targetPerson = currentCatalog.people.find(p => p.id === "new-person") ?? people[2];
+ const targetIntel = currentCatalog.intel.find(i => i.id === "new-intel") ?? catalog.intel[0];
+ return Response.json({ historyId: crypto.randomUUID(), source: { text: input.text ?? "Selected intel" }, coverage: catalog.coverage, catalog: currentCatalog, matches: [{ id: input.kind === "person" ? targetIntel.id : targetPerson.id, type: input.kind === "person" ? "intel" : "person", title: input.kind === "person" ? targetIntel.text : targetPerson.name, detail: "Infrastructure roundtable", relevance: "possible_synergy", reason: "Maya described security reviews as a barrier to enterprise adoption. Alex’s search for enterprise inference partners could be relevant to that problem.", caveat: "This is a suggested connection. Willingness to collaborate is unknown.", segmentIds: ["s1"], counterEvidenceIds: [], evidence: [mayaEvidence, evidence], counterEvidence: [] }] });
 };
 createRoot(document.getElementById("root")!).render(<AppShell activeHref="/intel" wide><IntelSearch catalog={catalog} initialHistory={history} /><p className="fixed bottom-2 right-3 rounded bg-background px-2 py-1 text-[10px] text-muted-foreground">Fictional review data</p></AppShell>);

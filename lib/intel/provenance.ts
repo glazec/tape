@@ -34,11 +34,12 @@ export function personId(meetingId: string, speaker: string) {
 }
 export function buildCatalog(meetings: IntelMeeting[], now = new Date()) {
   const since = new Date(now); since.setMonth(since.getMonth() - 6);
+  const sourceMeetings = new Map(meetings.flatMap(m => m.segments.map(s => [s.id, m] as const)));
   const people = new Map<string, Person>();
   const intel: IntelCard[] = [];
   for (const meeting of meetings) {
     for (const segment of meeting.segments) {
-      if (!segment.speaker || /^(unknown|speaker)[\s_\d]*$/i.test(segment.speaker)) continue;
+      if (!segment.speaker || /^(?:unknown(?:\s+speaker)?|speaker(?:[\s_-]*(?:\d+|[a-z]))?)$/i.test(segment.speaker.trim())) continue;
       const id = personId(meeting.id, segment.speaker);
       let person = people.get(id);
       if (!person) {
@@ -51,13 +52,16 @@ export function buildCatalog(meetings: IntelMeeting[], now = new Date()) {
     const connectionIds = getCurrentMeetingConnectionIds(meeting);
     for (const [index, connection] of getCurrentMeetingConnections(meeting).entries()) {
       if (connection.kind !== "person") continue;
-      const id = `contact:${meeting.id}:${connectionIds[index]}`;
-      people.set(id, { id, name: connection.name ?? "Unnamed contact", detail: [connection.company, connection.title, connection.context].filter(Boolean).join(" · "), kind: "mentioned", relationship: connection.relationship, sourceDate: meeting.date, sourceMeetingId: meetings.find(m => m.segments.some(s => s.id === connection.speakerSegmentId))?.id ?? meeting.id, sourceSegmentId: connection.speakerSegmentId, meetingIds: [meeting.id], segmentIds: connection.evidence.map(e => e.segmentId) });
+      const anchorMeeting = sourceMeetings.get(connection.speakerSegmentId) ?? meeting;
+      const id = `contact:${anchorMeeting.id}:${createHash("sha256").update(JSON.stringify([connectionIds[index], connection])).digest("hex")}`;
+      const evidenceMeetings = [...new Set(connection.evidence.flatMap(e => { const source = sourceMeetings.get(e.segmentId); return source ? [source.id] : []; }))];
+      people.set(id, { id, name: connection.name ?? "Unnamed contact", detail: [connection.company, connection.title, connection.context].filter(Boolean).join(" · "), kind: "mentioned", relationship: connection.relationship, sourceDate: anchorMeeting.date, sourceMeetingId: anchorMeeting.id, sourceSegmentId: connection.speakerSegmentId, meetingIds: evidenceMeetings, segmentIds: connection.evidence.map(e => e.segmentId) });
     }
     const extracted = currentIntel(meeting);
+    const sourceHash = extracted ? intelSourceHash(meeting) : "";
     if (new Date(meeting.date) >= since) {
       for (const item of extracted?.items ?? []) {
-        intel.push({ ...item, id: `intel:${meeting.id}:${createHash("sha256").update(JSON.stringify([intelSourceHash(meeting), item])).digest("hex")}`, date: meeting.date,
+        intel.push({ ...item, id: `intel:${meeting.id}:${createHash("sha256").update(JSON.stringify([sourceHash, item])).digest("hex")}`, date: meeting.date,
           speaker: meeting.segments.find(s => s.id === item.speakerSegmentId)!.speaker!,
           evidence: item.segmentIds.map(id => evidenceFor(meeting, id)) });
       }
@@ -86,7 +90,7 @@ export function buildMatchingContext(meetings: IntelMeeting[], people: Person[],
 export function validateMatches(value: unknown, input: SearchInput, meetings: IntelMeeting[]): Match[] {
   const result = rankingSchema.parse(value);
   const catalog = buildCatalog(meetings);
-  const evidence = new Map(meetings.flatMap(m => m.segments.map(s => [s.id, evidenceFor(m, s.id)] as const)));
+  const evidence = new Map(meetings.flatMap(m => m.segments.map(s => [s.id, { ...s, meetingId: m.id, meetingTitle: m.title, date: m.date }] as const)));
   const seen = new Set<string>();
   return result.matches.map(match => {
     const target = match.type === "person" ? catalog.people.find(p => p.id === match.id) : catalog.intel.find(i => i.id === match.id);

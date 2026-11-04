@@ -10,10 +10,10 @@ import type { IntelMeeting, SearchInput } from "./types";
 
 export async function searchIntel(workspace: WorkspaceContext, input: SearchInput, corpus: IntelMeeting[]) {
   const catalog = buildCatalog(corpus);
-  const label = resolveInputLabel(input, corpus);
+  const label = resolveInputLabel(input, corpus, catalog);
   if (!label) throw new IntelInputError("This selection is no longer available. Choose it again.");
   const source = input.kind === "content" ? await resolveIntelContent(input.text) : { text: label };
-  if (!catalog.people.length) return { matches: [], source, coverage: catalog.coverage };
+  if (!catalog.people.length) return { matches: [], source, coverage: catalog.coverage, catalog };
   const context = buildMatchingContext(corpus, catalog.people);
   const payload = JSON.stringify({ input, source, people: catalog.people, intel: catalog.intel, meetings: context });
   if (payload.length > 1800000) throw new IntelInputError("There is too much meeting context for one search. No incomplete match was generated.");
@@ -34,5 +34,5 @@ export async function searchIntel(workspace: WorkspaceContext, input: SearchInpu
   if (sourceSnapshot !== freshSnapshot) {
     throw new IntelInputError("Meeting access or content changed during this search. Please try again.");
   }
-  return { matches: validateMatches(parsed, input, fresh), source, coverage: buildCatalog(fresh).coverage };
+  return { matches: validateMatches(parsed, input, fresh), source, coverage: freshCatalog.coverage, catalog: freshCatalog };
 }

@@ -31,3 +31,22 @@ it("rejects a different page on the requested host", async () => {
   vi.stubGlobal("fetch", vi.fn().mockResolvedValue(Response.json({ results: [{ url: "https://example.com/", text: "This is a homepage rather than the article the user requested. ".repeat(3) }] })));
   await expect(resolveIntelContent("https://example.com/article")).rejects.toThrow("Could not read");
 });
+it("rejects a long article instead of hiding a later qualification", async () => {
+  vi.stubEnv("EXA_API_KEY", "test");
+  const fetch = vi.fn().mockResolvedValue(Response.json({ results: [{ url: "https://example.com/article", text: "a".repeat(20000) + "This is no longer true." }] }));
+  vi.stubGlobal("fetch", fetch);
+  await expect(resolveIntelContent("https://example.com/article")).rejects.toThrow("too long to read in full");
+  expect(JSON.parse(fetch.mock.calls[0][1].body).text.maxCharacters).toBe(20001);
+});
+it("rejects long X posts instead of trimming them", async () => {
+  vi.stubEnv("EXA_API_KEY", ""); vi.stubEnv("TWITTERAPI_IO_API_KEY", "test");
+  vi.stubGlobal("fetch", vi.fn().mockResolvedValue(Response.json({ tweets: [{ id: "123", text: "a".repeat(20001) }] })));
+  await expect(resolveIntelContent("https://x.com/a/status/123")).rejects.toThrow("too long to read in full");
+});
+it("cancels oversized provider streams before buffering the whole response", async () => {
+  vi.stubEnv("EXA_API_KEY", "test");
+  const cancel = vi.fn();
+  vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(new ReadableStream({ pull(controller) { controller.enqueue(new Uint8Array(2100000)); }, cancel }))));
+  await expect(resolveIntelContent("https://example.com/article")).rejects.toThrow("Could not read");
+  expect(cancel).toHaveBeenCalledOnce();
+});

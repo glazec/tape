@@ -30,12 +30,14 @@ describe("authorized Intel corpus", () => {
  });
  it("reuses canonical merged timing and keeps source evidence on its original meeting", async () => {
   const source = { title: "m1", startedAt: "2020-01-01T00:00:00.000Z", segments: [segments[1], segments[0]] };
-  mocks.select.mockReturnValueOnce(query([row("m1", saved(source)), row("m2")])).mockReturnValueOnce(query(segments)).mockReturnValueOnce(query([{ meetingId: "m1", sourceMeetingId: "m2" }]));
+  mocks.select.mockReturnValueOnce(query([{ ...row("m1", saved(source)), createdAt: new Date("2020-01-01") }, row("m2", saved({ title: "m2", startedAt: now.toISOString(), segments: [segments[1]] }))])).mockReturnValueOnce(query(segments)).mockReturnValueOnce(query([{ meetingId: "m1", sourceMeetingId: "m2" }]));
   mocks.getComposedMeetingForFollowup.mockResolvedValue({ status: "ready", followupSource: source });
   const corpus = await loadIntelMeetings(workspace);
   expect(corpus[0].followupSource).toEqual(source);
+  expect(buildCatalog(corpus).people.filter(p => p.kind === "mentioned")).toHaveLength(1);
   const contact = buildCatalog(corpus).people.find(p => p.kind === "mentioned");
   expect(contact?.name).toBe("Ben"); expect(contact?.sourceMeetingId).toBe("m2");
+  expect(contact?.sourceDate).toBe(now.toISOString()); expect(contact?.meetingIds).toEqual(["m2"]);
  });
  it("drops combined followups when even one source is outside personal access", async () => {
   const source = { title: "m1", startedAt: now.toISOString(), segments };

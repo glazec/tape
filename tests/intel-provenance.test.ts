@@ -11,8 +11,8 @@ describe("Intel provenance and identities", () => {
     expect(buildCatalog([meeting("m1", "a@example.com"), meeting("m2", "A@example.com")]).people).toHaveLength(1);
     expect(buildCatalog([meeting("m1", "a@example.com"), meeting("m2", "b@example.com")]).people).toHaveLength(2);
   });
-  it("does not fabricate a person from a generic speaker", () => {
-    expect(buildCatalog([meeting("m1", "Speaker 1")]).people).toHaveLength(0);
+  it.each(["Speaker 1", "Unknown speaker", "Speaker A", " speaker_0 "])("does not fabricate a person from generic label %s", label => {
+    expect(buildCatalog([meeting("m1", label)]).people).toHaveLength(0);
   });
   it("rejects unknown segments and attribution absent from citations", () => {
     expect(() => validateExtraction({ items: [{ ...item, segmentIds: ["missing"] }] }, meeting())).toThrow();

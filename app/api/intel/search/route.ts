@@ -24,8 +24,11 @@ export async function POST(request: Request) {
     await assertRequestRateLimit({ limit: 10, scope: "intel_search", subject: `${workspace.teamId}:${workspace.userId}`, windowMs: 60000 });
     const corpus = await loadIntelMeetings(workspace);
     const result = await searchIntel(workspace, parsed.data, corpus);
-    const historyId = await saveIntelHistory(workspace, parsed.data);
-    return Response.json({ ...result, historyId }, { headers: { "Cache-Control": "private, no-store" } });
+    let historyId: string | undefined;
+    let historyWarning: string | undefined;
+    try { historyId = await saveIntelHistory(workspace, parsed.data); }
+    catch { historyWarning = "Matches are ready, but this search could not be saved to history."; }
+    return Response.json({ ...result, historyId, historyWarning }, { headers: { "Cache-Control": "private, no-store" } });
   } catch (error) {
     const credit = providerCreditErrorResponse(error); if (credit) return credit;
     if (error instanceof RequestRateLimitError) return Response.json({ error: error.message }, { status: 429, headers: { "Retry-After": String(error.retryAfterSeconds) } });

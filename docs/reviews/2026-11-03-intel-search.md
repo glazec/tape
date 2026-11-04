@@ -20,3 +20,9 @@ Astra reviewed workflow, evidence accuracy, access control and desktop/mobile sc
 6. TwitterAPI.io returned the exact requested public post ID with 6,451 characters. The supplied credential was used only for that request and was not committed. The attempted Exa path did not retrieve this example post.
 
 The synthetic sample does not establish broad accuracy or 90 percent parity with Granola or Otter. Production deployment, authenticated live workflow validation and a user judged relevance evaluation remain outstanding. Deployment requires migration 0066, Inngest registration and server provider configuration documented in `docs/setup.md`.
+
+## Followup review
+
+Removed the sidebar, list and tab baseline dividers, retaining whitespace, the search field outline and active tab indication. The review fixed silent truncation of long links, broken continuation into newly indexed results, loss of successful matches after history persistence failure, incorrect merged contact dates and duplicate merged contacts. It also removed repeated catalog construction and quadratic evidence hydration, excluded additional generic speaker labels, and separated history deletion errors from search retries.
+
+Validation: 115 focused and regression tests passed, including four actual PostgreSQL integration checks. All 67 migrations applied to the isolated local database. A separate live integration run passed all five checks, including real Jev matching and independent verification against synthetic authorized transcripts. Database tests exercised current transcript selection, JSONB readback, private history RLS and pruning. Browser checks passed on desktop and mobile, including newly indexed person and intel continuation and history deletion failure recovery. TypeScript, focused lint and production build passed. Astra rechecked the substantive fixes and found no remaining blocker. Production deployment remains unchanged.
