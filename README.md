@@ -24,7 +24,7 @@ The dashboard combines weekly activity, calendar capture status, and a searchabl
 
 ### Review the complete record
 
-Every meeting includes My notes, a private writing area for each signed in reader. Notes save automatically during a meeting and remain editable afterward. They are separate from generated summaries and shared transcripts.
+Every meeting includes My notes, a private writing area for each signed in reader. Notes save automatically during a meeting and remain editable afterward. They are separate from generated summaries and shared transcripts. Notes support Markdown with a formatted Preview. Pasting formatted text or tables preserves their structure as Markdown; spreadsheet rows copied as tab separated text also become tables.
 
 Questions ending in `?` or `？` receive an answer beneath them after a short pause, using only the available meeting transcript. Factual answers include supporting transcript sources. You can revise the question, use the regenerate icon beside the source label, or type directly in the answer. Answer edits save automatically; manually edited answers are protected from automatic replacement.
 
