@@ -5,6 +5,7 @@ import { getComposedMeetingForFollowup } from "@/lib/meeting-composition";
 import { currentTranscriptJobIdsSubquery } from "@/lib/current-transcript-job";
 import { getPersonalReadableMeetingsCondition } from "@/lib/meeting-access-policy";
 import type { WorkspaceContext } from "@/lib/workspace";
+import { IntelCapacityError } from "./content";
 import { buildCatalog } from "./provenance";
 import { searchInputSchema, type IntelMeeting, type SearchInput, type HistoryEntry } from "./types";
 
@@ -15,7 +16,7 @@ export async function loadIntelMeetings(workspace: WorkspaceContext, meetingId?:
     eq(meetings.teamId, workspace.teamId), getPersonalReadableMeetingsCondition(workspace),
     eq(meetings.status, "ready"), meetingId ? eq(meetings.id, meetingId) : undefined,
   )).orderBy(desc(meetings.startedAt), desc(meetings.createdAt), asc(meetings.id)).limit(1001);
-  if (rows.length > 1000) throw new Error("Intel currently supports up to 1,000 accessible meetings in a workspace.");
+  if (rows.length > 1000) throw new IntelCapacityError("Intel currently supports up to 1,000 accessible meetings. This workspace exceeds that limit.");
   if (!rows.length) return [];
   const segments = await db.select({ id: transcriptSegments.id, meetingId: transcriptSegments.meetingId,
     speaker: transcriptSegments.speaker, text: transcriptSegments.text, startMs: transcriptSegments.startMs,
@@ -23,7 +24,7 @@ export async function loadIntelMeetings(workspace: WorkspaceContext, meetingId?:
     .where(and(inArray(meetings.id, rows.map(m => m.id)), getPersonalReadableMeetingsCondition(workspace),
       inArray(transcriptSegments.jobId, currentTranscriptJobIdsSubquery(meetings.id))))
     .orderBy(asc(transcriptSegments.startMs), asc(transcriptSegments.id)).limit(100001);
-  if (segments.length > 100000) throw new Error("The transcript collection is too large for Intel. No partial search was run.");
+  if (segments.length > 100000) throw new IntelCapacityError("Intel currently supports up to 100,000 transcript segments. This workspace exceeds that limit.");
   const byMeeting = new Map<string, typeof segments>();
   for (const segment of segments) {
     const group = byMeeting.get(segment.meetingId) ?? []; group.push(segment); byMeeting.set(segment.meetingId, group);

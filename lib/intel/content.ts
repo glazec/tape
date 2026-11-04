@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 export class IntelInputError extends Error {}
+export class IntelCapacityError extends IntelInputError {}
 export function parseContentUrl(text: string) {
   if (!/^[a-z][a-z\d+.-]*:\/\//i.test(text)) return null;
   let url: URL;
