@@ -1,12 +1,9 @@
-import { browserCatalog } from "@/lib/intel/provenance";
+import { z } from "zod";
+import { enqueueIntelSearch, readIntelJob } from "@/lib/intel/jobs";
 import { getCurrentUser } from "@/lib/auth";
 import { getOrCreateWorkspaceForSessionUser } from "@/lib/workspace";
 import { assertRequestRateLimit, RequestRateLimitError } from "@/lib/request-rate-limit";
-import { providerCreditErrorResponse } from "@/lib/provider-credit";
 import { searchInputSchema } from "@/lib/intel/types";
-import { loadIntelMeetings, saveIntelHistory } from "@/lib/intel/store";
-import { searchIntel } from "@/lib/intel/search";
-import { IntelInputError } from "@/lib/intel/content";
 export const runtime = "nodejs";
 export const maxDuration = 600;
 export async function POST(request: Request) {
@@ -23,17 +20,18 @@ export async function POST(request: Request) {
   const workspace = await getOrCreateWorkspaceForSessionUser(user);
   try {
     await assertRequestRateLimit({ limit: 10, scope: "intel_search", subject: `${workspace.teamId}:${workspace.userId}`, windowMs: 60000 });
-    const corpus = await loadIntelMeetings(workspace);
-    const result = await searchIntel(workspace, parsed.data, corpus);
-    let historyId: string | undefined;
-    let historyWarning: string | undefined;
-    try { historyId = await saveIntelHistory(workspace, parsed.data); }
-    catch { historyWarning = "Matches are ready, but this search could not be saved to history."; }
-    return Response.json({ ...result, catalog: browserCatalog(result.catalog), historyId, historyWarning }, { headers: { "Cache-Control": "private, no-store" } });
+    return Response.json(await enqueueIntelSearch(workspace, parsed.data), { status: 202, headers: { "Cache-Control": "private, no-store" } });
   } catch (error) {
-    const credit = providerCreditErrorResponse(error); if (credit) return credit;
     if (error instanceof RequestRateLimitError) return Response.json({ error: error.message }, { status: 429, headers: { "Retry-After": String(error.retryAfterSeconds) } });
-    if (error instanceof IntelInputError) return Response.json({ error: error.message }, { status: 422 });
     return Response.json({ error: "Could not complete this search. Please try again." }, { status: 502 });
   }
+}
+
+export async function GET(request: Request) {
+  const user = await getCurrentUser();
+  if (!user) return Response.json({ error: "Unauthorized" }, { status: 401 });
+  const id = new URL(request.url).searchParams.get("id");
+  if (id !== null && !z.uuid().safeParse(id).success) return Response.json({ error: "Invalid search" }, { status: 400 });
+  const job = await readIntelJob(await getOrCreateWorkspaceForSessionUser(user), id ?? undefined);
+  return Response.json({ job }, { status: id && !job ? 404 : 200, headers: { "Cache-Control": "private, no-store" } });
 }

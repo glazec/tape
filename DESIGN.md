@@ -387,6 +387,8 @@ Share dialogs list participants and recipients separately from inherent workspac
 
 ## Intel search
 
+Show the search box before loading starting points. While matching, show verified batch progress when known. Closing the browser leaves the search running; reopening Intel restores its status or result.
+
 Keep search history alone in the left sidebar. Separate the sidebar and list items with whitespace instead of divider lines; retain the search field outline and active tab indicator. The main surface starts with one search bar and Intel and People tabs beneath it. Intel defaults to importance, with newest first available. Use the existing warm light canvas, graphite text and restrained coral search action. Avoid score dashboards and invented interest percentages.
 
 A selected intel item or pasted content finds interested people. Selecting a person finds relevant intel and connections. Results support continued selection. Confirm ambiguous identities using meeting title, date and a source link; do not merge equal names silently. Distinguish direct participants from contacts mentioned in meetings. Preserve source dates and show evidence on expansion. Display unsuccessful extraction as a recoverable error with paste content available, never a successful URL match with missing content. History is collapsible on mobile.

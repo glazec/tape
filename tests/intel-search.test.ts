@@ -42,7 +42,9 @@ describe("Intel matching boundaries", () => {
 it("searches all batches and rechecks the full archive after verification", async () => {
  const corpus = Array.from({ length: 3 }, (_,i) => ({ ...m, id: `m${i}`, segments: [{ ...m.segments[0], id: `s${i}`, speaker: `Person ${i}`, text: "Inference evidence ".repeat(20000) }] }));
  mocks.loadIntelMeetings.mockResolvedValue(corpus);
- const result = await searchIntel(workspace, { kind: "content", text: "Inference" }, corpus);
+ const progress = vi.fn();
+ const result = await searchIntel(workspace, { kind: "content", text: "Inference" }, corpus, progress);
+ expect(progress.mock.calls).toEqual([[0,6], [1,6], [2,6], [3,6], [4,6], [5,6], [6,6]]);
  expect(mocks.createOpenRouterChatCompletion).toHaveBeenCalledTimes(3);
  expect(mocks.verifyIntelClaims).toHaveBeenCalledTimes(3);
  expect(result.catalog.people).toHaveLength(3);

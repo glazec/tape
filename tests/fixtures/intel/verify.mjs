@@ -1,7 +1,7 @@
 import { chromium } from "playwright";
 import assert from "node:assert/strict";
 import { mkdir } from "node:fs/promises";
-const browser = await chromium.launch({ headless: true });
+const browser = await chromium.launch({ channel: "chrome", headless: true });
 const page = await browser.newPage({ viewport: { width: 1440, height: 1100 } });
 const errors = []; page.on("pageerror", error => errors.push(error.message));
 await page.goto("http://127.0.0.1:8789");
@@ -50,5 +50,29 @@ await page.getByRole("alert").filter({ hasText: "Could not clear history" }).wai
 assert.equal(await page.getByRole("button", { name: "Try again", exact: true }).count(), 0);
 await page.getByRole("heading", { name: "Jordan Lee" }).waitFor();
 assert.deepEqual(errors, []);
+await page.getByRole("button", { name: "New search", exact: true }).first().click();
+await page.getByRole("textbox").fill("finish while away");
+await page.getByRole("textbox").press("Enter");
+await page.getByText("Matching and checking evidence · 1 of 2 steps").waitFor();
+assert.equal(await page.getByRole("progressbar").getAttribute("value"), "1");
 await browser.close();
+// The fixture worker must finish while there is no browser available to poll it.
+const deadline = Date.now() + 10000;
+let saved;
+do {
+  saved = (await (await fetch("http://127.0.0.1:8789/api/intel/search")).json()).job;
+  if (saved.status === "complete") break;
+  await new Promise(resolve => setTimeout(resolve, 200));
+} while (Date.now() < deadline);
+assert.equal(saved.status, "complete");
+assert.equal(saved.input.text, "finish while away");
+const returned = await chromium.launch({ channel: "chrome", headless: true });
+const reopened = await returned.newPage();
+let submissions = 0;
+reopened.on("request", req => { if (req.method() === "POST" && req.url().includes("/api/intel/search")) submissions++; });
+await reopened.goto("http://127.0.0.1:8789");
+await reopened.getByRole("heading", { name: "Jordan Lee" }).or(reopened.getByRole("heading", { name: "Maya Patel" })).waitFor();
+assert.equal(await reopened.getByRole("textbox").inputValue(), "finish while away");
+assert.equal(submissions, 0);
+await returned.close();
 console.log("Verified desktop and mobile, source disclosure, intel to person to intel, explicit identity selection, recoverable errors, Escape, newly indexed result continuation, and no overflow.");

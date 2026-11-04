@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, gt, inArray, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gt, inArray, or } from "drizzle-orm";
 import { db } from "@/db/client";
 import { meetings, meetingParts, transcriptSegments, intelSearches } from "@/db/schema";
 import { getComposedMeetingForFollowup } from "@/lib/meeting-composition";
@@ -67,21 +67,14 @@ export function resolveInputLabel(input: SearchInput, corpus: IntelMeeting[], ca
   const people = input.ids.map(id => catalog.people.find(p => p.id === id));
   return people.every(Boolean) ? [...new Set(people.map(p => p!.name))].join(", ") : null;
 }
-export async function loadIntelHistory(workspace: WorkspaceContext, corpus: IntelMeeting[]): Promise<HistoryEntry[]> {
-  const rows = await db.select().from(intelSearches).where(and(eq(intelSearches.teamId, workspace.teamId), eq(intelSearches.userId, workspace.userId)))
+export async function loadIntelHistory(workspace: WorkspaceContext, corpus: IntelMeeting[], catalog = buildCatalog(corpus)): Promise<HistoryEntry[]> {
+  const rows = await db.select({ id: intelSearches.id, input: intelSearches.input, status: intelSearches.status, createdAt: intelSearches.createdAt }).from(intelSearches).where(and(eq(intelSearches.teamId, workspace.teamId), eq(intelSearches.userId, workspace.userId)))
     .orderBy(desc(intelSearches.createdAt)).limit(50);
-  const catalog = buildCatalog(corpus);
   return rows.flatMap(row => {
     const input = searchInputSchema.safeParse(row.input);
     if (!input.success) return [];
     const label = resolveInputLabel(input.data, corpus, catalog);
     // Selection labels are always rebuilt from currently authorized sources.
-    return label ? [{ id: row.id, input: input.data, label, createdAt: row.createdAt.toISOString() }] : [];
+    return label ? [{ id: row.id, input: input.data, label, ...(row.status ? { savedJob: true } : {}), createdAt: row.createdAt.toISOString() }] : [];
   });
-}
-export async function saveIntelHistory(workspace: WorkspaceContext, input: SearchInput) {
-  const [saved] = await db.insert(intelSearches).values({ teamId: workspace.teamId, userId: workspace.userId, input }).returning({ id: intelSearches.id });
-  await db.delete(intelSearches).where(and(eq(intelSearches.teamId, workspace.teamId), eq(intelSearches.userId, workspace.userId),
-    sql`${intelSearches.id} in (select id from intel_searches where team_id = ${workspace.teamId} and user_id = ${workspace.userId} order by created_at desc offset 50)`));
-  return saved.id;
 }

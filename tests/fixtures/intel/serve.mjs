@@ -50,7 +50,23 @@ await writeFile(
   '<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Tape Intel review</title><link rel="stylesheet" href="/preview.css"><style>body{font-family:Arial,sans-serif}</style><div id="root"></div><script type="module" src="/preview.js"></script></html>',
 );
 if (process.env.FIXTURE_BUILD_ONLY === "1") process.exit(0);
+const jobs = new Map();
 createServer(async (req, res) => {
+  if (req.url.startsWith("/api/intel/search")) {
+    res.setHeader("Content-Type", "application/json");
+    if (req.method === "POST") {
+      let body = "";
+      for await (const chunk of req) body += chunk;
+      const { input, result } = JSON.parse(body);
+      const id = crypto.randomUUID();
+      const job = { id, input, status: "running", total: 2, completed: 1, createdAt: new Date().toISOString() };
+      jobs.set(id, job);
+      setTimeout(() => Object.assign(job, { status: "complete", completed: 2, result }), input.text === "finish while away" ? 4000 : 50);
+      res.writeHead(202); res.end(JSON.stringify({ id })); return;
+    }
+    const id = new URL(req.url, "http://fixture").searchParams.get("id");
+    res.end(JSON.stringify({ job: id ? jobs.get(id) : [...jobs.values()].at(-1) ?? null })); return;
+  }
   if (req.url === "/brand/tape-lockup.svg") { res.setHeader("Content-Type", "image/svg+xml"); res.end(await readFile(path.join(root, "public/brand/tape-lockup.svg"))); return; }
   const file =
     req.url === "/preview.js"

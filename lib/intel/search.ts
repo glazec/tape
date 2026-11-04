@@ -11,7 +11,7 @@ import { loadIntelMeetings, resolveInputLabel } from "./store";
 import { IntelInputError, resolveIntelContent } from "./content";
 import { rankingSchema, type IntelMeeting, type Match, type SearchInput } from "./types";
 
-export async function searchIntel(workspace: WorkspaceContext, input: SearchInput, corpus: IntelMeeting[]) {
+export async function searchIntel(workspace: WorkspaceContext, input: SearchInput, corpus: IntelMeeting[], onProgress?: (completed: number, total: number) => Promise<void>) {
   const catalog = buildCatalog(corpus);
   const label = resolveInputLabel(input, corpus, catalog);
   if (!label) throw new IntelInputError("This selection is no longer available. Choose it again.");
@@ -24,6 +24,9 @@ export async function searchIntel(workspace: WorkspaceContext, input: SearchInpu
   const batches = buildSearchBatches(retrieved, buildCatalog(retrieved), input, source);
   await assertWorkspaceHasProviderCredit(workspace);
   const candidates: Match[][] = new Array(batches.length);
+  let completed = 0;
+  const totalSteps = batches.length * 2;
+  await onProgress?.(0, totalSteps);
   let nextBatch = 0;
   let failed = false;
   async function worker() {
@@ -51,7 +54,9 @@ export async function searchIntel(workspace: WorkspaceContext, input: SearchInpu
           return [];
         }
       });
+      await onProgress?.(++completed, totalSteps);
       candidates[index] = await verifyIntelClaims(validated, batch, corpus[0].id);
+      await onProgress?.(++completed, totalSteps);
     }
   }
   await Promise.all(Array.from({ length: Math.min(3, batches.length) }, () => worker().catch(error => { failed = true; throw error; })));

@@ -12,7 +12,9 @@ vi.mock("@/db/client", async () => {
   await state.client.connect();
   return { db: drizzle(state.client, { schema }) };
 });
-import { loadIntelMeetings, loadIntelHistory, saveIntelHistory } from "@/lib/intel/store";
+import { loadIntelMeetings, loadIntelHistory } from "@/lib/intel/store";
+vi.mock("@/inngest/client", () => ({ inngest: { send: vi.fn() } }));
+import { enqueueIntelSearch, executeIntelSearch, readIntelJob } from "@/lib/intel/jobs";
 import { searchIntel } from "@/lib/intel/search";
 import { buildCatalog, intelSourceHash, currentIntel } from "@/lib/intel/provenance";
 const team = "11111111-1111-4111-8111-111111111111";
@@ -58,7 +60,7 @@ describe.skipIf(!enabled)("Intel with real PostgreSQL and caller RLS", () => {
     expect(buildCatalog([readback]).intel[0].text).toBe("Alex needs inference partners");
   });
   it("persists private history and blocks another member at the database boundary", async () => {
-    await saveIntelHistory(workspace, { kind: "content", text: "Inference partners" });
+    await enqueueIntelSearch(workspace, { kind: "content", text: "Inference partners" });
     expect(await loadIntelHistory(workspace, await loadIntelMeetings(workspace))).toHaveLength(1);
     await asUser(b);
     expect((await state.client!.query("SELECT * FROM intel_searches")).rows).toHaveLength(0);
@@ -72,9 +74,62 @@ describe.skipIf(!enabled)("Intel with real PostgreSQL and caller RLS", () => {
   }, 180000);
   it("limits history to fifty entries using the real pruning query", async () => {
     await state.client!.query("INSERT INTO intel_searches(team_id,user_id,input,created_at) SELECT $1,$2,jsonb_build_object('kind','content','text','Older idea ' || n),now()-interval '1 day' FROM generate_series(1,51) n", [team,a]);
-    const newest = await saveIntelHistory(workspace, { kind: "content", text: "Newest idea" });
+    const {id: newest} = await enqueueIntelSearch(workspace, { kind: "person", ids: ["missing"] });
+    await executeIntelSearch(workspace, newest);
     expect((await state.client!.query("SELECT id FROM intel_searches WHERE id=$1", [newest])).rows).toHaveLength(1);
-    expect((await state.client!.query("SELECT count(*)::int AS count FROM intel_searches")).rows[0].count).toBe(50);
+    expect((await state.client!.query("SELECT count(*)::int AS count FROM intel_searches WHERE status IS DISTINCT FROM 'queued'")).rows[0].count).toBe(50);
+  });
+  it("runs a queued job without a browser, resumes the saved result, and blocks changed evidence", async () => {
+    const w = { ...workspace, userId: b };
+    await asUser(b);
+    const { id } = await enqueueIntelSearch(w, { kind: "content", text: "Find an inference partner" });
+    expect((await readIntelJob(w))?.status).toBe("queued");
+    await executeIntelSearch(w, id);
+    expect(await readIntelJob(w)).toMatchObject({ id, status: "complete", result: { matches: [] } });
+    await asUser(a);
+    expect(await readIntelJob(workspace, id)).toBeNull();
+    await state.client!.query("RESET ROLE");
+    await state.client!.query("UPDATE meetings SET owner_user_id=$1 WHERE id=$2", [b,m]);
+    await asUser(b);
+    const changed = await readIntelJob(w, id);
+    expect(changed?.status).toBe("failed");
+    expect(changed).not.toHaveProperty("result");
+    await state.client!.query("RESET ROLE");
+    await state.client!.query("UPDATE meetings SET owner_user_id=$1 WHERE id=$2", [a,m]);
+    await asUser(a);
+  });
+  it("saves verified progress before completion and withholds a real match after access is revoked", async () => {
+    const router = await import("@/lib/vendors/openrouter");
+    const verifier = await import("@/lib/intel/verification");
+    const [meeting] = await loadIntelMeetings(workspace);
+    const target = buildCatalog([meeting]).people[0];
+    const match = { id: target.id, type: "person", relevance: "expressed_interest", reason: "Alex needs inference partners.", caveat: "", segmentIds: [segment], counterEvidenceIds: [] };
+    const model = vi.spyOn(router, "createOpenRouterChatCompletion").mockResolvedValue(JSON.stringify({ matches: [match] }));
+    let release!: () => void;
+    const gate = new Promise<void>(resolve => { release = resolve; });
+    let entered!: () => void;
+    const checking = new Promise<void>(resolve => { entered = resolve; });
+    const verify = vi.spyOn(verifier, "verifyIntelClaims").mockImplementation(async matches => {
+      entered(); await gate; return matches;
+    });
+    const { id } = await enqueueIntelSearch(workspace, { kind: "content", text: "Inference partners" });
+    const running = executeIntelSearch(workspace, id);
+    try {
+      await Promise.race([checking, running.then(() => { throw new Error("Worker did not reach verification"); })]);
+      expect(await readIntelJob(workspace, id)).toMatchObject({ status: "running", completed: 1, total: 2 });
+      release();
+      await running;
+      expect(await readIntelJob(workspace, id)).toMatchObject({ status: "complete", completed: 2, result: { matches: [{ title: "Alex" }] } });
+      await state.client!.query("SAVEPOINT revoke_intel_access");
+      try {
+        await state.client!.query("RESET ROLE");
+        await state.client!.query("UPDATE meetings SET owner_user_id=$1 WHERE id=$2", [b,m]);
+        await asUser(a);
+        const revoked = await readIntelJob(workspace, id);
+        expect(revoked?.status).toBe("failed");
+        expect(revoked).not.toHaveProperty("result");
+      } finally { await state.client!.query("ROLLBACK TO SAVEPOINT revoke_intel_access"); }
+    } finally { release(); await running; verify.mockRestore(); model.mockRestore(); }
   });
   it("pages a large transcript through real SQL without dropping equal timestamps", async () => {
     const client = state.client!;

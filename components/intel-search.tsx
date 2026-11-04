@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ArrowUp, ArrowUpRight, Clock3, Plus, Users, X, LoaderCircle, ChevronDown } from "lucide-react";
 import { connectionRelationshipLabels } from "@/lib/meeting-connections";
 import { Button } from "@/components/ui/button";
@@ -18,13 +18,21 @@ function EvidenceList({ evidence }: { evidence: Evidence[] }) {
     </a>
   </blockquote>)}</div>;
 }
-export function IntelSearch({ catalog: initialCatalog, initialHistory }: { catalog: IntelCatalog; initialHistory: HistoryEntry[] }) {
-  const [catalog, setCatalog] = useState(initialCatalog);
+const emptyCatalog: IntelCatalog = { people: [], intel: [], pending: 0, coverage: "" };
+type Job = { id: string; status: string; input: SearchInput; completed: number; total: number; result?: SearchResult; error?: string; createdAt: string };
+export function IntelSearch() {
+  const [catalog, setCatalog] = useState(emptyCatalog);
+  const [catalogState, setCatalogState] = useState("loading");
+  const [catalogAttempt, setCatalogAttempt] = useState(0);
+  const [watch, setWatch] = useState<string | null>("latest");
+  const [watchVersion, setWatchVersion] = useState(0);
+  const [job, setJob] = useState<Job | null>(null);
+  const [reconnecting, setReconnecting] = useState(false);
   const [text, setText] = useState("");
   const [selected, setSelected] = useState<SearchInput | null>(null);
   const [tab, setTab] = useState<"intel" | "people">("intel");
   const [sort, setSort] = useState("important");
-  const [history, setHistory] = useState(initialHistory);
+  const [history, setHistory] = useState<HistoryEntry[]>([]);
   const [activeHistory, setActiveHistory] = useState<string | null>(null);
   const [result, setResult] = useState<SearchResult | null>(null);
   const [busy, setBusy] = useState(false);
@@ -40,25 +48,87 @@ export function IntelSearch({ catalog: initialCatalog, initialHistory }: { catal
   const labelFor = (input: SearchInput, available = catalog) => input.kind === "content" ? input.text : input.kind === "intel"
     ? available.intel.find(i => i.id === input.id)?.text ?? "Unavailable intel"
     : [...new Set(available.people.filter(p => input.ids.includes(p.id)).map(p => p.name))].join(", ");
+  useEffect(() => {
+    const abort = new AbortController();
+    async function load() {
+      try {
+        const response = await fetch("/api/intel/catalog", { signal: abort.signal });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || "Could not load starting points.");
+        if (abort.signal.aborted) return;
+        setCatalog(data.catalog);
+        setHistory(current => [...current, ...data.history.filter((h: HistoryEntry) => !current.some(c => c.id === h.id))].slice(0, 50));
+        setCatalogState("ready");
+      } catch (e) {
+        if (!abort.signal.aborted) setCatalogState(e instanceof Error ? e.message : "Could not load starting points.");
+      }
+    }
+    void load();
+    return () => abort.abort();
+  }, [catalogAttempt]);
+  useEffect(() => {
+    if (!watch) return;
+    const abort = new AbortController();
+    let timer: ReturnType<typeof setTimeout>;
+    let id = watch;
+    const current = sequence.current;
+    const stale = () => abort.signal.aborted || current !== sequence.current;
+    async function poll() {
+      try {
+        const response = await fetch(id === "latest" ? "/api/intel/search" : "/api/intel/search?id=" + id, { signal: abort.signal, cache: "no-store" });
+        if (stale()) return;
+        if (!response.ok) {
+          if (response.status >= 500) throw new Error();
+          setError(response.status === 401 ? "Sign in again to view your search." : "This search is no longer available.");
+          setBusy(false); setWatch(null); return;
+        }
+        const { job: next }: { job: Job | null } = await response.json();
+        if (stale()) return;
+        setReconnecting(false);
+        if (!next) { setWatch(null); setBusy(false); return; }
+        id = next.id;
+        setJob(next); setActiveHistory(next.id);
+        if (next.input.kind === "content") { setSelected(null); setText(next.input.text); } else { setSelected(next.input); setText(""); }
+        if (next.status === "failed") { setError(next.error ?? "Search failed."); setBusy(false); setWatch(null); return; }
+        if (next.result) {
+          setResult(next.result);
+          if (next.result.catalog) setCatalog(next.result.catalog);
+          setBusy(false); setWatch(null); return;
+        }
+        setBusy(true);
+        timer = setTimeout(poll, 1500);
+      } catch {
+        if (!stale()) { setReconnecting(true); timer = setTimeout(poll, 3000); }
+      }
+    }
+    void poll();
+    return () => { abort.abort(); clearTimeout(timer); };
+  }, [watch, watchVersion]);
+  function detach() {
+    setWatchVersion(n => n + 1); sequence.current++; controller.current?.abort(); setWatch(null); setJob(null); setReconnecting(false); setBusy(false);
+  }
   function reset() {
-    sequence.current++; controller.current?.abort(); setBusy(false); setSelected(null); setText(""); setResult(null); setError(""); setActiveHistory(null); field.current?.focus();
+    detach(); setSelected(null); setText(""); setResult(null); setError(""); setActiveHistory(null); field.current?.focus();
   }
   async function run(input: SearchInput, historyId?: string) {
-    controller.current?.abort(); const abort = new AbortController(); controller.current = abort;
-    const requestId = ++sequence.current;
+    detach();
+    const abort = new AbortController(); controller.current = abort;
+    const requestId = sequence.current;
     setBusy(true); setError(""); setResult(null); setActiveHistory(historyId ?? null); setHistoryOpen(false);
     if (input.kind === "content") { setSelected(null); setText(input.text); } else { setSelected(input); setText(""); }
+    if (historyId && history.some(h => h.id === historyId && h.savedJob)) { setWatch(historyId); return; }
     try {
       const response = await fetch("/api/intel/search", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(input), signal: abort.signal });
       const data = await response.json();
-      if (!response.ok) throw new Error(data.error ?? "Search failed. Please try again.");
       if (requestId !== sequence.current) return;
-      if (data.catalog) setCatalog(data.catalog);
-      setResult(data); setActiveHistory(data.historyId ?? null);
-      if (data.historyId) setHistory(current => [{ id: data.historyId, input, label: labelFor(input, data.catalog ?? catalog), createdAt: new Date().toISOString() }, ...current].slice(0,50));
+      if (!response.ok) throw new Error(data.error ?? "Search failed. Please try again.");
+      setWatch(data.id); setActiveHistory(data.id);
+      setHistory(current => [{ id: data.id, savedJob: true, input, label: labelFor(input), createdAt: new Date().toISOString() }, ...current.filter(h => h.id !== data.id)].slice(0,50));
     } catch (caught) {
-      if (requestId === sequence.current && !abort.signal.aborted) setError(caught instanceof Error ? caught.message : "Search failed. Please try again.");
-    } finally { if (requestId === sequence.current) setBusy(false); }
+      if (requestId === sequence.current && !abort.signal.aborted) {
+        setError(caught instanceof Error ? caught.message : "Search failed. Please try again."); setBusy(false);
+      }
+    }
   }
   function choosePerson(candidate: Person) { setPerson(candidate); setIdentityIds([candidate.id]); setIdentityQuery(""); }
   const filteredPeople = catalog.people.filter(p => `${p.name} ${p.detail}`.toLowerCase().includes(text.toLowerCase()));
@@ -78,7 +148,7 @@ export function IntelSearch({ catalog: initialCatalog, initialHistory }: { catal
         </button>) : <p className="px-2 text-sm leading-6 text-muted-foreground">Your searches will appear here.</p>}
         {history.length > 0 && <button type="button" className="mt-5 px-2 py-2 text-xs text-muted-foreground underline underline-offset-4" onClick={async () => {
           setHistoryError("");
-          try { const r = await fetch("/api/intel/history", { method: "DELETE" }); if (!r.ok) throw new Error(); setHistory([]); setActiveHistory(null); }
+          try { const r = await fetch("/api/intel/history", { method: "DELETE" }); if (!r.ok) throw new Error(); setHistory([]); reset(); }
           catch { setHistoryError("Could not clear history. Try clearing it again."); }
         }}>Clear history</button>}
         {historyError && <p role="alert" className="px-2 text-xs leading-5 text-muted-foreground">{historyError}</p>}
@@ -90,13 +160,13 @@ export function IntelSearch({ catalog: initialCatalog, initialHistory }: { catal
         <h1 className="text-3xl font-medium tracking-tight sm:text-4xl">Who should know?</h1>
         <p className="mt-3 max-w-lg text-sm leading-6 text-muted-foreground">Find the right person for an idea. Or the right idea for a person.</p>
       </header>
-      <form onSubmit={event => { event.preventDefault(); if (selected) void run(selected); else if (text.trim().length >= 3) void run({ kind: "content", text: text.trim() }); }}
+      <form onSubmit={event => { event.preventDefault(); if (busy) return; if (selected) void run(selected); else if (text.trim().length >= 3) void run({ kind: "content", text: text.trim() }); }}
         className="rounded-2xl border border-border bg-background shadow-[0_3px_20px_-12px_rgba(40,25,20,0.2)] focus-within:border-ring focus-within:ring-2 focus-within:ring-ring/15">
         {selected && <div className="px-4 pt-4"><div className="inline-flex max-w-full items-center gap-2 rounded-lg bg-muted px-3 py-2 text-sm"><span className="line-clamp-2">{labelFor(selected)}</span>
           <button type="button" onClick={reset} aria-label="Remove selection" className="shrink-0 rounded p-1 hover:bg-background"><X className="size-3.5" /></button></div></div>}
         <label htmlFor="intel-query" className="sr-only">Search intel or people, or paste content or a link</label>
         <textarea ref={field} id="intel-query" value={text} maxLength={20000} rows={2} disabled={!!selected}
-          onChange={event => { sequence.current++; controller.current?.abort(); setBusy(false); setText(event.target.value); setResult(null); setError(""); setActiveHistory(null); }}
+          onChange={event => { detach(); setText(event.target.value); setResult(null); setError(""); setActiveHistory(null); }}
           onKeyDown={event => { if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); event.currentTarget.form?.requestSubmit(); } }}
           placeholder={selected ? "Ready to find matches" : "Search intel or people, or paste content or a link…"}
           className="block w-full resize-none bg-transparent px-5 pb-2 pt-5 text-base leading-6 outline-none placeholder:text-muted-foreground disabled:opacity-60" />
@@ -106,7 +176,11 @@ export function IntelSearch({ catalog: initialCatalog, initialHistory }: { catal
         </div>
       </form>
       {error && <div role="alert" className="mt-5 rounded-lg border border-destructive/30 p-4 text-sm">{error}<button type="button" className="ml-2 underline" onClick={() => { if (selected) void run(selected); else if (text.trim()) void run({ kind: "content", text }); }}>Try again</button></div>}
-      {busy && <p role="status" className="mt-8 text-sm text-muted-foreground">Reading the evidence and finding relevant people…</p>}
+      {(busy || reconnecting) && <div className="mt-6 max-w-lg space-y-2 text-sm">
+        <p role="status">{reconnecting ? "Reconnecting to your search…" : job?.total ? (job.completed === job.total ? "Finishing your matches…" : `Matching and checking evidence · ${job.completed} of ${job.total} steps`) : job?.status === "running" ? "Reading meeting evidence…" : watch ? "Waiting for your search…" : "Starting your search…"}</p>
+        <progress aria-label="Matching progress" className="block h-1.5 w-full accent-primary" max={job?.total || 1} value={job?.total ? job.completed : undefined} />
+        {((watch && watch !== "latest") || job) ? <p className="text-xs text-muted-foreground">You can close this tab. Your search will continue.</p> : null}
+      </div>}
       {result && <div aria-live="polite" className="mt-9">
         <div className="mb-5 flex items-center justify-between"><h2 className="text-sm font-medium">{result.matches.length ? `${result.matches.length} possible ${result.matches.length === 1 ? "match" : "matches"}` : "No supported matches"}</h2><Button variant="ghost" onClick={reset}>New search</Button></div>
         {result.historyWarning && <p role="status" className="mb-5 text-sm text-muted-foreground">{result.historyWarning}</p>}
@@ -124,7 +198,8 @@ export function IntelSearch({ catalog: initialCatalog, initialHistory }: { catal
         </article>)}</div>
         <p className="mt-6 text-xs leading-5 text-muted-foreground">{result.coverage}</p>
       </div>}
-      {!result && !busy && <div className="mt-9">
+      {!result && !busy && catalogState !== "ready" && <div className="mt-9 text-sm text-muted-foreground" role="status">{catalogState === "loading" ? "Loading intel and people…" : <>{catalogState} <button className="underline" onClick={() => { setCatalogState("loading"); setCatalogAttempt(n => n + 1); }}>Reload</button></>}</div>}
+      {!result && !busy && catalogState === "ready" && <div className="mt-9">
         <div className="mb-2 flex items-center justify-between">
           <div className="flex gap-6" role="tablist" aria-label="Starting points">{(["intel", "people"] as const).map(value => <button type="button" role="tab" id={`tab-${value}`} aria-controls={`panel-${value}`} aria-selected={tab === value} key={value} onClick={() => setTab(value)}
             onKeyDown={event => { if (["ArrowLeft", "ArrowRight"].includes(event.key)) { event.preventDefault(); const next = value === "intel" ? "people" : "intel"; setTab(next); document.getElementById(`tab-${next}`)?.focus(); } }}

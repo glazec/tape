@@ -20,13 +20,17 @@ const history: HistoryEntry[] = [{ id: "h0", label: "Enterprise inference", inpu
 let currentCatalog = catalog;
 const newPerson: Person = { ...people[2], id: "new-person", name: "Jordan Lee", detail: "Newly indexed meeting" };
 const newIntel = { ...catalog.intel[0], id: "new-intel", text: "A newly indexed opportunity for enterprise inference." };
-window.fetch = async (_url, init) => {
+const realFetch = window.fetch.bind(window);
+window.fetch = async (url, init) => {
+ if (url === "/api/intel/catalog") return Response.json({ catalog, history });
+ if (init?.method !== "POST" && init?.method !== "DELETE") return realFetch(url, init);
  if (init?.method === "DELETE") return Response.json({ cleared: true });
  const input = JSON.parse(String(init?.body));
  if (input.text?.includes("fail")) return Response.json({ error: "Could not read this link. Paste the content to find interested people." }, { status: 422 });
  if (input.text === "newly indexed") currentCatalog = { ...catalog, people: [...people, newPerson], intel: [...catalog.intel, newIntel] };
  const targetPerson = currentCatalog.people.find(p => p.id === "new-person") ?? people[2];
  const targetIntel = currentCatalog.intel.find(i => i.id === "new-intel") ?? catalog.intel[0];
- return Response.json({ historyId: crypto.randomUUID(), source: { text: input.text ?? "Selected intel" }, coverage: catalog.coverage, catalog: currentCatalog, matches: [{ id: input.kind === "person" ? targetIntel.id : targetPerson.id, type: input.kind === "person" ? "intel" : "person", title: input.kind === "person" ? targetIntel.text : targetPerson.name, detail: "Infrastructure roundtable", relevance: "possible_synergy", reason: "Maya described security reviews as a barrier to enterprise adoption. Alex’s search for enterprise inference partners could be relevant to that problem.", caveat: "This is a suggested connection. Willingness to collaborate is unknown.", segmentIds: ["s1"], counterEvidenceIds: [], evidence: [mayaEvidence, evidence], counterEvidence: [] }] });
+ const result = { source: { text: input.text ?? "Selected intel" }, coverage: catalog.coverage, catalog: currentCatalog, matches: [{ id: input.kind === "person" ? targetIntel.id : targetPerson.id, type: input.kind === "person" ? "intel" : "person", title: input.kind === "person" ? targetIntel.text : targetPerson.name, detail: "Infrastructure roundtable", relevance: "possible_synergy", reason: "Maya described security reviews as a barrier to enterprise adoption. Alex’s search for enterprise inference partners could be relevant to that problem.", caveat: "This is a suggested connection. Willingness to collaborate is unknown.", segmentIds: ["s1"], counterEvidenceIds: [], evidence: [mayaEvidence, evidence], counterEvidence: [] }] };
+ return realFetch(url, { ...init, body: JSON.stringify({ input, result }) });
 };
-createRoot(document.getElementById("root")!).render(<AppShell activeHref="/intel" wide><IntelSearch catalog={catalog} initialHistory={history} /><p className="fixed bottom-2 right-3 rounded bg-background px-2 py-1 text-[10px] text-muted-foreground">Fictional review data</p></AppShell>);
+createRoot(document.getElementById("root")!).render(<AppShell activeHref="/intel" wide><IntelSearch /><p className="fixed bottom-2 right-3 rounded bg-background px-2 py-1 text-[10px] text-muted-foreground">Fictional review data</p></AppShell>);
