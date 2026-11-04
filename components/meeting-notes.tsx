@@ -9,6 +9,8 @@ import {
   useState,
 } from "react";
 import { Check, Copy, LockKeyhole } from "lucide-react";
+import { NoteMarkdown } from "@/components/note-markdown";
+import { noteClipboardMarkdown } from "@/lib/note-markdown";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -50,10 +52,21 @@ function splitAfterQuestions(text: string) {
   const chunks: string[] = [];
   let current = "";
   const lines = text.split("\n");
+  let fence: string | null = null;
+  let inList = false;
   lines.forEach((line, index) => {
+    const delimiter = line.match(/^ {0,3}(`{3,}|~{3,})/);
+    const wasFenced = fence !== null;
+    if (delimiter) {
+      if (!fence) fence = delimiter[1];
+      else if (delimiter[1][0] === fence[0] && delimiter[1].length >= fence.length && !line.slice(delimiter[0].length).trim()) fence = null;
+    }
+    if (!line.trim()) inList = false;
+    if (/^\s*(?:[-*+] |\d+[.)] )/.test(line)) inList = true;
+    const protectedLine = wasFenced || fence !== null || inList || /^(?: {4}|\t| {0,3}>| {0,3}#{1,6} )/.test(line) || line.includes("|");
     current += line;
     if (index < lines.length - 1) {
-      if (noteQuestion(line)) {
+      if (!protectedLine && noteQuestion(line)) {
         chunks.push(current);
         current = "";
       } else current += "\n";
@@ -74,6 +87,8 @@ export function MeetingNotes({
 }) {
   const { blocks, change, status, loaded, save, reload, retry } =
     useMeetingNote(meetingId, userId);
+  const [preview, setPreview] = useState(false);
+  const [pasteError, setPasteError] = useState("");
   const [editingMoments, setEditingMoments] = useState(false);
   const [momentMessage, setMomentMessage] = useState("");
   const lastEditor = useRef<string | null>(null);
@@ -204,7 +219,7 @@ export function MeetingNotes({
       editor?.scrollIntoView?.({ block: "nearest" });
       pendingFocus.current = null;
     }
-  }, [blocks, loaded, editingMoments, resizeEditors]);
+  }, [blocks, loaded, editingMoments, preview, resizeEditors]);
   useEffect(() => {
     window.addEventListener("resize", resizeEditors);
     return () => window.removeEventListener("resize", resizeEditors);
@@ -398,7 +413,7 @@ export function MeetingNotes({
     updateText(id, text, start + token.length + 1, false, moments);
   }
 
-  function renderMomentText(block: NoteBlock) {
+  function renderMomentText(block: NoteBlock, markdown = false) {
     const tokens = [
       ...parseNoteMoments(block.text),
       ...(block.moments ?? [])
@@ -473,6 +488,9 @@ export function MeetingNotes({
         </button>,
       ];
     });
+    if (markdown) return <NoteMarkdown moments={tokens.map((token, index) => ({
+      start: token.start, text: token.text, element: nodes[index * 2 + 1],
+    }))}>{block.text}</NoteMarkdown>;
     return [...nodes, block.text.slice(offset)];
   }
 
@@ -489,11 +507,11 @@ export function MeetingNotes({
 
   return (
     <section aria-labelledby={headingId} className="group/notes mb-10">
-      <div className="mb-2 flex items-center justify-between gap-3">
-        <div className="flex min-w-0 items-center gap-2">
+      <div className="mb-2 flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
+        <div className="flex shrink-0 items-center gap-2">
           <h2
             id={headingId}
-            className="text-xs font-medium text-muted-foreground"
+            className="text-base font-semibold"
           >
             My notes
           </h2>
@@ -506,10 +524,62 @@ export function MeetingNotes({
             <span className="sr-only">Only visible to you</span>
           </p>
         </div>
+        <div className="flex shrink-0 flex-wrap items-center justify-end gap-1">
+        {loaded ? (
+          <>
+          <button
+            type="button"
+            aria-pressed={preview}
+            className="min-h-11 rounded px-2 text-xs text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            onClick={() => {
+              setPreview(!preview);
+              if (preview) {
+                setEditingMoments(true);
+                const id = lastEditor.current ?? blocks[0].id;
+                pendingFocus.current = { id, position: blocks.find((block) => block.id === id)?.text.length ?? 0 };
+              } else void save();
+            }}
+          >
+            {preview ? "Write" : "Preview"}
+          </button>
+          <button
+            type="button"
+            className="min-h-11 rounded px-2 text-xs text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:min-h-8"
+            onMouseDown={(event) => event.preventDefault()}
+            onClick={() => {
+              setPreview(false);
+              captureMoment(lastEditor.current ?? blocks.at(-1)!.id);
+            }}
+          >
+            Add timestamp
+          </button>
+          {!preview && blocks.some(
+            (block) =>
+              parseNoteMoments(block.text).length || block.moments?.length,
+          ) ? (
+            <button
+              type="button"
+              className="min-h-11 rounded px-2 text-xs text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:min-h-8"
+              onClick={() => {
+                const id = lastEditor.current ?? blocks[0].id;
+                setPreview(false);
+                setEditingMoments(true);
+                pendingFocus.current = {
+                  id,
+                  position:
+                    blocks.find((block) => block.id === id)?.text.length ?? 0,
+                };
+              }}
+            >
+              Edit notes
+            </button>
+          ) : null}
+          </>
+        ) : null}
         <span
           aria-live="polite"
           role="status"
-          className="flex min-h-6 min-w-16 shrink-0 items-center justify-end gap-1.5 text-xs text-muted-foreground"
+          className="flex min-h-6 min-w-16 shrink-0 items-center justify-end gap-1.5 pl-2 text-xs text-muted-foreground"
         >
           {answerDrafts.size > 0 ? (
             "Editing answer…"
@@ -528,41 +598,9 @@ export function MeetingNotes({
             ""
           )}
         </span>
-      </div>
-      {loaded ? (
-        <div className="mb-2 flex flex-wrap items-center gap-2">
-          <button
-            type="button"
-            className="min-h-11 rounded px-2 text-xs text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            onMouseDown={(event) => event.preventDefault()}
-            onClick={() =>
-              captureMoment(lastEditor.current ?? blocks.at(-1)!.id)
-            }
-          >
-            Add timestamp
-          </button>
-          {blocks.some(
-            (block) =>
-              parseNoteMoments(block.text).length || block.moments?.length,
-          ) ? (
-            <button
-              type="button"
-              className="min-h-11 rounded px-2 text-xs text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              onClick={() => {
-                const id = lastEditor.current ?? blocks[0].id;
-                setEditingMoments(true);
-                pendingFocus.current = {
-                  id,
-                  position:
-                    blocks.find((block) => block.id === id)?.text.length ?? 0,
-                };
-              }}
-            >
-              Edit notes
-            </button>
-          ) : null}
         </div>
-      ) : null}
+      </div>
+      {pasteError ? <p role="alert" className="mb-2 text-sm text-destructive">{pasteError}</p> : null}
       {momentMessage ? (
         <p
           role="status"
@@ -584,7 +622,8 @@ export function MeetingNotes({
         ) : null}
         {blocks.map((block, index) => (
           <div key={block.id}>
-            {loaded &&
+            {preview ? renderMomentText(block, true) : null}
+            {!preview && loaded &&
             !editingMoments &&
             (parseNoteMoments(block.text).length > 0 ||
               Boolean(block.moments?.length)) ? (
@@ -593,11 +632,11 @@ export function MeetingNotes({
               </p>
             ) : null}
             <textarea
-              hidden={
+              hidden={preview || (
                 loaded &&
                 !editingMoments &&
                 (parseNoteMoments(block.text).length > 0 ||
-                  Boolean(block.moments?.length))
+                  Boolean(block.moments?.length)))
               }
               ref={(node) => {
                 if (node) editors.current.set(block.id, node);
@@ -606,7 +645,7 @@ export function MeetingNotes({
               aria-label={index === 0 ? "My notes" : `Note ${index + 1}`}
               aria-describedby={`${privacyId} ${hintId}`}
               aria-busy={status === "loading"}
-              className={`${loaded && !editingMoments && (parseNoteMoments(block.text).length > 0 || Boolean(block.moments?.length)) ? "hidden" : "block"} max-h-[min(24rem,60dvh)] w-full resize-none border-0 bg-transparent p-0 text-base leading-7 outline-none placeholder:text-muted-foreground disabled:text-muted-foreground ${blocks.length === 1 && !hasQuestions ? "min-h-16 focus:min-h-36" : "min-h-7"}`}
+              className={`${preview || (loaded && !editingMoments && (parseNoteMoments(block.text).length > 0 || Boolean(block.moments?.length))) ? "hidden" : "block"} max-h-[min(24rem,60dvh)] w-full resize-none border-0 bg-transparent p-0 text-base leading-7 outline-none placeholder:text-muted-foreground disabled:text-muted-foreground ${blocks.length === 1 && !hasQuestions ? "min-h-14 focus:min-h-36" : "min-h-7"}`}
               disabled={!loaded}
               maxLength={20_000 - content.length + block.text.length}
               onFocus={() => {
@@ -618,8 +657,31 @@ export function MeetingNotes({
                 if (!(event.relatedTarget instanceof HTMLTextAreaElement))
                   setEditingMoments(false);
               }}
-              onPaste={() => {
+              onPaste={(event) => {
                 pastedCommand.current = block.id;
+                setPasteError("");
+                let markdown = noteClipboardMarkdown(
+                  event.clipboardData?.getData("text/html") ?? "",
+                  event.clipboardData?.getData("text/plain") ?? "",
+                );
+                if (markdown === null) return;
+                event.preventDefault();
+                const editor = event.currentTarget;
+                const start = editor.selectionStart;
+                const end = editor.selectionEnd;
+                const before = block.text.slice(0, start);
+                const after = block.text.slice(end);
+                if (markdown.includes("\n")) {
+                  if (before && !before.endsWith("\n\n")) markdown = (before.endsWith("\n") ? "\n" : "\n\n") + markdown;
+                  if (after && !after.startsWith("\n\n")) markdown += after.startsWith("\n") ? "\n" : "\n\n";
+                }
+                const text = before + markdown + after;
+                if (content.length - block.text.length + text.length > 20_000) {
+                  setPasteError("This paste exceeds the 20,000 character limit. Paste a smaller section.");
+                  return;
+                }
+                pendingFocus.current = { id: block.id, position: start + markdown.length };
+                updateText(block.id, text, start + markdown.length, true);
               }}
               onCompositionStart={() => setComposing(block.id)}
               onCompositionEnd={(event) => {
@@ -746,6 +808,8 @@ export function MeetingNotes({
             className="mt-1 min-h-11 w-full text-left text-base leading-7 text-muted-foreground outline-none focus-visible:rounded focus-visible:ring-2 focus-visible:ring-ring/30"
             onClick={() => {
               if (blocks.length >= 100 || content.length >= 20_000) return;
+              setPreview(false);
+              setEditingMoments(true);
               const next = { id: crypto.randomUUID(), text: "" };
               pendingFocus.current = { id: next.id, position: 0 };
               change([...blocks, next]);
@@ -763,7 +827,7 @@ export function MeetingNotes({
             : "mt-2 text-xs leading-5 text-muted-foreground opacity-0 transition-opacity group-focus-within/notes:opacity-100 motion-reduce:transition-none"
         }
       >
-        Type @now then Space to mark a moment, or use [12:34]. End a question
+        Markdown supported, including pasted tables. Use Preview to see formatting. Type @now then Space to mark a moment, or use [12:34]. End a question
         with ? to find an answer in this transcript.
       </p>
       {content.length >= 19_000 ? (

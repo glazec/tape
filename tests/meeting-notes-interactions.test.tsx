@@ -35,6 +35,60 @@ afterEach(() => {
 });
 
 describe("meeting notes editor", () => {
+  it("pastes a table over a selection, previews it, saves and reloads Markdown", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(response("Replace me", 4));
+    const view = await open();
+    editor().setSelectionRange(0, 10);
+    fireEvent.paste(editor(), {
+      clipboardData: { getData: (type: string) => type === "text/html"
+        ? "<table><tr><td>Task</td><td>Owner</td></tr><tr><td>Review</td><td>Alice</td></tr></table>" : "Task\tOwner\nReview\tAlice" },
+    });
+    const markdown = editor().value;
+    expect(markdown).toContain("| Task | Owner |");
+    expect(markdown).not.toContain("Replace me");
+    expect(editor().selectionStart).toBe(markdown.length);
+    vi.mocked(fetch).mockResolvedValueOnce(response(markdown, 5));
+    fireEvent.click(screen.getByRole("button", { name: "Preview" }));
+    expect(screen.getByRole("table")).toBeTruthy();
+    expect(screen.queryByRole("textbox", { name: "My notes" })).toBeNull();
+    await waitFor(() => expect(screen.getByText("Saved")).toBeTruthy());
+    expect(JSON.parse(vi.mocked(fetch).mock.calls.at(-1)![1]!.body as string).content).toBe(markdown);
+    view.unmount();
+    vi.mocked(fetch).mockResolvedValueOnce(response(markdown, 5));
+    await open();
+    expect(editor().value).toBe(markdown);
+    fireEvent.click(screen.getByRole("button", { name: "Preview" }));
+    expect(screen.getByRole("cell", { name: "Alice" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Write" }));
+    expect(document.activeElement).toBe(editor());
+  });
+
+  it("separates a pasted table from surrounding text", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(response("BeforeAfter", 1));
+    await open();
+    editor().setSelectionRange(6, 6);
+    fireEvent.paste(editor(), { clipboardData: { getData: (type: string) => type === "text/plain" ? "Task\tOwner\nReview\tAlice" : "" } });
+    expect(editor().value).toContain("Before\n\n| Task");
+    expect(editor().value).toContain("Alice |\n\nAfter");
+    fireEvent.click(screen.getByRole("button", { name: "Preview" }));
+    expect(screen.getByRole("table")).toBeTruthy();
+  });
+
+  it("keeps code fences containing questions intact while typing", async () => {
+    await open();
+    fireEvent.change(editor(), { target: { value: "```text\nReady?\nYes\n```" } });
+    expect(screen.getAllByRole("textbox")).toHaveLength(1);
+    fireEvent.click(screen.getByRole("button", { name: "Preview" }));
+    expect(screen.getByText(/Ready/, { selector: "code" }).closest("pre")).toBeTruthy();
+  });
+
+  it("preserves question blocks after a Markdown heading and completed list", async () => {
+    await open();
+    fireEvent.change(editor(), { target: { value: "# Planning\n\n- Discuss budget\n\nWho owns this?\nNext thought" } });
+    expect(editor().value).toBe("# Planning\n\n- Discuss budget\n\nWho owns this?");
+    expect((screen.getByRole("textbox", { name: "Note 2" }) as HTMLTextAreaElement).value).toBe("Next thought");
+  });
+
   it("loads existing notes and explains privacy", async () => {
     vi.mocked(fetch).mockResolvedValueOnce(response("Existing notes", 4));
     await open();

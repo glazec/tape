@@ -5,7 +5,13 @@ import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
 
-export function CopyMcpAddressButton({ address }: { address: string }) {
+export function CopyMcpAddressButton({
+  address,
+  variant = "ink",
+}: {
+  address: string;
+  variant?: "ink" | "outline";
+}) {
   const [status, setStatus] = useState<"idle" | "copied" | "failed">("idle");
 
   async function copyAddress() {
@@ -23,6 +29,7 @@ export function CopyMcpAddressButton({ address }: { address: string }) {
         className="min-h-11 w-full sm:min-h-8 sm:w-auto"
         onClick={copyAddress}
         type="button"
+        variant={variant}
       >
         {status === "copied" ? <Check /> : <Copy />}
         {status === "copied"

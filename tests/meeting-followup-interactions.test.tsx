@@ -55,7 +55,7 @@ const research = {
 // The followup is always open now; keep the helper so each test still reads
 // as "open the followup, then act".
 const open = () => {
-  expect(screen.getByRole("heading", { name: "AI followup" })).toBeTruthy();
+  expect(screen.getByRole("heading", { name: "From the transcript" })).toBeTruthy();
 };
 afterEach(() => {
   cleanup();
@@ -252,6 +252,38 @@ describe("meeting followup interaction", () => {
     expect(writeText).not.toHaveBeenCalled();
     rerender(<MeetingFollowup {...props} key="empty" initialResult={result} />);
     expect(screen.queryByText("Potential research")).toBeNull();
+  });
+
+  it("auto generates once when no followup exists", async () => {
+    const fetch = vi.fn().mockResolvedValue(Response.json({ result }));
+    vi.stubGlobal("fetch", fetch);
+    const { rerender } = render(<MeetingFollowup {...props} autoGenerate />);
+    expect(screen.getByText("Writing followup from the transcript…")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Generate followup" })).toBeNull();
+    await screen.findByText("@Momir Amidzic");
+    rerender(<MeetingFollowup {...props} autoGenerate />);
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("waits for the background job before generating a just finished transcript", async () => {
+    vi.useFakeTimers();
+    const fetch = vi.fn().mockResolvedValue(Response.json({ result }));
+    vi.stubGlobal("fetch", fetch);
+    render(<MeetingFollowup {...props} autoGenerate waitForBackground />);
+    expect(screen.getByText("Writing followup from the transcript…")).toBeTruthy();
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(fetch).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(3 * 60_000);
+    expect(fetch).toHaveBeenCalledTimes(1);
+    vi.useRealTimers();
+  });
+
+  it("does not auto generate when a followup already exists", async () => {
+    const fetch = vi.fn();
+    vi.stubGlobal("fetch", fetch);
+    render(<MeetingFollowup {...props} autoGenerate initialResult={result} />);
+    await new Promise(resolve => setTimeout(resolve, 10));
+    expect(fetch).not.toHaveBeenCalled();
   });
 
   it("generates on demand, displays explicit names and links to transcript evidence", async () => {

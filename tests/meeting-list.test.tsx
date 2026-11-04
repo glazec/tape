@@ -245,9 +245,9 @@ describe("MeetingList", () => {
 
     expect(joinButton).toBeDefined();
     expect(joinButton).toContain("h-5 w-[5.625rem]");
-    expect(joinButton).toContain("rounded-4xl");
-    expect(joinButton).toContain("border-primary");
-    expect(joinButton).toContain("text-primary");
+    expect(joinButton).toContain("rounded-full");
+    expect(joinButton).not.toContain("border-primary");
+    expect(joinButton).not.toContain("text-primary");
     expect(joinButton).toContain("meeting-join-action");
     expect(joinButton).toContain('aria-busy="false"');
     expect(joinButton).toContain("Join now");

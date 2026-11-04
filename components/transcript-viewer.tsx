@@ -1,5 +1,6 @@
 "use client";
 
+import { appLabelClassName } from "@/components/app-label";
 import {
   type ChangeEvent,
   type FormEvent,
@@ -155,6 +156,10 @@ type TranscriptViewerProps = {
   meetingId?: string | null;
   navigationMeetingId?: string;
   mobileAfterSpeakers?: ReactNode;
+  /** Shown under Speakers at every width, e.g. what the meeting mentioned. */
+  afterSpeakers?: ReactNode;
+  /** Keep the Transcript heading for screen readers only, when a tab already names the view. */
+  hideHeading?: boolean;
   preferredTranslationLanguage?: TranslationLanguage;
   segments: TranscriptSegment[];
   speakerAliases?: SpeakerAlias[];
@@ -379,6 +384,8 @@ export function TranscriptViewer({
   meetingId,
   navigationMeetingId,
   mobileAfterSpeakers,
+  afterSpeakers,
+  hideHeading = false,
   preferredTranslationLanguage,
   segments: initialSegments,
   speakerAliases = [],
@@ -1195,8 +1202,13 @@ export function TranscriptViewer({
     if (!target) return;
     detail.handled = true;
     setNoteMomentSegmentId(target.id);
-    segmentRefs.current.get(target.id)?.focus({ preventScroll: true });
-    scrollTranscriptToTime(detail.timestampMs / 1000);
+    const reveal = () => {
+      segmentRefs.current.get(target.id)?.focus({ preventScroll: true });
+      scrollTranscriptToTime(detail.timestampMs / 1000);
+    };
+    // If a view switch has not revealed the transcript yet, let it land first.
+    if (segmentRefs.current.get(target.id)?.closest("[data-state=inactive]")) requestAnimationFrame(reveal);
+    else reveal();
     void setPlaybackPosition(detail.timestampMs / 1000, { shouldPlay: true, preserveNoteMoment: true });
   });
   useEffect(() => {
@@ -1232,9 +1244,9 @@ export function TranscriptViewer({
   return (
     <>
       <section className={activeAudioUrl ? "pb-48" : undefined}>
-        <header className="mb-5">
+        <header className={hideHeading && !(hasOriginalPolish || hasTranslations || translationNotNeeded) ? undefined : "mb-5"}>
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <h2 className="text-lg font-semibold">Transcript</h2>
+            <h2 className={hideHeading ? "sr-only" : "text-lg font-semibold tracking-[-0.01em]"}>Transcript</h2>
             {hasOriginalPolish || hasTranslations || translationNotNeeded ? (
               <div className="flex flex-wrap items-center gap-2">
                 {translationNotNeeded && meetingId ? (
@@ -1372,11 +1384,11 @@ export function TranscriptViewer({
               onOpenGallery={() => setIsGalleryOverviewOpen(true)}
               visualAssets={visualAssets}
             />
-            <div className="mb-6">
-              <h3 className="text-xs font-medium text-muted-foreground">
+            <div className="mb-5">
+              <h3 className={appLabelClassName}>
                 Speakers
               </h3>
-              <div className="mt-2 flex min-w-0 flex-wrap items-center gap-x-4 gap-y-1">
+              <div className="mt-1.5 flex min-w-0 flex-wrap items-center gap-x-4 gap-y-1">
                 {visibleSpeakerStats.map((speaker) => {
                   const speakerLabel = speaker.speaker ?? "Unknown speaker";
                   const speakerKey = speaker.speakerKey;
@@ -1425,10 +1437,11 @@ export function TranscriptViewer({
                           className="min-w-0 truncate text-sm"
                           title={`${speaker.percent > 0 ? `${speaker.percent}%` : "<1%"} of the conversation`}
                         >
-                          {speakerLabel}
-                          <span className="sr-only">
-                            {" "}
+                          {speakerLabel}{" "}
+                          <span className="text-muted-foreground tabular-nums">
                             {speaker.percent > 0 ? `${speaker.percent}%` : "<1%"}
+                          </span>
+                          <span className="sr-only">
                             <span>
                               {" "}
                               · {formatLineCount(speaker.lineCount)}
@@ -1476,6 +1489,7 @@ export function TranscriptViewer({
                 ) : null}
               </div>
             </div>
+            {afterSpeakers ? <div className="mb-5">{afterSpeakers}</div> : null}
             {mobileAfterSpeakers ? (
               <div className="mb-8 space-y-6 lg:hidden [&>:first-child]:mt-0">
                 {mobileAfterSpeakers}
@@ -1976,7 +1990,7 @@ export function MeetingVisualGalleryOverview({
       <header className="sticky top-0 z-10 border-b bg-background/95 px-4 py-4 backdrop-blur md:px-8">
         <div className="mx-auto flex max-w-[1800px] items-center justify-between gap-4">
           <div>
-            <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+            <p className={appLabelClassName}>
               Meeting images
             </p>
             <h2 className="mt-1 text-xl font-semibold">
@@ -2109,7 +2123,7 @@ export function MeetingVisualLightbox({
       <div className="flex min-h-0 w-full flex-col gap-3">
         <div className="flex min-h-10 flex-wrap items-center justify-between gap-3">
           <div>
-            <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+            <p className={appLabelClassName}>
               Meeting images
             </p>
             <p className="mt-1 text-sm font-semibold">
@@ -2573,7 +2587,7 @@ function TranscriptAudioPlayer({
   }
 
   return (
-    <div className="fixed inset-x-0 bottom-0 z-40 border-t bg-background/95 backdrop-blur">
+    <div className="fixed inset-x-0 bottom-0 z-40 border-t bg-background/95 backdrop-blur" data-persistent-player>
       <audio
         onLoadedMetadata={(event) => onPlaybackReady(event.currentTarget)}
         onCanPlay={(event) => onPlaybackReady(event.currentTarget)}

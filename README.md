@@ -6,7 +6,7 @@
 
 Tape captures team conversations from Google Meet, Zoom, Microsoft Teams through local recording, uploaded media, phone recording, or the macOS recorder and turns them into searchable, shareable meeting records.
 
-This repository is source available for noncommercial use. See [License](#license) before using or redistributing it.
+Tape is fair source: use it, change it, and host it for your own team, including at work. See [License](#license) for the one thing you cannot do.
 
 Personal notes support `@now` followed by Space, an Add timestamp action, and explicit times such as `[12:34]`. Moments retain private capture anchors and link to the matching transcript when recording timing is available. Single recording imports offer local playback, a timestamp jump, editable date and timezone clues, and an explicit choice of an empty calendar meeting or a new meeting. Successful imports open the destination meeting.
 
@@ -24,7 +24,7 @@ The dashboard combines weekly activity, calendar capture status, and a searchabl
 
 ### Review the complete record
 
-Every meeting includes My notes, a private writing area for each signed in reader. Notes save automatically during a meeting and remain editable afterward. They are separate from generated summaries and shared transcripts.
+Every meeting includes My notes, a private writing area for each signed in reader. Notes save automatically during a meeting and remain editable afterward. They are separate from generated summaries and shared transcripts. Notes support Markdown with a formatted Preview. Pasting formatted text or tables preserves their structure as Markdown; spreadsheet rows copied as tab separated text also become tables.
 
 Questions ending in `?` or `？` receive an answer beneath them after a short pause, using only the available meeting transcript. Factual answers include supporting transcript sources. You can revise the question, use the regenerate icon beside the source label, or type directly in the answer. Answer edits save automatically; manually edited answers are protected from automatic replacement.
 
@@ -48,7 +48,7 @@ The transcript supports raw and polished text, synchronized playback, speaker pr
 
 ### Record locally on macOS
 
-Desktop settings show the signed in account and paired workspace. “Record on this Mac” captures local audio, and the waveform reflects both microphone and Mac sound. The desktop recorder opens a visible setup window at launch and after browser sign in. Desktop sign in is checked before permission setup completes, so connected devices can report missing permissions. Desktop device sessions last 180 days from sign in and persist across deployments; expired sessions offer sign in again. Dashboard loading errors preserve browser login and offer a page reload. Sharing suggests colleagues from all connected organizations, organization addresses seen in calendars, and previous recipients; new external addresses can also be selected.
+Desktop settings show the signed in account and paired workspace. “Record on this Mac” captures meeting audio, and the waveform reflects both microphone and Mac sound. The native fallback asks for one meeting window, saves screenshots when its content changes, compresses audio to AAC, and applies microphone voice processing. Interrupted native uploads resume completed parts. See [capture and upload details](docs/recorder-upload-recovery.md) for defaults and release verification status. The desktop recorder opens a visible setup window at launch and after browser sign in. Desktop sign in is checked before permission setup completes, so connected devices can report missing permissions. Desktop device sessions last 180 days from sign in and persist across deployments; expired sessions offer sign in again. Dashboard loading errors preserve browser login and offer a page reload. Sharing suggests colleagues from all connected organizations, organization addresses seen in calendars, and previous recipients; new external addresses can also be selected.
 
 The companion recorder shows the current or next eligible calendar event from meetings the signed in person owns or attends with recording rights. Workspace admin access alone does not add colleagues’ meetings to automatic suggestions or missed bot alerts. Record starts capture for that event immediately; during capture, click the title to select another writable meeting or create a new one. Selecting a recent meeting adds another recording segment while preserving its earlier audio and transcript. Settings stay behind the gear, open without moving the summary controls, and collapse when recording starts. Recording start errors remain visible across calendar refreshes; an unavailable server route offers Retry recording rather than a separate meeting.
 
@@ -205,9 +205,11 @@ See [testing architecture](docs/testing.md) for individual commands, current cov
 
 ## License
 
-This project is source available under the [PolyForm Noncommercial License 1.0.0](LICENSE). Noncommercial use, modification, and distribution are permitted. Commercial use requires a separate license from the project owner.
+Tape is released under the [Functional Source License 1.1, Apache 2.0 future license](LICENSE) (FSL-1.1-ALv2).
 
-Because commercial use is restricted, this is not an OSI approved open source license.
+You may use, modify, self-host, and redistribute Tape for any purpose except a Competing Use: offering Tape, or a product with substantially the same functionality, to others as a commercial product or hosted service. Running it inside your own company, for your own meetings, is permitted. Each release converts to the Apache License 2.0 two years after it is published.
+
+Until that conversion, FSL is a fair source license rather than an OSI approved open source license.
 
 Google Calendar connections are stored separately by verified Google email. Connect additional work accounts and manage each calendar in Team settings. Accounts from configured organization domains join those organizations as members; existing admin roles are preserved. Organization administrators can switch organizations and edit each email domain’s bot avatar independently. Domains of one company must share a workspace to deduplicate invited calendar bots. The preferred organization bot is used when its domain appears among the attendees.
 

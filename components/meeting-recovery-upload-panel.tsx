@@ -326,8 +326,8 @@ export function MeetingRecoveryUploadPanel({
       }
     },
     className: cn(
-      "flex flex-col gap-2 rounded-lg border-2 border-dashed p-3",
-      isDragging ? "border-primary bg-primary/5" : "border-border",
+      "flex flex-col gap-2 rounded-xl border-2 border-dashed bg-background p-3",
+      isDragging ? "border-foreground/40" : "border-border",
     ),
   };
 
@@ -339,11 +339,17 @@ export function MeetingRecoveryUploadPanel({
     <Card
       aria-label={replaceAudio ? "Replacement audio upload" : undefined}
       aria-labelledby={replaceAudio ? undefined : titleId}
+      className={cn(
+        // One tonal plate, no ring. In the replace-audio dialog the dialog is
+        // already the surface, so the panel sits bare inside it.
+        "shadow-none ring-0",
+        replaceAudio ? "bg-transparent py-0 [--card-spacing:0px]" : "rounded-2xl bg-muted py-5",
+      )}
       role="region"
       size="sm"
     >
       {!replaceAudio ? (
-        <CardHeader className="border-b bg-muted/35">
+        <CardHeader className="px-5">
           <div className="flex items-start justify-between gap-3">
             <div>
               <CardTitle id={titleId}>Add meeting content</CardTitle>
@@ -353,14 +359,14 @@ export function MeetingRecoveryUploadPanel({
             </div>
             <span
               aria-hidden="true"
-              className="flex size-8 items-center justify-center rounded-lg bg-muted text-muted-foreground"
+              className="flex size-8 items-center justify-center rounded-full bg-background text-muted-foreground"
             >
               <UploadCloud className="size-4" />
             </span>
           </div>
         </CardHeader>
       ) : null}
-      <CardContent className="space-y-4">
+      <CardContent className={cn("space-y-4", !replaceAudio && "px-5")}>
         {!replaceAudio ? (
           <div
             aria-label="Meeting content source"
@@ -373,8 +379,8 @@ export function MeetingRecoveryUploadPanel({
               aria-label="Audio recording"
               aria-pressed={source === "audio"}
               className={cn(
-                "rounded-lg border bg-background p-3 text-left outline-none transition-colors hover:border-primary/50 focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:pointer-events-none disabled:opacity-50",
-                source === "audio" && "border-primary bg-primary/5",
+                "rounded-xl bg-background/50 p-3 text-left outline-none transition-colors hover:bg-background focus-visible:ring-3 focus-visible:ring-ring/50 disabled:pointer-events-none disabled:opacity-50",
+                source === "audio" && "bg-background shadow-sm",
               )}
               disabled={isBusy}
               onClick={() => {
@@ -386,7 +392,7 @@ export function MeetingRecoveryUploadPanel({
               <UploadCloud
                 className={cn(
                   "size-4",
-                  source === "audio" ? "text-primary" : "text-muted-foreground",
+                  source === "audio" ? "text-foreground" : "text-muted-foreground",
                 )}
               />
               <span className="mt-2 block text-sm font-semibold">
@@ -402,8 +408,8 @@ export function MeetingRecoveryUploadPanel({
               aria-label="Transcript"
               aria-pressed={source === "transcript"}
               className={cn(
-                "rounded-lg border bg-background p-3 text-left outline-none transition-colors hover:border-primary/50 focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:pointer-events-none disabled:opacity-50",
-                source === "transcript" && "border-primary bg-primary/5",
+                "rounded-xl bg-background/50 p-3 text-left outline-none transition-colors hover:bg-background focus-visible:ring-3 focus-visible:ring-ring/50 disabled:pointer-events-none disabled:opacity-50",
+                source === "transcript" && "bg-background shadow-sm",
               )}
               disabled={isBusy}
               onClick={() => {
@@ -416,7 +422,7 @@ export function MeetingRecoveryUploadPanel({
                 className={cn(
                   "size-4",
                   source === "transcript"
-                    ? "text-primary"
+                    ? "text-foreground"
                     : "text-muted-foreground",
                 )}
               />
@@ -432,7 +438,7 @@ export function MeetingRecoveryUploadPanel({
 
         {source === "audio" ? (
           <form
-            className="space-y-4 rounded-lg border bg-muted/20 p-4"
+            className="space-y-4"
             id={audioFormId}
             onSubmit={handleAudioSubmit}
           >
@@ -460,7 +466,7 @@ export function MeetingRecoveryUploadPanel({
               </p>
             </div>
             {audioFiles.length > 0 ? (
-              <ol className="list-decimal space-y-1 rounded-md border bg-background px-3 py-2 pl-8 text-xs text-muted-foreground">
+              <ol className="list-decimal space-y-1 rounded-lg bg-background px-3 py-2 pl-8 text-xs text-muted-foreground">
                 {audioFiles.map((file, index) => (
                   <li
                     className="break-all"
@@ -471,7 +477,7 @@ export function MeetingRecoveryUploadPanel({
                 ))}
               </ol>
             ) : null}
-            <Button type="submit" disabled={isBusy} size="sm">
+            <Button type="submit" disabled={isBusy} size="sm" variant="ink">
               <UploadCloud data-icon="inline-start" />
               {audioUploading
                 ? "Uploading..."
@@ -486,7 +492,7 @@ export function MeetingRecoveryUploadPanel({
 
         {source === "transcript" ? (
           <form
-            className="space-y-4 rounded-lg border bg-muted/20 p-4"
+            className="space-y-4"
             id={transcriptFormId}
             onSubmit={handleTranscriptSubmit}
           >
@@ -503,10 +509,8 @@ export function MeetingRecoveryUploadPanel({
                 value={transcriptText}
               />
             </div>
-            <div className="flex items-center gap-3" aria-hidden="true">
-              <span className="h-px flex-1 bg-border" />
+            <div className="flex justify-center" aria-hidden="true">
               <span className="text-xs text-muted-foreground">or</span>
-              <span className="h-px flex-1 bg-border" />
             </div>
             <div {...dropAreaProps}>
               <Label htmlFor={transcriptInputId}>Transcript file</Label>
@@ -530,7 +534,7 @@ export function MeetingRecoveryUploadPanel({
               ) : null}
               <p className="text-xs text-muted-foreground">TXT, SRT, or VTT</p>
             </div>
-            <Button type="submit" disabled={isBusy} size="sm">
+            <Button type="submit" disabled={isBusy} size="sm" variant="ink">
               <FileText data-icon="inline-start" />
               {transcriptUploading ? "Uploading..." : "Add transcript"}
             </Button>

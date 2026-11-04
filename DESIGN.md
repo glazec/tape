@@ -152,7 +152,7 @@ Use `ProductLogo` with `variant="light"` on dark backgrounds. Never apply a CSS 
 
 ### Typography
 
-Use Geist for the application interface. Use Fraunces, Space Grotesk, and IBM Plex Mono only on the public site and sign in surfaces where the editorial brand voice is intentional.
+Use Geist for the application interface. Use Fraunces, Space Grotesk, and IBM Plex Mono only on the public site, sign in, and not-found surfaces where the editorial brand voice is intentional. Inside the workspace, IBM Plex Mono appears only through `AppLabel` (below).
 
 The public site has one display scale, defined as font-size tokens in `app/globals.css`: `text-display-hero` for the hero H1, `text-display-1` for large section headings, `text-display-2` for section headings, `text-display-3` for sub-display lines, `text-lede` for opening paragraphs, and `text-label` for mono microcopy. Each step is fluid through `clamp()` and monotonic, so a heading never shrinks as the viewport grows. Never hand-write a landing font size; add a token if a step is missing.
 
@@ -162,13 +162,19 @@ The application uses a fixed rem scale with a tight ratio: `text-2xl` for a page
 
 Headings should be short, sentence case, and visually distinct through size and weight rather than uppercase. Small uppercase text may label a section, but it must not repeat the heading below it. Mono microcopy is never smaller than 11px.
 
+The one exception to Geist inside the workspace is `AppLabel` (`components/app-label.tsx`): IBM Plex Mono, `text-label` (11px), uppercase, `tracking-[0.2em]`, muted. It is the shared brand cue for small section labels: meeting list day headings, follow-up subheads, and transcript Speakers and Mentioned labels. Use the component, or `appLabelClassName` where an element already exists, rather than hand-writing uppercase label classes. Step numbers in the setup card use the same mono face.
+
 Use tabular numerals for timers, durations, and changing metrics. Keep body copy readable with generous line height and a narrow measure: cap prose around 48ch to 52ch, and use `text-pretty` on body copy and `text-balance` on display headings so lines do not end in orphans.
 
 ### Spacing and surfaces
 
 Use the existing four pixel scale, with eight pixels as the common spacing step. Prefer whitespace and alignment over nested cards.
 
-Cards should represent a meaningful group, not every section. Avoid card inside card. Keep borders quiet and shadows subtle. Use a maximum content width that supports scanning, while long transcript text should use a narrower reading measure.
+Cards should represent a meaningful group, not every section. Avoid card inside card. When a group needs a surface, use one tonal plate (`rounded-2xl bg-muted`, no ring or border) and put tonal tiles (`bg-background`) inside it rather than more bordered boxes. Keep borders quiet and shadows subtle. Use a maximum content width that supports scanning, while long transcript text should use a narrower reading measure.
+
+Do not separate page sections or list items with rules. No horizontal dividers between sections, no `divide-y` between list rows, and no vertical side rails to group items. Granola and Otter separate sections with heading size and whitespace alone, and so do we: a group is a `text-base font-semibold` heading with about 40 to 48 px before the next one, subsections are small uppercase muted labels with 32 px between them, and items within a subsection sit 16 px apart. Group items by placing them under a label, not by drawing a line. A tonal hover surface is fine for an interactive row; a resting border is not. Rules remain acceptable only where they mark a physical edge, such as a fixed player bar or a dialog footer.
+
+The meeting page follows Granola's Enhanced and Transcript switch: a rounded segmented control under the title chooses Notes (sparkle icon) or Transcript (audio icon), and `?view=transcript` opens the second. Both views stay mounted; the hidden transcript keeps its fixed player bar visible, and any source link, connection name or note timestamp that points into the transcript switches to it before scrolling. Notes holds two groups, My notes (private, with Add timestamp and save status on the right) and From the transcript (the generated To do list, Dynamic, Potential research and Potential connections, with Regenerate on the right). Do not reintroduce a separate AI followup section. Transcript holds Speakers, Mentioned and the lines; its own heading stays for screen readers only because the tab names it. Meetings that have no transcript yet keep the plain stacked layout without the switch. Every generated item ends in one muted meta line of the same form: an optional lead in such as the timing or relationship, a dot, then Source and its timestamps.
 
 The public site paces sections rather than repeating one padding value: the thesis band is tight, content sections use the standard step, the dark open source section is more generous, and the closing call to action is the most generous of all. Split sections align their columns to the top. Centering columns of unequal height leaves matching voids above and below and reads as a mistake.
 
@@ -188,7 +194,13 @@ Task critical flows such as recording use a focused layout for the entire route,
 
 ### Buttons
 
-Use one primary button per decision area. Secondary actions use outline or ghost styles. Destructive actions stay visually quiet until the user enters the destructive flow, then require clear confirmation.
+Every button is a pill (`rounded-full`), matching the landing page. Each screen has one primary action:
+
+- **Coral (`variant="brand"`)** is reserved for the single create action, the header New meeting split button. Nothing else in the workspace is a coral fill, so it never competes with an in-page primary.
+- **Ink (`variant="ink"`, also the `default`)** is the in-page primary: `bg-ink text-paper`, hovering to graphite. Examples are Add meeting bot, Copy MCP server link, and the upload submit in Add meeting content. Use at most one ink pill per decision area.
+- Secondary actions use `outline` or `ghost`. A group of parallel steps, such as the setup card, gives every step the same secondary style instead of mixing outline, ghost, and fills.
+
+Destructive actions stay visually quiet until the user enters the destructive flow, then require clear confirmation.
 
 Button labels should describe the outcome: `Upload audio`, `Copy transcript`, `Record on phone`. Avoid vague labels such as `Submit`, `Continue`, or `Apply` when a more specific label fits.
 
@@ -222,17 +234,21 @@ The transcript is the primary reading surface. Audio, language, style, speaker c
 
 Keep the player and the currently useful transcript controls close to the content. Secondary analysis and correction tools should be collapsible. Preserve a readable line length and make speaker changes easy to understand and undo.
 
-On populated meeting pages, show available translation state, captured images, and speaker tools before transcript text. Keep detected entities visible as supporting information after the transcript. Omit each section when its corresponding data is absent.
+On populated meeting pages, show available translation state, captured images, and speaker tools before transcript text. The transcript header stacks Speakers (each with its share of the conversation as a visible percentage) and Mentioned (organizations, money amounts and names as a label and value grid), the way Otter shows Speakers and Keywords. Combined meetings keep Mentioned after the transcripts. Omit each section when its corresponding data is absent.
 
 ### Meeting detail
 
-Place My notes above the transcript or recovery panel in every meeting state. Align the title and writing text on one edge, put Only visible to you beneath the title, and reserve a stable space for quiet autosave feedback. Use 16 px writing text, a subtle outer focus ring, and automatic height with a viewport aware cap so long notes do not hide the transcript. Keep a static loading placeholder until notes are available. Preserve drafts through meeting refreshes and keep failed saves visible with Retry. For conflicting edits, offer Copy my edits and require confirmation in the shared dialog before loading the saved version. Show the character limit only when notes approach it.
+Place My notes above the transcript or recovery panel in every meeting state. Align the title and writing text on one edge, put Only visible to you beneath the title, and reserve a stable space for quiet autosave feedback. Use 16 px writing text, a subtle outer focus ring, and automatic height with a viewport aware cap so long notes do not hide the transcript. Keep a static loading placeholder until notes are available. Preserve drafts through meeting refreshes and keep failed saves visible with Retry. For conflicting edits, offer Copy my edits and require confirmation in the shared dialog before loading the saved version. Show the character limit only when notes approach it. Keep Markdown writing and formatted Preview behind one quiet toggle. Preserve timestamp navigation in Preview. Tables scroll inside the note at narrow widths; pasted tables retain row and column structure.
 
 Question answers belong directly beneath their questions, marked From transcript with a quiet left rule and expandable sources. Put an icon-only Regenerate answer control immediately beside the source label. Render the answer as a directly editable, borderless textarea with automatic saving, an accessible label, and a visible focus treatment; do not require Edit, Done, or Cancel buttons. Preserve deliberately cleared answers. Preserve earlier pairs when writing continues. Use a 1.2 second pause after a question mark, respect IME composition, and never move focus when an answer arrives. Keep the previous answer visible during regeneration. Show changed question or transcript state explicitly; protect edited answers with confirmation before regeneration. Answer edits use the existing notes save status and draft recovery. Keep the answer read only while regeneration is running so incoming results cannot overwrite typing. Bound the notes document height so the transcript remains reachable. Source links and answer actions have at least 44 px touch targets.
 
 Lead with the editable title and compact, human readable metadata, with Share, Export, Copy, and the overflow menu on the title row. The page is one centered reading column. Private notes and the AI followup come before the transcript, because they are the summary layer; the transcript follows. The AI followup generates on its own when a transcript finishes, so the page opens on it; Regenerate stays available, and Generate appears only when automatic generation has not produced one. Related meetings sit behind a compact chip under the metadata rather than in a side column, and sharing opens in a dialog from the Share button.
 
 Show available participant names below the meeting metadata, including scheduled meetings without a recording or transcript. Omit the participant row when no names or emails are available to the viewer.
+
+Empty lists and empty results use `EmptyState` (`components/empty-state.tsx`): an optional `AppLabel`, one plain sentence, an optional supporting line, and at most one action, an ink pill when there is a useful next step.
+
+Not-found pages (`app/not-found.tsx`, and `app/meetings/[meetingId]/not-found.tsx` for meetings in another workspace) sit outside the workspace shell, so they follow the sign-in page's landing language through `BrandedNotFound`: logo, mono eyebrow, a Fraunces line, a plain explanation, and an ink pill back to Meetings.
 
 For meetings without content, center the add content choice. Show only the source choices that can resolve the current state. Do not show an empty transcript viewer.
 
@@ -311,7 +327,7 @@ Write like a helpful colleague. Be direct, calm, and specific.
 
 ## AI followup
 
-Keep AI followup open above the transcript in the meeting's reading column. To do list and Dynamic are stacked plain lists with at most two short entries each. Begin those entries with explicit @Name labels and preserve named team ownership. Add Potential research below them only when research items exist, with at most five concise question and evidence paragraphs. Each question starts on its own semibold line, followed by muted evidence text. Align questions and source rows with the section heading, and constrain the copy surface to the reading measure with a small outward hover gutter. Each entire paragraph is a keyboard accessible copy button with a quiet copy icon and visible focus ring. Expose the evidence request as the button’s accessible description. A single helper line explains that copying includes the question and meeting context for AI research. Keep detailed context in the clipboard prompt and source excerpts behind timestamp controls. Do not assign research owners or deadlines unless explicitly agreed.
+Show the generated followup in the Notes view under From the transcript, below My notes. To do list and Dynamic are stacked plain lists with at most two short entries each. Begin those entries with explicit @Name labels and preserve named team ownership. Add Potential research below them only when research items exist, with at most five concise question and evidence paragraphs. Each question starts on its own semibold line, followed by muted evidence text, with a small copy icon inline after the question. Align questions and source rows with the section heading, and constrain the copy surface to the reading measure with a small outward hover gutter. Each entire paragraph is a keyboard accessible copy button with a quiet copy icon and visible focus ring. Expose the evidence request as the button’s accessible description. A single helper line explains that copying includes the question and meeting context for AI research. Keep detailed context in the clipboard prompt and source excerpts behind timestamp controls. Do not assign research owners or deadlines unless explicitly agreed.
 
 Show Potential connections after research when supported leads exist. Group entries under the current speaker name. Each compact entry shows the known name, company and title, a plain relationship label, brief context and existing timestamp source controls. Use Unnamed person, Unnamed team or Unnamed project when no name was said; omit absent company and title metadata. Names and organizations link to the cited transcript rather than guessed external profiles. Show three entries per speaker initially and disclose the remainder with Show more connections. Keep distinct unnamed teams separate. A saved speaker correction updates only entries anchored to affected segments; failed saves retain the previous labels. Saved connections remain readable after a rename even when the other summary sections need regeneration.
 
@@ -319,7 +335,7 @@ Order identified current organization speakers last, keeping other group order s
 
 Keep source controls outside the copy button. Hover, tap, or keyboard activation opens the exact transcript quote and a View in transcript link; Escape dismisses the bubble. Source controls and research paragraphs have at least 44 pixel touch targets. Keep the copy status live region mounted before interaction, with atomic announcements. Show a temporary status toast only after the clipboard write succeeds; failure shows an error toast and allows another click. Support copying for existing readers as well as managers. Preserve the stacked layout and wrap long text on mobile.
 
-Place a quiet Regenerate icon after the results, aligned right, with an accessible name. Managers can generate or regenerate; readers see saved results without generation controls. Existing summaries remain visible without a research section until regenerated. Hide unavailable or source stale results. Announce generation and errors, offer Retry, and avoid exposing model details.
+Generate the followup automatically when a transcript finishes, and from the meeting page when none exists yet; show a quiet writing status rather than a Generate button while that happens. Place a quiet Regenerate icon in the AI followup heading row, aligned right, with an accessible name. Managers can generate or regenerate; readers see saved results without generation controls. Existing summaries remain visible without a research section until regenerated. Hide unavailable or source stale results. Announce generation and errors, offer Retry, and avoid exposing model details.
 
 ## Design decision process
 
@@ -368,3 +384,5 @@ A started meeting must not disappear because its status notification is missing.
 Web and desktop sign in use the existing Google flow. Desktop device credentials have a separate fixed 180 day lifetime and retain their existing reconnect flow. Sessions last 180 days from login and persist across deployments. Expired sessions return to sign in with the requested destination; transient dashboard failures retain the session and offer retry.
 
 Share dialogs list participants and recipients separately from inherent workspace administrator access. An empty recipient list must not imply owner-only visibility.
+
+When native fallback needs a capture source, use the system window picker restricted to one window. Explain that the meeting tab must stay visible. Cancellation must not silently start audio capture. Screenshot interruption warnings stay visible while audio continues, and clear only after screenshot capture recovers. Do not imply that selecting a browser window pins a hidden tab.

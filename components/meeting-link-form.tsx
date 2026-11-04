@@ -225,6 +225,7 @@ export function MeetingLinkForm() {
             type="submit"
             disabled={state === "saving"}
             className="min-h-11 w-fit"
+            variant="ink"
           >
             <CalendarPlus data-icon="inline-start" />
             {state === "saving" ? "Checking meeting" : "Add meeting bot"}

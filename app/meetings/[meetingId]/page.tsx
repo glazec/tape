@@ -15,6 +15,7 @@ import { MeetingFollowup } from "@/components/meeting-followup";
 import { MeetingRecoveryUploadPanel } from "@/components/meeting-recovery-upload-panel";
 import { MeetingRecordingResume } from "@/components/meeting-recording-resume";
 import { MeetingTitleEditor } from "@/components/meeting-title-editor";
+import { MeetingViewTabs } from "@/components/meeting-view-tabs";
 import { RelatedMeetingsCard } from "@/components/related-meetings-card";
 import { MeetingShareButton } from "@/components/share-dialog";
 import { TranscriptViewer } from "@/components/transcript-viewer";
@@ -46,13 +47,17 @@ export const dynamic = "force-dynamic";
 
 export default async function MeetingPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ meetingId: string }>;
+  searchParams?: Promise<{ view?: string | string[] }>;
 }) {
-  const [user, { meetingId }] = await Promise.all([
+  const [user, { meetingId }, query] = await Promise.all([
     requireCurrentUser(),
     params,
+    searchParams ?? Promise.resolve<{ view?: string | string[] }>({}),
   ]);
+  const initialView = query.view === "transcript" ? "transcript" : "notes";
   const workspace = await getOrCreateWorkspaceForSessionUser(user, { meetingId });
   const [composition, relatedMeetings] = await Promise.all([
     getMeetingCompositionForWorkspace(workspace, meetingId),
@@ -75,6 +80,10 @@ export default async function MeetingPage({
   const followupSource = getFollowupSource(followupMeeting);
   const followupResult = getCurrentMeetingFollowup(followupMeeting);
   const followupSourceHash = getFollowupSourceHash(followupMeeting);
+  // The transcript-complete job generates the followup shortly after a recording ends; give it
+  // time before the page generates its own. Edits bump updatedAt, so key off the recording end.
+  const recordingEndedAt = Date.parse(latestPart?.lastRecordingEndedAt ?? meeting.endedAt ?? "");
+  const followupJobMayBeRunning = Number.isFinite(recordingEndedAt) && recordingEndedAt > new Date().getTime() - 20 * 60_000;
   const canShare = parts.some(part => part.segments.length > 0);
   const { domains: organizationDomains } = await getOrganizationBotSettings(workspace.teamId);
   const [shareRecipients, activeShares, teamConfiguration] = canShare
@@ -162,6 +171,87 @@ export default async function MeetingPage({
         teamMembers={shareRecipients}
       />
     ) : null;
+  const notesContent = (
+    <>
+      <MeetingNotes
+        key={`${workspace.userId}:${meetingId}`}
+        meetingId={meetingId}
+        userId={workspace.userId}
+        momentSources={(isComposed ? parts : [meeting]).map(source => ({
+          id: source.id,
+          durationMs: source.durationMs,
+          recordings: source.recordingParts ?? [],
+          hasTranscript: source.segments.length > 0,
+          recording: source.status === "recording",
+        }))}
+      />
+      {isFollowupReady(followupMeeting) ? (
+        <MeetingFollowup
+          autoGenerate
+          waitForBackground={followupJobMayBeRunning}
+          canGenerate={canManage}
+          initialResult={followupResult}
+          initialConnections={getCurrentMeetingConnections(followupMeeting)}
+          initialConnectionsRevision={getConnectionsRevision(followupMeeting)}
+          initialConnectionIds={getCurrentMeetingConnectionIds(followupMeeting)}
+          organizationDomains={organizationDomains}
+          participants={participants}
+          key={`${workspace.userId}:${meetingId}:${canManage}`}
+          meetingId={meetingId}
+          meetingTitle={followupMeeting.title}
+          meetingStartedAt={followupSource.startedAt}
+          segments={followupMeeting.segments.map(({ id, startMs, speaker, text }) => ({ id, startMs, speaker, text }))}
+          sourceHash={followupSourceHash}
+        />
+      ) : null}
+    </>
+  );
+  const transcriptContent = (
+    <>
+      {isComposed ? <>
+        <p className="mb-5 text-sm text-muted-foreground">{parts.length} recordings. Each part keeps its original audio and sharing.</p>
+        <MeetingComposedTranscripts meetings={parts} primaryMeetingId={meetingId} preferredTranslationLanguage={teamConfiguration?.translationLanguage} />
+      </> : <TranscriptViewer
+        audioParts={
+          recordingParts.length > 1 ? recordingParts : undefined
+        }
+        audioUrl={meeting.audioUrl}
+        key={getTranscriptViewerRenderKey({
+          displayStatus,
+          meetingId,
+          polishedSegments: meeting.segments.filter((segment) =>
+            Boolean(segment.polishedText?.trim()),
+          ).length,
+          segmentCount: meeting.segments.length,
+          translatedSegments:
+            meeting.translationSummary.translatedSegments,
+          translationStatus: meeting.translationSummary.status,
+        })}
+        meetingId={canManage ? meetingId : null}
+        navigationMeetingId={meetingId}
+        hideHeading
+        afterSpeakers={
+          <MeetingEntityLinks entities={meeting.entities} />
+        }
+        preferredTranslationLanguage={
+          teamConfiguration?.translationLanguage ??
+          meeting.translationLanguage
+        }
+        segments={meeting.segments}
+        speakerAliases={meeting.speakerAliases}
+        speakerSuggestions={meeting.speakerSuggestions}
+        translationLanguage={meeting.translationLanguage}
+        translationSummary={meeting.translationSummary}
+        visualAssets={continuousVisualAssets}
+      />}
+
+      {isComposed ? (
+        <div className="mt-8">
+          <MeetingEntityLinks entities={meeting.entities} />
+        </div>
+      ) : null}
+    </>
+  );
   return (
     <AppShell
       activeHref="/dashboard"
@@ -169,7 +259,7 @@ export default async function MeetingPage({
       canCreateMeetings={workspace.canCreateMeetings !== false}
       oneSignalExternalId={workspace.userId}
     >
-      <div className="flex w-full min-w-0 flex-col gap-8">
+      <div className="flex w-full min-w-0 flex-col gap-10">
         <section className="flex min-w-0 flex-wrap items-start gap-x-6">
           <MeetingAutoRefresh
             meetingStatus={meeting.status}
@@ -210,7 +300,7 @@ export default async function MeetingPage({
             />
           </div>
           {composition.parent ? <p className="order-3 mt-2 basis-full text-sm text-muted-foreground">Part of <Link className="underline underline-offset-4" href={`/meetings/${composition.parent.id}`}>{composition.parent.title}</Link></p> : null}
-          <div className="order-1 min-w-0 flex-1">
+          <div className="order-1 min-w-0 basis-full sm:flex-1 sm:basis-0">
             {canManage ? (
               <MeetingTitleEditor
                 meetingId={meetingId}
@@ -256,35 +346,7 @@ export default async function MeetingPage({
 
         <section className="min-w-0">
           <div>
-            <MeetingNotes
-              key={`${workspace.userId}:${meetingId}`}
-              meetingId={meetingId}
-              userId={workspace.userId}
-              momentSources={(isComposed ? parts : [meeting]).map(source => ({
-                id: source.id,
-                durationMs: source.durationMs,
-                recordings: source.recordingParts ?? [],
-                hasTranscript: source.segments.length > 0,
-                recording: source.status === "recording",
-              }))}
-            />
-            {isFollowupReady(followupMeeting) ? (
-              <MeetingFollowup
-                canGenerate={canManage}
-                initialResult={followupResult}
-                initialConnections={getCurrentMeetingConnections(followupMeeting)}
-                initialConnectionsRevision={getConnectionsRevision(followupMeeting)}
-                initialConnectionIds={getCurrentMeetingConnectionIds(followupMeeting)}
-                organizationDomains={organizationDomains}
-                participants={participants}
-                key={`${workspace.userId}:${meetingId}:${canManage}`}
-                meetingId={meetingId}
-                meetingTitle={followupMeeting.title}
-                meetingStartedAt={followupSource.startedAt}
-                segments={followupMeeting.segments.map(({ id, startMs, speaker, text }) => ({ id, startMs, speaker, text }))}
-                sourceHash={followupSourceHash}
-              />
-            ) : null}
+            {shouldCenterMeetingSource ? notesContent : null}
                 {shouldOfferRecordingResume && latestPart.meetingUrl && latestPart.lastRecordingEndedAt ? (
                   <MeetingRecordingResume
                     meetingId={meetingId}
@@ -296,7 +358,7 @@ export default async function MeetingPage({
               <div className="mx-auto w-full max-w-2xl py-2 sm:py-6">
                 {shouldOfferLocalRecorderGuidance ? (
                   <div className="space-y-4">
-                    <div className="rounded-lg border bg-muted/25 p-5">
+                    <div className="rounded-2xl bg-muted p-5">
                       <h2 className="text-base font-semibold">
                         Record this Teams meeting locally
                       </h2>
@@ -306,7 +368,7 @@ export default async function MeetingPage({
                         a notification when local capture becomes available.
                       </p>
                     </div>
-                    <details className="rounded-lg border bg-muted/20 p-4">
+                    <details className="px-1">
                       <summary className="cursor-pointer text-sm font-medium outline-none focus-visible:ring-3 focus-visible:ring-ring/50">
                         Already have a recording or transcript?
                       </summary>
@@ -321,7 +383,7 @@ export default async function MeetingPage({
                       meetingId={meetingId}
                       meetingUrl={meeting.meetingUrl}
                     />
-                    <details className="rounded-lg border bg-muted/20 p-4">
+                    <details className="px-1">
                       <summary className="cursor-pointer text-sm font-medium outline-none focus-visible:ring-3 focus-visible:ring-ring/50">
                         Already have a recording or transcript?
                       </summary>
@@ -335,47 +397,11 @@ export default async function MeetingPage({
                 )}
               </div>
             ) : (
-              <>
-                {isComposed ? <>
-                  <p className="mb-5 text-sm text-muted-foreground">{parts.length} recordings. Each part keeps its original audio and sharing.</p>
-                  <MeetingComposedTranscripts meetings={parts} primaryMeetingId={meetingId} preferredTranslationLanguage={teamConfiguration?.translationLanguage} />
-                </> : <TranscriptViewer
-                  audioParts={
-                    recordingParts.length > 1 ? recordingParts : undefined
-                  }
-                  audioUrl={meeting.audioUrl}
-                  key={getTranscriptViewerRenderKey({
-                    displayStatus,
-                    meetingId,
-                    polishedSegments: meeting.segments.filter((segment) =>
-                      Boolean(segment.polishedText?.trim()),
-                    ).length,
-                    segmentCount: meeting.segments.length,
-                    translatedSegments:
-                      meeting.translationSummary.translatedSegments,
-                    translationStatus: meeting.translationSummary.status,
-                  })}
-                  meetingId={canManage ? meetingId : null}
-                  navigationMeetingId={meetingId}
-                  mobileAfterSpeakers={
-                    <MeetingEntityLinks entities={meeting.entities} />
-                  }
-                  preferredTranslationLanguage={
-                    teamConfiguration?.translationLanguage ??
-                    meeting.translationLanguage
-                  }
-                  segments={meeting.segments}
-                  speakerAliases={meeting.speakerAliases}
-                  speakerSuggestions={meeting.speakerSuggestions}
-                  translationLanguage={meeting.translationLanguage}
-                  translationSummary={meeting.translationSummary}
-                  visualAssets={continuousVisualAssets}
-                />}
-
-                <div className="hidden lg:block">
-                  <MeetingEntityLinks entities={meeting.entities} />
-                </div>
-              </>
+              <MeetingViewTabs
+                initialView={initialView}
+                notes={notesContent}
+                transcript={transcriptContent}
+              />
             )}
           </div>
         </section>
