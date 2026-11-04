@@ -5,7 +5,7 @@ struct PermissionList: View {
     var checklist: PermissionChecklist
     var requestPermission: (OperationalPermission) -> Void
     var setStartAtLoginEnabled: @MainActor @Sendable (Bool) -> Void
-    var repairAccessibility: () -> Void
+    var repairPermission: (RecorderSystemActions.RepairPermission) -> Void
     var showAppInFinder: () -> Void
     var isBusy: Bool
     @State private var showsRecovery = false
@@ -44,15 +44,26 @@ struct PermissionList: View {
                 .controlSize(.mini)
                 .accessibilityLabel("Start Tape Desktop at login")
             }
-            if checklist.accessibility != .granted {
-                DisclosureGroup("Accessibility still blocked?", isExpanded: $showsRecovery) {
+            if !checklist.allSetupGranted {
+                DisclosureGroup("Access still blocked?", isExpanded: $showsRecovery) {
                     VStack(alignment: .leading, spacing: 8) {
-                        Text("An older copy may have the saved permission. Reset its entry, then enable this copy in System Settings.")
+                        Text("An older copy may have the saved permission. Choose the affected permission to repair access and restart, then enable this copy in System Settings.")
                             .font(TapeType.sans(11.5))
                             .foregroundStyle(TapePalette.muted)
                             .fixedSize(horizontal: false, vertical: true)
-                        HStack(spacing: 16) {
-                            Button("Reset access…", action: repairAccessibility)
+                        VStack(alignment: .leading, spacing: 8) {
+                            if checklist.microphone != .granted {
+                                Button("Repair microphone…") { repairPermission(.microphone) }
+                            }
+                            if checklist.notifications != .granted {
+                                Button("Repair notifications…") { repairPermission(.notifications) }
+                            }
+                            if checklist.accessibility != .granted {
+                                Button("Repair Accessibility…") { repairPermission(.accessibility) }
+                            }
+                            if checklist.screenCapture != .granted {
+                                Button("Repair screen and system audio…") { repairPermission(.screenCapture) }
+                            }
                             Button("Show this app", action: showAppInFinder)
                         }
                         .buttonStyle(.plain)

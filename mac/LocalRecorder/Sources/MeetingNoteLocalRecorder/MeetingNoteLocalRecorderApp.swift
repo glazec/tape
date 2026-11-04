@@ -340,6 +340,9 @@ final class RecorderAppModel: NSObject, ObservableObject, UNUserNotificationCent
         self.serverURLText = initialLocalRecorderServerURLText(credentials: credentials)
         self.bearerToken = credentials?.bearerToken ?? ""
         super.init()
+        Task { @MainActor in
+            await resumePermissionRepair(arguments: ProcessInfo.processInfo.arguments)
+        }
         loadPersistedPendingMeetings()
         recallSDKController.onUnexpectedTermination = { [weak self] id in
             Task { @MainActor in
@@ -1375,27 +1378,81 @@ final class RecorderAppModel: NSObject, ObservableObject, UNUserNotificationCent
         }
     }
 
-    func repairAccessibility() {
-        guard !isRequestingPermissions, canCloseApp(),
+    func repairPermission(_ permission: RecorderSystemActions.RepairPermission) {
+        guard !isRequestingPermissions, !isRestarting, canCloseApp(),
               let bundleIdentifier = Bundle.main.bundleIdentifier else { return }
         let alert = NSAlert()
-        alert.messageText = "Reset Accessibility access?"
-        alert.informativeText = "This removes the old permission entry for Tape Desktop and requests access for this copy. Enable Tape Desktop again in System Settings."
-        alert.addButton(withTitle: "Reset access")
+        alert.messageText = "Repair \(permission.title) access?"
+        alert.informativeText = permission.resetService == nil
+            ? "This refreshes the app registration and restarts Tape Desktop. Enable notifications for this copy in System Settings. Your existing notification choice is preserved."
+            : "This removes the old permission entry and restarts Tape Desktop to request access for this copy. Enable Tape Desktop again in System Settings."
+        alert.addButton(withTitle: "Repair access")
         alert.addButton(withTitle: "Cancel")
         guard alert.runModal() == .alertFirstButtonReturn else { return }
 
         isRequestingPermissions = true
         Task {
             defer { isRequestingPermissions = false }
-            do {
-                try await RecorderSystemActions.resetAccessibility(bundleIdentifier: bundleIdentifier)
-                permissionChecklist.accessibility = requestAccessibilityPermission()
-                statusText = "Access reset. Enable Tape Desktop in Accessibility settings."
-            } catch {
-                statusText = "Reset failed. Remove the old Accessibility entry, then add this app."
-                openAccessibilitySettings()
+            await repairPermissionAndRelaunch(permission, bundleIdentifier: bundleIdentifier)
+        }
+    }
+
+    private func repairPermissionAndRelaunch(_ permission: RecorderSystemActions.RepairPermission, bundleIdentifier: String) async {
+        do {
+            try await RecorderSystemActions.repairPermission(permission, bundleIdentifier: bundleIdentifier, applicationURL: Bundle.main.bundleURL)
+        } catch {
+            statusText = permission.resetService == nil
+                ? "Repair failed. Open Notifications settings and enable Tape Desktop."
+                : "Reset failed. Remove the old \(permission.title) entry, then add this app."
+            switch permission {
+            case .microphone: openMicrophoneSettings()
+            case .notifications: openNotificationSettings()
+            case .accessibility: openAccessibilitySettings()
+            case .screenCapture: openScreenCaptureSettings()
             }
+            return
+        }
+
+        // Request from a new process so an earlier prompt or trust decision
+        // in this process cannot be reused after the saved entry is removed.
+        switch permission {
+        case .microphone: permissionChecklist.microphone = .unknown
+        case .notifications: break
+        case .accessibility: permissionChecklist.accessibility = .unknown
+        case .screenCapture: permissionChecklist.screenCapture = .unknown
+        }
+        isRestarting = true
+        defer { isRestarting = false }
+        do {
+            try await RecorderSystemActions.launchReplacement(
+                at: Bundle.main.bundleURL,
+                arguments: [permission.launchArgument]
+            )
+            stopLevelTest()
+            NSApp.terminate(nil)
+        } catch {
+            statusText = permission.resetService == nil
+                ? "Restart failed. Quit and reopen Tape Desktop, then enable notifications in Settings."
+                : "Access reset, but restart failed. Quit and reopen Tape Desktop, then allow \(permission.title)."
+        }
+    }
+
+    private func resumePermissionRepair(arguments: [String]) async {
+        guard let permission = RecorderSystemActions.RepairPermission.allCases.first(where: {
+            arguments.contains($0.launchArgument)
+        }) else { return }
+        switch permission {
+        case .microphone:
+            permissionChecklist.microphone = await requestMicrophonePermission()
+            if permissionChecklist.microphone != .granted { openMicrophoneSettings() }
+        case .notifications:
+            permissionChecklist.notifications = await requestNotificationPermission()
+            if permissionChecklist.notifications != .granted { openNotificationSettings() }
+        case .accessibility:
+            permissionChecklist.accessibility = requestAccessibilityPermission()
+        case .screenCapture:
+            permissionChecklist.screenCapture = await requestScreenCapturePermission()
+            if permissionChecklist.screenCapture != .granted { openScreenCaptureSettings() }
         }
     }
 
