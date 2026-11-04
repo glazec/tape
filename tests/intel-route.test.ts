@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-const mocks = vi.hoisted(() => ({ getCurrentUser: vi.fn(), getOrCreateWorkspaceForSessionUser: vi.fn(), assertRequestRateLimit: vi.fn(), loadIntelMeetings: vi.fn(), enqueueIntelSearch: vi.fn(), readIntelJob: vi.fn(), searchIntel: vi.fn() }));
+const mocks = vi.hoisted(() => ({ getCurrentUser: vi.fn(), getOrCreateWorkspaceForSessionUser: vi.fn(), assertRequestRateLimit: vi.fn(), loadIntelMeetings: vi.fn(), enqueueIntelSearch: vi.fn(), readIntelJob: vi.fn(), previewIntelSearch: vi.fn(), searchIntel: vi.fn() }));
 vi.mock("@/lib/auth", () => mocks);
 vi.mock("@/lib/workspace", () => mocks);
 vi.mock("@/lib/intel/store", () => mocks);
@@ -26,6 +26,16 @@ describe("Intel search route", () => {
     expect(response.headers.get("cache-control")).toBe("private, no-store");
     expect(await response.json()).toEqual({ id: "job" });
     expect(mocks.loadIntelMeetings).not.toHaveBeenCalled();
+  });
+  it("previews the model cost without dispatching a search", async () => {
+    const input = { kind: "content", text: "inference" };
+    const estimate = { lowUsd: 0.01, highUsd: 0.09 };
+    mocks.previewIntelSearch.mockResolvedValue({ id: "preview", estimate });
+    const response = await POST(new Request("https://tape.example/api/intel/search?estimate=1", {
+      method: "POST", body: JSON.stringify(input),
+    }));
+    expect(await response.json()).toEqual({ id: "preview", estimate });
+    expect(mocks.enqueueIntelSearch).not.toHaveBeenCalled();
   });
   it("does not acknowledge a failed enqueue", async () => {
     mocks.enqueueIntelSearch.mockRejectedValue(new Error());

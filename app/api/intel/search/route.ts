@@ -1,8 +1,9 @@
 import { z } from "zod";
-import { enqueueIntelSearch, readIntelJob } from "@/lib/intel/jobs";
+import { enqueueIntelSearch, previewIntelSearch, readIntelJob } from "@/lib/intel/jobs";
 import { getCurrentUser } from "@/lib/auth";
 import { getOrCreateWorkspaceForSessionUser } from "@/lib/workspace";
 import { assertRequestRateLimit, RequestRateLimitError } from "@/lib/request-rate-limit";
+import { IntelInputError } from "@/lib/intel/content";
 import { searchInputSchema } from "@/lib/intel/types";
 export const runtime = "nodejs";
 export const maxDuration = 600;
@@ -19,9 +20,15 @@ export async function POST(request: Request) {
   if (!parsed.success) return Response.json({ error: "Choose intel, a person, or paste content." }, { status: 400 });
   const workspace = await getOrCreateWorkspaceForSessionUser(user);
   try {
-    await assertRequestRateLimit({ limit: 10, scope: "intel_search", subject: `${workspace.teamId}:${workspace.userId}`, windowMs: 60000 });
-    return Response.json(await enqueueIntelSearch(workspace, parsed.data), { status: 202, headers: { "Cache-Control": "private, no-store" } });
+    const params = new URL(request.url).searchParams;
+    const preview = params.has("estimate");
+    const quoteId = params.get("quote");
+    if (quoteId !== null && !z.uuid().safeParse(quoteId).success) return Response.json({ error: "Invalid estimate" }, { status: 400 });
+    await assertRequestRateLimit({ limit: 10, scope: preview ? "intel_estimate" : "intel_search", subject: `${workspace.teamId}:${workspace.userId}`, windowMs: 60000 });
+    if (preview) return Response.json(await previewIntelSearch(workspace, parsed.data), { headers: { "Cache-Control": "private, no-store" } });
+    return Response.json(await enqueueIntelSearch(workspace, parsed.data, quoteId ?? undefined), { status: 202, headers: { "Cache-Control": "private, no-store" } });
   } catch (error) {
+    if (error instanceof IntelInputError) return Response.json({ error: error.message }, { status: 422 });
     if (error instanceof RequestRateLimitError) return Response.json({ error: error.message }, { status: 429, headers: { "Retry-After": String(error.retryAfterSeconds) } });
     return Response.json({ error: "Could not complete this search. Please try again." }, { status: 502 });
   }

@@ -387,7 +387,7 @@ Share dialogs list participants and recipients separately from inherent workspac
 
 ## Intel search
 
-Show the search box before loading starting points. While matching, show verified batch progress when known. Closing the browser leaves the search running; reopening Intel restores its status or result.
+Show the search box before loading starting points. Show the estimated model cost beside the search action before matching starts. Keep the range with the saved search. While matching, show verified batch progress when known. Closing the browser leaves the search running; reopening Intel restores its status or result.
 
 Keep search history alone in the left sidebar. Separate the sidebar and list items with whitespace instead of divider lines; retain the search field outline and active tab indicator. The main surface starts with one search bar and Intel and People tabs beneath it. Intel defaults to importance, with newest first available. Use the existing warm light canvas, graphite text and restrained coral search action. Avoid score dashboards and invented interest percentages.
 

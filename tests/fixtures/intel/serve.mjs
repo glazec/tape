@@ -59,7 +59,7 @@ createServer(async (req, res) => {
       for await (const chunk of req) body += chunk;
       const { input, result } = JSON.parse(body);
       const id = crypto.randomUUID();
-      const job = { id, input, status: "running", total: 2, completed: 1, createdAt: new Date().toISOString() };
+      const job = { id, input, estimate: { lowUsd: 0.01, highUsd: 0.09 }, status: "running", total: 2, completed: 1, createdAt: new Date().toISOString() };
       jobs.set(id, job);
       setTimeout(() => Object.assign(job, { status: "complete", completed: 2, result }), input.text === "finish while away" ? 4000 : 50);
       res.writeHead(202); res.end(JSON.stringify({ id })); return;

@@ -27,6 +27,7 @@ window.fetch = async (url, init) => {
  if (init?.method === "DELETE") return Response.json({ cleared: true });
  const input = JSON.parse(String(init?.body));
  if (input.text?.includes("fail")) return Response.json({ error: "Could not read this link. Paste the content to find interested people." }, { status: 422 });
+ if (String(url).includes("?estimate=")) return Response.json({ id: crypto.randomUUID(), estimate: { lowUsd: 0.01, highUsd: 0.09 } });
  if (input.text === "newly indexed") currentCatalog = { ...catalog, people: [...people, newPerson], intel: [...catalog.intel, newIntel] };
  const targetPerson = currentCatalog.people.find(p => p.id === "new-person") ?? people[2];
  const targetIntel = currentCatalog.intel.find(i => i.id === "new-intel") ?? catalog.intel[0];

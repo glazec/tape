@@ -14,7 +14,7 @@ vi.mock("@/db/client", async () => {
 });
 import { loadIntelMeetings, loadIntelHistory } from "@/lib/intel/store";
 vi.mock("@/inngest/client", () => ({ inngest: { send: vi.fn() } }));
-import { enqueueIntelSearch, executeIntelSearch, readIntelJob } from "@/lib/intel/jobs";
+import { enqueueIntelSearch, executeIntelSearch, previewIntelSearch, readIntelJob } from "@/lib/intel/jobs";
 import { searchIntel } from "@/lib/intel/search";
 import { buildCatalog, intelSourceHash, currentIntel } from "@/lib/intel/provenance";
 const team = "11111111-1111-4111-8111-111111111111";
@@ -78,6 +78,23 @@ describe.skipIf(!enabled)("Intel with real PostgreSQL and caller RLS", () => {
     await executeIntelSearch(workspace, newest);
     expect((await state.client!.query("SELECT id FROM intel_searches WHERE id=$1", [newest])).rows).toHaveLength(1);
     expect((await state.client!.query("SELECT count(*)::int AS count FROM intel_searches WHERE status IS DISTINCT FROM 'queued'")).rows[0].count).toBe(50);
+  });
+  it("quotes the selected evidence without starting a search and preserves the estimate through failure", async () => {
+    const input = { kind: "content" as const, text: "Inference partners" };
+    const { id, estimate } = await previewIntelSearch(workspace, input);
+    expect(estimate.highUsd).toBeGreaterThan(estimate.lowUsd);
+    expect(estimate.lowUsd).toBeGreaterThan(0);
+    expect(await readIntelJob(workspace, id)).toBeNull();
+    expect((await loadIntelHistory(workspace, await loadIntelMeetings(workspace))).some(h => h.id === id)).toBe(false);
+    await expect(enqueueIntelSearch(workspace, { ...input, text: "another search" }, id)).rejects.toThrow();
+    await asUser(b);
+    await expect(enqueueIntelSearch({ ...workspace, userId: b }, input, id)).rejects.toThrow();
+    await asUser(a);
+    await enqueueIntelSearch(workspace, input, id);
+    await expect(enqueueIntelSearch(workspace, input, id)).rejects.toThrow();
+    expect(await readIntelJob(workspace, id)).toMatchObject({ status: "queued", estimate });
+    await state.client!.query("UPDATE intel_searches SET status='failed' WHERE id=$1", [id]);
+    expect(await readIntelJob(workspace, id)).toMatchObject({ status: "failed", estimate });
   });
   it("runs a queued job without a browser, resumes the saved result, and blocks changed evidence", async () => {
     const w = { ...workspace, userId: b };

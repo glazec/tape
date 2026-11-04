@@ -19,13 +19,21 @@ function EvidenceList({ evidence }: { evidence: Evidence[] }) {
   </blockquote>)}</div>;
 }
 const emptyCatalog: IntelCatalog = { people: [], intel: [], pending: 0, coverage: "" };
-type Job = { id: string; status: string; input: SearchInput; completed: number; total: number; result?: SearchResult; error?: string; createdAt: string };
+type Estimate = { lowUsd: number; highUsd: number };
+function costLabel(estimate: Estimate) {
+  if (!estimate.highUsd) return "$0";
+  if (estimate.highUsd < 0.01) return "under $0.01";
+  const dollars = (n: number) => new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 3 }).format(n);
+  return `${dollars(estimate.lowUsd)} to ${dollars(estimate.highUsd)}`;
+}
+type Job = { estimate?: Estimate; id: string; status: string; input: SearchInput; completed: number; total: number; result?: SearchResult; error?: string; createdAt: string };
 export function IntelSearch() {
   const [catalog, setCatalog] = useState(emptyCatalog);
   const [catalogState, setCatalogState] = useState("loading");
   const [catalogAttempt, setCatalogAttempt] = useState(0);
   const [watch, setWatch] = useState<string | null>("latest");
   const [watchVersion, setWatchVersion] = useState(0);
+  const [quote, setQuote] = useState<{ id: string; estimate: Estimate; input: SearchInput } | null>(null);
   const [job, setJob] = useState<Job | null>(null);
   const [reconnecting, setReconnecting] = useState(false);
   const [text, setText] = useState("");
@@ -105,12 +113,13 @@ export function IntelSearch() {
     return () => { abort.abort(); clearTimeout(timer); };
   }, [watch, watchVersion]);
   function detach() {
-    setWatchVersion(n => n + 1); sequence.current++; controller.current?.abort(); setWatch(null); setJob(null); setReconnecting(false); setBusy(false);
+    setWatchVersion(n => n + 1); sequence.current++; controller.current?.abort(); setWatch(null); setJob(null); setQuote(null); setReconnecting(false); setBusy(false);
   }
   function reset() {
     detach(); setSelected(null); setText(""); setResult(null); setError(""); setActiveHistory(null); field.current?.focus();
   }
-  async function run(input: SearchInput, historyId?: string) {
+  async function run(input: SearchInput, historyId?: string, useEstimate = false) {
+    const accepted = useEstimate && quote && JSON.stringify(quote.input) === JSON.stringify(input) ? quote : null;
     detach();
     const abort = new AbortController(); controller.current = abort;
     const requestId = sequence.current;
@@ -118,10 +127,15 @@ export function IntelSearch() {
     if (input.kind === "content") { setSelected(null); setText(input.text); } else { setSelected(input); setText(""); }
     if (historyId && history.some(h => h.id === historyId && h.savedJob)) { setWatch(historyId); return; }
     try {
-      const response = await fetch("/api/intel/search", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(input), signal: abort.signal });
+      const url = accepted ? "/api/intel/search?quote=" + accepted.id : "/api/intel/search?estimate=1";
+      const response = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(input), signal: abort.signal });
       const data = await response.json();
       if (requestId !== sequence.current) return;
       if (!response.ok) throw new Error(data.error ?? "Search failed. Please try again.");
+      if (!accepted) {
+        setQuote({ id: data.id, estimate: data.estimate, input }); setBusy(false); return;
+      }
+      setJob({ id: data.id, estimate: accepted.estimate, input, status: "queued", completed: 0, total: 0, createdAt: new Date().toISOString() });
       setWatch(data.id); setActiveHistory(data.id);
       setHistory(current => [{ id: data.id, savedJob: true, input, label: labelFor(input), createdAt: new Date().toISOString() }, ...current.filter(h => h.id !== data.id)].slice(0,50));
     } catch (caught) {
@@ -160,7 +174,7 @@ export function IntelSearch() {
         <h1 className="text-3xl font-medium tracking-tight sm:text-4xl">Who should know?</h1>
         <p className="mt-3 max-w-lg text-sm leading-6 text-muted-foreground">Find the right person for an idea. Or the right idea for a person.</p>
       </header>
-      <form onSubmit={event => { event.preventDefault(); if (busy) return; if (selected) void run(selected); else if (text.trim().length >= 3) void run({ kind: "content", text: text.trim() }); }}
+      <form onSubmit={event => { event.preventDefault(); if (busy) return; if (selected) void run(selected, undefined, true); else if (text.trim().length >= 3) void run({ kind: "content", text: text.trim() }, undefined, true); }}
         className="rounded-2xl border border-border bg-background shadow-[0_3px_20px_-12px_rgba(40,25,20,0.2)] focus-within:border-ring focus-within:ring-2 focus-within:ring-ring/15">
         {selected && <div className="px-4 pt-4"><div className="inline-flex max-w-full items-center gap-2 rounded-lg bg-muted px-3 py-2 text-sm"><span className="line-clamp-2">{labelFor(selected)}</span>
           <button type="button" onClick={reset} aria-label="Remove selection" className="shrink-0 rounded p-1 hover:bg-background"><X className="size-3.5" /></button></div></div>}
@@ -171,13 +185,16 @@ export function IntelSearch() {
           placeholder={selected ? "Ready to find matches" : "Search intel or people, or paste content or a link…"}
           className="block w-full resize-none bg-transparent px-5 pb-2 pt-5 text-base leading-6 outline-none placeholder:text-muted-foreground disabled:opacity-60" />
         <div className="flex items-center justify-between px-4 pb-3">
-          <span className="text-xs text-muted-foreground">{selected?.kind === "person" ? "Find relevant intel and connections" : "Find people who may be interested"}</span>
-          <Button type="submit" aria-label="Find matches" disabled={busy || (!selected && text.trim().length < 3)} className="size-11 rounded-xl" size="icon">{busy ? <LoaderCircle aria-hidden="true" className="size-4 animate-spin" /> : <ArrowUp aria-hidden="true" className="size-4" />}</Button>
+          <span aria-live="polite" className="text-xs text-muted-foreground">{quote || job?.estimate
+            ? `Estimated AI cost: ${costLabel((quote?.estimate ?? job?.estimate)!)} USD`
+            : selected?.kind === "person" ? "Find relevant intel and connections" : "Find people who may be interested"}</span>
+          <Button type="submit" aria-label={quote ? "Run search" : "Estimate search cost"} disabled={busy || (!selected && text.trim().length < 3)} className={quote ? "rounded-xl" : "size-11 rounded-xl"} size={quote ? "default" : "icon"}>{quote ? "Run search" : busy ? <LoaderCircle aria-hidden="true" className="size-4 animate-spin" /> : <ArrowUp aria-hidden="true" className="size-4" />}</Button>
         </div>
       </form>
+      {quote && <p className="mt-2 text-xs text-muted-foreground">Based on Nov 4, 2026 usage. Actual cost varies.{quote.input.kind === "content" && /^https:\/\//i.test(quote.input.text) ? " Link retrieval is excluded." : ""}</p>}
       {error && <div role="alert" className="mt-5 rounded-lg border border-destructive/30 p-4 text-sm">{error}<button type="button" className="ml-2 underline" onClick={() => { if (selected) void run(selected); else if (text.trim()) void run({ kind: "content", text }); }}>Try again</button></div>}
       {(busy || reconnecting) && <div className="mt-6 max-w-lg space-y-2 text-sm">
-        <p role="status">{reconnecting ? "Reconnecting to your search…" : job?.total ? (job.completed === job.total ? "Finishing your matches…" : `Matching and checking evidence · ${job.completed} of ${job.total} steps`) : job?.status === "running" ? "Reading meeting evidence…" : watch ? "Waiting for your search…" : "Starting your search…"}</p>
+        <p role="status">{reconnecting ? "Reconnecting to your search…" : job?.total ? (job.completed === job.total ? "Finishing your matches…" : `Matching and checking evidence · ${job.completed} of ${job.total} steps`) : job?.status === "running" ? "Reading meeting evidence…" : watch ? "Waiting for your search…" : "Estimating search cost…"}</p>
         <progress aria-label="Matching progress" className="block h-1.5 w-full accent-primary" max={job?.total || 1} value={job?.total ? job.completed : undefined} />
         {((watch && watch !== "latest") || job) ? <p className="text-xs text-muted-foreground">You can close this tab. Your search will continue.</p> : null}
       </div>}

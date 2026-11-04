@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, gt, inArray, or } from "drizzle-orm";
+import { and, asc, desc, eq, gt, inArray, isNull, ne, or } from "drizzle-orm";
 import { db } from "@/db/client";
 import { meetings, meetingParts, transcriptSegments, intelSearches } from "@/db/schema";
 import { getComposedMeetingForFollowup } from "@/lib/meeting-composition";
@@ -68,7 +68,7 @@ export function resolveInputLabel(input: SearchInput, corpus: IntelMeeting[], ca
   return people.every(Boolean) ? [...new Set(people.map(p => p!.name))].join(", ") : null;
 }
 export async function loadIntelHistory(workspace: WorkspaceContext, corpus: IntelMeeting[], catalog = buildCatalog(corpus)): Promise<HistoryEntry[]> {
-  const rows = await db.select({ id: intelSearches.id, input: intelSearches.input, status: intelSearches.status, createdAt: intelSearches.createdAt }).from(intelSearches).where(and(eq(intelSearches.teamId, workspace.teamId), eq(intelSearches.userId, workspace.userId)))
+  const rows = await db.select({ id: intelSearches.id, input: intelSearches.input, status: intelSearches.status, createdAt: intelSearches.createdAt }).from(intelSearches).where(and(eq(intelSearches.teamId, workspace.teamId), eq(intelSearches.userId, workspace.userId), or(isNull(intelSearches.status), ne(intelSearches.status, "preview"))))
     .orderBy(desc(intelSearches.createdAt)).limit(50);
   return rows.flatMap(row => {
     const input = searchInputSchema.safeParse(row.input);

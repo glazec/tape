@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-const mocks = vi.hoisted(() => ({ loadIntelMeetings: vi.fn(), createOpenRouterChatCompletion: vi.fn(), verifyIntelClaims: vi.fn(), assertWorkspaceHasProviderCredit: vi.fn(), resolveIntelContent: vi.fn() }));
+const mocks = vi.hoisted(() => ({ emitTelemetryLog: vi.fn(), loadIntelMeetings: vi.fn(), createOpenRouterChatCompletion: vi.fn(), verifyIntelClaims: vi.fn(), assertWorkspaceHasProviderCredit: vi.fn(), resolveIntelContent: vi.fn() }));
 vi.mock("@/lib/intel/store", async importOriginal => ({ ...await importOriginal<typeof import("@/lib/intel/store")>(), loadIntelMeetings: mocks.loadIntelMeetings }));
+vi.mock("@/lib/telemetry/server", () => mocks);
 vi.mock("@/db/client", () => ({ db: {} }));
 vi.mock("@/lib/meeting-composition", () => ({}));
 vi.mock("@/lib/intel/generation", () => ({ INTEL_MODEL: "typesafe/jev-router" }));
@@ -15,6 +16,13 @@ const m: IntelMeeting = { id: "m1", title: "Meeting", date: new Date().toISOStri
 const workspace = { userId: "u", teamId: "t", domain: "example.com" };
 beforeEach(() => { vi.clearAllMocks(); mocks.loadIntelMeetings.mockResolvedValue([m]); mocks.createOpenRouterChatCompletion.mockResolvedValue('{"matches":[]}'); mocks.verifyIntelClaims.mockResolvedValue([]); mocks.resolveIntelContent.mockResolvedValue({ text: "Actual article content about inference", url: "https://example.com/article" }); });
 describe("Intel matching boundaries", () => {
+ it("identifies a matching timeout without sending search or provider text to telemetry", async () => {
+  mocks.createOpenRouterChatCompletion.mockRejectedValueOnce(new Error("timeout for confidential query"));
+  await expect(searchIntel(workspace, { kind: "content", text: "inference" }, [m])).rejects.toThrow("timeout");
+  const [event] = mocks.emitTelemetryLog.mock.calls[0];
+  expect(event.attributes["operation.name"]).toBe("matching");
+  expect(event.error.message).toBe("Intel search matching: timeout");
+ });
  it("gives the verifier resolved article content, not just the URL", async () => {
   await searchIntel(workspace, { kind: "content", text: "https://example.com/article" }, [m]);
   expect(mocks.verifyIntelClaims.mock.calls[0][1].source.text).toBe("Actual article content about inference");
