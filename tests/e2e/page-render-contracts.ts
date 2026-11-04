@@ -9,6 +9,7 @@ export const publicPageRenderHeadings = {
 } as const;
 
 export const authenticatedPageRenderHeadings = {
+  "/intel": "Who should know?",
   [`/meetings/${authenticatedDashboardFixture.meetingId}`]:
     authenticatedDashboardFixture.meetingTitle,
   [`/meetings/${authenticatedDashboardFixture.meetingId}/record`]:
