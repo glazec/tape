@@ -665,7 +665,7 @@ function buildTranslationBatches(
   return batches;
 }
 
-async function createOpenRouterChatCompletion(input: {
+export async function createOpenRouterChatCompletion(input: {
   attempts?: number;
   timeoutMs?: number;
   model?: string;

@@ -562,3 +562,13 @@ Configure the Recall dashboard endpoint against the current production `NEXT_PUB
 Register `reconcile-recall-meetings` with Inngest after deployment. It runs every five minutes and accepts `meeting/reconcile.recall` for an immediate recovery pass. It checks up to 100 oldest-updated unresolved bot meetings from the past 30 days, verifies recording readiness, and reuses the recording and transcription job. Inngest event IDs deduplicate interrupted queued dispatches. Per-meeting durable steps isolate failures; failed steps retry and surface a failed run rather than silently reporting success.
 
 A provider 404 is treated as an unavailable bot and marks the unresolved meeting failed, preserving its provider identity and any running or completed transcript work. Permanent missing bots do not hold up subsequent recovery steps.
+
+## Intel search setup
+
+Apply migration `0066_intel_search.sql` before deploying this code. It adds `meetings.ai_intel` and private `intel_searches` with caller scoped row level security. Deploy and register both `generate-meeting-intel` and `reconcile-meeting-intel` with Inngest. Extraction listens to `meeting/enrich.transcript` and `meeting/intel.generate`; the repair job queues up to 50 meetings at minute 17 each hour. Attempts persist a checked time; failed or oversized records wait six hours before another scheduled attempt, and unattempted records are processed first. Extraction concurrency is three overall and one per meeting.
+
+Intel uses the existing `OPENROUTER_API_KEY` and the pinned `typesafe/jev-router` model, separately from the general `OPENROUTER_MODEL` setting. Both generation and independent verification record assistant usage and respect workspace credit. The shared adapter still requires the general model setting to be configured. Web search requests are limited to 10 per user and workspace per minute.
+
+`EXA_API_KEY` enables public HTTPS content extraction through Exa Contents. `TWITTERAPI_IO_API_KEY` is the optional server only fallback for specific X post URLs. Neither key belongs in client code, committed files, logs or public environment variables. An unreadable link asks the user to paste its content. Firecrawl is not used.
+
+Search history retains up to 50 private inputs, not model results. The user can clear it. The current implementation rejects collections above 1,000 meetings or 100,000 segments and matching payloads above 1.8 million characters rather than silently searching partial context. Extraction skips individual transcripts above 600,000 serialized characters. These limits are operational bounds, not advertised coverage guarantees.

@@ -117,3 +117,11 @@ Remembering a speaker name is an explicit option during an all matching lines co
 ## Recording reliability
 
 Started meetings remain visible while recording or processing is unresolved, including when provider notifications are delayed. A background check reconciles Recall bot state every five minutes for the past 30 days and repairs missing transcription dispatches. Already running, completed, or failed transcription jobs are not automatically submitted again.
+
+## Intel
+
+Intel is a search workspace at `/intel`. History occupies the left sidebar. The main search bar accepts an intel selection, a confirmed person selection, pasted text, or a public HTTPS URL. Intel can be sorted by importance or recency; People can be filtered by name or meeting context. Intel and pasted content return potential interested recipients, excluding an intel item's source speaker. People return relevant intel and useful contacts. Results can be selected to continue in either direction.
+
+Extraction distinguishes reported facts, anecdotes, plans, opinions, AI insights and numbers. It runs after transcript enrichment and through an hourly repair queue. It is not rendered on the meeting page. Source references are checked deterministically; a separate model pass audits semantic support before storing or displaying claims. This is not a guarantee of factual truth or calibrated interest probability.
+
+Matching uses personally accessible meetings in the active workspace, current transcript generations, initial and latest available meetings, and the past six months of transcripts, valid Dynamics and Connections. Literal speaker emails can unify identities; names and mentioned contacts do not merge automatically. A user can explicitly combine meeting identities when selecting a person. Mentioned contacts retain their attributed relationship and source. Saved queries rerun authorization rather than replaying stored results.

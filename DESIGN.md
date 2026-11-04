@@ -368,3 +368,9 @@ A started meeting must not disappear because its status notification is missing.
 Web and desktop sign in use the existing Google flow. Desktop device credentials have a separate fixed 180 day lifetime and retain their existing reconnect flow. Sessions last 180 days from login and persist across deployments. Expired sessions return to sign in with the requested destination; transient dashboard failures retain the session and offer retry.
 
 Share dialogs list participants and recipients separately from inherent workspace administrator access. An empty recipient list must not imply owner-only visibility.
+
+## Intel search
+
+Keep search history alone in the left sidebar. The main surface starts with one search bar and Intel and People tabs beneath it. Intel defaults to importance, with newest first available. Use the existing warm light canvas, graphite text and restrained coral search action. Avoid score dashboards and invented interest percentages.
+
+A selected intel item or pasted content finds interested people. Selecting a person finds relevant intel and connections. Results support continued selection. Confirm ambiguous identities using meeting title, date and a source link; do not merge equal names silently. Distinguish direct participants from contacts mentioned in meetings. Preserve source dates and show evidence on expansion. Display unsuccessful extraction as a recoverable error with paste content available, never a successful URL match with missing content. History is collapsible on mobile.

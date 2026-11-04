@@ -1,3 +1,4 @@
+import { generateIntelOnTranscript, reconcileMeetingIntel } from "@/inngest/meeting-intel";
 import { listRecallMeetingsToReconcile, reconcileRecallMeeting } from "@/lib/recall-meeting-reconciliation";
 import { z } from "zod";
 import { and, asc, eq, inArray, sql } from "drizzle-orm";
@@ -832,6 +833,8 @@ const reconcileStaleJobs = inngest.createFunction(
 );
 
 export const functions = [
+  generateIntelOnTranscript,
+  reconcileMeetingIntel,
   scheduleMeetingBot,
   deleteRecallBot,
   deleteRecallCalendarEventBotJob,
