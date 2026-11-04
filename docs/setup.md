@@ -468,6 +468,8 @@ INNGEST_EVENT_KEY
 INNGEST_SIGNING_KEY
 ```
 
+The web sync command refuses to register a localhost app URL with a remote engine. Run production sync with the deployed service environment; local development must use a local engine or an explicitly configured public endpoint.
+
 When `INNGEST_BASE_URL` is present, both Inngest sync scripts ask the deployed
 application endpoints to register with that self-hosted engine. When it is
 absent, they continue to use the Inngest Cloud sync API.

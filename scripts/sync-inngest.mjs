@@ -13,6 +13,15 @@ if (!appUrl) {
   process.exit(1);
 }
 
+const isLoopback = (url) => {
+  const hostname = new URL(url).hostname.toLowerCase();
+  return ["localhost", "127.0.0.1", "[::1]", "0.0.0.0"].includes(hostname) || hostname.endsWith(".localhost");
+};
+if (isLoopback(appUrl) && (!apiHost || !isLoopback(apiHost))) {
+  console.error("Refusing to register a local app with a remote Inngest engine. Use the deployed app URL, or a local Inngest engine for development.");
+  process.exit(1);
+}
+
 const endpoint = new URL("/api/inngest", appUrl).toString();
 
 if (apiHost) {
