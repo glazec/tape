@@ -32,7 +32,7 @@ export function LaunchFilmButton() {
       >
         <span className="relative flex aspect-video w-24 items-center justify-center overflow-hidden rounded-lg bg-mist ring-1 ring-ink/10">
           <Image
-            src="/media/tape-launch-v5-thumb.webp"
+            src="/media/tape-launch-v6-thumb.webp"
             alt=""
             fill
             sizes="96px"
@@ -44,7 +44,7 @@ export function LaunchFilmButton() {
         </span>
         Watch the film
         <span className="font-mono text-[0.75rem] tabular-nums text-ash">
-          0:24
+          0:30
         </span>
       </button>
       <dialog
@@ -63,15 +63,15 @@ export function LaunchFilmButton() {
             className="aspect-video w-full"
             controls
             playsInline
-            poster="/media/tape-launch-v5-poster.jpg"
+            poster="/media/tape-launch-v6-poster.jpg"
             preload="none"
           >
-            <source src="/media/tape-launch-v5.mp4" type="video/mp4" />
+            <source src="/media/tape-launch-v6.mp4" type="video/mp4" />
             <track
               default
               kind="captions"
               label="English"
-              src="/media/tape-launch-v5-en.vtt"
+              src="/media/tape-launch-v6-en.vtt"
               srcLang="en"
             />
           </video>

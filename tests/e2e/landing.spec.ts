@@ -16,15 +16,15 @@ test("shows the Tape landing page", async ({ page }) => {
   await expect(launchFilm).toBeVisible();
   await expect(launchFilm).toHaveAttribute(
     "poster",
-    "/media/tape-launch-v5-poster.jpg",
+    "/media/tape-launch-v6-poster.jpg",
   );
   await expect(launchFilm.locator("source")).toHaveAttribute(
     "src",
-    "/media/tape-launch-v5.mp4",
+    "/media/tape-launch-v6.mp4",
   );
   await expect(launchFilm.locator("track")).toHaveAttribute(
     "src",
-    "/media/tape-launch-v5-en.vtt",
+    "/media/tape-launch-v6-en.vtt",
   );
   await page.getByRole("button", { name: "Close film" }).click();
   await expect(launchFilm).toBeHidden();

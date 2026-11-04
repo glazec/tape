@@ -5,12 +5,12 @@
 <title>Tape launch film</title>
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..600;1,9..144,300..600&family=IBM+Plex+Mono:wght@400;500&family=Space+Grotesk:wght@400;500&family=Noto+Sans+SC:wght@400;500&display=block" rel="stylesheet" />
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..600;1,9..144,300..600&family=IBM+Plex+Mono:wght@400;500&family=Space+Grotesk:wght@400;500;600&family=Noto+Sans+SC:wght@400;500&display=block" rel="stylesheet" />
 <style>
   :root {
-    --paper: #fdfcfa;
-    --mist: #f6f3f0;
-    --ink: #1c1917;
+    --paper: oklch(0.994 0.002 30);
+    --mist: oklch(0.965 0.006 30);
+    --ink: oklch(0.19 0.007 30);
     --graphite: #57514c;
     --ash: #8a827b;
     --brand: #ec4f44;
@@ -19,262 +19,371 @@
   * { box-sizing: border-box; margin: 0; padding: 0; }
   html, body { width: 1920px; height: 1080px; overflow: hidden; background: var(--paper); }
   body { font-family: "Space Grotesk", "Noto Sans SC", sans-serif; color: var(--ink); -webkit-font-smoothing: antialiased; }
-  .scene { position: absolute; inset: 0; opacity: 0; }
-  .serif { font-family: "Fraunces", Georgia, serif; font-optical-sizing: auto; letter-spacing: -0.02em; }
-  .mono { font-family: "IBM Plex Mono", monospace; text-transform: uppercase; letter-spacing: 0.18em; }
-  .art { position: absolute; inset: 0; background-size: cover; background-position: center; }
-  .window { position: absolute; background: var(--paper); border-radius: 22px; overflow: hidden; box-shadow: 0 50px 120px -40px rgba(28,25,23,.55), 0 0 0 1px rgba(28,25,23,.06); }
-  .window-bar { display: flex; align-items: center; gap: 10px; padding: 20px 28px; background: #f3efeb; }
-  .dot { width: 13px; height: 13px; border-radius: 50%; background: rgba(28,25,23,.14); }
+  .scene { position: absolute; inset: 0; overflow: hidden; display: none; background: var(--paper); }
+  .cam { position: absolute; inset: 0; transform-origin: 0 0; }
+  .serif { font-family: "Fraunces", Georgia, serif; font-optical-sizing: auto; letter-spacing: -0.02em; font-weight: 400; }
+  .mono { font-family: "IBM Plex Mono", monospace; text-transform: uppercase; letter-spacing: 0.16em; }
+  .art { position: absolute; inset: -40px; background-size: cover; background-position: center; }
+  .acc { color: var(--brand); font-style: italic; }
+  .fr { color: var(--brand); }
+  .ghost { color: transparent; text-shadow: none; }
+  .head { position: absolute; left: 0; right: 0; text-align: center; font-size: 76px; line-height: 1.08; }
+  .onart { text-shadow: 0 2px 34px rgba(253,252,250,.95), 0 0 12px rgba(253,252,250,.8); }
+  .window { position: absolute; background: var(--paper); border-radius: 22px; overflow: hidden; box-shadow: 0 50px 120px -50px rgba(40,25,20,.55), 0 0 0 1px rgba(28,25,23,.07); }
+  .bar { display: flex; align-items: center; gap: 9px; padding: 16px 24px; background: var(--mist); font-size: 19px; font-weight: 500; color: var(--graphite); }
+  .dot { width: 12px; height: 12px; border-radius: 50%; background: rgba(28,25,23,.15); flex: none; }
 
-  /* recording pill, the film's constant, after Granola's waveform pill */
-  #pill { position: absolute; left: 50%; top: 50%; height: 84px; border-radius: 999px; background: var(--ink); display: flex; align-items: center; gap: 18px; padding: 0 34px; color: var(--paper); transform: translate(-50%, -50%); z-index: 50; box-shadow: 0 20px 60px -20px rgba(236,79,68,.55); white-space: nowrap; overflow: hidden; }
-  #pill .rec { width: 16px; height: 16px; border-radius: 50%; background: var(--brand); flex: none; }
-  #pill .bars { display: flex; align-items: center; gap: 5px; height: 40px; }
-  #pill .bars span { width: 5px; border-radius: 3px; background: var(--brand); }
-  #pill .time { font-family: "IBM Plex Mono", monospace; font-size: 24px; color: rgba(253,252,250,.8); font-variant-numeric: tabular-nums; }
-
-
-  .caption { position: absolute; left: 140px; top: 96px; font-size: 64px; line-height: 1.05; padding: 22px 32px 26px; border-radius: 22px; background: rgba(253,252,250,.86); backdrop-filter: blur(6px); }
-  #s2-cap, #s4-cap { margin-left: -32px; }
-  .caption em { color: var(--brand); }
-
-  .tline { display: grid; grid-template-columns: 150px 1fr 1fr; gap: 40px; padding: 22px 40px; font-size: 30px; line-height: 1.45; }
-  .tline .who { font-weight: 500; font-size: 24px; }
-  .tline .at { font-family: "IBM Plex Mono", monospace; font-size: 18px; color: var(--ash); margin-top: 4px; }
-  .tline .tr { color: var(--graphite); }
-  .tline.live { background: #fbefec; }
-
-  .bubble { margin-left: auto; width: fit-content; max-width: 80%; background: var(--ink); color: var(--paper); padding: 20px 28px; border-radius: 28px 28px 8px 28px; font-size: 28px; }
-  .hit { display: flex; justify-content: space-between; gap: 24px; background: #f5f1ee; border-radius: 14px; padding: 18px 22px; font-size: 24px; }
-  .hit span:last-child { font-family: "IBM Plex Mono", monospace; font-size: 19px; color: var(--graphite); }
-
-  .tile { position: relative; height: 330px; border-radius: 14px; display: flex; align-items: center; justify-content: center; }
-  .tile .face { width: 120px; height: 120px; border-radius: 50%; background: rgba(253,252,250,.16); color: var(--paper); font-family: "Fraunces", serif; font-size: 56px; display: flex; align-items: center; justify-content: center; }
-  .tile .name { position: absolute; left: 16px; bottom: 14px; font-size: 20px; color: var(--paper); background: rgba(28,25,23,.55); padding: 4px 12px; border-radius: 8px; }
-  .chip { display: inline-flex; align-items: center; justify-content: center; width: 96px; height: 96px; border-radius: 26px; background: #fff; box-shadow: 0 20px 50px -20px rgba(28,25,23,.35), 0 0 0 1px rgba(28,25,23,.06); }
-  .chip img { width: 54px; height: 54px; }
+  /* the pill: a tiny cassette, the film's constant object and its transition */
+  #pill { position: absolute; left: 0; top: 0; z-index: 50; border-radius: 999px; background: #221d1a; color: var(--paper); display: flex; align-items: center; justify-content: center; white-space: nowrap; overflow: hidden; box-shadow: 0 24px 60px -18px rgba(236,79,68,.45); }
+  #pill .inner { display: flex; align-items: center; gap: 20px; }
+  #pill .time { font-family: "IBM Plex Mono", monospace; font-size: 26px; color: rgba(253,252,250,.75); font-variant-numeric: tabular-nums; }
+  #pill .lbl { font-size: 25px; font-weight: 500; }
+  #pill .chk { width: 30px; height: 30px; border-radius: 50%; background: var(--brand); display: flex; align-items: center; justify-content: center; }
+  #ribbon { position: absolute; z-index: 49; overflow: visible; }
 </style>
 </head>
 <body>
 
-<!-- S1 a call starts and Tape joins it -->
-<section class="scene" id="s1">
-  <div class="art" style="background-image:url(../../public/media/art/hero.webp);opacity:.35"></div>
-  <div class="window" id="call" style="left:460px;top:200px;width:1000px;background:#24201d;">
-    <div class="window-bar" style="background:#2e2925;">
-      <span class="dot" style="background:rgba(255,255,255,.18)"></span><span class="dot" style="background:rgba(255,255,255,.18)"></span><span class="dot" style="background:rgba(255,255,255,.18)"></span>
-      <span style="margin-left:14px;font-size:22px;color:rgba(253,252,250,.85);">Weekly partner sync · Google Meet</span>
-    </div>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;padding:14px;">
-      <div class="tile" style="background:#ec4f44 url(assets/lin.webp) center/cover;"><span class="name">Lin</span></div>
-      <div class="tile" style="background:#4a3428 url(assets/marco.webp) center/cover;"><span class="name">Marco</span></div>
-    </div>
-    <div id="badge" style="position:absolute;right:28px;top:84px;display:flex;align-items:center;gap:12px;background:var(--paper);color:var(--ink);border-radius:999px;padding:10px 20px 10px 10px;font-size:22px;font-weight:500;">
-      <img src="../../public/brand/tape-app-icon-512.png" style="width:40px;height:40px;border-radius:12px;image-rendering:pixelated" alt="" />Tape joined
+<!-- A thesis, on a desk beside a Mac -->
+<section class="scene" id="sA">
+  <div class="art" id="a-art" style="background-image:url(../../public/media/art/assistant.webp);background-position:62% 60%;"></div>
+  <div style="position:absolute;inset:0;background:linear-gradient(90deg, rgba(253,252,250,.97) 0%, rgba(253,252,250,.9) 38%, rgba(253,252,250,0) 64%);"></div>
+  <p class="serif" id="a-h" style="position:absolute;left:130px;top:250px;width:1400px;font-size:82px;line-height:1.08;"></p>
+  <p class="serif" id="a-h2" style="position:absolute;left:130px;top:300px;width:1000px;font-size:110px;line-height:1.04;"></p>
+</section>
+
+<!-- B one bilingual line -->
+<section class="scene" id="sB">
+  <div class="art" id="b-art" style="background-image:url(../../public/media/art/braid.webp)"></div>
+  <p class="head serif onart" id="b-h" style="top:110px;"></p>
+  <div class="cam" id="b-cam">
+    <div class="window" id="b-win" style="left:430px;top:420px;width:1060px;">
+      <div class="bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span style="margin-left:12px;">Platform planning</span></div>
+      <div style="padding:26px 36px 32px;">
+        <p style="display:flex;gap:14px;align-items:baseline;"><b style="font-weight:500;font-size:22px;">Lin</b><span style="font-family:'IBM Plex Mono',monospace;font-size:17px;color:var(--ash);">04:12</span></p>
+        <p id="b-src" style="font-size:32px;line-height:1.4;margin-top:10px;"></p>
+        <p id="b-tr" style="font-size:29px;line-height:1.4;margin-top:6px;color:var(--graphite);"></p>
+      </div>
     </div>
   </div>
 </section>
 
-<!-- S2 bilingual transcript -->
-<section class="scene" id="s2">
-  <div class="art" id="s2-art" style="background-image:url(../../public/media/art/braid.webp)"></div>
-  <p class="caption serif" id="s2-cap">Two languages,<br /><em><i>one transcript.</i></em></p>
-  <div class="window" id="s2-win" style="left:200px;top:270px;width:1520px;">
-    <div class="window-bar">
-      <span class="dot"></span><span class="dot"></span><span class="dot"></span>
-      <span style="margin-left:14px;font-size:22px;font-weight:500;">Weekly partner sync</span>
-      <span class="mono" style="margin-left:auto;font-size:16px;color:var(--ash);">中文 · English</span>
-    </div>
-    <div id="s2-lines"></div>
+<!-- C who knows whom -->
+<section class="scene" id="sC" style="background:var(--mist);">
+  <p class="head serif" id="c-h" style="top:150px;"></p>
+  <div id="c-stat" style="position:absolute;left:0;right:0;top:120px;text-align:center;">
+    <p class="serif" style="font-size:150px;line-height:1;color:var(--brand);letter-spacing:-0.035em;" id="c-n">9 of 10</p>
+    <p class="serif" style="font-size:58px;line-height:1.15;margin-top:14px;">intros land when the name came up on a call.</p>
   </div>
-</section>
-
-<!-- S3 works everywhere -->
-<section class="scene" id="s3">
-  <div class="art" style="background-image:url(../../public/media/art/assistant.webp);opacity:.22"></div>
-  <p class="serif" style="position:absolute;left:0;right:0;top:370px;text-align:center;font-size:84px;">
-    Records <span id="s3-word" style="font-style:italic;color:var(--brand);"></span>
-  </p>
-  <div id="s3-chips" style="position:absolute;left:0;right:0;top:530px;display:flex;justify-content:center;gap:28px;"></div>
-</section>
-
-<!-- S4 agents -->
-<section class="scene" id="s4">
-  <div class="art" id="s4-art" style="background-image:url(../../public/media/art/assistant.webp)"></div>
-  <p class="caption serif" id="s4-cap">Your archive,<br /><em><i>in your assistant.</i></em></p>
-  <div class="window" id="s4-win" style="left:140px;top:330px;width:860px;">
-    <div class="window-bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span style="margin-left:14px;font-size:22px;color:var(--graphite);">Your assistant</span></div>
-    <div style="padding:36px 40px 40px;">
-      <div class="bubble" id="s4-q"></div>
-      <p class="mono" id="s4-tool" style="margin-top:34px;font-size:17px;color:var(--ash);display:flex;align-items:center;gap:12px;"><span style="width:10px;height:10px;border-radius:50%;background:var(--brand);display:inline-block"></span>tape.search_meetings · 3 matches</p>
-      <div id="s4-hits" style="display:flex;flex-direction:column;gap:10px;margin-top:16px;"></div>
-      <p id="s4-a" style="margin-top:26px;font-size:26px;line-height:1.5;color:var(--graphite);min-height:80px;"></p>
+  <div class="cam" id="c-cam">
+    <div id="c-card" class="window" style="left:560px;top:440px;width:800px;padding:30px 36px 32px;">
+      <p class="mono" style="font-size:15px;color:var(--ash);">Potential connection</p>
+      <div style="display:flex;align-items:center;margin-top:24px;">
+        <div style="display:flex;align-items:center;gap:16px;" id="c-a">
+          <div style="width:84px;height:84px;border-radius:50%;background:#4a3428 url(assets/marco.webp) center 20%/cover;"></div>
+          <span style="font-size:32px;font-weight:500;">Marco</span>
+        </div>
+        <div style="flex:1;position:relative;height:84px;margin:0 22px;">
+          <div id="c-line" style="position:absolute;left:0;top:41px;height:2px;background:var(--brand);width:100%;transform-origin:0 50%;"></div>
+          <span id="c-tag" style="position:absolute;left:50%;top:22px;transform:translateX(-50%);font-family:'IBM Plex Mono',monospace;font-size:15px;letter-spacing:.1em;text-transform:uppercase;background:#fbe1dc;color:var(--brand-ink);border-radius:999px;padding:7px 14px;white-space:nowrap;">Worked with</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:16px;" id="c-b">
+          <span style="font-size:32px;font-weight:500;">Priya</span>
+          <div style="width:84px;height:84px;border-radius:50%;background:var(--brand);color:var(--paper);display:flex;align-items:center;justify-content:center;font-family:'Fraunces',serif;font-size:42px;">P</div>
+        </div>
+      </div>
+      <p id="c-at" style="margin-top:24px;display:flex;align-items:center;gap:12px;font-size:20px;color:var(--graphite);"><span style="display:inline-flex;align-items:center;gap:8px;font-family:'IBM Plex Mono',monospace;color:var(--brand-ink);background:#fbe1dc;border-radius:8px;padding:5px 11px;"><svg width="12" height="12" viewBox="0 0 10 10"><path d="M2 1l7 4-7 4z" fill="currentColor"/></svg>18:52</span>Platform planning</p>
+    </div>
+    <div id="c-todo" style="position:absolute;left:560px;width:800px;top:745px;">
+      <p class="mono" style="font-size:15px;color:var(--ash);padding-left:6px;" id="c-tl">To do</p>
+      <div id="c-t0" class="window" style="position:relative;margin-top:14px;display:flex;align-items:center;gap:16px;padding:18px 24px;font-size:24px;border-radius:14px;"><span style="width:22px;height:22px;border-radius:6px;box-shadow:inset 0 0 0 1.5px rgba(28,25,23,.25);flex:none;"></span><span><b style="font-weight:500">Lin</b> · Send Marco the budget breakdown</span><span style="margin-left:auto;font-family:'IBM Plex Mono',monospace;font-size:19px;color:var(--brand-ink);">04:41</span></div>
+      <div id="c-t1" class="window" style="position:relative;margin-top:10px;display:flex;align-items:center;gap:16px;padding:18px 24px;font-size:24px;border-radius:14px;"><span style="width:22px;height:22px;border-radius:6px;box-shadow:inset 0 0 0 1.5px rgba(28,25,23,.25);flex:none;"></span><span><b style="font-weight:500">Marco</b> · Write the rollback plan</span><span style="margin-left:auto;font-family:'IBM Plex Mono',monospace;font-size:19px;color:var(--brand-ink);">04:26</span></div>
     </div>
   </div>
 </section>
 
-<!-- S5 slogan -->
-<section class="scene" id="s5">
-  <div class="art" id="s5-art" style="background-image:url(../../public/media/art/hero.webp);opacity:.3"></div>
-  <p class="serif" style="position:absolute;left:0;right:0;top:360px;text-align:center;font-size:150px;line-height:1;letter-spacing:-0.035em;">
+<!-- D ask your own AI -->
+<section class="scene" id="sD">
+  <div class="art" id="d-art" style="background-image:url(../../public/media/art/archive.webp);filter:saturate(.55) blur(3px);opacity:.55;"></div>
+  <div style="position:absolute;inset:0;background:linear-gradient(180deg, rgba(253,252,250,.9) 0px, rgba(253,252,250,.75) 200px, rgba(253,252,250,.12) 340px);"></div>
+  <p class="head serif onart" id="d-h" style="top:96px;"></p>
+  <div class="cam" id="d-cam">
+    <div class="window" id="d-win" style="left:460px;top:300px;width:1000px;">
+      <div class="bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span style="margin-left:12px;">Your assistant</span></div>
+      <div style="padding:30px 36px 36px;">
+        <div id="d-q" style="margin-left:auto;width:fit-content;max-width:92%;background:var(--ink);color:var(--paper);padding:18px 26px;border-radius:26px 26px 8px 26px;font-size:30px;line-height:1.35;"></div>
+        <div id="d-more" style="overflow:hidden;">
+        <p id="d-tool" style="margin-top:26px;font-family:'IBM Plex Mono',monospace;font-size:17px;color:var(--graphite);display:flex;align-items:center;gap:10px;"><span style="width:9px;height:9px;border-radius:50%;background:var(--brand);"></span>tape.execute_meeting_sql</p>
+        <div id="d-hit" style="margin-top:14px;display:flex;justify-content:space-between;background:#fbe1dc;box-shadow:inset 0 0 0 2px rgba(236,79,68,.5);border-radius:12px;padding:14px 20px;font-size:24px;"><span>Lin · 产品路线图评审</span><span style="font-family:'IBM Plex Mono',monospace;font-size:19px;color:var(--brand-ink);padding-top:3px;">Sep 09 · 27:41</span></div>
+        <p id="d-a" style="margin-top:22px;font-size:30px;line-height:1.42;"></p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- E fork it, in the paper world -->
+<section class="scene" id="sE">
+  <div class="cam" id="e-cam">
+    <p class="serif" id="e-h1" style="position:absolute;left:0;right:0;top:170px;text-align:center;font-size:96px;line-height:1;"></p>
+    <p class="serif acc" id="e-h2" style="position:absolute;left:0;right:0;top:300px;text-align:center;font-size:190px;line-height:1;letter-spacing:-0.035em;">Fork it.</p>
+    <div id="e-term" style="position:absolute;left:390px;top:560px;width:1140px;border-radius:22px;background:var(--mist);box-shadow:inset 0 0 0 1px rgba(28,25,23,.08);padding:30px 44px;font-family:'IBM Plex Mono',monospace;font-size:34px;line-height:1.7;white-space:pre;"><div id="e-l1"></div><div id="e-l2"></div></div>
+    <p class="mono" id="e-sub" style="position:absolute;left:0;right:0;top:812px;text-align:center;font-size:28px;color:var(--ink);">Change the prompts. Self-host.</p>
+  </div>
+</section>
+
+<!-- F slogan -->
+<section class="scene" id="sF">
+  <div class="art" id="f-art" style="background-image:url(../../public/media/art/hero-loop-poster.webp);opacity:.4"></div>
+  <p class="serif" style="position:absolute;left:0;right:0;top:330px;text-align:center;font-size:170px;line-height:1;letter-spacing:-0.035em;">
     <span id="w1">It’s</span> <span id="w2">all</span> <span id="w3">on</span> <i id="w4" style="color:var(--brand)">Tape.</i>
   </p>
-  <p class="mono" id="s5-sub" style="position:absolute;left:0;right:0;top:580px;text-align:center;font-size:24px;color:var(--graphite);">Every call · every room · both languages</p>
 </section>
 
-<!-- S6 lockup -->
-<section class="scene" id="s6" style="background:var(--brand);">
-  <div id="s6-lock" style="position:absolute;left:50%;top:44%;display:flex;align-items:center;gap:34px;transform:translate(-50%,-50%);">
-    <div style="width:150px;height:150px;border-radius:38px;overflow:hidden;background:#f7f3ec;"><img src="../../public/brand/tape-app-icon-512.png" style="width:100%;height:100%;image-rendering:pixelated" alt="" /></div>
-    <span class="serif" style="font-size:150px;color:var(--paper);letter-spacing:-0.04em;line-height:1;">tape</span>
+<!-- G end card, over the pill once it fills the frame -->
+<section class="scene" id="sG" style="background:transparent;z-index:60;">
+  <div id="g-lock" style="position:absolute;left:50%;top:40%;display:flex;align-items:center;gap:40px;transform:translate(-50%,-50%);">
+    <div style="width:176px;height:176px;border-radius:44px;overflow:hidden;background:#f7f3ec;box-shadow:0 30px 70px -30px rgba(80,10,5,.6);"><img src="../../public/brand/tape-app-icon-512.png" style="width:100%;height:100%;image-rendering:pixelated" alt="" /></div>
+    <span class="serif" style="font-size:176px;color:var(--paper);letter-spacing:-0.045em;line-height:1;">tape</span>
   </div>
-  <p class="serif" id="s6-cat" style="position:absolute;left:0;right:0;top:660px;text-align:center;font-size:44px;color:var(--paper);">Bilingual meeting memory. <i>Now on Mac and web.</i></p>
-  <p class="mono" id="s6-url" style="position:absolute;left:0;right:0;top:770px;text-align:center;font-size:28px;color:rgba(253,252,250,.85);">tape.inevitable.tech</p>
+  <p class="serif" id="g-line" style="position:absolute;left:0;right:0;top:630px;text-align:center;font-size:52px;color:var(--paper);">Open source meeting memory.</p>
+  <p id="g-url" style="position:absolute;left:0;right:0;top:740px;text-align:center;font-family:'IBM Plex Mono',monospace;font-size:34px;color:var(--paper);letter-spacing:.06em;">tape.inevitable.tech</p>
 </section>
 
-<div id="pill"><span class="rec"></span><span class="bars" id="bars"></span><span class="time" id="clock">00:00</span></div>
+<svg id="ribbon" width="900" height="80" viewBox="0 0 900 80"><defs><linearGradient id="rg" x1="0" x2="1"><stop offset="0" stop-color="#ec4f44" stop-opacity="0"/><stop offset=".55" stop-color="#ec4f44" stop-opacity=".85"/><stop offset="1" stop-color="#ec4f44"/></linearGradient></defs><path id="rib" fill="none" stroke="url(#rg)" stroke-width="9" stroke-linecap="round"/></svg>
+
+<div id="pill"><div class="inner">
+  <span class="chk" id="p-chk"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></span>
+  <svg id="cass" width="166" height="66" viewBox="0 0 132 52">
+    <circle id="wL" cx="26" cy="26" r="20" fill="#ec4f44"/><circle id="wR" cx="106" cy="26" r="12" fill="#ec4f44"/>
+    <line id="tp" x1="26" y1="46" x2="106" y2="38" stroke="#ec4f44" stroke-width="3"/>
+    <g id="rL" transform="rotate(0 26 26)"><circle cx="26" cy="26" r="11" fill="#221d1a"/><circle cx="26" cy="26" r="11" fill="none" stroke="#fdfcfa" stroke-width="2.4"/><path d="M26 17v6M33.8 30.5l-5.2-3M18.2 30.5l5.2-3" stroke="#fdfcfa" stroke-width="2.4" stroke-linecap="round"/></g>
+    <g id="rR" transform="rotate(0 106 26)"><circle cx="106" cy="26" r="11" fill="#221d1a"/><circle cx="106" cy="26" r="11" fill="none" stroke="#fdfcfa" stroke-width="2.4"/><path d="M106 17v6M113.8 30.5l-5.2-3M98.2 30.5l5.2-3" stroke="#fdfcfa" stroke-width="2.4" stroke-linecap="round"/></g>
+  </svg>
+  <span class="lbl" id="p-lbl"></span><span class="time" id="clock">00:00</span>
+</div></div>
 
 <script>
 const $ = (id) => document.getElementById(id);
 const clamp = (v, a = 0, b = 1) => Math.min(b, Math.max(a, v));
 const seg = (t, a, b) => clamp((t - a) / (b - a));
 const outExpo = (x) => (x >= 1 ? 1 : 1 - Math.pow(2, -10 * x));
+const outCubic = (x) => 1 - Math.pow(1 - x, 3);
 const inOut = (x) => (x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2);
-const outBack = (x) => { const c1 = 1.6, c3 = c1 + 1; return 1 + c3 * Math.pow(x - 1, 3) + c1 * Math.pow(x - 1, 2); };
-const type = (s, p) => Array.from(s).slice(0, Math.round(Array.from(s).length * clamp(p))).join("");
+const inOutQuint = (x) => (x < 0.5 ? 16 * x ** 5 : 1 - Math.pow(-2 * x + 2, 5) / 2);
+const inCubic = (x) => x * x * x;
+const outBack = (x) => { const c1 = 1.5, c3 = c1 + 1; return 1 + c3 * Math.pow(x - 1, 3) + c1 * Math.pow(x - 1, 2); };
 const lerp = (a, b, p) => a + (b - a) * p;
+const esc = (s) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;");
 
-// scene windows, with 0.45s crossfades
-const SCENES = [["s1", 0, 3.4], ["s2", 3.4, 9.6], ["s3", 9.6, 11.6], ["s4", 11.6, 18.8], ["s5", 18.8, 22.0], ["s6", 22.0, 24.5]];
-const T4 = 11.6;
-const FADE = 0.45;
+/** Types runs into el without reflow; the newest characters land in coral and settle to ink. */
+function typeRuns(el, runs, p, fresh = 4, ghost = true) {
+  const total = runs.reduce((n, r) => n + Array.from(r[0]).length, 0);
+  const raw = Math.round((total + fresh) * clamp(p));
+  const shown = Math.min(total, raw), settled = raw - fresh;
+  let i = 0, html = "";
+  for (const [text, cls] of runs) {
+    let b = { s: "", f: "", g: "" };
+    for (const ch of Array.from(text)) {
+      if (ch === "\n") { html += flush(b, cls) + "<br>"; b = { s: "", f: "", g: "" }; i++; continue; }
+      if (i < settled) b.s += ch; else if (i < shown) b.f += ch; else if (ghost) b.g += ch;
+      i++;
+    }
+    html += flush(b, cls);
+  }
+  if (el._h !== html) { el.innerHTML = html; el._h = html; }
+}
+function flush(b, cls) {
+  let h = "";
+  if (b.s) h += `<span class="${cls || ""}">${esc(b.s)}</span>`;
+  if (b.f) h += `<span class="${cls || ""} fr" style="${cls === "acc" ? "color:#f59a8f" : ""}">${esc(b.f)}</span>`;
+  if (b.g) h += `<span class="${cls || ""} ghost">${esc(b.g)}</span>`;
+  return h;
+}
+const typeText = (el, s, p, fresh) => typeRuns(el, [[s, ""]], p, fresh);
+function offsetIn(el, root) { let x = 0, y = 0; while (el && el !== root) { x += el.offsetLeft; y += el.offsetTop; el = el.offsetParent; } return { x, y }; }
+function centerOf(el, root) { const o = offsetIn(el, root); return { x: o.x + el.offsetWidth / 2, y: o.y + el.offsetHeight / 2 }; }
+function camTo(cam, s, cx, cy, fx = 960, fy = 540) { cam.style.transform = `translate(${fx - s * cx}px, ${fy - s * cy}px) scale(${s})`; }
+const clockStr = (s) => { s = Math.max(0, Math.floor(s)); return `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`; };
+const mixHex = (a, b, p) => { const pa = [1, 3, 5].map((i) => parseInt(a.slice(i, i + 2), 16)), pb = [1, 3, 5].map((i) => parseInt(b.slice(i, i + 2), 16)); return `rgb(${pa.map((v, i) => Math.round(lerp(v, pb[i], p))).join(",")})`; };
 
-const BAR_COUNT = 22;
-$("bars").innerHTML = Array.from({ length: BAR_COUNT }, () => "<span></span>").join("");
-const bars = Array.from($("bars").children);
+// ---------- timeline ----------
+// Cuts happen inside the pill: it swells to coral, the scene changes, it shrinks onto the next one.
+const CUTS = [3.3, 8.3, 15.0, 22.0, 24.9];
+const END = 27.0;            // the pill fills the frame for the end card
+const DUR = 30.3;
+const SC = { sA: [0, CUTS[0]], sB: [CUTS[0], CUTS[1]], sC: [CUTS[1], CUTS[2]], sD: [CUTS[2], CUTS[3]], sE: [CUTS[3], CUTS[4]], sF: [CUTS[4], END + 0.5], sG: [END + 0.2, DUR + 1] };
 
-const LINES = [
-  { who: "Lin", at: "04:12", src: "我们下周把数据管道切到新的调度器。", tr: "We move the data pipeline onto the new scheduler next week." },
-  { who: "Marco", at: "04:26", src: "回滚方案要先写好，别到时候手忙脚乱。", tr: "Write the rollback plan first, so nobody is scrambling on the day." },
-  { who: "Lin", at: "04:41", src: "预算那块我下午发你一份明细。", tr: "I’ll send you the budget breakdown this afternoon." },
-  { who: "Marco", at: "04:58", src: "OK, 那我们周五之前定下来。", tr: "OK, then we lock it before Friday." },
-];
-$("s2-lines").innerHTML = LINES.map((l, i) => `<div class="tline" id="l${i}"><div><div class="who">${l.who}</div><div class="at">${l.at}</div></div><div class="src" id="l${i}s"></div><div class="tr" id="l${i}t"></div></div>`).join("");
+// how loud the room is; drives the reels and the ribbon while someone speaks
+function speech(t) {
+  const on = Math.max(seg(t, 3.75, 3.85) * (1 - seg(t, 6.6, 6.8)), 0.35 * seg(t, 0.6, 0.9) * (1 - seg(t, 3.2, 3.3)), 0.4 * seg(t, 25.0, 25.2) * (1 - seg(t, 26.6, 26.9)));
+  return on * (0.55 + 0.45 * Math.abs(Math.sin(t * 9.1) * Math.sin(t * 3.7 + 1)));
+}
+// integrated reel angle, sampled at a fixed step so every frame is reproducible
+function reelAngle(t) { let a = 0; const dt = 1 / 60; for (let s = 0; s < t; s += dt) a += (70 + 520 * speech(s)) * dt; return a; }
 
-const PLACES = [
-  { word: "Zoom", src: "../../public/brand/partners/zoom.svg" },
-  { word: "Google Meet", src: "../../public/brand/partners/googlemeet.svg" },
-  { word: "Teams", src: null, glyph: "T" },
-  { word: "the room", src: null, glyph: "●" },
-];
-$("s3-chips").innerHTML = PLACES.map((p, i) => `<span class="chip" id="c${i}">${p.src ? `<img src="${p.src}" alt="" />` : `<span class="serif" style="font-size:46px;color:${p.glyph === "●" ? "var(--brand)" : "#5b5fc7"}">${p.glyph}</span>`}</span>`).join("");
-
-const HITS = [["Weekly partner sync", "Jul 16 · 12:04"], ["产品路线图评审", "Jul 09 · 27:41"], ["Security questionnaire", "Jun 30 · 08:15"]];
-$("s4-hits").innerHTML = HITS.map((h, i) => `<div class="hit" id="h${i}"><span>${h[0]}</span><span>${h[1]}</span></div>`).join("");
-
-function sceneOpacity(t, a, b, first, last) {
-  const fin = first ? 1 : seg(t, a - FADE / 2, a + FADE / 2);
-  const fout = last ? 1 : 1 - seg(t, b - FADE / 2, b + FADE / 2);
-  return Math.min(fin, fout);
+// where the pill rests in each scene
+function rest(t) {
+  if (t < CUTS[0]) return { x: 700, y: 790, w: 370, mode: "rec", clock: clockStr(t) };
+  if (t < CUTS[1]) return { x: 960, y: 985, w: 370, mode: "rec", clock: clockStr(252 + (t - CUTS[0])) };
+  if (t < CUTS[2]) return { x: 960, y: 985, w: 400, mode: "done", label: "Follow-up written" };
+  if (t < CUTS[3]) return { x: 960, y: 985, w: 520, mode: "label", label: "over MCP · read only" };
+  if (t < CUTS[4]) return { x: 960, y: 985, w: 450, mode: "label", label: "glazec/tape" };
+  return { x: 960, y: 690, w: 370, mode: "rec", clock: clockStr(t - CUTS[4]) };
 }
 
-function render(t) {
-  SCENES.forEach(([id, a, b], i) => {
-    $(id).style.opacity = sceneOpacity(t, a, b, i === 0, i === SCENES.length - 1);
-  });
-
-  // pill: born from the icon in S1, docks at the bottom through S2 to S4, leaves before the slogan
-  const born = outExpo(seg(t, 1.2, 2.0));
-  const dock = inOut(seg(t, 3.0, 3.8));
-  const leave = inOut(seg(t, 18.3, 18.9));
+function renderPill(t) {
   const pill = $("pill");
-  const width = lerp(84, 420, born);
-  pill.style.width = width + "px";
-  const x = lerp(lerp(1330, 960, born), 960, dock);
-  const y = lerp(lerp(320, 715, born), 975, dock) + leave * 200;
-  pill.style.left = x + "px";
-  pill.style.top = y + "px";
-  pill.style.opacity = seg(t, 1.2, 1.4) * (1 - leave);
-  const secs = Math.max(0, Math.floor(t - 1.2));
-  $("clock").textContent = `${String(Math.floor(secs / 60)).padStart(2, "0")}:${String(secs % 60).padStart(2, "0")}`;
-  bars.forEach((bar, i) => {
-    const h = 8 + 26 * Math.abs(Math.sin(t * 5.3 + i * 0.7) * Math.sin(t * 2.1 + i * 1.3));
-    bar.style.height = (born > 0.6 ? h : 6) + "px";
-  });
+  const r = rest(t);
+  let { x, y, w } = r, h = 84, inner = 1;
+  // born on the desk: a coral point swells into the cassette
+  if (t < 0.9) { const p = outBack(seg(t, 0.05, 0.45)), q = outExpo(seg(t, 0.3, 0.9)); h = 84 * p; w = lerp(84 * p, 370, q); inner = seg(t, 0.55, 0.85); }
+  // cover amount from the nearest cut, or the end fill
+  let k = 0;
+  for (const tc of CUTS) {
+    if (t >= tc - 0.3 && t < tc) k = Math.max(k, inCubic(seg(t, tc - 0.3, tc)));
+    if (t >= tc && t < tc + 0.38) k = Math.max(k, 1 - outCubic(seg(t, tc, tc + 0.38)));
+  }
+  if (t >= END - 0.05) k = inOutQuint(seg(t, END - 0.05, END + 0.4));
+  w = lerp(w, 2750, k); h = lerp(h, 1650, k); x = lerp(x, 960, k); y = lerp(y, 540, k);
+  pill.style.background = mixHex("#221d1a", "#ec4f44", clamp(k * 14));
+  pill.style.width = w + "px"; pill.style.height = h + "px";
+  pill.style.left = x - w / 2 + "px"; pill.style.top = y - h / 2 + "px";
+  pill.style.borderRadius = t >= END + 0.25 ? lerp(800, 0, seg(t, END + 0.25, END + 0.4)) + "px" : "999px";
+  pill.style.boxShadow = k > 0.02 ? "none" : "";
+  pill.querySelector(".inner").style.opacity = inner * (1 - clamp(k * 5));
+  $("p-chk").style.display = r.mode === "done" ? "flex" : "none";
+  $("cass").style.display = r.mode === "done" ? "none" : "";
+  $("clock").style.display = r.mode === "rec" ? "" : "none";
+  $("p-lbl").style.display = r.mode === "rec" ? "none" : "";
+  $("p-lbl").textContent = r.label || "";
+  $("clock").textContent = r.clock || "";
+  // reels: tape winds from left to right over the film
+  const a = reelAngle(t), wound = clamp(t / DUR);
+  const rl = lerp(21, 13, wound), rr = lerp(13, 21, wound);
+  $("wL").setAttribute("r", rl); $("wR").setAttribute("r", rr);
+  $("tp").setAttribute("y1", 26 + rl); $("tp").setAttribute("y2", 26 + rr);
+  $("rL").setAttribute("transform", `rotate(${-a} 26 26)`); $("rR").setAttribute("transform", `rotate(${-a * 0.8} 106 26)`);
+  // a coral ribbon unspools from the pill while it records
+  const showRib = r.mode === "rec" && k < 0.05 && t > 0.6 && t < END - 0.1;
+  const rib = $("ribbon");
+  rib.style.display = showRib ? "" : "none";
+  if (showRib) {
+    const s0 = t < CUTS[0] ? 0.6 : t < CUTS[1] ? CUTS[0] + 0.3 : CUTS[4] + 0.3;
+    const len = 900 * outCubic(seg(t, s0, s0 + 1.0));
+    rib.style.left = x - w / 2 - 900 + 8 + "px"; rib.style.top = y - 40 + "px";
+    const amp = 6 + 16 * speech(t);
+    let d = "";
+    for (let px = 0; px <= 900; px += 12) {
+      if (px < 900 - len) continue;
+      const yy = 40 + amp * Math.sin(px * 0.022 - t * 6) * (px / 900) + 4 * Math.sin(px * 0.05 + t * 2);
+      d += (d ? " L " : "M ") + px + " " + yy.toFixed(1);
+    }
+    $("rib").setAttribute("d", d || "M 0 0");
+  }
+}
 
-  // S1 the call window lands, then Tape's badge drops in and the pill is born under it
-  const pop = outExpo(seg(t, 0.1, 0.9));
-  $("call").style.transform = `translateY(${lerp(50, 0, pop)}px) scale(${lerp(0.94, 1, pop)})`;
-  $("call").style.opacity = seg(t, 0.1, 0.4);
-  const badge = outBack(seg(t, 0.7, 1.1));
-  $("badge").style.opacity = seg(t, 0.7, 0.85);
-  $("badge").style.transform = `scale(${lerp(0.6, 1, badge)})`;
+function vis(t) { for (const id in SC) { const [a, b] = SC[id]; $(id).style.display = t >= a && t < b ? "block" : "none"; } }
 
-  // S2 transcript writes itself, original then translation
-  $("s2-art").style.transform = `scale(${lerp(1.08, 1, outExpo(seg(t, 3.2, 5)))})`;
-  $("s2-cap").style.opacity = seg(t, 3.7, 4.2);
-  $("s2-win").style.transform = `translateY(${lerp(60, 0, outExpo(seg(t, 3.5, 4.4)))}px)`;
-  LINES.forEach((l, i) => {
-    const start = 4.3 + i * 1.6 - (i === 3 ? 0.4 : 0);
-    const row = $("l" + i);
-    row.style.opacity = seg(t, start - 0.1, start + 0.1);
-    row.classList.toggle("live", t >= start && t < start + 1.6 && t < 9.2);
-    // the original types at speaking pace; the translation lands whole
-    $("l" + i + "s").textContent = type(l.src, seg(t, start, start + Array.from(l.src).length / 18));
-    $("l" + i + "t").textContent = l.tr;
-    $("l" + i + "t").style.opacity = seg(t, start + 1.05, start + 1.2);
-  });
+function render(t) {
+  vis(t);
+  renderPill(t);
 
-  // S3 the third word cycles through every place Tape records
-  const k = clamp(Math.floor((t - 9.75) / 0.45), 0, PLACES.length - 1);
-  const local = (t - 9.75) - k * 0.45;
-  $("s3-word").textContent = type(PLACES[k].word, seg(local, 0, 0.18));
-  PLACES.forEach((p, i) => {
-    const c = $("c" + i);
-    const appear = outBack(seg(t, 9.75 + i * 0.45, 10.05 + i * 0.45));
-    c.style.opacity = seg(t, 9.75 + i * 0.45, 9.9 + i * 0.45);
-    c.style.transform = `translateY(${lerp(30, 0, appear)}px) scale(${i === k ? 1.08 : 0.94})`;
-  });
+  // A thesis on the desk, then the privacy line
+  $("a-art").style.transform = `scale(${lerp(1.0, 1.05, seg(t, 0, CUTS[0]))})`;
+  typeRuns($("a-h"), [["Your team says more in one call\nthan it writes ", ""], ["all week.", "acc"]], seg(t, 0.35, 1.3), 5);
+  $("a-h").style.opacity = 1 - seg(t, 1.95, 2.1);
+  $("a-h").style.transform = `translateY(${-30 * outCubic(seg(t, 1.95, 2.15))}px)`;
+  typeRuns($("a-h2"), [["A Mac app.\n", ""], ["No bot.", "acc"]], seg(t, 2.1, 2.55), 3);
 
-  // S4 an assistant asks Tape, in English, and gets a Mandarin meeting back
-  $("s4-art").style.transform = `scale(${lerp(1.08, 1, outExpo(seg(t, T4 - 0.2, T4 + 1.6)))})`;
-  $("s4-cap").style.opacity = seg(t, T4 + 0.3, T4 + 0.8);
-  $("s4-win").style.transform = `translateY(${lerp(60, 0, outExpo(seg(t, T4 + 0.1, T4 + 1.0)))}px)`;
-  $("s4-q").textContent = type("Where did we land on the security review?", seg(t, T4 + 0.6, T4 + 1.6));
-  $("s4-q").style.opacity = seg(t, T4 + 0.55, T4 + 0.65);
-  $("s4-tool").style.opacity = seg(t, T4 + 1.8, T4 + 2.1);
-  HITS.forEach((h, i) => {
-    const e = $("h" + i);
-    e.style.opacity = seg(t, T4 + 2.0 + i * 0.2, T4 + 2.2 + i * 0.2);
-    e.style.transform = `translateY(${lerp(14, 0, outExpo(seg(t, T4 + 2.0 + i * 0.2, T4 + 2.5 + i * 0.2)))}px)`;
-    e.style.background = i === 1 && t > T4 + 2.9 ? "#fbe3df" : "";
-  });
-  $("s4-a").textContent = type("After the July 30 freeze. Lin confirmed it in the roadmap review, in Mandarin, at 27:41.", seg(t, T4 + 3.0, T4 + 5.4));
+  // B one line, Chinese at speaking pace, English 0.3 s behind
+  const TB = CUTS[0];
+  typeRuns($("b-h"), [["Chinese and English, ", ""], ["one transcript.", "acc"]], seg(t, TB + 0.2, TB + 0.8));
+  $("b-art").style.transform = `scale(${lerp(1.08, 1.0, outCubic(seg(t, TB, CUTS[1])))})`;
+  typeText($("b-src"), "我们下周把数据管道切到新的调度器。", seg(t, 3.8, 6.7), 2);
+  typeText($("b-tr"), "We move the data pipeline onto the new scheduler next week.", seg(t, 4.1, 7.0), 5);
+  const bc = centerOf($("b-win"), $("b-cam"));
+  camTo($("b-cam"), lerp(1.62, 1.74, inOut(seg(t, TB, CUTS[1]))), bc.x, bc.y, 960, 590);
 
-  // S5 slogan, word by word
+  // C the connection is the hero, then the stat, then the quiet rest
+  const TC = CUTS[1];
+  typeRuns($("c-h"), [["Who knows ", ""], ["whom.", "acc"]], seg(t, TC + 0.3, TC + 0.75));
+  $("c-h").style.opacity = 1 - seg(t, 10.85, 11.0);
+  const card = $("c-card"), cc = centerOf(card, $("c-cam"));
+  const toStat = inOutQuint(seg(t, 10.8, 11.4)), toRest = inOutQuint(seg(t, 13.35, 14.0));
+  const cs = lerp(lerp(1.6, 1.25, toStat), 1.45, toRest) + 0.03 * seg(t, TC, CUTS[2]);
+  const ccr = (offsetIn(card, $("c-cam")).y + offsetIn($("c-todo"), $("c-cam")).y + $("c-todo").offsetHeight) / 2;
+  camTo($("c-cam"), cs, cc.x, lerp(cc.y, ccr, toRest), 960, lerp(lerp(590, 720, toStat), 530, toRest));
+  card.style.opacity = 1 - 0.65 * toStat * (1 - toRest);
+  $("c-a").style.opacity = seg(t, TC + 0.35, TC + 0.5);
+  $("c-line").style.transform = `scaleX(${outExpo(seg(t, TC + 0.6, TC + 1.2))})`;
+  $("c-tag").style.opacity = seg(t, TC + 1.0, TC + 1.15);
+  $("c-tag").style.transform = `translateX(-50%) scale(${lerp(0.7, 1, outBack(seg(t, TC + 1.0, TC + 1.3)))})`;
+  $("c-b").style.opacity = seg(t, TC + 1.1, TC + 1.3);
+  $("c-b").style.transform = `translateX(${lerp(24, 0, outExpo(seg(t, TC + 1.1, TC + 1.6)))}px)`;
+  $("c-at").style.opacity = seg(t, TC + 1.5, TC + 1.7);
+  $("c-stat").style.opacity = seg(t, 11.0, 11.2) * (1 - seg(t, 13.3, 13.5));
+  $("c-stat").style.transform = `translateY(${lerp(30, 0, outExpo(seg(t, 11.0, 11.6)))}px)`;
+  $("c-n").textContent = `${Math.round(9 * outCubic(seg(t, 11.05, 11.55)))} of 10`;
+  $("c-tl").style.opacity = seg(t, 13.5, 13.7);
+  [0, 1].forEach((i) => { const a = 13.5 + i * 0.14, e = $("c-t" + i); e.style.opacity = seg(t, a, a + 0.15); e.style.transform = `translateY(${lerp(26, 0, outExpo(seg(t, a, a + 0.55)))}px)`; });
+
+  // D ask your own AI: one question, one hit, the answer, pushed in
+  const TD = CUTS[2];
+  $("d-art").style.transform = `scale(${lerp(1.1, 1.02, outCubic(seg(t, TD, CUTS[3])))})`;
+  typeRuns($("d-h"), [["Ask your ", ""], ["own AI.", "acc"]], seg(t, TD + 0.3, TD + 0.75));
+  $("d-h").style.opacity = 1 - seg(t, 17.5, 17.8);
+  // the bubble exists only once its first character does, so it never flashes empty
+  const qp = seg(t, 15.55, 16.7);
+  $("d-q").style.opacity = Math.round(66 * qp) >= 1 ? 1 : 0;
+  typeRuns($("d-q"), [["Who has offered us an intro to a payments team since August?", ""]], qp, 5, false);
+  const more = $("d-more");
+  more.style.height = "auto"; const fullH = more.scrollHeight;
+  more.style.height = lerp(0, fullH, outExpo(seg(t, 17.0, 17.7))) + "px";
+  $("d-tool").style.opacity = seg(t, 17.05, 17.2);
+  $("d-hit").style.opacity = seg(t, 17.3, 17.45);
+  $("d-hit").style.transform = `translateY(${lerp(14, 0, outExpo(seg(t, 17.3, 17.8)))}px)`;
+  typeRuns($("d-a"), [["Three people offered. ", ""], ["Lin made the warmest one, in Mandarin, at 27:41.", ""]], seg(t, 17.85, 19.0), 6);
+  const dq = centerOf($("d-q"), $("d-cam")), da = centerOf($("d-a"), $("d-cam")), dh = centerOf($("d-hit"), $("d-cam"));
+  const push = inOutQuint(seg(t, 17.4, 18.5));
+  const ds = lerp(1.32, 1.45, push) + 0.03 * seg(t, 18.5, CUTS[3]);
+  const dwx = centerOf($("d-win"), $("d-cam")).x;
+  camTo($("d-cam"), ds, dwx, lerp(dq.y + 40, (dh.y + da.y) / 2, push), 960, lerp(560, 540, push));
+
+  // E fork it
+  const TE = CUTS[3];
+  typeText($("e-h1"), "Don’t like how it works?", seg(t, TE + 0.25, TE + 0.75), 4);
+  const fk = outBack(seg(t, 22.85, 23.25));
+  $("e-h2").style.opacity = seg(t, 22.85, 22.95);
+  $("e-h2").style.transform = `translateY(${lerp(40, 0, fk)}px)`;
+  $("e-term").style.opacity = seg(t, 23.0, 23.15);
+  $("e-l1").innerHTML = `<span style="color:var(--brand)">$ </span>` + esc(Array.from("gh repo fork glazec/tape --clone").slice(0, Math.round(32 * seg(t, 23.15, 23.65))).join(""));
+  $("e-l2").innerHTML = t < 23.8 ? "&nbsp;" : `<span style="color:var(--brand)">$ </span>` + esc(Array.from("$EDITOR lib/meeting-followup-generation.ts").slice(0, Math.round(42 * seg(t, 23.8, 24.35))).join(""));
+  $("e-sub").style.opacity = seg(t, 24.1, 24.3);
+  camTo($("e-cam"), lerp(1, 1.04, seg(t, TE, CUTS[4])), 960, 540);
+
+  // F slogan
   ["w1", "w2", "w3", "w4"].forEach((w, i) => {
-    const p = outExpo(seg(t, 19.0 + i * 0.28, 19.6 + i * 0.28));
-    $(w).style.opacity = p;
+    const a = 25.05 + i * 0.13, p = outExpo(seg(t, a, a + 0.5));
+    $(w).style.opacity = seg(t, a, a + 0.12);
     $(w).style.display = "inline-block";
-    $(w).style.transform = `translateY(${lerp(40, 0, p)}px)`;
+    $(w).style.transform = `translateY(${lerp(50, 0, p)}px)`;
   });
-  $("s5-sub").style.opacity = seg(t, 20.4, 20.9);
-  $("s5-art").style.transform = `translateX(${lerp(40, 0, seg(t, 18.6, 22))}px) scale(1.05)`;
+  $("f-art").style.transform = `translateX(${lerp(30, 0, seg(t, 24.9, 27.2))}px) scale(1.04)`;
 
-  // S6 lockup on coral
-  const lp = outBack(seg(t, 22.1, 22.8));
-  $("s6-lock").style.transform = `translate(-50%, -50%) scale(${lerp(0.85, 1, lp)})`;
-  $("s6-lock").style.opacity = seg(t, 22.1, 22.4);
-  $("s6-cat").style.opacity = seg(t, 22.5, 22.9);
-  $("s6-url").style.opacity = seg(t, 22.9, 23.3);
+  // G end card: lockup, line, URL by +0.7 s
+  const lp = outBack(seg(t, END + 0.2, END + 0.7));
+  $("g-lock").style.opacity = seg(t, END + 0.2, END + 0.32);
+  $("g-lock").style.transform = `translate(-50%, -50%) scale(${lerp(0.88, 1, lp)})`;
+  $("g-line").style.opacity = seg(t, END + 0.3, END + 0.45);
+  $("g-url").style.opacity = seg(t, END + 0.38, END + 0.5);
 }
 
 window.render = render;
-window.DURATION = 24.5;
+window.DURATION = DUR;
 const q = new URLSearchParams(location.search);
 if (q.has("t")) render(parseFloat(q.get("t")));
-else { const t0 = performance.now(); const loop = () => { render(((performance.now() - t0) / 1000) % 24.5); requestAnimationFrame(loop); }; loop(); }
+else { const t0 = performance.now(); const loop = () => { render(((performance.now() - t0) / 1000) % DUR); requestAnimationFrame(loop); }; loop(); }
 </script>
 </body>
 </html>

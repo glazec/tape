@@ -144,7 +144,7 @@ Transcription is no longer a differentiator, and neither is bot-free capture on 
 
 Section grammar alternates on purpose: centered showcase, full-bleed band, stacked track, split, dark grid. Do not add another stacked `TrackSection` in a row. Partner logos live in `public/brand/partners/` as monochrome graphite SVGs.
 
-The launch film (`public/media/tape-launch-v5.mp4`, 24 seconds) is generated from `scripts/launch-film/film.html`, a deterministic timeline rendered frame by frame by `scripts/launch-film/render.mjs` and muxed with a fal generated music bed. Edit the HTML and re-render rather than editing video.
+The launch film (`public/media/tape-launch-v6.mp4`, 30 seconds: thesis, bilingual line, connections and to-dos, ask your own AI, fork it, slogan) is generated from `scripts/launch-film/film.html`, a deterministic timeline rendered frame by frame by `scripts/launch-film/render.mjs` and muxed with a fal generated music bed. Edit the HTML and re-render rather than editing video.
 
 The windows in the follow-up, capture, languages, and agents panels are interface mockups drawn in HTML (`components/landing/mockups.tsx`), not screenshots. Prefer that for anything the page needs to *argue*: a 1440px application capture scaled into a 640px column is unreadable, and raster captures drift out of brand as the product changes. Each mockup shows one idea, uses the live brand tokens, and stays crisp at any size. Keep the content generic: no real customer names and no quotes attributed to real people.
 
