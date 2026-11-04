@@ -16,6 +16,8 @@ function method(name, next) {
   return source.slice(start, end).replace("private func", "func");
 }
 
+const systemSource = readFileSync(new URL("../Sources/MeetingNoteLocalRecorder/RecorderSystemActions.swift", import.meta.url), "utf8");
+const repairPermissionEnum = systemSource.slice(systemSource.indexOf("    enum RepairPermission:"), systemSource.indexOf("    enum Failure:"));
 let directory;
 before(() => {
   directory = mkdtempSync(join(tmpdir(), "tape-permissions-"));
@@ -57,9 +59,30 @@ struct Checklist {
   var notifications = PermissionGrant.unknown
 }
 @MainActor enum RecorderSystemActions {
+${repairPermissionEnum}
+  static var selected: RepairPermission {
+    if CommandLine.arguments.contains("screen") { return .screenCapture }
+    if CommandLine.arguments.contains("notifications") { return .notifications }
+    if CommandLine.arguments.contains("microphone") { return .microphone }
+    return .accessibility
+  }
+  static var resets = 0
+  static func repairPermission(_ permission: RepairPermission, bundleIdentifier: String, applicationURL: URL) async throws {
+    precondition(bundleIdentifier == "test.tape")
+    precondition(permission == selected)
+    precondition(applicationURL == Bundle.main.bundleURL)
+    precondition(permission.resetService == (permission == .notifications ? nil : permission.rawValue))
+    resets += 1
+    if CommandLine.arguments.contains("reset-failure") { throw URLError(.noPermissionsToReadFile) }
+  }
   static var launches = 0
   static var replacementReady = false
-  static func launchReplacement(at url: URL) async throws {
+  static func launchReplacement(at url: URL, arguments: [String] = []) async throws {
+    if CommandLine.arguments.contains("repair") {
+      precondition(resets == 1, "Reset must complete before relaunch")
+      precondition(arguments == [selected.launchArgument])
+      precondition(url == Bundle.main.bundleURL)
+    }
     launches += 1
     try await Task.sleep(for: .milliseconds(50))
     if CommandLine.arguments.contains("failure") { throw URLError(.cannotOpenFile) }
@@ -91,26 +114,41 @@ struct Checklist {
   var statusText = ""
   var canMonitor = false
   var accessibilityRequests = 0
+  var screenRequests = 0
+  var notificationRequests = 0
+  var notificationSettingsOpened = false
   func canCloseApp() -> Bool { !CommandLine.arguments.contains("recording") }
   func stopLevelTest() {}
   func refreshPermissions() async { try? await Task.sleep(for: .milliseconds(20)) }
+  func openAccessibilitySettings() {}
   func openMicrophoneSettings() {}
   func openScreenCaptureSettings() {}
-  func openNotificationSettings() {}
+  func openNotificationSettings() { notificationSettingsOpened = true }
   func startMonitoring() { fatalError("Signed out permission setup must not monitor") }
   func requestAccessibilityPermission() -> PermissionGrant { accessibilityRequests += 1; return .denied }
-  func requestScreenCapturePermission() async -> PermissionGrant { .denied }
-  func requestNotificationPermission() async -> PermissionGrant { .denied }
+  func requestScreenCapturePermission() async -> PermissionGrant { screenRequests += 1; return .denied }
+  func requestNotificationPermission() async -> PermissionGrant { notificationRequests += 1; return .denied }
 ${method("requestMicrophonePermission()", "private func requestNotificationPermission()")}
 ${method("requestPermission(_ requestedStep:", "func startRecording()")}
-${method("restartApp()", "func repairAccessibility()")}
+${method("restartApp()", "func repairPermission(")}
+${method("repairPermissionAndRelaunch(_ permission:", "private func resumePermissionRepair(")}
+${method("resumePermissionRepair(arguments:", "func showAppInFinder()")}
 ${method("observeAudioLevel(source:", "func toggleLevelTest()")}
 }
 @main struct Main {
   @MainActor static func main() async {
     installMicrophoneMock()
     let probe = Probe()
-    if CommandLine.arguments.contains("levels") {
+    if CommandLine.arguments.contains("repair") {
+      probe.permissionChecklist.accessibility = .denied
+      await probe.repairPermissionAndRelaunch(RecorderSystemActions.selected, bundleIdentifier: "test.tape")
+      precondition(!probe.isRestarting)
+      precondition(probe.accessibilityRequests == 0 && probe.screenRequests == 0, "Old process must not request access again")
+      print("resets=\\(RecorderSystemActions.resets);launches=\\(RecorderSystemActions.launches);terminations=\\(NSApp.terminations);status=\\(probe.statusText)")
+    } else if CommandLine.arguments.contains("resume") {
+      await probe.resumePermissionRepair(arguments: CommandLine.arguments)
+      print("accessibility=\\(probe.accessibilityRequests);screen=\\(probe.screenRequests);notifications=\\(probe.notificationRequests);notificationSettings=\\(probe.notificationSettingsOpened);microphone=\\(probe.permissionChecklist.microphone)")
+    } else if CommandLine.arguments.contains("levels") {
       probe.isRecording = true
       probe.observeAudioLevel(source: .computerAudio, level: 0.04)
       precondition(probe.audioLevels.last! > 0, "Mac sound must animate the waveform without microphone callbacks")
@@ -186,3 +224,35 @@ function run(args, status, granted) {
 test("waveform follows either audio source and stays bounded", () => {
   assert.equal(run(["levels"], 0, 0).stdout.trim(), "levels passed");
 });
+
+test("Accessibility repair resets before relaunching the exact app with a fresh request", () => {
+  assert.equal(run(["repair"], 0, 0).stdout.trim(), "resets=1;launches=1;terminations=1;status=");
+});
+test("failed Accessibility reset does not relaunch or terminate", () => {
+  assert.match(run(["repair", "reset-failure"], 0, 0).stdout, /resets=1;launches=0;terminations=0;status=Reset failed/);
+});
+test("failed relaunch after Accessibility reset keeps the app open with accurate recovery", () => {
+  assert.match(run(["repair", "failure"], 0, 0).stdout, /resets=1;launches=1;terminations=0;status=Access reset, but restart failed/);
+});
+
+for (const [name, args, expected] of [
+  ["Screen capture repair resets and relaunches", ["repair", "screen"], /resets=1;launches=1;terminations=1;status=/],
+  ["Screen capture reset failure keeps app open", ["repair", "screen", "reset-failure"], /resets=1;launches=0;terminations=0;status=Reset failed.*Screen and system audio/],
+  ["Screen capture relaunch failure keeps app open", ["repair", "screen", "failure"], /resets=1;launches=1;terminations=0;status=Access reset, but restart failed.*Screen and system audio/],
+  ["Fresh process requests only screen capture", ["resume", "--repair-ScreenCapture"], /accessibility=0;screen=1/],
+  ["Fresh process requests only Accessibility", ["resume", "--repair-Accessibility"], /accessibility=1;screen=0/],
+  ["Normal launch does not request permissions", ["resume"], /accessibility=0;screen=0/],
+]) {
+  test(name, () => assert.match(run(args, 0, 0).stdout, expected));
+}
+
+for (const [name, args, expected] of [
+  ["Microphone repair relaunches after reset", ["repair", "microphone"], /resets=1;launches=1;terminations=1;status=/],
+  ["Notification repair relaunches after registration", ["repair", "notifications"], /resets=1;launches=1;terminations=1;status=/],
+  ["Notification registration failure does not claim a reset", ["repair", "notifications", "reset-failure"], /resets=1;launches=0;terminations=0;status=Repair failed/],
+  ["Notification restart failure does not claim a reset", ["repair", "notifications", "failure"], /resets=1;launches=1;terminations=0;status=Restart failed/],
+  ["Fresh process requests notifications and opens settings on denial", ["resume", "--repair-Notifications"], /accessibility=0;screen=0;notifications=1;notificationSettings=true/],
+  ["Fresh process requests microphone", ["resume", "--repair-Microphone"], /accessibility=0;screen=0;notifications=0;notificationSettings=false;microphone=denied/],
+]) {
+  test(name, () => assert.match(run(args, 0, 0).stdout, expected));
+}

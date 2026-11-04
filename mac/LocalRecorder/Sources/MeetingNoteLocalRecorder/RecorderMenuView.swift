@@ -1037,7 +1037,7 @@ struct RecorderSettingsView: View {
             checklist: model.permissionChecklist,
             requestPermission: model.requestPermission,
             setStartAtLoginEnabled: model.setStartAtLoginEnabled,
-            repairAccessibility: model.repairAccessibility,
+            repairPermission: model.repairPermission,
             showAppInFinder: model.showAppInFinder,
             isBusy: model.isRequestingPermissions || model.isRestarting || model.isRecording || model.isFinishingRecording
         )
