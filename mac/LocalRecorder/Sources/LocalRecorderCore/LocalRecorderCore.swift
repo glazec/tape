@@ -1238,6 +1238,7 @@ public struct LocalRecordingUploadPayload: Codable, Equatable, Sendable {
     public var microphoneAudioURL: URL
     public var synthesizedAudioURL: URL
     public var uploadAssets: LocalRecordingUploadAssetIds?
+    public var uploadCompleted: Bool?
     public var manifest: RecordingManifest
 
     public init(
@@ -1312,6 +1313,19 @@ public struct LocalRecordingUploadQueue: Sendable {
         return payloads.sorted {
             $0.recordingStartedAt < $1.recordingStartedAt
         }
+    }
+
+    /// Persist server confirmation before deleting any local media so cleanup
+    /// can resume after a failure or restart without uploading again.
+    public func completeUpload(_ payload: LocalRecordingUploadPayload) throws {
+        var completed = payload
+        completed.uploadCompleted = true
+        try save(completed)
+        let recordingDirectory = payload.computerAudioURL.deletingLastPathComponent()
+        if FileManager.default.fileExists(atPath: recordingDirectory.path) {
+            try FileManager.default.removeItem(at: recordingDirectory)
+        }
+        try remove(clientRecordingId: payload.clientRecordingId)
     }
 
     public func remove(clientRecordingId: String) throws {

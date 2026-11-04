@@ -959,6 +959,53 @@ import Testing
     #expect(try queue.load().map(\.clientRecordingId) == ["recording_new"])
 }
 
+@Test func completedUploadDeletesLocalRecordingAndQueueEntry() throws {
+    let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let directory = root.appending(path: "recording")
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    let queue = LocalRecordingUploadQueue(directoryURL: root.appending(path: "queue"))
+    let payload = makeUploadPayload(clientRecordingId: "completed", recordingStartedAt: Date(), directoryURL: directory)
+    for url in [payload.computerAudioURL, payload.microphoneAudioURL, payload.synthesizedAudioURL] {
+        try Data("audio".utf8).write(to: url)
+    }
+    try queue.save(payload)
+    #expect(try queue.load().first?.uploadCompleted == nil)
+    try queue.completeUpload(payload)
+    #expect(!FileManager.default.fileExists(atPath: directory.path))
+    #expect(try queue.load().isEmpty)
+    // A restart after deletion but before queue removal can safely finish cleanup.
+    var completed = payload
+    completed.uploadCompleted = true
+    try queue.save(completed)
+    let recovered = try #require(queue.load().first)
+    #expect(recovered.uploadCompleted == true)
+    try queue.completeUpload(recovered)
+    #expect(try queue.load().isEmpty)
+}
+
+@Test func cleanupFailureKeepsConfirmedUploadForRetry() throws {
+    let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+    let media = root.appending(path: "media")
+    let directory = media.appending(path: "recording")
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    defer {
+        try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: media.path)
+        try? FileManager.default.removeItem(at: root)
+    }
+    let queue = LocalRecordingUploadQueue(directoryURL: root.appending(path: "queue"))
+    let payload = makeUploadPayload(clientRecordingId: "cleanup_retry", recordingStartedAt: Date(), directoryURL: directory)
+    try queue.save(payload)
+    try FileManager.default.setAttributes([.posixPermissions: 0o500], ofItemAtPath: media.path)
+    #expect(throws: (any Error).self) { try queue.completeUpload(payload) }
+    let recovered = try #require(queue.load().first)
+    #expect(recovered.uploadCompleted == true)
+    try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: media.path)
+    try queue.completeUpload(recovered)
+    #expect(try queue.load().isEmpty)
+    #expect(!FileManager.default.fileExists(atPath: directory.path))
+}
+
 @Test func uploadQueueQuarantinesPermanentFailuresWithoutDeletingAudio() throws {
     let temporaryDirectory = FileManager.default.temporaryDirectory
         .appending(path: UUID().uuidString, directoryHint: .isDirectory)

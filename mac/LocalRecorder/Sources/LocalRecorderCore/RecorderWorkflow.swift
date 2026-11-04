@@ -123,19 +123,31 @@ public struct RecordingUploadReceipt: Identifiable {
     public var meetingURL: URL?
     public var isTerminal = false
     public var needsAttention = false
+    /// False once the server has rejected this recording for good; resending would fail the same way.
+    public var canRetry = true
 
     public init(id: String, message: String) { self.id = id; self.message = message }
 
-    public mutating func update(target: RecordingTarget?, message: String, serverURL: URL?, terminal: Bool, failed: Bool = false) {
+    public mutating func update(target: RecordingTarget?, message: String, serverURL: URL?, terminal: Bool, failed: Bool = false, retryable: Bool = true) {
         // A late destination confirmation must not turn an uploaded receipt back
         // into Uploading. Metadata can still arrive after the upload completes.
         if !isTerminal || terminal { self.message = message }
         isTerminal = isTerminal || terminal
-        if terminal { needsAttention = failed }
+        // A transient failure needs attention too, so the card offers Retry instead of spinning.
+        if terminal || failed { needsAttention = failed }
+        if failed { canRetry = retryable }
         if let target, let serverURL {
             self.target = target
             meetingURL = serverURL.appending(path: "meetings/\(target.meetingId)")
         }
+    }
+
+    /// Puts a failed receipt back into the working state so a retry shows progress right away.
+    public mutating func markRetrying(message: String) {
+        guard canRetry else { return }
+        self.message = message
+        isTerminal = false
+        needsAttention = false
     }
 }
 

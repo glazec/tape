@@ -78,6 +78,31 @@ import Testing
     #expect(receipt.meetingURL?.absoluteString == "https://example.com/meetings/confirmed")
 }
 
+@Test func transientUploadFailureOffersRetryAndRetryShowsProgress() {
+    var receipt = RecordingUploadReceipt(id: "intent", message: "Uploading")
+    receipt.update(target: nil, message: "Could not upload", serverURL: nil, terminal: false, failed: true)
+    #expect(receipt.needsAttention)
+    #expect(receipt.canRetry)
+    #expect(!receipt.isTerminal)
+    receipt.markRetrying(message: "Retrying upload…")
+    #expect(!receipt.needsAttention)
+    #expect(receipt.message == "Retrying upload…")
+    receipt.update(target: nil, message: "Uploaded", serverURL: nil, terminal: true)
+    #expect(!receipt.needsAttention)
+    #expect(receipt.isTerminal)
+}
+
+@Test func permanentUploadFailureCannotBeRetried() {
+    var receipt = RecordingUploadReceipt(id: "intent", message: "Uploading")
+    receipt.update(target: nil, message: "Upload failed", serverURL: nil, terminal: true, failed: true, retryable: false)
+    #expect(receipt.needsAttention)
+    #expect(!receipt.canRetry)
+    receipt.markRetrying(message: "Retrying upload…")
+    #expect(receipt.needsAttention)
+    #expect(receipt.isTerminal)
+    #expect(receipt.message == "Upload failed")
+}
+
 @Test func recordingTargetRequestPreservesExactDestinationAndRetryID() throws {
     let client = LocalRecorderAPIClient(serverURL: URL(string: "https://example.com")!, bearerToken: "secret", deviceId: "device")
     let request = try client.recordingTargetRequest(RecordingTargetRequest(clientRequestId: "retry", meetingId: "displayed"))

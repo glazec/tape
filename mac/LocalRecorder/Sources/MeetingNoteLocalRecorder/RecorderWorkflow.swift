@@ -83,14 +83,14 @@ extension RecorderAppModel {
         + uploadReceipts.filter { $0.isTerminal && !$0.needsAttention }.suffix(1)
     }
 
-    func updateUploadReceipt(intentID: String, target: RecordingTarget? = nil, message: String, serverURL: URL? = nil, terminal: Bool = false, failed: Bool = false, client: LocalRecorderAPIClient? = nil) {
+    func updateUploadReceipt(intentID: String, target: RecordingTarget? = nil, message: String, serverURL: URL? = nil, terminal: Bool = false, failed: Bool = false, retryable: Bool = true, client: LocalRecorderAPIClient? = nil) {
         guard !bearerToken.isEmpty else { return }
         if let client, client.bearerToken != bearerToken || client.serverURL.absoluteString != serverURLText { return }
         if !uploadReceipts.contains(where: { $0.id == intentID }) {
             uploadReceipts.append(RecordingUploadReceipt(id: intentID, message: message))
         }
         guard let index = uploadReceipts.firstIndex(where: { $0.id == intentID }) else { return }
-        uploadReceipts[index].update(target: target, message: message, serverURL: serverURL, terminal: terminal, failed: failed)
+        uploadReceipts[index].update(target: target, message: message, serverURL: serverURL, terminal: terminal, failed: failed, retryable: retryable)
     }
 
     private var recoveryURL: URL {
@@ -355,6 +355,7 @@ extension RecorderAppModel {
         var sdkRecordingID: String?
         var sdkHadCapture = true
         var stoppedLocally = false
+        if !continueNatively { statusText = "Stopping capture" }
         do {
             await stopRecallSDKLevelMetering()
             switch backend {
@@ -366,6 +367,7 @@ extension RecorderAppModel {
                 let payload: LocalRecordingUploadPayload
                 if let retainedStoppedPayload { payload = retainedStoppedPayload }
                 else {
+                    if !continueNatively { statusText = "Saving audio to this Mac" }
                     let result = try await captureController.stop()
                     payload = result.payload
                     retainedStoppedPayload = payload

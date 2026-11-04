@@ -228,9 +228,12 @@ final class RecorderAppModel: NSObject, ObservableObject, UNUserNotificationCent
     @Published var isRecording = false {
         didSet {
             recordingStartedAt = isRecording ? (recordingStartedAt ?? Date()) : nil
+            if !isRecording { recordingStoppedAt = nil }
         }
     }
     @Published var recordingStartedAt: Date?
+    /// When Stop was pressed, so the clock freezes while the file is saved.
+    @Published var recordingStoppedAt: Date?
     @Published var isTestingLevels = false
     @Published var isRequestingPermissions = false
     @Published var isRestarting = false
@@ -238,7 +241,12 @@ final class RecorderAppModel: NSObject, ObservableObject, UNUserNotificationCent
     @Published var selectedMicrophoneUID: String?
     @Published var microphoneLevel: Float = 0
     @Published var systemAudioLevel: Float = 0
-    @Published var isFinishingRecording = false
+    @Published var isFinishingRecording = false {
+        didSet {
+            if isFinishingRecording, isRecording, recordingStoppedAt == nil { recordingStoppedAt = Date() }
+            if !isFinishingRecording, isRecording { recordingStoppedAt = nil }
+        }
+    }
     @Published var isRefreshingSchedule = false
     @Published var isAdvancedExpanded = false
     @Published var nextScheduleMeeting: LocalRecorderMonitoringMeeting? {
@@ -467,7 +475,43 @@ final class RecorderAppModel: NSObject, ObservableObject, UNUserNotificationCent
     }
 
     /// Lets the person retry a failed upload now instead of waiting for the backoff.
+    /// Every path answers the click: a spinner, a sign-in prompt, or a reason it cannot resend.
     func retryUploadsNow() {
+        guard !bearerToken.isEmpty, makeClient() != nil else {
+            uploadStatusText = "Upload needs sign in. Reconnect to continue."
+            return
+        }
+        guard !isUploadingQueuedRecordings else {
+            uploadStatusText = "Upload already in progress"
+            return
+        }
+
+        let queuedIntentIDs: Set<String>
+        do {
+            queuedIntentIDs = Set(try uploadQueue.load().map(\.fallbackIntentId))
+        } catch {
+            uploadStatusText = "Could not read saved recordings"
+            return
+        }
+
+        for index in uploadReceipts.indices where uploadReceipts[index].needsAttention {
+            if queuedIntentIDs.contains(uploadReceipts[index].id) {
+                uploadReceipts[index].markRetrying(message: "Retrying upload…")
+            } else {
+                // The server already rejected this one and its files left the queue.
+                uploadReceipts[index].canRetry = false
+                if !uploadReceipts[index].message.contains("Show file") {
+                    uploadReceipts[index].message += " Tape can’t resend this recording. Use Show file to keep it."
+                }
+            }
+        }
+
+        guard !queuedIntentIDs.isEmpty else {
+            uploadStatusText = "No recordings waiting to upload"
+            return
+        }
+
+        uploadStatusText = "Retrying upload…"
         queuedUploadRetryAfter = nil
         Task { await retryQueuedUploadsIfPossible() }
     }
@@ -513,14 +557,18 @@ final class RecorderAppModel: NSObject, ObservableObject, UNUserNotificationCent
         uploadStatusText = "Uploading saved recordings"
         for payload in queuedPayloads {
             let client = makeClient() ?? client
+            if let index = uploadReceipts.firstIndex(where: { $0.id == payload.fallbackIntentId }),
+               uploadReceipts[index].needsAttention {
+                uploadReceipts[index].markRetrying(message: "Uploading…")
+            }
             do {
                 if let confirmed = try? await client.finishRecordingTarget(fallbackIntentId: payload.fallbackIntentId) {
                     updateUploadReceipt(intentID: payload.fallbackIntentId, target: confirmed, message: "Saved on this Mac. Uploading…", serverURL: client.serverURL, client: client)
                 }
-                try await uploadWithRetry(client: client, payload: payload)
+                if payload.uploadCompleted != true {
+                    try await uploadWithRetry(client: client, payload: payload)
+                }
                 updateUploadReceipt(intentID: payload.fallbackIntentId, message: "Uploaded. Open meeting for transcript.", terminal: true, client: client)
-                try uploadQueue.remove(clientRecordingId: payload.clientRecordingId)
-                cleanupRecordingFiles(for: payload)
             } catch {
                 await handleUploadFailure(
                     client: client,
@@ -529,16 +577,16 @@ final class RecorderAppModel: NSObject, ObservableObject, UNUserNotificationCent
                 )
                 return
             }
+            do {
+                try uploadQueue.completeUpload(payload)
+            } catch {
+                uploadStatusText = "Uploaded. Local file cleanup will retry."
+                return
+            }
         }
 
         queuedUploadRetryAfter = nil
         uploadStatusText = "Saved recordings uploaded"
-    }
-
-    private func cleanupRecordingFiles(for payload: LocalRecordingUploadPayload) {
-        try? FileManager.default.removeItem(
-            at: payload.computerAudioURL.deletingLastPathComponent()
-        )
     }
 
     func requestNextPermission() {
@@ -1662,7 +1710,7 @@ final class RecorderAppModel: NSObject, ObservableObject, UNUserNotificationCent
         LocalRecorderTelemetry.capture(error, operation: .recordingUpload)
         if localRecorderRequiresSignIn(error) {
             uploadStatusText = "Upload needs sign in. Reconnect to continue."
-            updateUploadReceipt(intentID: payload.fallbackIntentId, message: "Sign in again to upload. Files kept on this Mac.")
+            updateUploadReceipt(intentID: payload.fallbackIntentId, message: "Sign in again to upload. Files kept on this Mac.", failed: true)
             return
         }
         if case let .wait(retryAfterSeconds) = localRecorderUploadRetryDecision(
@@ -1679,7 +1727,7 @@ final class RecorderAppModel: NSObject, ObservableObject, UNUserNotificationCent
 
         guard isPermanentLocalRecorderUploadError(error) else {
             uploadStatusText = "Could not upload recording. Files kept locally."
-            updateUploadReceipt(intentID: payload.fallbackIntentId, message: "Could not upload. Files kept on this Mac.")
+            updateUploadReceipt(intentID: payload.fallbackIntentId, message: "Could not upload. Files kept on this Mac.", failed: true)
             return
         }
 
@@ -1692,7 +1740,7 @@ final class RecorderAppModel: NSObject, ObservableObject, UNUserNotificationCent
             clientRecordingId: payload.clientRecordingId
         )
         uploadStatusText = "Upload stopped: \(message). Files kept locally."
-        updateUploadReceipt(intentID: payload.fallbackIntentId, message: "Upload failed: \(message). Files kept on this Mac.", terminal: true, failed: true, client: client)
+        updateUploadReceipt(intentID: payload.fallbackIntentId, message: "Upload failed: \(message). Use Show file to keep the recording.", terminal: true, failed: true, retryable: false, client: client)
     }
 }
 

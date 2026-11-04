@@ -1,5 +1,7 @@
 # Releasing the macOS recorder
 
+Local fallback recordings are automatically deleted after the server confirms a successful upload. Upload confirmation is persisted before cleanup, so a failed deletion retries on a later queue pass or app restart without uploading again. Failed uploads keep their local audio for recovery. This policy covers the app managed recording directory, not SDK managed storage.
+
 The recorder uses Sparkle 2 to check for and install updates automatically. Release archives and the Sparkle appcast are hosted in GitHub Releases.
 
 The app uses a stable private code signing certificate. It is not signed with an Apple Developer ID certificate and is not notarized. The stable identity preserves macOS permission grants across releases. Sparkle update archives are also signed with EdDSA so installed apps can verify future downloads.
