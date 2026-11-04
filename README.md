@@ -6,7 +6,7 @@
 
 Tape captures team conversations from Google Meet, Zoom, Microsoft Teams through local recording, uploaded media, phone recording, or the macOS recorder and turns them into searchable, shareable meeting records.
 
-This repository is source available for noncommercial use. See [License](#license) before using or redistributing it.
+Tape is fair source: use it, change it, and host it for your own team, including at work. See [License](#license) for the one thing you cannot do.
 
 Personal notes support `@now` followed by Space, an Add timestamp action, and explicit times such as `[12:34]`. Moments retain private capture anchors and link to the matching transcript when recording timing is available. Single recording imports offer local playback, a timestamp jump, editable date and timezone clues, and an explicit choice of an empty calendar meeting or a new meeting. Successful imports open the destination meeting.
 
@@ -205,9 +205,11 @@ See [testing architecture](docs/testing.md) for individual commands, current cov
 
 ## License
 
-This project is source available under the [PolyForm Noncommercial License 1.0.0](LICENSE). Noncommercial use, modification, and distribution are permitted. Commercial use requires a separate license from the project owner.
+Tape is released under the [Functional Source License 1.1, Apache 2.0 future license](LICENSE) (FSL-1.1-ALv2).
 
-Because commercial use is restricted, this is not an OSI approved open source license.
+You may use, modify, self-host, and redistribute Tape for any purpose except a Competing Use: offering Tape, or a product with substantially the same functionality, to others as a commercial product or hosted service. Running it inside your own company, for your own meetings, is permitted. Each release converts to the Apache License 2.0 two years after it is published.
+
+Until that conversion, FSL is a fair source license rather than an OSI approved open source license.
 
 Google Calendar connections are stored separately by verified Google email. Connect additional work accounts and manage each calendar in Team settings. Accounts from configured organization domains join those organizations as members; existing admin roles are preserved. Organization administrators can switch organizations and edit each email domain’s bot avatar independently. Domains of one company must share a workspace to deduplicate invited calendar bots. The preferred organization bot is used when its domain appears among the attendees.
 

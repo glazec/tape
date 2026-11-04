@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "description": "Team meeting capture, transcription, review, and follow-up workspace.",
   "private": true,
-  "license": "PolyForm-Noncommercial-1.0.0",
+  "license": "FSL-1.1-ALv2",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/glazec/tape.git"

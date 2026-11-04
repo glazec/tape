@@ -1,6 +1,6 @@
 # Contributing
 
-Contributions are welcome for noncommercial use under the repository license.
+Contributions are welcome under the repository license (FSL-1.1-ALv2). By contributing, you agree that your contribution is licensed on the same terms, including the conversion to Apache 2.0 two years after each release.
 
 Use Node.js 24 and follow the [setup guide](docs/setup.md) before making changes.
 
