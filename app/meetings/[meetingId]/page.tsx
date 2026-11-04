@@ -300,7 +300,7 @@ export default async function MeetingPage({
             />
           </div>
           {composition.parent ? <p className="order-3 mt-2 basis-full text-sm text-muted-foreground">Part of <Link className="underline underline-offset-4" href={`/meetings/${composition.parent.id}`}>{composition.parent.title}</Link></p> : null}
-          <div className="order-1 min-w-0 flex-1">
+          <div className="order-1 min-w-0 basis-full sm:flex-1 sm:basis-0">
             {canManage ? (
               <MeetingTitleEditor
                 meetingId={meetingId}
@@ -358,7 +358,7 @@ export default async function MeetingPage({
               <div className="mx-auto w-full max-w-2xl py-2 sm:py-6">
                 {shouldOfferLocalRecorderGuidance ? (
                   <div className="space-y-4">
-                    <div className="rounded-lg border bg-muted/25 p-5">
+                    <div className="rounded-2xl bg-muted p-5">
                       <h2 className="text-base font-semibold">
                         Record this Teams meeting locally
                       </h2>
@@ -368,7 +368,7 @@ export default async function MeetingPage({
                         a notification when local capture becomes available.
                       </p>
                     </div>
-                    <details className="rounded-lg border bg-muted/20 p-4">
+                    <details className="px-1">
                       <summary className="cursor-pointer text-sm font-medium outline-none focus-visible:ring-3 focus-visible:ring-ring/50">
                         Already have a recording or transcript?
                       </summary>
@@ -383,7 +383,7 @@ export default async function MeetingPage({
                       meetingId={meetingId}
                       meetingUrl={meeting.meetingUrl}
                     />
-                    <details className="rounded-lg border bg-muted/20 p-4">
+                    <details className="px-1">
                       <summary className="cursor-pointer text-sm font-medium outline-none focus-visible:ring-3 focus-visible:ring-ring/50">
                         Already have a recording or transcript?
                       </summary>

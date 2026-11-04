@@ -1,5 +1,6 @@
 "use client";
 
+import { appLabelClassName } from "@/components/app-label";
 import {
   type ChangeEvent,
   type FormEvent,
@@ -1384,7 +1385,7 @@ export function TranscriptViewer({
               visualAssets={visualAssets}
             />
             <div className="mb-5">
-              <h3 className="text-xs font-semibold uppercase tracking-[0.06em] text-muted-foreground">
+              <h3 className={appLabelClassName}>
                 Speakers
               </h3>
               <div className="mt-1.5 flex min-w-0 flex-wrap items-center gap-x-4 gap-y-1">
@@ -1989,7 +1990,7 @@ export function MeetingVisualGalleryOverview({
       <header className="sticky top-0 z-10 border-b bg-background/95 px-4 py-4 backdrop-blur md:px-8">
         <div className="mx-auto flex max-w-[1800px] items-center justify-between gap-4">
           <div>
-            <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+            <p className={appLabelClassName}>
               Meeting images
             </p>
             <h2 className="mt-1 text-xl font-semibold">
@@ -2122,7 +2123,7 @@ export function MeetingVisualLightbox({
       <div className="flex min-h-0 w-full flex-col gap-3">
         <div className="flex min-h-10 flex-wrap items-center justify-between gap-3">
           <div>
-            <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+            <p className={appLabelClassName}>
               Meeting images
             </p>
             <p className="mt-1 text-sm font-semibold">

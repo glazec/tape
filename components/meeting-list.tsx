@@ -18,6 +18,8 @@ import {
   RotateCcw,
 } from "lucide-react";
 
+import { AppLabel } from "@/components/app-label";
+import { EmptyState } from "@/components/empty-state";
 import { MeetingBotRecoveryPanel } from "@/components/meeting-bot-recovery-panel";
 import { Button, buttonVariants } from "@/components/ui/button";
 import {
@@ -144,7 +146,7 @@ export function MeetingList({
         {/* The rows describe themselves; headers stay for screen readers and
             keep their sort links reachable by keyboard. */}
         <TableHeader className="sr-only focus-within:not-sr-only">
-          <TableRow className="border-border/60 hover:bg-transparent">
+          <TableRow className="border-0 hover:bg-transparent">
             <TableHead
               aria-sort={getHeaderAriaSort("startedAt", sort)}
               className="hidden w-28 pl-0 text-xs font-normal text-muted-foreground md:table-cell"
@@ -172,12 +174,9 @@ export function MeetingList({
         </TableHeader>
         <TableBody>
           {meetings.length === 0 ? (
-            <TableRow>
-              <TableCell
-                colSpan={3}
-                className="h-24 text-center text-muted-foreground"
-              >
-                {emptyMessage}
+            <TableRow className="border-0 hover:bg-transparent">
+              <TableCell colSpan={3} className="p-0 whitespace-normal">
+                <EmptyState label="Meetings" title={emptyMessage} />
               </TableCell>
             </TableRow>
           ) : (
@@ -194,11 +193,11 @@ export function MeetingList({
                   {groupLabel ? (
                     <TableRow className="border-0 hover:bg-transparent">
                       <TableCell
-                        className="border-b border-border pt-8 pb-2 pl-0 text-[0.8125rem] font-semibold text-foreground"
+                        className="pt-8 pb-2 pl-0"
                         colSpan={3}
                         scope="rowgroup"
                       >
-                        {groupLabel}
+                        <AppLabel as="span">{groupLabel}</AppLabel>
                       </TableCell>
                     </TableRow>
                   ) : null}
@@ -303,8 +302,8 @@ function MeetingTableRow({
     <TableRow
       aria-expanded={relatedCount > 0 ? isExpanded : undefined}
       className={cn(
-        "group/meeting-row meeting-row border-border/45",
-        isChild && "border-b-0",
+        // Rows separate by spacing and a hover tone, never a resting rule.
+        "group/meeting-row meeting-row border-0",
       )}
     >
       <TableCell
@@ -315,7 +314,7 @@ function MeetingTableRow({
       >
         <LocalDateTime timeOnly={grouped && !isChild} value={meeting.startedAt} />
       </TableCell>
-      <TableCell className={cn("min-w-56", isChild ? "py-2" : "py-3")}>
+      <TableCell className={cn("min-w-0 whitespace-normal", isChild ? "py-2" : "py-3")}>
         <MeetingTitleCell
           isChild={isChild}
           isExpanded={isExpanded}
@@ -376,7 +375,7 @@ function FailedMeetingAction({ meeting }: { meeting: MeetingListBaseItem }) {
       <Button
         aria-haspopup="dialog"
         aria-label={`Rejoin ${meeting.title}`}
-        className="meeting-join-action col-start-1 row-start-1 h-5 w-[5.625rem] rounded-4xl border-primary bg-background px-2 py-0.5 text-xs text-primary shadow-none hover:bg-primary/10 hover:text-primary [@media(hover:none)]:h-11 [@media(hover:none)]:text-sm"
+        className="meeting-join-action col-start-1 row-start-1 h-5 w-[5.625rem] bg-background px-2 py-0.5 text-xs shadow-none [@media(hover:none)]:h-11 [@media(hover:none)]:text-sm"
         data-state="idle"
         onClick={() => setOpen(true)}
         ref={triggerRef}
@@ -468,7 +467,7 @@ function ScheduledMeetingAction({ meeting }: { meeting: MeetingListBaseItem }) {
         aria-busy={state === "joining"}
         aria-label={`Join ${meeting.title} now`}
         className={cn(
-          "meeting-join-action col-start-1 row-start-1 h-5 w-[5.625rem] rounded-4xl border-primary bg-background px-2 py-0.5 text-xs text-primary shadow-none hover:bg-primary/10 hover:text-primary [@media(hover:none)]:h-11 [@media(hover:none)]:text-sm",
+          "meeting-join-action col-start-1 row-start-1 h-5 w-[5.625rem] bg-background px-2 py-0.5 text-xs shadow-none [@media(hover:none)]:h-11 [@media(hover:none)]:text-sm",
           state === "error" &&
             "border-destructive/50 text-destructive hover:bg-destructive/10 hover:text-destructive",
         )}
@@ -525,7 +524,7 @@ function MeetingTitleCell({
       className={cn(
         "flex min-w-0 items-start",
         isChild &&
-          "relative pl-4 before:absolute before:bottom-1 before:left-0 before:top-1 before:w-px before:bg-border",
+          "pl-4",
       )}
     >
       <div className="min-w-0">
@@ -774,10 +773,10 @@ function MeetingStatusLabel({ status }: { status: MeetingDisplayStatus }) {
   return (
     <span
       className={cn(
-        "inline-flex items-center gap-1.5 text-xs",
+        "inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-xs whitespace-nowrap",
         status === "failed" || status === "missed"
-          ? "text-destructive"
-          : "text-muted-foreground",
+          ? "bg-destructive/10 text-destructive"
+          : "bg-muted text-muted-foreground",
       )}
       data-status={status}
     >

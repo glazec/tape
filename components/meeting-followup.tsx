@@ -1,5 +1,6 @@
 "use client";
 
+import { appLabelClassName } from "@/components/app-label";
 import { useEffect, useId, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Popover } from "@base-ui/react/popover";
@@ -13,7 +14,7 @@ import { connectionRelationshipLabels, isOrganizationSpeaker, SPEAKER_LABELS_CHA
 
 const EMPTY_CONNECTIONS: MeetingConnection[] = [];
 const EMPTY_IDS: string[] = [];
-const SUBHEAD = "mb-2 text-xs font-semibold uppercase tracking-[0.06em] text-muted-foreground";
+const SUBHEAD = `mb-2 ${appLabelClassName}`;
 const BACKGROUND_POLL_MS = 15_000;
 const BACKGROUND_WAIT_MS = 3 * 60_000;
 

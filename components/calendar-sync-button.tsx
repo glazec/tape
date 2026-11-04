@@ -37,6 +37,8 @@ type CalendarSyncButtonProps = {
   autoSync?: boolean;
   connected?: boolean;
   setupMode?: boolean;
+  /** Style of the Connect calendar button; parallel setup steps use outline. */
+  connectVariant?: "ink" | "outline";
   size?: "default" | "sm";
   /** Several accounts: sync covers all of them and disconnect moves to settings. */
   multipleAccounts?: boolean;
@@ -105,6 +107,7 @@ export function CalendarSyncButton({
   autoSync = false,
   connected = true,
   setupMode = false,
+  connectVariant = "ink",
   size = "default",
   multipleAccounts = false,
 }: CalendarSyncButtonProps) {
@@ -232,7 +235,7 @@ export function CalendarSyncButton({
             onClick={connectCalendar}
             disabled={isBusy}
             size={size}
-            variant="default"
+            variant={connectVariant}
           >
             <CalendarCheck data-icon="inline-start" />
             {buttonLabel}

@@ -152,7 +152,7 @@ Use `ProductLogo` with `variant="light"` on dark backgrounds. Never apply a CSS 
 
 ### Typography
 
-Use Geist for the application interface. Use Fraunces, Space Grotesk, and IBM Plex Mono only on the public site and sign in surfaces where the editorial brand voice is intentional.
+Use Geist for the application interface. Use Fraunces, Space Grotesk, and IBM Plex Mono only on the public site, sign in, and not-found surfaces where the editorial brand voice is intentional. Inside the workspace, IBM Plex Mono appears only through `AppLabel` (below).
 
 The public site has one display scale, defined as font-size tokens in `app/globals.css`: `text-display-hero` for the hero H1, `text-display-1` for large section headings, `text-display-2` for section headings, `text-display-3` for sub-display lines, `text-lede` for opening paragraphs, and `text-label` for mono microcopy. Each step is fluid through `clamp()` and monotonic, so a heading never shrinks as the viewport grows. Never hand-write a landing font size; add a token if a step is missing.
 
@@ -162,13 +162,15 @@ The application uses a fixed rem scale with a tight ratio: `text-2xl` for a page
 
 Headings should be short, sentence case, and visually distinct through size and weight rather than uppercase. Small uppercase text may label a section, but it must not repeat the heading below it. Mono microcopy is never smaller than 11px.
 
+The one exception to Geist inside the workspace is `AppLabel` (`components/app-label.tsx`): IBM Plex Mono, `text-label` (11px), uppercase, `tracking-[0.2em]`, muted. It is the shared brand cue for small section labels: meeting list day headings, follow-up subheads, and transcript Speakers and Mentioned labels. Use the component, or `appLabelClassName` where an element already exists, rather than hand-writing uppercase label classes. Step numbers in the setup card use the same mono face.
+
 Use tabular numerals for timers, durations, and changing metrics. Keep body copy readable with generous line height and a narrow measure: cap prose around 48ch to 52ch, and use `text-pretty` on body copy and `text-balance` on display headings so lines do not end in orphans.
 
 ### Spacing and surfaces
 
 Use the existing four pixel scale, with eight pixels as the common spacing step. Prefer whitespace and alignment over nested cards.
 
-Cards should represent a meaningful group, not every section. Avoid card inside card. Keep borders quiet and shadows subtle. Use a maximum content width that supports scanning, while long transcript text should use a narrower reading measure.
+Cards should represent a meaningful group, not every section. Avoid card inside card. When a group needs a surface, use one tonal plate (`rounded-2xl bg-muted`, no ring or border) and put tonal tiles (`bg-background`) inside it rather than more bordered boxes. Keep borders quiet and shadows subtle. Use a maximum content width that supports scanning, while long transcript text should use a narrower reading measure.
 
 Do not separate page sections or list items with rules. No horizontal dividers between sections, no `divide-y` between list rows, and no vertical side rails to group items. Granola and Otter separate sections with heading size and whitespace alone, and so do we: a group is a `text-base font-semibold` heading with about 40 to 48 px before the next one, subsections are small uppercase muted labels with 32 px between them, and items within a subsection sit 16 px apart. Group items by placing them under a label, not by drawing a line. A tonal hover surface is fine for an interactive row; a resting border is not. Rules remain acceptable only where they mark a physical edge, such as a fixed player bar or a dialog footer.
 
@@ -192,7 +194,13 @@ Task critical flows such as recording use a focused layout for the entire route,
 
 ### Buttons
 
-Use one primary button per decision area. Secondary actions use outline or ghost styles. Destructive actions stay visually quiet until the user enters the destructive flow, then require clear confirmation.
+Every button is a pill (`rounded-full`), matching the landing page. Each screen has one primary action:
+
+- **Coral (`variant="brand"`)** is reserved for the single create action, the header New meeting split button. Nothing else in the workspace is a coral fill, so it never competes with an in-page primary.
+- **Ink (`variant="ink"`, also the `default`)** is the in-page primary: `bg-ink text-paper`, hovering to graphite. Examples are Add meeting bot, Copy MCP server link, and the upload submit in Add meeting content. Use at most one ink pill per decision area.
+- Secondary actions use `outline` or `ghost`. A group of parallel steps, such as the setup card, gives every step the same secondary style instead of mixing outline, ghost, and fills.
+
+Destructive actions stay visually quiet until the user enters the destructive flow, then require clear confirmation.
 
 Button labels should describe the outcome: `Upload audio`, `Copy transcript`, `Record on phone`. Avoid vague labels such as `Submit`, `Continue`, or `Apply` when a more specific label fits.
 
@@ -237,6 +245,10 @@ Question answers belong directly beneath their questions, marked From transcript
 Lead with the editable title and compact, human readable metadata, with Share, Export, Copy, and the overflow menu on the title row. The page is one centered reading column. Private notes and the AI followup come before the transcript, because they are the summary layer; the transcript follows. The AI followup generates on its own when a transcript finishes, so the page opens on it; Regenerate stays available, and Generate appears only when automatic generation has not produced one. Related meetings sit behind a compact chip under the metadata rather than in a side column, and sharing opens in a dialog from the Share button.
 
 Show available participant names below the meeting metadata, including scheduled meetings without a recording or transcript. Omit the participant row when no names or emails are available to the viewer.
+
+Empty lists and empty results use `EmptyState` (`components/empty-state.tsx`): an optional `AppLabel`, one plain sentence, an optional supporting line, and at most one action, an ink pill when there is a useful next step.
+
+Not-found pages (`app/not-found.tsx`, and `app/meetings/[meetingId]/not-found.tsx` for meetings in another workspace) sit outside the workspace shell, so they follow the sign-in page's landing language through `BrandedNotFound`: logo, mono eyebrow, a Fraunces line, a plain explanation, and an ink pill back to Meetings.
 
 For meetings without content, center the add content choice. Show only the source choices that can resolve the current state. Do not show an empty transcript viewer.
 
