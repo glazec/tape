@@ -71,8 +71,14 @@ export async function searchIntel(workspace: WorkspaceContext, input: SearchInpu
   // Recheck access, replacement transcripts and identities after the provider call.
   const fresh = await loadIntelMeetings(workspace);
   const freshCatalog = buildCatalog(fresh);
-  const sourceSnapshot = JSON.stringify([catalog.people, catalog.intel, context]);
-  const freshSnapshot = JSON.stringify([freshCatalog.people, freshCatalog.intel, buildMatchingContext(fresh, freshCatalog.people)]);
+  // New extraction results do not change transcript evidence. Compare only the
+  // intel records actually selected or returned, so background indexing can proceed.
+  const referencedIntel = new Set([
+    ...(input.kind === "intel" ? [input.id] : []),
+    ...ranked.filter(match => match.type === "intel").map(match => match.id),
+  ]);
+  const sourceSnapshot = JSON.stringify([catalog.people, catalog.intel.filter(item => referencedIntel.has(item.id)), context]);
+  const freshSnapshot = JSON.stringify([freshCatalog.people, freshCatalog.intel.filter(item => referencedIntel.has(item.id)), buildMatchingContext(fresh, freshCatalog.people)]);
   if (sourceSnapshot !== freshSnapshot) {
     throw new IntelInputError("Meeting access or content changed during this search. Please try again.");
   }

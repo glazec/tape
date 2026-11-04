@@ -76,3 +76,15 @@ it("drops unsupported attribution before independently verifying valid candidate
  expect(result.matches.map(m => m.title)).toEqual(["Maya"]);
  expect(mocks.verifyIntelClaims.mock.calls[0][0]).toHaveLength(1);
 });
+it("allows background indexing to add intel without invalidating unchanged source evidence", async () => {
+ const indexed = { ...m, aiIntel: { sourceHash: intelSourceHash(m), result: { items: [{ kind: "plan", text: "Alex needs inference partners", importance: "high", speakerSegmentId: "s1", segmentIds: ["s1"] }] } } };
+ mocks.loadIntelMeetings.mockResolvedValue([indexed]);
+ const result = await searchIntel(workspace, { kind: "content", text: "Inference" }, [m]);
+ expect(result.catalog.intel).toHaveLength(1);
+});
+it("still rejects replacement of the selected intel record during matching", async () => {
+ const item = { kind: "plan", text: "Alex needs inference partners", importance: "high", speakerSegmentId: "s1", segmentIds: ["s1"] };
+ const indexed = { ...m, aiIntel: { sourceHash: intelSourceHash(m), result: { items: [item] } } };
+ mocks.loadIntelMeetings.mockResolvedValue([{ ...indexed, aiIntel: { ...indexed.aiIntel, result: { items: [{ ...item, text: "A different extracted item" }] } } }]);
+ await expect(searchIntel(workspace, { kind: "intel", id: buildCatalog([indexed]).intel[0].id }, [indexed])).rejects.toThrow("access or content changed");
+});
