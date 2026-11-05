@@ -1,24 +1,42 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
-const mocks = vi.hoisted(() => ({ createOpenRouterChatCompletion: vi.fn() }));
-vi.mock("@/lib/vendors/openrouter", () => mocks);
-import { verifyIntelClaims } from "@/lib/intel/verification";
-afterEach(() => vi.clearAllMocks());
-describe("independent claim verification", () => {
-  it("drops contradicted interest and invented numbers when the critic rejects them", async () => {
-    const claims = [{ text: "Alex committed $50 million to GPUs" }, { reason: "Alex is interested in GPUs", relevance: "expressed_interest" }];
-    mocks.createOpenRouterChatCompletion.mockResolvedValue(JSON.stringify({ decisions: [{ index: 0, supported: false }, { index: 1, supported: false }] }));
-    expect(await verifyIntelClaims(claims, [{ speaker: "Alex", text: "I am not interested in GPUs. My colleague Ben researches GPUs." }], "m1")).toEqual([]);
-    const call = mocks.createOpenRouterChatCompletion.mock.calls[0][0];
-    expect(call.messages[0].content).toContain("negation"); expect(call.messages[1].content).toContain("My colleague Ben");
-  });
-  it("fails closed when a decision is missing, duplicated, or out of range", async () => {
-    for (const decisions of [[], [{ index: 1, supported: true }], [{ index: 0, supported: true }, { index: 0, supported: true }]]) {
-      mocks.createOpenRouterChatCompletion.mockResolvedValue(JSON.stringify({ decisions }));
-      await expect(verifyIntelClaims(["claim"], "source", "m")).rejects.toThrow("incomplete");
-    }
-  });
-  it("propagates verifier errors rather than displaying unchecked output", async () => {
-    mocks.createOpenRouterChatCompletion.mockRejectedValue(new Error("Unavailable"));
-    await expect(verifyIntelClaims(["claim"], "source", "m")).rejects.toThrow("Unavailable");
-  });
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { INTEL_VERIFIER_MODEL, verifyIntelClaims } from "@/lib/intel/verification";
+
+const fetchDecision = vi.fn();
+const usage = vi.hoisted(() => vi.fn());
+vi.mock("@/lib/provider-usage", () => ({ recordOpenRouterCompletionUsage: usage }));
+function respond(answers: unknown) {
+  fetchDecision.mockResolvedValue(Response.json({ id: "gen-1", model: INTEL_VERIFIER_MODEL,
+    usage: { cost: 0.000042, input_tokens: 1000, output_tokens: 30 }, answers }));
+}
+beforeEach(() => {
+  vi.stubEnv("OPENROUTER_API_KEY", "test");
+  vi.stubGlobal("fetch", fetchDecision);
+});
+afterEach(() => { vi.unstubAllGlobals(); vi.unstubAllEnvs(); vi.clearAllMocks(); });
+
+it("checks all candidates in one request and records the reported charge once", async () => {
+  respond({ claim_1: { type: "noul", noul: 0.89 }, claim_0: { type: "noul", noul: 0.9 } });
+  const claims = ["supported", "uncertain"];
+  expect(await verifyIntelClaims(claims, "shared evidence", "meeting")).toEqual(["supported"]);
+  expect(fetchDecision).toHaveBeenCalledTimes(1);
+  const [url, init] = fetchDecision.mock.calls[0];
+  expect(url).toBe("https://openrouter.ai/api/alpha/decisions");
+  const body = JSON.parse(init.body);
+  expect(body.model).toBe("typesafe/jev-1.14");
+  expect(body.state).toEqual({ evidence: "shared evidence", candidates: { claim_0: claims[0], claim_1: claims[1] } });
+  expect(Object.keys(body.questions)).toEqual(["claim_0", "claim_1"]);
+  expect(usage).toHaveBeenCalledWith(expect.objectContaining({ operation: "decisions", generationId: "gen-1",
+    usage: { costUsd: 0.000042, promptTokens: 1000, completionTokens: 30, totalTokens: 1030 } }));
+});
+it("rejects missing, unexpected or invalid answers", async () => {
+  for (const answers of [{}, { other: { type: "noul", noul: 1 } }, { claim_0: { type: "noul", noul: 2 } }]) {
+    respond(answers);
+    await expect(verifyIntelClaims(["test"], "evidence", "meeting")).rejects.toThrow();
+  }
+});
+it("skips empty batches and propagates provider failures", async () => {
+  expect(await verifyIntelClaims([], {}, "meeting")).toEqual([]);
+  expect(fetchDecision).not.toHaveBeenCalled();
+  fetchDecision.mockResolvedValue(new Response("private details", { status: 429 }));
+  await expect(verifyIntelClaims(["test"], {}, "meeting")).rejects.toThrow("HTTP 429");
 });

@@ -155,6 +155,7 @@ export async function recordOpenRouterCompletionUsage(input: {
     ProviderUsageCategory,
     "assistant" | "transcript_polish" | "translation"
   >;
+  operation?: "chat_completion" | "decisions";
   generationId?: string | null;
   meetingId?: string | null;
   model?: string | null;
@@ -181,7 +182,7 @@ export async function recordOpenRouterCompletionUsage(input: {
       sourceUrl: providerPricingSources.openrouter,
     },
     model: input.model ?? undefined,
-    operation: "chat_completion",
+    operation: input.operation ?? "chat_completion",
     provider: "openrouter",
     quantity: Math.max(0, Math.round(input.usage?.totalTokens ?? 0)),
     unit: "tokens",
