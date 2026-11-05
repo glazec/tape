@@ -15,6 +15,13 @@ private let activationLogger = Logger(
     category: "activation"
 )
 
+private enum LocalRecorderAppIdentity {
+    static let name = Bundle.main.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String ?? "Tape Desktop"
+    static let bundleID = Bundle.main.bundleIdentifier ?? "tech.inevitable.meeting-note.local-recorder"
+    static let isDevelopment = bundleID.hasSuffix(".dev")
+    static let loginScheme = isDevelopment ? "meetingnote-local-recorder-dev" : "meetingnote-local-recorder"
+}
+
 private enum LocalRecorderAppVersion {
     static var current: String {
         let version = Bundle.main.object(
@@ -40,12 +47,13 @@ private final class LocalRecorderUpdater {
     static let shared = LocalRecorderUpdater()
 
     private let controller = SPUStandardUpdaterController(
-        startingUpdater: true,
+        startingUpdater: !LocalRecorderAppIdentity.isDevelopment,
         updaterDelegate: nil,
         userDriverDelegate: nil
     )
 
     func checkForUpdates() {
+        guard !LocalRecorderAppIdentity.isDevelopment else { return }
         controller.checkForUpdates(nil)
     }
 }
@@ -75,7 +83,7 @@ private final class LocalRecorderAppDelegate: NSObject, NSApplicationDelegate {
             let controller = NSHostingController(rootView: RecorderMenuView(model: recorderAppModel, showsWindowChrome: true))
             controller.safeAreaRegions = []
             let window = NSWindow(contentViewController: controller)
-            window.title = "Tape Desktop"
+            window.title = LocalRecorderAppIdentity.name
             window.styleMask = [.titled, .closable, .miniaturizable]
             RecorderWindowChrome.apply(to: window)
             window.isReleasedWhenClosed = false
@@ -201,7 +209,7 @@ struct MeetingNoteLocalRecorderApp: App {
     private let updater = LocalRecorderUpdater.shared
 
     var body: some Scene {
-        MenuBarExtra("Tape Desktop", systemImage: model.menuBarImage) {
+        MenuBarExtra(LocalRecorderAppIdentity.name, systemImage: model.menuBarImage) {
             RecorderMenuView(model: model)
         }
         .menuBarExtraStyle(.window)
@@ -331,7 +339,7 @@ final class RecorderAppModel: NSObject, ObservableObject, UNUserNotificationCent
     #endif
 
     override init() {
-        let credentialStore = LocalRecorderKeychainCredentialStore()
+        let credentialStore = LocalRecorderKeychainCredentialStore(service: LocalRecorderAppIdentity.bundleID)
         let credentials = recoverLocalRecorderCredentials(try? credentialStore.load())
         self.credentialStore = credentialStore
         self.uploadQueue = LocalRecordingUploadQueue(
@@ -413,7 +421,8 @@ final class RecorderAppModel: NSObject, ObservableObject, UNUserNotificationCent
         guard
             let url = makeLocalRecorderBrowserLoginURL(
                 serverURL: serverURL,
-                deviceId: deviceIdStore.deviceId
+                deviceId: deviceIdStore.deviceId,
+                callbackScheme: LocalRecorderAppIdentity.loginScheme
             )
         else {
             statusText = "Enter a valid server URL"
@@ -431,7 +440,7 @@ final class RecorderAppModel: NSObject, ObservableObject, UNUserNotificationCent
 
     func handleLoginCallback(_ url: URL) {
         do {
-            let callback = try LocalRecorderLoginCallback(url: url)
+            let callback = try LocalRecorderLoginCallback(url: url, expectedScheme: LocalRecorderAppIdentity.loginScheme)
             try credentialStore.save(
                 LocalRecorderCredentials(
                     serverURLText: callback.serverURL.absoluteString,

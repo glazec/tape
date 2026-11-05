@@ -1120,7 +1120,9 @@ struct RecorderSettingsView: View {
                 if isSignedIn {
                     textButton("Sign out", isDestructive: true, action: model.signOut)
                 }
-                textButton("Check for updates", action: model.checkForUpdates)
+                if Bundle.main.bundleIdentifier?.hasSuffix(".dev") != true {
+                    textButton("Check for updates", action: model.checkForUpdates)
+                }
                 // macOS applies some grants only after a relaunch.
                 textButton(model.isRestarting ? "Restarting…" : "Restart", action: model.restartApp)
                     .disabled(model.isRestarting || model.isRequestingPermissions)

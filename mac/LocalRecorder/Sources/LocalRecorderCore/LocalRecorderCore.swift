@@ -840,12 +840,12 @@ public final class LocalRecorderExternalURLDispatcher {
     }
 }
 
-public func makeLocalRecorderBrowserLoginURL(serverURL: URL, deviceId: String) -> URL? {
+public func makeLocalRecorderBrowserLoginURL(serverURL: URL, deviceId: String, callbackScheme: String = "meetingnote-local-recorder") -> URL? {
     var deviceLoginComponents = URLComponents()
     deviceLoginComponents.path = "/api/local-recorder/device-login"
     deviceLoginComponents.percentEncodedQuery = [
         "deviceId=\(percentEncodeQueryValue(deviceId))",
-        "callbackUrl=meetingnote-local-recorder%3A%2F%2Flogin",
+        "callbackUrl=\(percentEncodeQueryValue(callbackScheme + "://login"))",
     ].joined(separator: "&")
 
     guard let deviceLoginCallback = deviceLoginComponents.string else {
@@ -874,9 +874,9 @@ public struct LocalRecorderLoginCallback: Equatable, Sendable {
     public var serverURL: URL
     public var token: String
 
-    public init(url: URL) throws {
+    public init(url: URL, expectedScheme: String = "meetingnote-local-recorder") throws {
         guard
-            url.scheme == "meetingnote-local-recorder",
+            url.scheme == expectedScheme,
             url.host == "login",
             let components = URLComponents(url: url, resolvingAgainstBaseURL: false)
         else {

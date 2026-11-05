@@ -391,7 +391,7 @@ enum LocalRecorderFileLocations {
         ).first ?? FileManager.default.temporaryDirectory
 
         return baseURL
-            .appending(path: "MeetingNoteLocalRecorder", directoryHint: .isDirectory)
+            .appending(path: Bundle.main.bundleIdentifier?.hasSuffix(".dev") == true ? "MeetingNoteLocalRecorderDev" : "MeetingNoteLocalRecorder", directoryHint: .isDirectory)
     }
 }
 
@@ -564,7 +564,8 @@ enum LocalTrackSynthesizer {
 
 final class MicrophoneTrackRecorder {
     private let deviceUID: String?
-    private let engine = AVAudioEngine()
+    private var engine = AVAudioEngine()
+    private var hasInputTap = false
     private let fallsBackToDefaultDevice: Bool
     private let onAudioLevel: @Sendable (Float) -> Void
     private let writer: CompressedAudioWriter?
@@ -594,6 +595,24 @@ final class MicrophoneTrackRecorder {
     }
 
     func start() throws {
+        do {
+            try startEngine(voiceProcessing: writer != nil)
+        } catch {
+            resetEngine()
+            guard writer != nil else { throw error }
+            LocalRecorderTelemetry.capture(error, operation: .audioProcessingStart)
+            // Some audio routes cannot initialize VoiceProcessingIO. Retry with
+            // a fresh, unprocessed engine while preserving the selected input.
+            do {
+                try startEngine(voiceProcessing: false)
+            } catch {
+                resetEngine()
+                throw error
+            }
+        }
+    }
+
+    private func startEngine(voiceProcessing: Bool) throws {
         let input = engine.inputNode
 
         if let deviceUID {
@@ -605,7 +624,7 @@ final class MicrophoneTrackRecorder {
             }
         }
 
-        if writer != nil {
+        if voiceProcessing {
             try input.setVoiceProcessingEnabled(true)
             if let deviceUID, !applyInputDevice(uid: deviceUID, to: input) {
                 throw LocalRecordingCaptureError.writerFailed("Could not use the selected microphone with noise suppression")
@@ -631,13 +650,22 @@ final class MicrophoneTrackRecorder {
             onAudioLevel(LocalAudioLevelMeter.rmsLevel(from: buffer))
             writer?.write(buffer)
         }
+        hasInputTap = true
         engine.prepare()
         try engine.start()
     }
 
-    func stop() {
-        engine.inputNode.removeTap(onBus: 0)
+    private func resetEngine() {
         engine.stop()
+        if hasInputTap {
+            engine.inputNode.removeTap(onBus: 0)
+            hasInputTap = false
+        }
+        engine = AVAudioEngine()
+    }
+
+    func stop() {
+        resetEngine()
         writer?.close()
     }
 

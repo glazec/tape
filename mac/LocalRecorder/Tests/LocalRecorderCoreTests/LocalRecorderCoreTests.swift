@@ -1277,3 +1277,15 @@ private func makeMissedMeeting(
     let older = Data(#"{"missedMeetings":[],"nextMeeting":null}"#.utf8)
     #expect(try JSONDecoder.localRecorder.decode(LocalRecorderMonitoringResponse.self, from: older).account == nil)
 }
+
+@Test func developmentLoginUsesSeparateSchemeAndRejectsProductionCallback() throws {
+    let url = try #require(makeLocalRecorderBrowserLoginURL(
+        serverURL: URL(string: "https://app.example.com")!, deviceId: "dev",
+        callbackScheme: "meetingnote-local-recorder-dev"
+    ))
+    #expect(url.absoluteString.contains("meetingnote-local-recorder-dev%253A"))
+    let callback = URL(string: "meetingnote-local-recorder-dev://login?token=test&server=https%3A%2F%2Fapp.example.com")!
+    #expect(throws: LocalRecorderLoginCallbackError.self) { try LocalRecorderLoginCallback(url: callback) }
+    let accepted = try LocalRecorderLoginCallback(url: callback, expectedScheme: "meetingnote-local-recorder-dev")
+    #expect(accepted.token == "test")
+}
