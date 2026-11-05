@@ -1,4 +1,8 @@
-import type { Breadcrumb, ErrorEvent } from "@sentry/nextjs";
+import type {
+  Breadcrumb,
+  ErrorEvent,
+  ReplayFrameEvent,
+} from "@sentry/nextjs";
 
 import {
   sanitizeTelemetryAttributes,
@@ -31,6 +35,42 @@ export const sentryDataCollection = {
   urlQueryParams: false,
   userInfo: false,
 } satisfies NonNullable<SentryInitOptions["dataCollection"]>;
+
+type SentryReplayOptions = NonNullable<
+  Parameters<typeof import("@sentry/nextjs").replayIntegration>[0]
+>;
+
+// Replay shows on-screen text so UI bugs can be reviewed, including meeting
+// titles, transcripts, and notes. Typed input values stay masked, audio and
+// video are blocked, and network request and response details are never
+// recorded. Mark an element `data-sentry-mask` or `data-sentry-block` to hide it.
+export const sentryReplayPrivacy = {
+  block: ["audio", "video", "[data-sentry-block]", "[data-amplitude-block]"],
+  blockAllMedia: false,
+  mask: ["[data-sentry-mask]"],
+  maskAllInputs: true,
+  maskAllText: false,
+  networkCaptureBodies: false,
+  networkDetailAllowUrls: [],
+  networkRequestHeaders: [],
+  networkResponseHeaders: [],
+} satisfies SentryReplayOptions;
+
+export function getSentryReplayOptions() {
+  return {
+    ...sentryReplayPrivacy,
+    beforeAddRecordingEvent: sanitizeSentryReplayEvent,
+  } satisfies SentryReplayOptions;
+}
+
+export function getSentryReplaySampleRates({
+  development,
+}: Pick<SentryRuntimeConfigInput, "development">) {
+  return {
+    replaysOnErrorSampleRate: 1,
+    replaysSessionSampleRate: development ? 1 : 0.1,
+  } satisfies SentryInitOptions;
+}
 
 export function getSentryInitOptions({
   development,
@@ -131,4 +171,49 @@ export function sanitizeSentryUrl(value: string) {
   } catch {
     return "/";
   }
+}
+
+const replayUrlSpanOps = /^(navigation|resource|request|history)\./;
+
+export function sanitizeSentryReplayEvent(
+  event: ReplayFrameEvent,
+): ReplayFrameEvent | null {
+  if (event.data.tag === "breadcrumb") {
+    const { payload } = event.data;
+
+    if (payload.category === "console") {
+      return null;
+    }
+
+    return {
+      ...event,
+      data: {
+        ...event.data,
+        payload: {
+          ...payload,
+          message: payload.message
+            ? sanitizeTelemetryText(payload.message)
+            : payload.message,
+        },
+      },
+    } as ReplayFrameEvent;
+  }
+
+  if (
+    event.data.tag === "performanceSpan" &&
+    replayUrlSpanOps.test(event.data.payload.op)
+  ) {
+    return {
+      ...event,
+      data: {
+        ...event.data,
+        payload: {
+          ...event.data.payload,
+          description: sanitizeSentryUrl(event.data.payload.description),
+        },
+      },
+    } as ReplayFrameEvent;
+  }
+
+  return event;
 }

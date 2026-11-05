@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import Testing
 import Sentry
@@ -30,5 +31,24 @@ import Sentry
     )
     LocalRecorderTelemetry.flush(timeout: 10)
     let output = URL(fileURLWithPath: environment["TAPE_SENTRY_VERIFY_OUTPUT"] ?? "/tmp/tape-desktop-sentry-event.json")
-    try JSONSerialization.data(withJSONObject: ["eventId": eventId, "run": run]).write(to: output)
+    try JSONSerialization.data(withJSONObject: ["eventId": eventId ?? "", "run": run]).write(to: output)
+}
+
+@MainActor
+@Test func recorderScreenshotRendersAViewAsPNG() throws {
+    let view = NSView(frame: NSRect(x: 0, y: 0, width: 120, height: 90))
+    view.wantsLayer = true
+    view.layer?.backgroundColor = NSColor.systemOrange.cgColor
+    let data = try #require(LocalRecorderScreenshot.pngData(of: view))
+    #expect(data.starts(with: [0x89, 0x50, 0x4E, 0x47]))
+    let image = try #require(NSBitmapImageRep(data: data))
+    #expect(image.pixelsWide >= 120)
+}
+
+@MainActor
+@Test func recorderScreenshotSkipsTinyAndHiddenWindows() {
+    let tiny = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 20, height: 20), styleMask: [.borderless], backing: .buffered, defer: true)
+    #expect(!LocalRecorderScreenshot.isCapturable(tiny))
+    let hidden = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 340, height: 500), styleMask: [.titled], backing: .buffered, defer: true)
+    #expect(!LocalRecorderScreenshot.isCapturable(hidden))
 }

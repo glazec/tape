@@ -2,7 +2,11 @@ import * as amplitude from "@amplitude/unified";
 import * as Sentry from "@sentry/nextjs";
 
 import { captureAmplitudeInitializationFailure } from "@/lib/amplitude/client";
-import { getSentryInitOptions } from "@/lib/sentry/config";
+import {
+  getSentryInitOptions,
+  getSentryReplayOptions,
+  getSentryReplaySampleRates,
+} from "@/lib/sentry/config";
 import {
   captureNavigationStart,
   initializeClientTelemetry,
@@ -25,14 +29,18 @@ function shouldTrackSafeInteraction(_actionType: string, element: Element) {
   );
 }
 
-Sentry.init(
-  getSentryInitOptions({
-    development: process.env.NODE_ENV === "development",
+const sentryDevelopment = process.env.NODE_ENV === "development";
+
+Sentry.init({
+  ...getSentryInitOptions({
+    development: sentryDevelopment,
     dsn: process.env.NEXT_PUBLIC_SENTRY_DSN,
     environment:
       process.env.NEXT_PUBLIC_VERCEL_ENV || process.env.NODE_ENV,
   }),
-);
+  ...getSentryReplaySampleRates({ development: sentryDevelopment }),
+  integrations: [Sentry.replayIntegration(getSentryReplayOptions())],
+});
 
 if (!amplitudeWindow.__tapeAmplitudeInitialization) {
   amplitudeWindow.__tapeAmplitudeInitialization = amplitude.initAll(

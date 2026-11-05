@@ -201,7 +201,15 @@ can upload source maps. Never expose that token to the browser or commit it.
 Configured SDKs capture every error. Production browser and edge traces are
 sampled at ten percent; the web server captures every trace. The image worker
 keeps its existing OTLP tracing provider and sends errors and logs to Sentry.
-Development browser and edge tracing captures every trace when a DSN is configured. Session replay remains disabled.
+Development browser and edge tracing captures every trace when a DSN is configured.
+Browser session replay records ten percent of production sessions, every
+development session, and every session that hits an error. Replays show
+on-screen text, including meeting titles, transcripts, and notes, so UI bugs
+can be reviewed. Typed input values stay masked, audio and video are blocked,
+and no network request or response details are recorded. Add
+`data-sentry-mask` to hide an element's text or `data-sentry-block` to hide it
+entirely. Console frames are dropped, and replay URLs lose identifiers and
+query strings.
 The SDK excludes user identity, cookies, headers, request and response bodies,
 query parameters, database values, GraphQL documents and variables, AI inputs
 and outputs, stack variables, console breadcrumbs, and UI interaction
@@ -210,7 +218,10 @@ breadcrumbs. Client source maps are removed after upload.
 Desktop builds use the native Sentry SDK for crashes and handled recording,
 audio metering, capture stream, file write, SDK termination, and upload failures.
 Set `SENTRY_DSN` when packaging the app; `NEXT_PUBLIC_SENTRY_DSN` is also accepted.
-Release builds reject a missing DSN. The release workflow reads the public DSN
+Release builds reject a missing DSN. Each handled error report attaches a PNG of
+Tape's own visible windows, which can show meeting titles; other apps and the
+desktop are never captured, and no screen recording permission is used. Crash
+reports have no screenshot. The release workflow reads the public DSN
 from the repository Actions variable `SENTRY_DSN` and sets the environment to
 `production`. Local packages default to `development`; verification uses
 `coverage-verification`. Reports include operation, error type, code, and app

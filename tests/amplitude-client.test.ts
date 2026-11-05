@@ -8,6 +8,7 @@ const {
   initAll,
   initializeClientTelemetry,
   initializeSentry,
+  replayIntegration,
   reset,
   setGroup,
   setUserId,
@@ -18,6 +19,7 @@ const {
   initAll: vi.fn(),
   initializeClientTelemetry: vi.fn(),
   initializeSentry: vi.fn(),
+  replayIntegration: vi.fn(),
   reset: vi.fn(),
   setGroup: vi.fn(),
   setUserId: vi.fn(),
@@ -28,6 +30,7 @@ vi.mock("@sentry/nextjs", () => ({
   captureMessage,
   captureRouterTransitionStart: vi.fn(),
   init: initializeSentry,
+  replayIntegration,
 }));
 
 vi.mock("@amplitude/unified", () => ({
@@ -54,6 +57,7 @@ describe("Amplitude browser analytics", () => {
     initAll.mockReset().mockResolvedValue(undefined);
     initializeClientTelemetry.mockReset();
     initializeSentry.mockReset();
+    replayIntegration.mockReset().mockReturnValue({ name: "Replay" });
     reset.mockReset();
     setGroup.mockReset();
     setUserId.mockReset();
@@ -70,6 +74,18 @@ describe("Amplitude browser analytics", () => {
 
     expect(initAll).toHaveBeenCalledOnce();
     expect(initializeSentry).toHaveBeenCalledBefore(initAll);
+    expect(replayIntegration).toHaveBeenCalledWith(
+      expect.objectContaining({
+        maskAllInputs: true,
+        maskAllText: false,
+      }),
+    );
+    expect(initializeSentry).toHaveBeenCalledWith(
+      expect.objectContaining({
+        integrations: [{ name: "Replay" }],
+        replaysOnErrorSampleRate: 1,
+      }),
+    );
     expect(initAll).toHaveBeenCalledWith(
       "5836fffe3657ee0cf0058fb4c044329",
       {

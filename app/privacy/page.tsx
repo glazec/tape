@@ -42,9 +42,12 @@ export default function PrivacyPage() {
               </p>
               <p>
                 Technical data may include browser and device information,
-                security and audit logs, product events, masked session replay
-                data, error details, and a push notification identifier when
-                notifications are enabled.
+                security and audit logs, product events, session replay data,
+                error details, screenshots of the Tape desktop app attached to
+                error reports, and a push notification identifier when
+                notifications are enabled. Session replays and desktop
+                screenshots can show text on screen, such as meeting titles,
+                transcripts, and notes. Typed input values are masked.
               </p>
             </>
           ),
@@ -101,7 +104,7 @@ export default function PrivacyPage() {
               ElevenLabs for transcription, OpenRouter for requested language
               and answer features, Inngest for background work, and optional
               OneSignal and Amplitude services for notifications and product
-              operations. Providers process data under their own terms and
+              operations, and Sentry for error monitoring and session replay. Providers process data under their own terms and
               privacy commitments.
             </p>
           ),

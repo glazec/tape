@@ -1,13 +1,17 @@
-import type { ErrorEvent } from "@sentry/nextjs";
+import type { ErrorEvent, ReplayFrameEvent } from "@sentry/nextjs";
 import { describe, expect, it } from "vitest";
 
 import {
   getSentryInitOptions,
+  getSentryReplayOptions,
+  getSentryReplaySampleRates,
   sanitizeSentryBreadcrumb,
   sanitizeSentryEvent,
   sanitizeSentryLog,
+  sanitizeSentryReplayEvent,
   sanitizeSentryUrl,
   sentryDataCollection,
+  sentryReplayPrivacy,
 } from "@/lib/sentry/config";
 
 describe("Sentry configuration", () => {
@@ -119,5 +123,92 @@ describe("Sentry configuration", () => {
         "https://tape.example.com/meetings/11111111-1111-4111-8111-111111111111?signature=secret#notes",
       ),
     ).toBe("https://tape.example.com/meetings/:id");
+  });
+
+  it("samples ten percent of production replays and every error replay", () => {
+    expect(getSentryReplaySampleRates({ development: false })).toEqual({
+      replaysOnErrorSampleRate: 1,
+      replaysSessionSampleRate: 0.1,
+    });
+    expect(getSentryReplaySampleRates({ development: true })).toEqual({
+      replaysOnErrorSampleRate: 1,
+      replaysSessionSampleRate: 1,
+    });
+  });
+
+  it("shows screen text but masks inputs and blocks audio and video in replays", () => {
+    expect(sentryReplayPrivacy).toMatchObject({
+      blockAllMedia: false,
+      mask: ["[data-sentry-mask]"],
+      maskAllInputs: true,
+      maskAllText: false,
+      networkCaptureBodies: false,
+      networkDetailAllowUrls: [],
+      networkRequestHeaders: [],
+      networkResponseHeaders: [],
+    });
+    expect(sentryReplayPrivacy.block).toEqual(
+      expect.arrayContaining(["audio", "video", "[data-sentry-block]"]),
+    );
+    expect(getSentryReplayOptions().beforeAddRecordingEvent).toBe(
+      sanitizeSentryReplayEvent,
+    );
+  });
+
+  it("drops console frames from replay recordings", () => {
+    expect(
+      sanitizeSentryReplayEvent({
+        data: {
+          payload: {
+            category: "console",
+            message: "private meeting words",
+            timestamp: 1,
+            type: "default",
+          },
+          tag: "breadcrumb",
+        },
+        timestamp: 1,
+        type: 5,
+      } as ReplayFrameEvent),
+    ).toBeNull();
+  });
+
+  it("sanitizes replay breadcrumb messages and span URLs", () => {
+    const breadcrumb = sanitizeSentryReplayEvent({
+      data: {
+        payload: {
+          category: "ui.click",
+          message: "button for alice@example.com",
+          timestamp: 1,
+          type: "default",
+        },
+        tag: "breadcrumb",
+      },
+      timestamp: 1,
+      type: 5,
+    } as ReplayFrameEvent);
+    const span = sanitizeSentryReplayEvent({
+      data: {
+        payload: {
+          description:
+            "https://tape.example.com/meetings/11111111-1111-4111-8111-111111111111?token=secret",
+          endTimestamp: 2,
+          op: "navigation.push",
+          startTimestamp: 1,
+        },
+        tag: "performanceSpan",
+      },
+      timestamp: 1,
+      type: 5,
+    } as ReplayFrameEvent);
+
+    expect(breadcrumb).toMatchObject({
+      data: { payload: { message: "button for [redacted-email]" } },
+    });
+    expect(span).toMatchObject({
+      data: {
+        payload: { description: "https://tape.example.com/meetings/:id" },
+      },
+    });
   });
 });
