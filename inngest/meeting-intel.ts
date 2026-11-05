@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { inngest } from "@/inngest/client";
-import { generateMeetingIntel } from "@/lib/intel/generation";
+import { generateMeetingIntel, INTEL_MAX_FAILURES } from "@/lib/intel/generation";
 import { ProviderCreditExhaustedError } from "@/lib/provider-credit";
 
 export const generateIntelOnTranscript = inngest.createFunction({
@@ -34,6 +34,10 @@ export const reconcileMeetingIntel = inngest.createFunction({
       sql`(${meetings.aiIntel} is null or greatest(${meetings.updatedAt},
         (select max(s.updated_at) from transcript_segments s where s.meeting_id = ${meetings.id}))
         > coalesce((${meetings.aiIntel}->>'generatedAt')::timestamptz, '-infinity'::timestamptz))`,
+      // Skip transcripts that already failed extraction repeatedly and have not changed since.
+      sql`not (coalesce((${meetings.aiIntel}->>'failures')::int, 0) >= ${INTEL_MAX_FAILURES}
+        and greatest(${meetings.updatedAt}, (select max(s.updated_at) from transcript_segments s where s.meeting_id = ${meetings.id}))
+        <= (${meetings.aiIntel}->>'failedAt')::timestamptz)`,
     )).orderBy(sql`coalesce((${meetings.aiIntel}->>'checkedAt')::timestamptz, '-infinity'::timestamptz)`, meetings.updatedAt).limit(50);
   });
   if (candidates.length) await step.sendEvent("queue-intel", candidates.map(m => ({ name: "meeting/intel.generate", data: { meetingId: m.id } })));
