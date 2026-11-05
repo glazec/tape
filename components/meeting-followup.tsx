@@ -215,7 +215,8 @@ export function MeetingFollowup({
       Object.assign(failure, { conflict: response.status === 409 });
       throw failure;
     }
-    setConnections(data.connections);
+    // Keep the reader's language; the English list only fills in when no translated copy exists.
+    setConnections(data.translatedConnections?.[preferredLanguage] ?? data.connections);
     setConnectionsRevision(data.revision);
     setConnectionIds(data.connectionIds ?? []);
     pendingSnapshot.current = null;

@@ -50,6 +50,20 @@ describe("connection edit API", () => {
     expect(query.sql).toContain('"ai_followup" ='); expect(query.sql).toContain('"updated_at" ='); expect(query.sql).toContain('"owner_user_id"');
     expect(response.headers.get("Cache-Control")).toBe("private, no-store");
   });
+  it("keeps translated followups after a rename so the page stays in the reader's language", async () => {
+    const translatedCopy = { todos: [], dynamics: [], research: [], connections: [{ ...original, context: "认识 GPU 团队。" }] };
+    const translatedMeeting = { ...meeting, aiFollowup: { ...meeting.aiFollowup, translations: { "zh-CN": translatedCopy } } };
+    mocks.meeting.mockResolvedValue(translatedMeeting);
+    const rename = { ...changes, context: "认识 GPU 团队。" };
+    const response = await PATCH(new Request("https://example.com/connections", { method: "PATCH", body: JSON.stringify({ revision: getConnectionsRevision(translatedMeeting), index: 0, changes: rename }) }), context);
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    const aiFollowup = JSON.parse(JSON.stringify(mocks.set.mock.calls[0][0].aiFollowup));
+    expect(aiFollowup.connectionEdits[0].changes.context).toBe(original.context);
+    expect(aiFollowup.translations["zh-CN"].connections[0]).toMatchObject({ name: "Corrected name", kind: "person", context: "认识 GPU 团队。", evidence: original.evidence });
+    expect(body.translatedConnections["zh-CN"][0]).toMatchObject({ name: "Corrected name", context: "认识 GPU 团队。" });
+    expect(body.connections[0].context).toBe(original.context);
+  });
   it("denies readers and unauthenticated users", async () => {
     mocks.user.mockResolvedValue(null); expect((await PATCH(request(), context)).status).toBe(401);
     mocks.user.mockResolvedValue({ id: "user" }); mocks.meeting.mockResolvedValue({ ...meeting, canManage: false }); expect((await PATCH(request(), context)).status).toBe(404);

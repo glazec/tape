@@ -35,10 +35,22 @@ export async function PATCH(request: Request, context: { params: Promise<{ meeti
   if (!meeting.segments.some(segment => segment.id === changes.speakerSegmentId)) {
     return Response.json({ error: "Choose a speaker from this meeting." }, { status: 400 });
   }
-  if (Object.values(saved.data.translations ?? {}).some(copy => copy?.connections?.[index]?.context === changes.context)) changes.context = entry.connection.context;
+  const typedContext = changes.context;
+  const keptTranslatedContext = Object.values(saved.data.translations ?? {}).some(copy => copy?.connections?.[index]?.context === typedContext);
+  if (keptTranslatedContext) changes.context = entry.connection.context;
+  const contextUnchanged = keptTranslatedContext || typedContext === entry.connection.context;
   const edits = (saved.data.connectionEdits ?? []).filter(edit => JSON.stringify(edit.original) !== JSON.stringify(entry.original));
   if (edits.length >= 80) return Response.json({ error: "This meeting has reached the connection edit limit." }, { status: 422 });
-  const aiFollowup = { ...saved.data, translations: undefined, connectionEdits: [...edits, { original: entry.original, changes }] };
+  const connectionCount = getCurrentMeetingConnectionEntries(meeting).length;
+  // Patch the edited connection into each translated copy instead of dropping
+  // them: dropping forced the page back to English and a full re-translation.
+  const translations = saved.data.translations && Object.fromEntries(Object.entries(saved.data.translations).flatMap(([language, copy]) => {
+    const translated = copy?.connections?.[index];
+    if (!copy || !translated || copy.connections!.length !== connectionCount) return [];
+    const connection = { ...translated, ...changes, context: contextUnchanged ? translated.context : typedContext };
+    return [[language, { ...copy, connections: copy.connections!.map((item, i) => i === index ? connection : item) }]];
+  }));
+  const aiFollowup = { ...saved.data, translations: translations && Object.keys(translations).length ? translations : undefined, connectionEdits: [...edits, { original: entry.original, changes }] };
   try {
     const rows = await db.update(meetings).set({ aiFollowup }).where(and(
       getManageableMeetingCondition(workspace, meetingId),
@@ -48,7 +60,8 @@ export async function PATCH(request: Request, context: { params: Promise<{ meeti
     )).returning({ id: meetings.id });
     if (!rows.length) return Response.json({ error: "The meeting changed. Load the latest version to review before saving." }, { status: 409 });
     const updated = { ...meeting, aiFollowup };
-    return Response.json({ connections: getCurrentMeetingConnections(updated), revision: getConnectionsRevision(updated), connectionIds: getCurrentMeetingConnectionIds(updated) }, { headers: { "Cache-Control": "private, no-store" } });
+    const translatedConnections = Object.fromEntries(Object.entries(aiFollowup.translations ?? {}).map(([language, copy]) => [language, copy?.connections ?? []]));
+    return Response.json({ connections: getCurrentMeetingConnections(updated), translatedConnections, revision: getConnectionsRevision(updated), connectionIds: getCurrentMeetingConnectionIds(updated) }, { headers: { "Cache-Control": "private, no-store" } });
   } catch {
     return Response.json({ error: "Connection could not be saved. Try again." }, { status: 500 });
   }
