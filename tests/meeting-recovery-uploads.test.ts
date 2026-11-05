@@ -153,6 +153,52 @@ describe("parseManualTranscriptText", () => {
     ]);
   });
 
+  it("splits one-utterance-per-line transcripts under a Markdown header", () => {
+    expect(
+      parseManualTranscriptText(
+        [
+          "# hanwei & IOSG 会议逐字稿",
+          "",
+          "- 平台：Zoom",
+          "- 参会：汉伟（langh）、Jocy",
+          "- 说明：AI 转写（润色版），说话人标签为自动识别",
+          "",
+          "---",
+          "",
+          "Speaker 1: 嗨。",
+          "langh: 喂。",
+          "Xiaonan Zeng: Luna 没进来吗？",
+          "孔维彤：好。",
+          "continued without a label",
+        ].join("\n"),
+      ),
+    ).toEqual([
+      { speaker: "Speaker 1", startMs: 0, text: "嗨。" },
+      { speaker: "langh", startMs: 0, text: "喂。" },
+      { speaker: "Xiaonan Zeng", startMs: 0, text: "Luna 没进来吗？" },
+      { speaker: "孔维彤", startMs: 0, text: "好。\ncontinued without a label" },
+    ]);
+  });
+
+  it("drops YAML front matter before speaker lines", () => {
+    expect(
+      parseManualTranscriptText(
+        "---\ntitle: Weekly sync\ndate: 2026-11-05\n---\nAlice: Hello\nBob: Thanks",
+      ),
+    ).toEqual([
+      { speaker: "Alice", startMs: 0, text: "Hello" },
+      { speaker: "Bob", startMs: 0, text: "Thanks" },
+    ]);
+  });
+
+  it("does not split prose with an incidental colon into speaker lines", () => {
+    expect(
+      parseManualTranscriptText(
+        "We agreed on three points: pricing, hiring,\nand the launch date.\nNothing else came up.",
+      ),
+    ).toHaveLength(1);
+  });
+
   it("keeps SRT and VTT timing when a Spark footer is present", () => {
     expect(
       parseManualTranscriptText(

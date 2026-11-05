@@ -11,6 +11,10 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { organizationHeaders } from "@/lib/organization-request";
+import {
+  transcriptUploadAccept,
+  transcriptUploadFormatsLabel,
+} from "@/lib/upload-media";
 import { cn } from "@/lib/utils";
 
 export type MeetingSource = "link" | "recording" | "transcript" | "phone";
@@ -29,7 +33,7 @@ const sourceOptions = [
     value: "recording" as const,
   },
   {
-    description: "Paste text or upload TXT, SRT, or VTT",
+    description: `Paste text or upload ${transcriptUploadFormatsLabel}`,
     icon: FileText,
     label: "Transcript",
     value: "transcript" as const,
@@ -219,7 +223,7 @@ function NewTranscriptForm({ teamId }: { teamId?: string }) {
             <Label htmlFor="new-transcript-file">Or choose a file</Label>
             <Input
               className="min-h-11"
-              accept=".txt,.srt,.vtt,text/plain,text/vtt"
+              accept={transcriptUploadAccept}
               id="new-transcript-file"
               onChange={(event) => {
                 const file = event.currentTarget.files?.[0] ?? null;

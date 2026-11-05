@@ -68,7 +68,7 @@ The New meeting page supports four sources:
 
 1. A Google Meet or Zoom link scheduled through Recall.ai
 2. An uploaded audio or video recording
-3. Pasted transcript text or a TXT, SRT, or VTT file
+3. Pasted transcript text or a TXT, Markdown, SRT, or VTT file
 4. A focused phone recording flow
 
 Google Calendar can be connected for automatic Recall Calendar V2 capture and repair. Microsoft Teams calendar meetings stay visible in the dashboard and prompt the macOS recorder for local capture instead of scheduling a bot. The recorder also provides a fallback for missed cloud recordings.

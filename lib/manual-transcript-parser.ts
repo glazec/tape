@@ -10,6 +10,12 @@ const sparkCuePattern = /^((?:\d{1,2}:)?\d{1,2}:\d{2})\s+(.+)$/;
 const sparkFooterPattern = /^由\s*Spark\s*\+AI\s*会议记录\s*驱动$/iu;
 const sparkMeetingTimePattern = /^\d{1,2}:\d{2}\s*(?:上午|下午|AM|PM)\s*[-–—]\s*\d{1,2}:\d{2}\s*(?:上午|下午|AM|PM)\s+GMT[+-]\d{2}:\d{2}$/iu;
 const trailingSparkTimestampPattern = /\s*\[(?:\d{1,2}:)?\d{1,2}:\d{2}\]\s*$/;
+const markdownRulePattern = /^(?:-{3,}|\*{3,}|_{3,})$/;
+const markdownHeadingPattern = /^#{1,6}\s+\S/;
+const markdownPreambleLinePattern = /^(?:#{1,6}\s+\S|[-*+]\s+\S|>\s*\S|[^:：\n]{1,40}[:：]\s*\S)/;
+const speakerLinePattern = /^([^:：\n]{1,40}?)[:：][ \t]*(\S.*)$/;
+const speakerNameRejectPattern = /[。，,！!？?；;「」“”"()（）[\]<>]|^\d+$|^[-*+>#]/;
+const maxMarkdownPreambleLines = 40;
 
 export function parseManualTranscriptText(
   transcriptText: string,
@@ -26,16 +32,28 @@ export function parseManualTranscriptText(
     return parseSparkMeetingNote(normalizedText);
   }
 
-  const paragraphs = normalizedText
+  const bodyText = hasTimedCue
+    ? normalizedText
+    : stripMarkdownPreamble(normalizedText);
+  const paragraphs = bodyText
     .split(/\n{2,}/)
     .map((paragraph) => paragraph.trim())
     .filter(
-      (paragraph) => paragraph && !sparkFooterPattern.test(paragraph),
+      (paragraph) =>
+        paragraph &&
+        !sparkFooterPattern.test(paragraph) &&
+        !isMarkdownDecoration(paragraph),
     );
   const chunks = paragraphs.length > 0 ? paragraphs : [transcriptText.trim()];
 
   return chunks
-    .map((chunk) => {
+    .flatMap((chunk) => {
+      const speakerLines = hasTimedCue ? null : parseSpeakerLines(chunk);
+
+      if (speakerLines) {
+        return speakerLines;
+      }
+
       const lines = chunk.split("\n");
       const timingLineIndex = lines.findIndex((line) =>
         timedCuePattern.test(line.trim()),
@@ -67,6 +85,118 @@ export function parseManualTranscriptText(
     .filter((segment): segment is ManualTranscriptSegmentInput =>
       Boolean(segment),
     );
+}
+
+/**
+ * Drops a Markdown document header (title, "- key: value" metadata bullets,
+ * YAML front matter) that ends with a horizontal rule before the transcript.
+ */
+function stripMarkdownPreamble(text: string) {
+  const lines = text.split("\n");
+  let start = 0;
+
+  while (start < lines.length && !lines[start].trim()) {
+    start += 1;
+  }
+
+  if (markdownRulePattern.test(lines[start]?.trim() ?? "")) {
+    const frontMatterEnd = lines.findIndex(
+      (line, index) => index > start && markdownRulePattern.test(line.trim()),
+    );
+
+    return frontMatterEnd > 0
+      ? lines.slice(frontMatterEnd + 1).join("\n")
+      : text;
+  }
+
+  const ruleIndex = lines.findIndex(
+    (line, index) =>
+      index >= start &&
+      index < start + maxMarkdownPreambleLines &&
+      markdownRulePattern.test(line.trim()),
+  );
+
+  if (ruleIndex < 0) {
+    return text;
+  }
+
+  const preamble = lines
+    .slice(start, ruleIndex)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  const isDocumentHeader =
+    preamble.length > 0 &&
+    markdownHeadingPattern.test(preamble[0]) &&
+    preamble.every((line) => markdownPreambleLinePattern.test(line));
+
+  return isDocumentHeader ? lines.slice(ruleIndex + 1).join("\n") : text;
+}
+
+function isMarkdownDecoration(paragraph: string) {
+  return paragraph
+    .split("\n")
+    .every(
+      (line) =>
+        markdownRulePattern.test(line.trim()) ||
+        markdownHeadingPattern.test(line.trim()),
+    );
+}
+
+/**
+ * Parses "Name: text" transcripts that put one utterance per line without
+ * blank lines between them. Lines without a speaker label continue the
+ * previous utterance.
+ */
+function parseSpeakerLines(
+  chunk: string,
+): ManualTranscriptSegmentInput[] | null {
+  const lines = chunk
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  if (lines.length < 2) {
+    return null;
+  }
+
+  const labeledLines = lines.map(matchSpeakerLine);
+  const labeledCount = labeledLines.filter(Boolean).length;
+
+  if (!labeledLines[0] || labeledCount < 2 || labeledCount * 2 < lines.length) {
+    return null;
+  }
+
+  const segments: ManualTranscriptSegmentInput[] = [];
+
+  lines.forEach((line, index) => {
+    const labeled = labeledLines[index];
+
+    if (labeled) {
+      segments.push({ speaker: labeled.speaker, startMs: 0, text: labeled.text });
+    } else {
+      const previous = segments[segments.length - 1];
+      previous.text = `${previous.text}\n${line}`;
+    }
+  });
+
+  return segments;
+}
+
+function matchSpeakerLine(line: string) {
+  const match = line.match(speakerLinePattern);
+  const speaker = match?.[1]?.trim();
+  const text = match?.[2]?.trim();
+
+  if (
+    !speaker ||
+    !text ||
+    speakerNameRejectPattern.test(speaker) ||
+    text.startsWith("//")
+  ) {
+    return null;
+  }
+
+  return { speaker, text };
 }
 
 function isSparkMeetingNote(transcriptText: string) {
