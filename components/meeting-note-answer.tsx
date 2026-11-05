@@ -38,6 +38,8 @@ export function MeetingNoteAnswer({
   url,
   transcript,
   transcriptError,
+  requiresSignIn,
+  onUnauthorized,
   refreshTranscript,
   enabled,
   composing,
@@ -50,6 +52,8 @@ export function MeetingNoteAnswer({
   url: string;
   transcript: NoteTranscript | null;
   transcriptError: boolean;
+  requiresSignIn: boolean;
+  onUnauthorized: () => void;
   refreshTranscript: () => void;
   enabled: boolean;
   composing: boolean;
@@ -73,7 +77,7 @@ export function MeetingNoteAnswer({
   const editor = useRef<HTMLTextAreaElement>(null);
   const returnToAnswer = useRef(false);
   const active = state.key === key ? state : null;
-  const busy = active?.kind === "loading";
+  const busy = !requiresSignIn && active?.kind === "loading";
   const questionChanged = Boolean(answer && answer.question !== question);
   const transcriptChanged = Boolean(
     answer &&
@@ -96,6 +100,12 @@ export function MeetingNoteAnswer({
         body: JSON.stringify({ question }),
         signal: controller.signal,
       });
+      if (controller.signal.aborted) return;
+      if (response.status === 401) {
+        onUnauthorized();
+        setState({ key, kind: "idle" });
+        return;
+      }
       const result = await response.json();
       if (controller.signal.aborted) return;
       if (!response.ok) {
@@ -159,6 +169,7 @@ export function MeetingNoteAnswer({
     enabled,
     key,
     onAnswer,
+    onUnauthorized,
     question,
     refreshTranscript,
     transcript,
@@ -383,7 +394,7 @@ export function MeetingNoteAnswer({
           Looking in transcript…
         </p>
       ) : null}
-      {!answer && !busy && question && !active?.message ? (
+      {!requiresSignIn && !answer && !busy && question && !active?.message ? (
         <p
           className="py-1 text-sm leading-6 text-muted-foreground"
           role="status"
@@ -403,7 +414,7 @@ export function MeetingNoteAnswer({
           ) : null}
         </p>
       ) : null}
-      {active?.kind === "error" ? (
+      {!requiresSignIn && active?.kind === "error" ? (
         <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1">
           <p className="text-sm text-muted-foreground" role="alert">
             {active.message}

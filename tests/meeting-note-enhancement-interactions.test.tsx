@@ -414,3 +414,62 @@ describe("automatic transcript answers", () => {
     expect(posts()).toHaveLength(0);
   });
 });
+
+
+describe("expired note sessions", () => {
+  it("keeps ordinary save failures retryable", async () => {
+    await open();
+    const originalFetch = vi.mocked(fetch).getMockImplementation()!;
+    vi.mocked(fetch).mockImplementationOnce(async () => Response.json({ error: "Unavailable" }, { status: 503 }));
+    fireEvent.change(editor(), { target: { value: "My draft" } });
+    await pause();
+    expect(screen.getByText("Could not save. Your edits are still here.")).toBeTruthy();
+    expect(screen.queryByRole("link", { name: "Sign in" })).toBeNull();
+    vi.mocked(fetch).mockImplementation(originalFetch);
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    await pause();
+    expect(persisted.content).toBe("My draft");
+  });
+
+  it.each(["load", "save", "metadata", "answer"])(
+    "offers sign in and stops requests after a 401 during %s",
+    async (failure) => {
+      const originalFetch = vi.mocked(fetch).getMockImplementation()!;
+      vi.mocked(fetch).mockImplementation(async (url, init) => {
+        const answering = String(url).endsWith("/answer");
+        const operation = answering
+          ? init?.method === "POST" ? "answer" : "metadata"
+          : init?.method === "PUT" ? "save" : "load";
+        if (operation === failure) return Response.json({ error: "Unauthorized" }, { status: 401 });
+        return originalFetch(url, init);
+      });
+      const view = await open();
+      if (failure !== "load") {
+        fireEvent.change(editor(), { target: { value: "what is their goal for the event?" } });
+        await pause();
+      }
+      const link = screen.getByRole("link", { name: "Sign in" });
+      expect(link.getAttribute("href")).toBe("/auth/sign-in?callbackUrl=%2Fmeetings%2Fmeeting-one");
+      expect(screen.queryByText("Could not check the transcript.")).toBeNull();
+      expect(screen.queryByText("Could not save. Your edits are still here.")).toBeNull();
+      if (failure !== "load") {
+        fireEvent.change(editor(), { target: { value: "My unsaved followup" } });
+        expect(JSON.parse(sessionStorage.getItem("meeting-notes:user-one:meeting-one")!).content).toBe("My unsaved followup");
+      }
+      const requests = vi.mocked(fetch).mock.calls.length;
+      await pause(60_000);
+      fireEvent(document, new Event("visibilitychange"));
+      await pause();
+      expect(fetch).toHaveBeenCalledTimes(requests);
+      view.unmount();
+      expect(fetch).toHaveBeenCalledTimes(requests);
+      if (failure !== "load") {
+        vi.mocked(fetch).mockImplementation(originalFetch);
+        await open();
+        expect(editor().value).toBe("My unsaved followup");
+        await pause();
+        expect(persisted.content).toBe("My unsaved followup");
+      }
+    },
+  );
+});

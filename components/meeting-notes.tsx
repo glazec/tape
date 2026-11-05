@@ -85,7 +85,7 @@ export function MeetingNotes({
   userId: string;
   momentSources?: NoteMomentSource[];
 }) {
-  const { blocks, change, status, loaded, save, reload, retry } =
+  const { blocks, change, status, loaded, save, reload, retry, requiresSignIn, requireSignIn } =
     useMeetingNote(meetingId, userId);
   const [preview, setPreview] = useState(false);
   const [pasteError, setPasteError] = useState("");
@@ -124,7 +124,7 @@ export function MeetingNotes({
     (block) => noteQuestion(block.text) || block.answer,
   );
   const hasAnswer = blocks.some((block) => block.answer);
-  const canEnhance = loaded && status !== "conflict" && status !== "error";
+  const canEnhance = loaded && !requiresSignIn && status !== "conflict" && status !== "error";
   const copyText = blocks
     .map((block) => {
       let text = block.text;
@@ -155,6 +155,7 @@ export function MeetingNotes({
   }, [blocks]);
 
   const refreshTranscript = useCallback(async () => {
+    if (requiresSignIn) return;
     metadataRequest.current?.abort();
     const controller = new AbortController();
     metadataRequest.current = controller;
@@ -163,6 +164,11 @@ export function MeetingNotes({
         cache: "no-store",
         signal: controller.signal,
       });
+      if (controller.signal.aborted) return;
+      if (response.status === 401) {
+        requireSignIn();
+        return;
+      }
       if (!response.ok) throw new Error("Transcript unavailable");
       const next = await response.json();
       if (controller.signal.aborted) return;
@@ -181,10 +187,10 @@ export function MeetingNotes({
     } catch {
       if (!controller.signal.aborted) setTranscriptError(true);
     }
-  }, [answerUrl]);
+  }, [answerUrl, requiresSignIn, requireSignIn]);
 
   useEffect(() => {
-    if (!hasQuestions || !loaded) return;
+    if (!hasQuestions || !loaded || requiresSignIn) return;
     // Refresh external transcript metadata after the note has loaded.
     // eslint-disable-next-line react-hooks/set-state-in-effect
     void refreshTranscript();
@@ -198,7 +204,7 @@ export function MeetingNotes({
       document.removeEventListener("visibilitychange", check);
       metadataRequest.current?.abort();
     };
-  }, [hasQuestions, loaded, refreshTranscript]);
+  }, [hasQuestions, loaded, refreshTranscript, requiresSignIn]);
 
   const resizeEditors = useCallback(() => {
     editors.current.forEach((editor) => {
@@ -791,6 +797,8 @@ export function MeetingNotes({
                 url={answerUrl}
                 transcript={transcript}
                 transcriptError={transcriptError}
+                requiresSignIn={requiresSignIn}
+                onUnauthorized={requireSignIn}
                 refreshTranscript={refreshTranscript}
                 enabled={canEnhance}
                 composing={composing === block.id}
@@ -827,7 +835,21 @@ export function MeetingNotes({
           {(20_000 - content.length).toLocaleString()} characters remaining
         </p>
       ) : null}
-      {status === "error" ? (
+      {requiresSignIn ? (
+        <div className="mt-4 flex flex-wrap items-center justify-between gap-x-4 gap-y-2 border-t pt-3">
+          <p className="text-sm text-muted-foreground" role="alert">
+            {loaded
+              ? "Sign in again to save notes and check the transcript. Your edits are still here."
+              : "Sign in again to load your notes."}
+          </p>
+          <a
+            className="inline-flex min-h-11 items-center rounded-full border px-4 text-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            href={`/auth/sign-in?callbackUrl=${encodeURIComponent(`/meetings/${meetingId}`)}`}
+          >
+            Sign in
+          </a>
+        </div>
+      ) : status === "error" ? (
         <div className="mt-4 flex flex-wrap items-center justify-between gap-x-4 gap-y-2 border-t pt-3">
           <p className="text-sm text-destructive" role="alert">
             {loaded

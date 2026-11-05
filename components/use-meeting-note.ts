@@ -40,6 +40,13 @@ export function useMeetingNote(meetingId: string, userId: string) {
   ]);
   const [status, setStatus] = useState<Status>("loading");
   const [loaded, setLoaded] = useState(false);
+  const [requiresSignIn, setRequiresSignIn] = useState(false);
+  const sessionExpired = useRef(false);
+  const requireSignIn = useCallback(() => {
+    sessionExpired.current = true;
+    setRequiresSignIn(true);
+    setStatus("error");
+  }, []);
   const draft = useRef<NoteBlock[]>([{ id: "legacy", text: "" }]);
   const saved = useRef<Note | null>(null);
   const draftVersion = useRef(0);
@@ -72,6 +79,11 @@ export function useMeetingNote(meetingId: string, userId: string) {
     async (signal?: AbortSignal) => {
       try {
         const response = await fetch(url, { cache: "no-store", signal });
+        if (signal?.aborted) return;
+        if (response.status === 401) {
+          requireSignIn();
+          return;
+        }
         if (!response.ok) throw new Error("Could not load notes");
         const note = readNote(await response.json());
         if (signal?.aborted) return;
@@ -115,14 +127,14 @@ export function useMeetingNote(meetingId: string, userId: string) {
         if (!signal?.aborted) setStatus("error");
       }
     },
-    [draftKey, retainDraft, url],
+    [draftKey, retainDraft, requireSignIn, url],
   );
 
   const save = useCallback(async () => {
-    if (!saved.current || saving.current || conflict.current) return;
+    if (!saved.current || saving.current || conflict.current || sessionExpired.current) return;
     saving.current = true;
     try {
-      while (!sameBlocks(draft.current, saved.current.blocks)) {
+      while (!sessionExpired.current && !sameBlocks(draft.current, saved.current.blocks)) {
         setStatus("saving");
         const next: Note = {
           content: noteContent(draft.current),
@@ -136,6 +148,10 @@ export function useMeetingNote(meetingId: string, userId: string) {
           keepalive:
             new TextEncoder().encode(JSON.stringify(next)).length < 60_000,
         });
+        if (response.status === 401) {
+          requireSignIn();
+          return;
+        }
         if (response.status === 409) {
           conflict.current = true;
           setStatus("conflict");
@@ -156,10 +172,12 @@ export function useMeetingNote(meetingId: string, userId: string) {
     } finally {
       saving.current = false;
     }
-  }, [retainDraft, url]);
+  }, [retainDraft, requireSignIn, url]);
 
   useEffect(() => {
     const controller = new AbortController();
+    // Loading updates state only after the external request resolves.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     void load(controller.signal);
     return () => controller.abort();
   }, [load]);
@@ -220,5 +238,5 @@ export function useMeetingNote(meetingId: string, userId: string) {
     }
   }
 
-  return { blocks, change, status, loaded, save, reload, retry };
+  return { blocks, change, status, loaded, save, reload, retry, requiresSignIn, requireSignIn };
 }
