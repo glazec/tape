@@ -87,6 +87,7 @@ ALLOWED_CLIENT_REDIRECT_URIS = [
     "https://chatgpt.com/connector/oauth/*",
     "https://chatgpt.com/connector_platform_oauth_redirect",
     "https://app.mintmcp.com/oauth/callback",
+    "https://www.cursor.com/agents/mcp/oauth/callback",
     "http://localhost:*",
     "http://127.0.0.1:*",
 ]
