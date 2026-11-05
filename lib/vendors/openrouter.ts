@@ -771,6 +771,7 @@ type OpenRouterUsageContext = {
     "assistant" | "transcript_polish" | "translation"
   >;
   meetingId?: string | null;
+  metadata?: Record<string, unknown>;
 };
 
 async function parseOpenRouterResponse(
@@ -793,6 +794,7 @@ async function parseOpenRouterResponse(
         category: usageContext.category,
         generationId: parsed.id,
         meetingId: usageContext.meetingId,
+        metadata: usageContext.metadata,
         model: parsed.model,
         usage: {
           completionTokens: parsed.usage.completion_tokens,

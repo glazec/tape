@@ -1,5 +1,6 @@
 import { z } from "zod";
-import { enqueueIntelSearch, previewIntelSearch, readIntelJob } from "@/lib/intel/jobs";
+import { enqueueIntelSearch, markIntelJobInterrupted, previewIntelSearch, readIntelJob } from "@/lib/intel/jobs";
+import { inngest } from "@/inngest/client";
 import { getCurrentUser } from "@/lib/auth";
 import { getOrCreateWorkspaceForSessionUser } from "@/lib/workspace";
 import { assertRequestRateLimit, RequestRateLimitError } from "@/lib/request-rate-limit";
@@ -41,4 +42,18 @@ export async function GET(request: Request) {
   if (id !== null && !z.uuid().safeParse(id).success) return Response.json({ error: "Invalid search" }, { status: 400 });
   const job = await readIntelJob(await getOrCreateWorkspaceForSessionUser(user), id ?? undefined);
   return Response.json({ job }, { status: id && !job ? 404 : 200, headers: { "Cache-Control": "private, no-store" } });
+}
+
+export async function DELETE(request: Request) {
+  const origin = request.headers.get("origin");
+  if (origin && origin !== new URL(process.env.NEXT_PUBLIC_APP_URL || request.url).origin) return Response.json({ error: "Forbidden" }, { status: 403 });
+  const user = await getCurrentUser();
+  if (!user) return Response.json({ error: "Unauthorized" }, { status: 401 });
+  const id = new URL(request.url).searchParams.get("id");
+  if (!id || !z.uuid().safeParse(id).success) return Response.json({ error: "Invalid search" }, { status: 400 });
+  const workspace = await getOrCreateWorkspaceForSessionUser(user);
+  const stopped = await markIntelJobInterrupted(workspace, id, "You stopped this search.");
+  // Cancelling the run is best effort: steps also stop once the job is no longer running.
+  if (stopped) await inngest.send({ name: "intel/search.cancelled", data: { id } }).catch(() => undefined);
+  return Response.json({ stopped }, { headers: { "Cache-Control": "private, no-store" } });
 }

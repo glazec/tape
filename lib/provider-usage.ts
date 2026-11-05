@@ -158,6 +158,7 @@ export async function recordOpenRouterCompletionUsage(input: {
   operation?: "chat_completion" | "decisions";
   generationId?: string | null;
   meetingId?: string | null;
+  metadata?: Record<string, unknown>;
   model?: string | null;
   usage?: OpenRouterUsage | null;
 }) {
@@ -176,6 +177,7 @@ export async function recordOpenRouterCompletionUsage(input: {
     idempotencyKey: `openrouter:generation:${generationId}`,
     meetingId,
     metadata: {
+      ...input.metadata,
       completionTokens: input.usage?.completionTokens ?? null,
       pricingDate: PROVIDER_PRICING_SNAPSHOT_DATE,
       promptTokens: input.usage?.promptTokens ?? null,

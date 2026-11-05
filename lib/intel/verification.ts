@@ -9,7 +9,7 @@ const receipt = z.object({
   }),
 });
 
-export async function verifyIntelClaims<T>(claims: T[], evidence: unknown, meetingId: string): Promise<T[]> {
+export async function verifyIntelClaims<T>(claims: T[], evidence: unknown, meetingId: string, searchId?: string): Promise<T[]> {
   if (!claims.length) return [];
   const key = process.env.OPENROUTER_API_KEY;
   if (!key) throw new Error("OpenRouter API key is missing");
@@ -31,6 +31,7 @@ export async function verifyIntelClaims<T>(claims: T[], evidence: unknown, meeti
     try {
       await recordOpenRouterCompletionUsage({
         category: "assistant", generationId: id, meetingId, model, operation: "decisions",
+        metadata: searchId ? { intelSearchId: searchId } : undefined,
         usage: {
           costUsd: usage.cost, promptTokens: usage.input_tokens, completionTokens: usage.output_tokens,
           totalTokens: usage.input_tokens + usage.output_tokens,
