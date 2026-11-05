@@ -19,12 +19,20 @@ export const INTEL_MAX_FAILURES = 2;
 const extractionFormat = { type: "json_schema", json_schema: { name: "intel_extraction", strict: true, schema: z.toJSONSchema(intelExtractionSchema) } };
 
 type FailureState = { failedSourceHash?: string; failures?: number };
-// Output that is truncated, malformed or unsupported will not improve on an
-// identical retry. Only network and provider availability errors are retried.
+// The extraction model returned output that cannot be used.
+class IntelExtractionOutputError extends Error {
+  constructor(cause: unknown) {
+    super(cause instanceof Error ? cause.message : "Unusable Intel extraction output", { cause });
+    this.name = "IntelExtractionOutputError";
+  }
+}
+// Extraction output that is truncated, malformed or unsupported will not
+// improve on an identical retry. Transport, gateway and verifier errors are
+// rethrown so Inngest retries them.
 function isDeterministicFailure(error: unknown) {
-  if (error instanceof SyntaxError || error instanceof z.ZodError) return true;
+  if (error instanceof IntelExtractionOutputError) return true;
   const message = error instanceof Error ? error.message : "";
-  return /token limit|unsupported attribution|verification was incomplete|missing content/i.test(message);
+  return /stopped at the token limit/i.test(message);
 }
 export async function generateMeetingIntel(meetingId: string) {
   const workspace = await getMeetingOwnerWorkspace(meetingId);
@@ -75,7 +83,12 @@ async function extractVerifiedIntel(meeting: Awaited<ReturnType<typeof loadIntel
       { role: "user", content: JSON.stringify({ title: meeting.title, date: meeting.date, segments: meeting.segments }) },
     ],
   });
-  const result = validateExtraction(JSON.parse(response), meeting);
+  let result;
+  try {
+    result = validateExtraction(JSON.parse(response), meeting);
+  } catch (error) {
+    throw new IntelExtractionOutputError(error);
+  }
   result.items = await verifyIntelClaims(result.items, meeting.segments, meetingId);
   return result;
 }

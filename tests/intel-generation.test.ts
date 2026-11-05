@@ -66,4 +66,9 @@ describe("background intel generation", () => {
   expect(call).toMatchObject({ model: "typesafe/jev-router", attempts: 1, provider: { require_parameters: true } });
   expect(call.responseFormat).toMatchObject({ type: "json_schema", json_schema: { name: "intel_extraction", strict: true } });
  });
+ it("rethrows verifier failures so Inngest retries them", async () => {
+  mocks.verifyIntelClaims.mockRejectedValue(new Error("Claim verification was incomplete"));
+  await expect(generateMeetingIntel("m1")).rejects.toThrow("Claim verification was incomplete");
+  expect(mocks.set).toHaveBeenCalledTimes(1);
+ });
 });
