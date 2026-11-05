@@ -1,3 +1,4 @@
+import { runIntelSearch } from "@/inngest/intel-search";
 import { generateIntelOnTranscript, reconcileMeetingIntel } from "@/inngest/meeting-intel";
 import { listRecallMeetingsToReconcile, reconcileRecallMeeting } from "@/lib/recall-meeting-reconciliation";
 import { z } from "zod";
@@ -835,6 +836,7 @@ const reconcileStaleJobs = inngest.createFunction(
 export const functions = [
   generateIntelOnTranscript,
   reconcileMeetingIntel,
+  runIntelSearch,
   scheduleMeetingBot,
   deleteRecallBot,
   deleteRecallCalendarEventBotJob,

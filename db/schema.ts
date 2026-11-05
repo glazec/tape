@@ -1214,5 +1214,10 @@ export const intelSearches = pgTable("intel_searches", {
   teamId: uuid("team_id").notNull().references(() => teams.id, { onDelete: "cascade" }),
   userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
   input: jsonb("input").notNull(),
+  status: text("status"),
+  completed: integer("completed").notNull().default(0),
+  total: integer("total").notNull().default(0),
+  result: jsonb("result"),
+  error: text("error"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 }, table => [index("intel_searches_owner_index").on(table.teamId, table.userId, table.createdAt)]);

@@ -181,6 +181,7 @@ describe("Inngest functions", () => {
     ).toEqual([
       { id: "generate-meeting-intel", triggers: [{ event: "meeting/enrich.transcript" }, { event: "meeting/intel.generate" }] },
       { id: "reconcile-meeting-intel", triggers: [{ cron: "17 * * * *" }] },
+      { id: "run-intel-search", triggers: [{ event: "intel/search.requested" }] },
       {
         id: "schedule-meeting-bot",
         triggers: [{ event: "meeting/schedule.bot" }],
