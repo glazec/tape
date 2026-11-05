@@ -6,9 +6,10 @@ import { ArtPanel, TrackSection } from "./landing-section";
 import { CalendarJoinMockup, RecorderMockup } from "./mockups";
 
 const NOTES = [
-  "In-person meetings on your Mac",
-  "No bot joins unless you send one",
-  "Zoom and Meet from your calendar, if you want",
+  "Bots join Zoom and Meet from your calendar",
+  "The Mac app records the room, no bot",
+  "Upload files from any voice recorder",
+  "Self-host it, one workspace per team",
 ] as const;
 
 export function LandingCapture() {
@@ -16,15 +17,15 @@ export function LandingCapture() {
     <TrackSection
       id="capture"
       track="A3"
-      label="In the room"
+      label="Every way in"
       heading={
         <>
-          Record the room.
+          Bot, Mac, or recorder.
           <br />
-          <em className="italic">Skip the bot.</em>
+          <em className="italic">One app.</em>
         </>
       }
-      lede="Some conversations should never have a guest bot in them. The Mac app records your microphone and system audio on your own machine: a meeting across the table, a Teams call, a coffee. When a bot is welcome, your calendar sends one to Zoom and Meet."
+      lede="Tape is the only tool that puts meeting bots, local recording on your Mac, and voice recorder uploads in one app you can host yourself, with a separate workspace for every team. When a bot is welcome, your calendar sends one to Zoom and Meet. When it is not, the Mac app records the room on your own machine. The recorder you carried to dinner uploads in one batch."
       notes={NOTES}
       panel={
         <div className="grid gap-4 [&>*]:min-w-0 lg:grid-cols-2">

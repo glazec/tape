@@ -52,7 +52,7 @@ describe("landing page smoke test", () => {
     expect(html).toContain("ElevenLabs");
     expect(html).toContain("Fork it.");
     expect(html).toContain("Who owes what.");
-    expect(html).toContain("Skip the bot.");
+    expect(html).toContain("Bot, Mac, or recorder.");
     expect(html).toContain('href="/auth/sign-in"');
     expect(html).toContain('href="/blog"');
     expect(html).toContain(
