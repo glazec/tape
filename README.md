@@ -93,6 +93,25 @@ Anyone with a Google account can sign in. IOSG team members join the IOSG worksp
 
 Team settings shows remaining workspace credit plus current month personal and organization consumption. Billing details supports current month, previous month, trailing 90 day, and all time views. Recall.ai and ElevenLabs activity uses published duration based rates, while OpenRouter records the exact cost reported for each model response. Uploads, bot scheduling, transcription, and transcript enrichment recheck the workspace credit before starting provider work. A five minute reconciliation removes scheduled bots after a workspace exhausts its credit. Work already in progress may finish, so recorded cost can slightly exceed the allowance. Organization detail stays aggregate and recent meeting activity is limited to meetings owned by the signed in user.
 
+### Multiple organizations
+
+Google Calendar connections are stored separately by verified Google email. Connect additional work accounts and manage each calendar in Team settings. Accounts from configured organization domains join those organizations as members; existing admin roles are preserved. Organization administrators can switch organizations and edit each email domain’s bot avatar independently. Domains of one company must share a workspace to deduplicate invited calendar bots. The preferred organization bot is used when its domain appears among the attendees.
+
+
+Use the organization control in navigation for new uploads, phone recordings, calendar controls, settings, and usage. Existing meeting actions use the meeting’s own workspace. Adding a meeting bot asks which organization’s bot should join whenever more than one identity is available, including multiple domains in one company. Retry and resume retain the selected bot. Calendar accounts have separate sync and disconnect controls.
+
+### Continue and combine meetings
+
+Continue recording accepts a Zoom or Google Meet link for one hour after the last recording ends. It keeps the previous recording bot name; new joins use the bot configured in organization settings. Merge meetings is available before transcripts finish, preserves original recordings and private notes, and can be undone from the merge dialog. Compatible meetings must share their workspace, owner, organization visibility, and current recipients.
+
+Combined meetings show chronological recording parts with separate audio and transcript controls. Note questions, text and image exports, and completed followups include readable parts. Sharing a combined meeting does not grant access to its original sources. Speaker corrections can explicitly remember a verified participant email for future meetings in the workspace.
+
+Recall recording recovery checks started bot meetings every five minutes, independently of webhooks. Missing completion notifications and queued transcription dispatches are retried without creating another job. Started and unfinished meetings remain visible in the library.
+
+### Intel search
+
+`/intel` turns meeting intelligence into people matches. The left sidebar contains private search history; Intel and People sit beneath the search bar. Choose intel or paste text or a public HTTPS link to find interested people. Choose a person to find relevant intel and connections. Unconfirmed names remain separate by meeting, with an explicit identity selection step. Results and intel cards expose original transcript evidence. Extraction runs in the background without adding another meeting page section. See the [setup guide](docs/setup.md#intel-search-setup) for migration and provider requirements.
+
 ## Architecture
 
 | Area | Current implementation |
@@ -138,7 +157,11 @@ git clone https://github.com/glazec/tape.git
 cd tape
 npm install
 cp .env.example .env.local
-npm run db:migrate
+```
+
+Fill in `.env.local` using the [required configuration](docs/setup.md#required-configuration), then follow the [database setup](docs/setup.md#database) to apply migrations and create the restricted database login. Start the application after both connection URLs are configured:
+
+```bash
 npm run dev
 ```
 
@@ -152,18 +175,23 @@ npm run setup:check
 
 ## Deployment
 
-The web application deploys to the `tape-web` service on Railway using `railway.web.json`. Its production build validates required configuration and migration lineage, applies pending migrations in a pre-deploy container, builds the application, and checks `/api/health/dashboard` before the new deployment receives traffic. The root `railway.json` remains dedicated to the media worker.
+The web application deploys to the `tape-web` service on Railway using `railway.web.json`. Its production build validates required configuration and migration lineage, then builds the application. A pre-deploy container applies pending migrations, and Railway checks `/api/health/dashboard` before the new deployment receives traffic. The root `railway.json` remains dedicated to the media worker.
 
 The Inngest engine, its authenticated gateway, MCP, and media worker run as separate services in one Railway project named `tape`. Inngest uses dedicated PostgreSQL and Redis services. The gateway keeps the engine private, exposes machine endpoints to the SDK, protects the dashboard with a seven day cookie session, and protects `/mcp` with separate credentials for bearer capable clients and Claude custom connector URLs. The worker accepts Inngest requests at `/api/inngest`, handles screen share extraction and recordings over 60 minutes, and exposes `/health` for service health checks.
 
 ```bash
 npm run build:image-worker
-PORT=3001 npm run start:image-worker
+PORT=3001 node --env-file=.env.local dist/image-worker/server.mjs
+```
+
+In another terminal, check the running worker. After deploying it, register its public endpoint with the production Inngest environment loaded:
+
+```bash
 curl --fail http://127.0.0.1:3001/health
 IMAGE_WORKER_URL=https://your-worker.example npm run inngest:sync:image-worker
 ```
 
-After deploying or changing `NEXT_PUBLIC_APP_URL` or `RECALL_REALTIME_WEBHOOK_URL`, register the provider callbacks and sync the web Inngest application:
+After deploying or changing `NEXT_PUBLIC_APP_URL` or `RECALL_REALTIME_WEBHOOK_URL`, register the provider callbacks separately as described in [Public callbacks](docs/setup.md#public-callbacks), then sync the web Inngest application:
 
 ```bash
 npm run inngest:sync
@@ -210,21 +238,3 @@ Tape is released under the [Functional Source License 1.1, Apache 2.0 future lic
 You may use, modify, self-host, and redistribute Tape for any purpose except a Competing Use: offering Tape, or a product with substantially the same functionality, to others as a commercial product or hosted service. Running it inside your own company, for your own meetings, is permitted. Each release converts to the Apache License 2.0 two years after it is published.
 
 Until that conversion, FSL is a fair source license rather than an OSI approved open source license.
-
-Google Calendar connections are stored separately by verified Google email. Connect additional work accounts and manage each calendar in Team settings. Accounts from configured organization domains join those organizations as members; existing admin roles are preserved. Organization administrators can switch organizations and edit each email domain’s bot avatar independently. Domains of one company must share a workspace to deduplicate invited calendar bots. The preferred organization bot is used when its domain appears among the attendees.
-
-## Multiple organizations
-
-Use the organization control in navigation for new uploads, phone recordings, calendar controls, settings, and usage. Existing meeting actions use the meeting’s own workspace. Adding a meeting bot asks which organization’s bot should join whenever more than one identity is available, including multiple domains in one company. Retry and resume retain the selected bot. Calendar accounts have separate sync and disconnect controls.
-
-### Continue and combine meetings
-
-Continue recording accepts a Zoom or Google Meet link for one hour after the last recording ends. It keeps the previous recording bot name; new joins use the bot configured in organization settings. Merge meetings is available before transcripts finish, preserves original recordings and private notes, and can be undone from the merge dialog. Compatible meetings must share their workspace, owner, organization visibility, and current recipients.
-
-Combined meetings show chronological recording parts with separate audio and transcript controls. Note questions, text and image exports, and completed followups include readable parts. Sharing a combined meeting does not grant access to its original sources. Speaker corrections can explicitly remember a verified participant email for future meetings in the workspace.
-
-Recall recording recovery checks started bot meetings every five minutes, independently of webhooks. Missing completion notifications and queued transcription dispatches are retried without creating another job. Started and unfinished meetings remain visible in the library.
-
-### Intel search
-
-`/intel` turns meeting intelligence into people matches. The left sidebar contains private search history; Intel and People sit beneath the search bar. Choose intel or paste text or a public HTTPS link to find interested people. Choose a person to find relevant intel and connections. Unconfirmed names remain separate by meeting, with an explicit identity selection step. Results and intel cards expose original transcript evidence. Extraction runs in the background without adding another meeting page section. See `docs/setup.md` for migration and provider requirements.

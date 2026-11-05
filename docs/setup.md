@@ -32,7 +32,7 @@ Existing browsers with a valid Neon session pass through `/api/auth/migrate-sess
 2. npm
 3. A Postgres database and Google OAuth web client
 4. Cloudflare R2 object storage
-5. Recall.ai, ElevenLabs, OpenRouter, and Inngest accounts for the complete meeting workflow
+5. Recall.ai, ElevenLabs, and OpenRouter accounts, plus a self hosted Inngest engine or Inngest Cloud account for background work
 6. A public HTTPS origin for provider webhooks
 
 The macOS recorder additionally requires macOS 15 or newer and Swift 6.
@@ -60,7 +60,7 @@ Fill these values in `.env.local` for the complete application:
 | Recall.ai | `RECALL_API_KEY`, `RECALL_API_BASE_URL`, `RECALL_WEBHOOK_SECRET`, `RECALL_REALTIME_WEBHOOK_URL` |
 | ElevenLabs | `ELEVENLABS_API_KEY`, `ELEVENLABS_WEBHOOK_SECRET` |
 | OpenRouter | `OPENROUTER_API_KEY`, `OPENROUTER_MODEL` |
-| Inngest | `INNGEST_EVENT_KEY`, `INNGEST_SIGNING_KEY` |
+| Inngest | `INNGEST_EVENT_KEY`, `INNGEST_SIGNING_KEY`; `INNGEST_BASE_URL` for a self hosted engine |
 | Application | `NEXT_PUBLIC_APP_URL`, `MCP_BACKEND_SHARED_SECRET` |
 
 `OPENROUTER_MODEL` must support the realtime chat/completions endpoint; deployment validation rejects `:batch` models. GLM 5.3 models use low reasoning because the provider requires reasoning to remain enabled.
@@ -97,9 +97,10 @@ Check the complete configuration before running a production deployment:
 npm run setup:check
 ```
 
-The check reports every missing or invalid value in one pass. Optional services
-do not block deployment. OneSignal remains disabled unless both its app id and
-REST API key are configured.
+The check reports every missing or invalid value in one pass. Optional services can remain unset. Partially configured or invalid optional
+settings can still fail the check: OneSignal requires both its app id and REST
+API key, and `SENTRY_AUTH_TOKEN` requires `NEXT_PUBLIC_SENTRY_DSN`. The check
+validates configuration values; it does not test provider credentials or database connectivity.
 
 ## Feature configuration
 
@@ -111,7 +112,8 @@ REST API key are configured.
 | MCP legacy JWT validation | `NEON_AUTH_JWKS_URL`, `NEON_AUTH_ISSUER` |
 | Public R2 media URL | `R2_PUBLIC_BASE_URL` |
 | Admin access | `APP_ADMIN_EMAILS`, `APP_SELF_HOSTED` |
-| Exa web search for live answers | `EXA_API_KEY` |
+| Exa web search and Intel link extraction | `EXA_API_KEY` |
+| Intel X post fallback | `TWITTERAPI_IO_API_KEY` |
 | Automatic notes and transcript email | `RESEND_API_KEY`, optional `MEETING_EMAIL_FROM` |
 | OneSignal reminders | `NEXT_PUBLIC_ONESIGNAL_APP_ID`, `NEXT_PUBLIC_ONESIGNAL_ALLOWED_ORIGINS`, `ONESIGNAL_REST_API_KEY` |
 | Twenty CRM vocabulary | `TWENTY_API_BASE_URL`, `TWENTY_API_KEY`; restricted to the team owning `iosg.vc` |
@@ -217,11 +219,13 @@ Native startup runs on the main actor before the recorder model starts.
 
 ## Database
 
-Apply every committed migration to the configured database:
+Apply every committed migration to the configured database. For local setup, explicitly load `.env.local`; `npm run db:migrate` reads the process environment and does not load that file:
 
 ```bash
-npm run db:migrate
+node --env-file=.env.local node_modules/drizzle-kit/bin.cjs migrate --config=drizzle.config.ts
 ```
+
+On Railway or in a shell where `DATABASE_URL` is already set, use `npm run db:migrate`. Other migration commands in this guide assume that environment is loaded. A fresh database needs only the owner `DATABASE_URL` for this step; create the restricted login below afterward and set `DATABASE_AUTHENTICATED_URL` before starting the app.
 
 Migration `0037_tenant_rls` creates the `tape_authenticated` and `tape_mcp`
 group roles without login credentials. Create separate Neon login roles, assign
@@ -269,12 +273,12 @@ Recall.ai, ElevenLabs, Google Calendar OAuth, and Inngest require a stable publi
 | Recall.ai realtime events | `RECALL_REALTIME_WEBHOOK_URL` |
 | Recall.ai Calendar V2 | `/api/recall/calendar/webhook` |
 | ElevenLabs transcription | `/api/elevenlabs/webhook` |
-
-Keep only the current Tape transcription webhook enabled in the ElevenLabs workspace. Legacy deployments sharing the database can claim the same callback before the current deployment and bypass newer completion behavior.
 | Web Google sign in | `/api/auth/callback/google` |
 | Google Calendar OAuth | `/api/calendar/oauth/callback` |
 | Landing pricing calculator calendar | `/api/pricing-calendar/callback` |
 | Inngest | `/api/inngest` |
+
+Keep only the current Tape transcription webhook enabled in the ElevenLabs workspace. Legacy deployments sharing the database can claim the same callback before the current deployment and bypass newer completion behavior.
 
 Both calendar routes use the same `GOOGLE_CALENDAR_CLIENT_ID`, so add **both** callback paths to the Authorized redirect URIs of that OAuth client. Without `/api/pricing-calendar/callback` registered, the landing page pricing calculator returns `?calendar=error` instead of an estimate.
 
@@ -369,15 +373,24 @@ R2_BUCKET
 R2_SECRET_ACCESS_KEY
 RECALL_API_BASE_URL
 RECALL_API_KEY
+INNGEST_BASE_URL=https://your-inngest-gateway.example
+NEXT_PUBLIC_SENTRY_DSN
 OTEL_EXPORTER_OTLP_ENDPOINT
 OTEL_SERVICE_NAME=tape-image-worker
 ```
 
-Build and check the worker locally:
+Use the same Inngest keys and gateway URL as the web service. Sentry and OTLP settings are optional; set them to enable worker monitoring.
+
+Build and start the worker locally with `.env.local` loaded:
 
 ```bash
 npm run build:image-worker
-PORT=3001 npm run start:image-worker
+PORT=3001 node --env-file=.env.local dist/image-worker/server.mjs
+```
+
+Leave that process running and check it from another terminal:
+
+```bash
 curl --fail http://127.0.0.1:3001/health
 ```
 
@@ -536,7 +549,7 @@ See [testing architecture](testing.md) for the individual suites, coverage thres
 ## Production checklist
 
 1. Use production credentials, a production `NEXT_PUBLIC_APP_URL`, and a durable production `RECALL_REALTIME_WEBHOOK_URL`.
-2. Confirm the production build passed its migration lineage check and applied pending migrations.
+2. Confirm the production build passed its migration lineage check and the pre-deploy migration command completed successfully.
 3. Register every callback route with its provider.
 4. Configure the R2 CORS origin.
 5. Run `npm run inngest:sync` after deployment.
