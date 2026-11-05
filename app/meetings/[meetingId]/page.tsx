@@ -8,6 +8,7 @@ import { AppShell } from "@/components/app-shell";
 import { MeetingAutoRefresh } from "@/components/meeting-auto-refresh";
 import { MeetingBotRecoveryPanel } from "@/components/meeting-bot-recovery-panel";
 import { MeetingActions } from "@/components/meeting-actions";
+import { canReplaceMeetingLink } from "@/lib/meeting-link-replacement-policy";
 import { MeetingEntityLinks } from "@/components/meeting-entity-links";
 import { MeetingHeaderMetadata } from "@/components/meeting-header-metadata";
 import { MeetingNotes } from "@/components/meeting-notes";
@@ -290,6 +291,8 @@ export default async function MeetingPage({
               meetingTitle={meeting.title}
               canDelete={meeting.canDelete}
               canReplaceAudio={!isComposed && canManage && meeting.status === "ready"}
+              canReplaceLink={!isComposed && canManage && canReplaceMeetingLink(meeting)}
+              meetingUrl={meeting.meetingUrl}
               hasAudio={
                 parts.some(part => Boolean(part.audioUrl) || part.recordingParts.length > 0)
               }

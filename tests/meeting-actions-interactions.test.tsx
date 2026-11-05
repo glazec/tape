@@ -28,6 +28,23 @@ describe("MeetingActions interactions", () => {
     vi.unstubAllGlobals();
   });
 
+  it("shows only the last menu opened when switching between More and Export", () => {
+    render(<MeetingActions meetingId="meeting" />);
+    const more = screen.getByLabelText("More meeting actions");
+    const details = more.closest("details");
+    const exportButton = screen.getByRole("button", { name: "Export" });
+
+    fireEvent.click(more);
+    expect(details?.open).toBe(true);
+    fireEvent.click(exportButton);
+    expect(details?.open).toBe(false);
+    expect(screen.getByRole("menu", { name: "Export options" })).toBeTruthy();
+
+    fireEvent.click(more);
+    expect(details?.open).toBe(true);
+    expect(screen.queryByRole("menu", { name: "Export options" })).toBeNull();
+  });
+
   it("downloads only selected formats and closes from outside interactions", () => {
     vi.useFakeTimers();
     const click = vi
