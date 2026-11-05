@@ -2545,6 +2545,55 @@ describe("calendar auto join", () => {
     );
   });
 
+  it("retires a manually linked bot when the calendar event is deleted", async () => {
+    vi.stubEnv("NEXT_PUBLIC_APP_URL", "https://app.example.com");
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-06-30T09:00:00.000Z"));
+    mockManualLinkMeeting({});
+
+    const { autoJoinCalendarEvent } = await import("@/lib/calendar-auto-join");
+
+    await autoJoinCalendarEvent({
+      connection: manualLinkConnection,
+      event: {
+        externalEventId: "google_event_123",
+        title: "Partner sync",
+        startsAt: "2026-06-30T12:00:00.000Z",
+        endsAt: null,
+        isDeleted: true,
+        location: null,
+      },
+    });
+
+    expect(retireScheduledRecallBot).toHaveBeenCalledWith("manual_bot");
+  });
+
+  it("leaves a manually linked meeting alone once recording has started", async () => {
+    vi.stubEnv("NEXT_PUBLIC_APP_URL", "https://app.example.com");
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-06-30T12:30:00.000Z"));
+    const updateSet = mockManualLinkMeeting({ status: "recording" });
+
+    const { autoJoinCalendarEvent } = await import("@/lib/calendar-auto-join");
+
+    await expect(
+      autoJoinCalendarEvent({
+        connection: manualLinkConnection,
+        event: {
+          externalEventId: "google_event_123",
+          title: "Partner sync renamed",
+          startsAt: "2026-06-30T12:00:00.000Z",
+          endsAt: "2026-06-30T13:30:00.000Z",
+          location: "Google Meet https://meet.google.com/old-link",
+        },
+      }),
+    ).resolves.toMatchObject({ action: "skipped" });
+
+    expect(updateSet).not.toHaveBeenCalledWith(
+      expect.objectContaining({ endedAt: expect.anything() }),
+    );
+  });
+
   it("refreshes an unchanged scheduled bot when its vendor config is stale", async () => {
     const calendarEventReturning = vi
       .fn()

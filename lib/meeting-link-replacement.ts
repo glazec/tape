@@ -1,4 +1,4 @@
-import { and, eq, inArray, or } from "drizzle-orm";
+import { and, eq, inArray, isNull, or } from "drizzle-orm";
 
 import { db } from "@/db/client";
 import { meetings } from "@/db/schema";
@@ -152,7 +152,16 @@ export async function replaceMeetingLink(input: {
         status: "scheduled",
         updatedAt: new Date(),
       })
-      .where(meetingCondition)
+      // Also require the bot we read: a concurrent replacement or calendar
+      // reschedule must not be overwritten, or its bot would never retire.
+      .where(
+        and(
+          meetingCondition,
+          meeting.recallBotId
+            ? eq(meetings.recallBotId, meeting.recallBotId)
+            : isNull(meetings.recallBotId),
+        ),
+      )
       .returning({ id: meetings.id });
   } catch (error) {
     await retireScheduledRecallBot(newBotId).catch(() => undefined);

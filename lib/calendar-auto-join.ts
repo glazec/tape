@@ -598,12 +598,13 @@ async function autoJoinCalendarEventInternal(input: AutoJoinInput) {
   }
 
   // Someone replaced this meeting's link by hand. Keep that link and its bot,
-  // but still follow the calendar's time and title. Cancelling the event
-  // still flows through below.
+  // but still follow the calendar's time and title. Cancelling, declining or
+  // ignoring the event still flows through below.
   if (
     existingMeeting?.meetingUrlSource === "manual" &&
     existingMeeting.meetingUrl &&
-    !input.event.isDeleted
+    !input.event.isDeleted &&
+    !autoJoinSuppressed
   ) {
     return syncManualLinkCalendarMeeting({
       calendarEventId: calendarEvent.id,
@@ -731,6 +732,7 @@ async function autoJoinCalendarEventInternal(input: AutoJoinInput) {
         await cancelScheduledMeetingBotFromCalendar({
           botId: existingMeeting.recallBotId,
           endsAt,
+          manualBot: existingMeeting.meetingUrlSource === "manual",
           meetingId: existingMeeting.id,
           meetingUrl: null,
           nextStatus: "cancelled",
@@ -783,6 +785,7 @@ async function autoJoinCalendarEventInternal(input: AutoJoinInput) {
       await cancelScheduledMeetingBotFromCalendar({
         botId: existingMeeting.recallBotId,
         endsAt,
+        manualBot: existingMeeting.meetingUrlSource === "manual",
         meetingId: existingMeeting.id,
         meetingUrl: null,
         recallCalendarEventId: input.event.recallCalendarEventId,
@@ -828,6 +831,7 @@ async function autoJoinCalendarEventInternal(input: AutoJoinInput) {
       await cancelScheduledMeetingBotFromCalendar({
         botId: existingMeeting.recallBotId,
         endsAt,
+        manualBot: existingMeeting.meetingUrlSource === "manual",
         meetingId: existingMeeting.id,
         meetingUrl,
         recallCalendarEventId: input.event.recallCalendarEventId,
@@ -1751,9 +1755,21 @@ async function syncManualLinkCalendarMeeting(input: {
 }) {
   const meeting = input.existingMeeting;
   const nextTitle = getCalendarMeetingTitle(meeting, input.title);
-  const isScheduled = meeting.status === "scheduled";
+
+  // Once the bot is recording or the meeting is processed, the real start and
+  // end times belong to the recording, not to later calendar edits.
+  if (meeting.status !== "scheduled") {
+    return {
+      action: "skipped" as const,
+      calendarEventId: input.calendarEventId,
+      meetingId: meeting.id,
+      meetingUrl: meeting.meetingUrl,
+      reason: "already_scheduled" as const,
+    };
+  }
+
   const startChanged =
-    isScheduled && meeting.startedAt?.getTime() !== input.startsAt.getTime();
+    meeting.startedAt?.getTime() !== input.startsAt.getTime();
   const endChanged =
     (meeting.endedAt?.getTime() ?? null) !== (input.endsAt?.getTime() ?? null);
 
@@ -1767,10 +1783,58 @@ async function syncManualLinkCalendarMeeting(input: {
     };
   }
 
+  const leadMs = input.startsAt.getTime() - Date.now();
+  const movedEarlier =
+    meeting.startedAt !== null &&
+    input.startsAt.getTime() < meeting.startedAt.getTime();
+  let recallBotId = meeting.recallBotId;
+
   if (
     startChanged &&
     meeting.recallBotId &&
-    input.startsAt.getTime() - Date.now() > MANUAL_LINK_RESCHEDULE_MIN_LEAD_MS
+    leadMs <= MANUAL_LINK_RESCHEDULE_MIN_LEAD_MS &&
+    movedEarlier
+  ) {
+    // Too close to move the scheduled join, and the old join time is now too
+    // late: send a bot that joins immediately and retire the old one.
+    const botProfile = await getBotProfileForMeeting(meeting.id);
+    const response = (await scheduleRecallBot({
+      meetingUrl: meeting.meetingUrl,
+      ...getMeetingBotRecallCreateInput(botProfile),
+      webhookUrl: buildAppUrl("/api/recall/webhook"),
+      metadata: {
+        ...getMeetingBotMetadata(botProfile),
+        calendarEventId: input.calendarEventId,
+        meetingId: meeting.id,
+      },
+    })) as { id?: unknown };
+
+    if (typeof response.id !== "string") {
+      throw new Error("Recall bot response missing id");
+    }
+
+    const replaced = await db
+      .update(meetings)
+      .set({ recallBotId: response.id, updatedAt: new Date() })
+      .where(
+        and(
+          eq(meetings.id, meeting.id),
+          eq(meetings.status, "scheduled"),
+          eq(meetings.recallBotId, meeting.recallBotId),
+        ),
+      )
+      .returning({ id: meetings.id });
+
+    if (replaced.length === 0) {
+      await retireScheduledRecallBot(response.id).catch(() => undefined);
+    } else {
+      recallBotId = response.id;
+      await retireScheduledRecallBot(meeting.recallBotId).catch(() => undefined);
+    }
+  } else if (
+    startChanged &&
+    meeting.recallBotId &&
+    leadMs > MANUAL_LINK_RESCHEDULE_MIN_LEAD_MS
   ) {
     const botProfile = await getBotProfileForMeeting(meeting.id);
     await updateScheduledRecallBot({
@@ -1803,7 +1867,7 @@ async function syncManualLinkCalendarMeeting(input: {
     meetingId: meeting.id,
     meetingUrl: meeting.meetingUrl,
     platform: meeting.platform,
-    recallBotId: meeting.recallBotId,
+    recallBotId,
   };
 }
 
@@ -2112,6 +2176,9 @@ function shouldPreserveIgnoredCalendarMeeting(meeting: ExistingMeeting) {
 async function cancelScheduledMeetingBotFromCalendar(input: {
   botId?: string | null;
   durableBotCleanup?: boolean;
+  // Bots scheduled by a manual link replacement are not owned by Recall
+  // Calendar V2, so deleting the calendar event never removes them.
+  manualBot?: boolean;
   meetingId: string;
   title: string;
   titleSource?: string | null;
@@ -2122,7 +2189,9 @@ async function cancelScheduledMeetingBotFromCalendar(input: {
   startsAt: Date;
   endsAt: Date | null;
 }) {
-  if (input.skipVendorDelete) {
+  if (input.manualBot && input.botId) {
+    await retireScheduledRecallBot(input.botId);
+  } else if (input.skipVendorDelete) {
     // Recall Calendar V2 automatically removes scheduled bots for deleted events.
   } else if (
     input.durableBotCleanup &&
