@@ -222,6 +222,7 @@ describe("Inngest functions", () => {
         id: "generate-meeting-followup",
         triggers: [{ event: "meeting/enrich.transcript" }],
       },
+      { id: "translate-shared-followup", triggers: [{ event: "meeting/translate.followup" }] },
       {
         id: "share-meeting-with-participants",
         triggers: [{ event: "meeting/enrich.transcript" }],

@@ -15,6 +15,7 @@ const mocks = vi.hoisted(() => ({
   requireUser: vi.fn(),
 }));
 
+vi.mock("@/lib/user-language", () => ({ getUserLanguage: (_id: string, fallback: string) => Promise.resolve(fallback ?? "en") }));
 vi.mock("next/navigation", () => ({
   notFound: mocks.notFound,
   useRouter: () => ({ refresh: vi.fn() }),
@@ -237,7 +238,7 @@ describe("meeting page", () => {
       }),
     );
 
-    expect(html).toContain("languages:zh-CN:en");
+    expect(html).toContain("languages:en:en");
   });
 
   it.each(["scheduled", "missed", "failed"])(

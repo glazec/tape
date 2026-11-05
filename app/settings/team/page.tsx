@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { getUserLanguage } from "@/lib/user-language";
 import { redirect } from "next/navigation";
 import {
   CalendarCheck,
@@ -63,7 +64,11 @@ export default async function TeamSettingsPage({ searchParams }: {
   const accessSummary = await getWorkspaceAccessSummary(workspace);
 
   if (!accessSummary.canCreateMeetings) {
-    redirect("/dashboard");
+    const defaultLanguage = await getUserLanguage(workspace.userId, (await getTeamConfiguration(workspace.teamId)).translationLanguage);
+    return <AppShell activeHref="/settings/team" canCreateMeetings={false}>
+      <SettingsSaveStatusProvider><h1 className="text-2xl font-semibold">Settings</h1>
+        <SettingsSaveStatus /><LanguagePreferences defaultLanguage={defaultLanguage} />
+      </SettingsSaveStatusProvider></AppShell>;
   }
 
   const botSettings = await getOrganizationBotSettings(workspace.teamId);
@@ -89,6 +94,7 @@ export default async function TeamSettingsPage({ searchParams }: {
     listOrganizationWorkspaces(workspace),
     listConnectedCalendarAccounts(workspace),
   ]);
+  const defaultLanguage = await getUserLanguage(workspace.userId, teamConfiguration.translationLanguage);
   const botAvatarJpegBase64 =
     botProfile.avatarJpegBase64 ?? getDefaultMeetingBotAvatarJpegBase64();
 
@@ -160,14 +166,14 @@ export default async function TeamSettingsPage({ searchParams }: {
           <h1 className="text-2xl font-semibold tracking-[-0.015em]">
             Settings
           </h1>
-          {canEditTeamSettings ? (
-            <SettingsSaveStatus />
-          ) : (
+          <SettingsSaveStatus />
+          {!canEditTeamSettings && (
             <p className="text-sm text-muted-foreground">
-              Only team administrators can edit these settings.
+              Only team administrators can edit workspace settings.
             </p>
           )}
         </div>
+        <LanguagePreferences defaultLanguage={defaultLanguage} />
         <SettingsSection id="connected-accounts" title="Connected accounts">
           <div className="flex flex-col gap-3">
             {calendarAccounts.length ? (
@@ -230,7 +236,7 @@ export default async function TeamSettingsPage({ searchParams }: {
                     required
                   />
                 </FieldRow>
-                <FieldRow htmlFor="translationLanguage" label="Translate transcripts to">
+                <FieldRow htmlFor="translationLanguage" label="Workspace language">
                   <AutosaveSelect
                     defaultValue={teamConfiguration.translationLanguage}
                     id="translationLanguage"
@@ -513,7 +519,18 @@ export default async function TeamSettingsPage({ searchParams }: {
   );
 }
 
+function LanguagePreferences({ defaultLanguage }: { defaultLanguage: "en" | "zh-CN" }) {
+  return <SettingsSection id="preferences" title="Preferences">
+          <AutosaveForm action="/api/user/language" className="flex flex-col">
+            <FieldRow htmlFor="defaultLanguage" label="Default language" description="Transcripts and AI followups across all your workspaces.">
+              <AutosaveSelect id="defaultLanguage" name="defaultLanguage" defaultValue={defaultLanguage} options={translationLanguageOptions} />
+            </FieldRow>
+          </AutosaveForm>
+        </SettingsSection>;
+}
+
 const settingsSections = [
+  { id: "preferences", label: "Preferences" },
   { id: "connected-accounts", label: "Connected accounts" },
   { id: "workspace", label: "Workspace" },
   { id: "meeting-bot", label: "Meeting bot" },

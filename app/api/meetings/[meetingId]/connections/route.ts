@@ -35,9 +35,10 @@ export async function PATCH(request: Request, context: { params: Promise<{ meeti
   if (!meeting.segments.some(segment => segment.id === changes.speakerSegmentId)) {
     return Response.json({ error: "Choose a speaker from this meeting." }, { status: 400 });
   }
+  if (Object.values(saved.data.translations ?? {}).some(copy => copy?.connections?.[index]?.context === changes.context)) changes.context = entry.connection.context;
   const edits = (saved.data.connectionEdits ?? []).filter(edit => JSON.stringify(edit.original) !== JSON.stringify(entry.original));
   if (edits.length >= 80) return Response.json({ error: "This meeting has reached the connection edit limit." }, { status: 422 });
-  const aiFollowup = { ...saved.data, connectionEdits: [...edits, { original: entry.original, changes }] };
+  const aiFollowup = { ...saved.data, translations: undefined, connectionEdits: [...edits, { original: entry.original, changes }] };
   try {
     const rows = await db.update(meetings).set({ aiFollowup }).where(and(
       getManageableMeetingCondition(workspace, meetingId),

@@ -10,6 +10,8 @@ const mocks = vi.hoisted(() => ({
   returning: vi.fn(),
 }));
 
+vi.mock("@/lib/recent-meeting-companies", () => ({ getRecentMeetingCompanies: () => Promise.resolve([]) }));
+vi.mock("@/lib/meeting-followup-lease", () => ({ acquireFollowupLease: vi.fn(() => Promise.resolve("lease")), releaseFollowupLease: vi.fn() }));
 vi.mock("@/db/client", () => ({
   db: {
     select: () => ({
@@ -110,4 +112,11 @@ describe("autoGenerateMeetingFollowup", () => {
       status: "not_found",
     });
   });
+});
+
+it("does not start a second provider call while another process owns the meeting lease", async () => {
+  const { acquireFollowupLease } = await import("@/lib/meeting-followup-lease");
+  vi.mocked(acquireFollowupLease).mockResolvedValueOnce(null);
+  expect(await autoGenerateMeetingFollowup(meetingId)).toEqual({ status: "in_progress" });
+  expect(mocks.generate).not.toHaveBeenCalled();
 });

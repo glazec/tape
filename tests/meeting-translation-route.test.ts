@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+vi.mock("@/lib/user-language", () => ({ getUserLanguage: (_id: string, fallback: string) => Promise.resolve(fallback ?? "en") }));
 vi.mock("@/lib/provider-credit", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/provider-credit")>()),
   assertWorkspaceHasProviderCredit: vi.fn(),
@@ -112,12 +113,7 @@ describe("POST /api/meetings/[meetingId]/translation", () => {
       queued: true,
       meetingId: "11111111-1111-4111-8111-111111111111",
     });
-    expect(set).toHaveBeenCalledWith({
-      translationCompletedAt: null,
-      translationErrorMessage: null,
-      translationStatus: "queued",
-      updatedAt: expect.any(Date),
-    });
+    expect(set).not.toHaveBeenCalled();
     expect(send).toHaveBeenCalledWith({
       name: "meeting/enrich.transcript",
       data: {

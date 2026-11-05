@@ -65,6 +65,7 @@ function getMatchingFollowupVersion(
 
 export const storedFollowupSchema = z.strictObject({
   sourceHash: z.string(),
+  translations: z.object({ en: meetingFollowupSchema.optional(), "zh-CN": meetingFollowupSchema.optional() }).optional(),
   connectionsSourceHash: z.string().optional(),
   connectionEdits: connectionEditsSchema.optional(),
   result: z.union([meetingFollowupSchema, meetingFollowupSchema.omit({ research: true })]),
@@ -179,7 +180,8 @@ export function getConnectionsRevision(meeting: FollowupMeeting & { aiFollowup?:
   // PostgreSQL JSONB reorders object keys. Schema parsing gives revisions the
   // same field order before saving, in the response and after database readback.
   const saved = storedFollowupSchema.safeParse(meeting.aiFollowup);
-  return createHash("sha256").update(JSON.stringify([getConnectionsSourceHash(meeting), saved.success ? saved.data : null])).digest("hex");
+  const revisionData = saved.success ? { ...saved.data, translations: undefined } : null;
+  return createHash("sha256").update(JSON.stringify([getConnectionsSourceHash(meeting), revisionData])).digest("hex");
 }
 
 

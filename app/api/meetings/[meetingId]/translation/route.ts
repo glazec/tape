@@ -6,8 +6,9 @@ import { meetings, transcriptSegments } from "@/db/schema";
 import { inngest } from "@/inngest/client";
 import { getCurrentUser } from "@/lib/auth";
 import { currentTranscriptJobIdsSubquery } from "@/lib/current-transcript-job";
-import { getManageableMeetingCondition } from "@/lib/meeting-write-policy";
-import { markMeetingTranslationQueued } from "@/lib/meeting-translation-jobs";
+import { getReadableMeetingsCondition } from "@/lib/meeting-access-policy";
+
+import { getUserLanguage } from "@/lib/user-language";
 import { getTeamConfiguration } from "@/lib/team-configuration";
 import {
   assertWorkspaceHasProviderCredit,
@@ -40,7 +41,7 @@ export async function POST(
   const meetingRows = await db
     .select({ id: meetings.id })
     .from(meetings)
-    .where(getManageableMeetingCondition(workspace, parsedMeetingId.data))
+    .where(and(eq(meetings.id, parsedMeetingId.data), getReadableMeetingsCondition(workspace)))
     .limit(1);
 
   if (!meetingRows[0]) {
@@ -80,8 +81,9 @@ export async function POST(
     throw error;
   }
 
-  const { translationLanguage } = await getTeamConfiguration(workspace.teamId);
-  await markMeetingTranslationQueued(parsedMeetingId.data, segmentRows[0].jobId);
+  const team = await getTeamConfiguration(workspace.teamId);
+  const translationLanguage = await getUserLanguage(workspace.userId, team.translationLanguage);
+
   await inngest.send({
     name: "meeting/enrich.transcript",
     data: {

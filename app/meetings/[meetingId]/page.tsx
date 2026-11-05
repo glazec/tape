@@ -11,6 +11,9 @@ import { MeetingActions } from "@/components/meeting-actions";
 import { MeetingEntityLinks } from "@/components/meeting-entity-links";
 import { MeetingHeaderMetadata } from "@/components/meeting-header-metadata";
 import { MeetingNotes } from "@/components/meeting-notes";
+import { applyPreferredTranscriptLanguage } from "@/lib/preferred-transcript-language";
+import { getUserLanguage } from "@/lib/user-language";
+import { storedFollowupSchema } from "@/lib/meeting-followup-source";
 import { MeetingFollowup } from "@/components/meeting-followup";
 import { MeetingRecoveryUploadPanel } from "@/components/meeting-recovery-upload-panel";
 import { MeetingRecordingResume } from "@/components/meeting-recording-resume";
@@ -93,6 +96,10 @@ export default async function MeetingPage({
         getTeamConfiguration(workspace.teamId),
       ])
     : [[], [], null];
+  const preferredLanguage = await getUserLanguage(workspace.userId, teamConfiguration?.translationLanguage);
+  const savedFollowup = storedFollowupSchema.safeParse(followupMeeting.aiFollowup);
+  const translatedFollowup = followupResult && savedFollowup.success ? savedFollowup.data.translations?.[preferredLanguage] : undefined;
+  for (const part of parts) applyPreferredTranscriptLanguage(part, preferredLanguage);
   const primaryDisplayStatus = getMeetingDisplayStatus({
     botState: meeting.botState,
     meetingStatus: meeting.status,
@@ -190,7 +197,9 @@ export default async function MeetingPage({
           autoGenerate
           waitForBackground={followupJobMayBeRunning}
           canGenerate={canManage}
-          initialResult={followupResult}
+          initialResult={translatedFollowup ?? followupResult}
+          needsTranslation={!!followupResult && preferredLanguage !== "en" && !translatedFollowup}
+          preferredLanguage={preferredLanguage}
           initialConnections={getCurrentMeetingConnections(followupMeeting)}
           initialConnectionsRevision={getConnectionsRevision(followupMeeting)}
           initialConnectionIds={getCurrentMeetingConnectionIds(followupMeeting)}
@@ -210,7 +219,7 @@ export default async function MeetingPage({
     <>
       {isComposed ? <>
         <p className="mb-5 text-sm text-muted-foreground">{parts.length} recordings. Each part keeps its original audio and sharing.</p>
-        <MeetingComposedTranscripts meetings={parts} primaryMeetingId={meetingId} preferredTranslationLanguage={teamConfiguration?.translationLanguage} />
+        <MeetingComposedTranscripts meetings={parts} primaryMeetingId={meetingId} preferredTranslationLanguage={preferredLanguage} />
       </> : <TranscriptViewer
         audioParts={
           recordingParts.length > 1 ? recordingParts : undefined
@@ -233,13 +242,11 @@ export default async function MeetingPage({
         afterSpeakers={
           <MeetingEntityLinks entities={meeting.entities} />
         }
-        preferredTranslationLanguage={
-          teamConfiguration?.translationLanguage ??
-          meeting.translationLanguage
-        }
+        preferredTranslationLanguage={preferredLanguage}
         segments={meeting.segments}
         speakerAliases={meeting.speakerAliases}
         speakerSuggestions={meeting.speakerSuggestions}
+        translationMeetingId={meetingId}
         translationLanguage={meeting.translationLanguage}
         translationSummary={meeting.translationSummary}
         visualAssets={continuousVisualAssets}

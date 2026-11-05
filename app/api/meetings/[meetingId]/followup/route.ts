@@ -1,9 +1,14 @@
 import { z } from "zod";
+import { getOrTranslateFollowupCopy } from "@/lib/meeting-followup-translation";
+import { inngest } from "@/inngest/client";
+import { getUserLanguage } from "@/lib/user-language";
+import { getTeamConfiguration } from "@/lib/team-configuration";
+import { getCurrentMeetingFollowup, getConnectionsRevision, getCurrentMeetingConnectionIds, getFollowupSourceHash, storedFollowupSchema } from "@/lib/meeting-followup-source";
 
 import { getCurrentUser } from "@/lib/auth";
 import { getComposedMeetingForFollowup } from "@/lib/meeting-composition";
 import { generateAndSaveMeetingFollowup } from "@/lib/meeting-followup-generation";
-import { providerCreditErrorResponse } from "@/lib/provider-credit";
+import { assertWorkspaceHasProviderCredit, providerCreditErrorResponse } from "@/lib/provider-credit";
 import { getOrCreateWorkspaceForSessionUser } from "@/lib/workspace";
 
 export const runtime = "nodejs";
@@ -24,7 +29,7 @@ export async function POST(
   }
   const workspace = await getOrCreateWorkspaceForSessionUser(user, { meetingId });
   const meeting = await getComposedMeetingForFollowup(workspace, meetingId);
-  if (!meeting?.canManage) {
+  if (!meeting) {
     return Response.json({ error: "Meeting not found" }, { status: 404 });
   }
   const parsed = requestSchema.safeParse(
@@ -36,7 +41,11 @@ export async function POST(
       { status: 400 },
     );
   try {
-    const outcome = await generateAndSaveMeetingFollowup({
+    const existing = getCurrentMeetingFollowup(meeting);
+    if (!existing && !meeting.canManage) return Response.json({ error: "Meeting not found" }, { status: 404 });
+    const team = await getTeamConfiguration(workspace.teamId);
+    const language = await getUserLanguage(workspace.userId, team.translationLanguage);
+    const outcome = existing ? { status: "saved" as const, result: existing, connectionsRevision: getConnectionsRevision(meeting), connectionIds: getCurrentMeetingConnectionIds(meeting) } : await generateAndSaveMeetingFollowup({
       expectedSourceHash: parsed.data.sourceHash,
       meeting,
       meetingId,
@@ -44,11 +53,30 @@ export async function POST(
     });
 
     switch (outcome.status) {
-      case "saved":
+      case "saved": {
+        if (!meeting.canManage && language !== "en") {
+          if (parsed.data.sourceHash !== getFollowupSourceHash(meeting)) return Response.json({ error: "The meeting changed." }, { status: 409 });
+          const saved = storedFollowupSchema.safeParse(meeting.aiFollowup);
+          const copy = saved.success && saved.data.translations?.[language];
+          if (copy) return Response.json({ ...outcome, result: copy, language }, { headers: { "Cache-Control": "private, no-store" } });
+          await assertWorkspaceHasProviderCredit(workspace);
+          await inngest.send({
+            id: `followup-copy:${meetingId}:${outcome.connectionsRevision}:${language}:${Math.floor(Date.now() / 60_000)}`,
+            name: "meeting/translate.followup",
+            data: { meetingId, workspace: { userId: workspace.userId, teamId: workspace.teamId, domain: workspace.domain }, language, sourceHash: parsed.data.sourceHash },
+          });
+          return Response.json({ pending: true }, { status: 202 });
+        }
+        const result = await getOrTranslateFollowupCopy(workspace, meetingId, language, parsed.data.sourceHash);
+        if (result === "in_progress") return Response.json({ pending: true }, { status: 202 });
+        if (!result) return Response.json({ error: "The meeting changed. Refresh and try again." }, { status: 409 });
         return Response.json(
-          { result: outcome.result, connectionsRevision: outcome.connectionsRevision, connectionIds: outcome.connectionIds },
+          { result, language, connectionsRevision: outcome.connectionsRevision, connectionIds: outcome.connectionIds },
           { headers: { "Cache-Control": "private, no-store" } },
         );
+      }
+      case "in_progress":
+        return Response.json({ pending: true }, { status: 202 });
       case "not_found":
         return Response.json({ error: "Meeting not found" }, { status: 404 });
       case "too_long":

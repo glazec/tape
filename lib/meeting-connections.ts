@@ -16,7 +16,7 @@ export const connectionRelationshipLabels = {
 } as const;
 
 export const meetingConnectionSchema = z.strictObject({
-  kind: z.enum(["person", "team", "project"]),
+  kind: z.enum(["person", "team", "project", "organization"]),
   name: z.string().trim().min(1).max(200).nullable(),
   company: z.string().trim().min(1).max(200).nullable(),
   title: z.string().trim().min(1).max(200).nullable(),
@@ -62,7 +62,12 @@ export function parseMeetingConnections(
   }).map(connection => {
     const evidenceText = connection.evidence.map(evidence => segments.get(evidence.segmentId)!.text).join("\n").toLowerCase();
     const supported = (value: string | null) => value && evidenceText.includes(value.toLowerCase()) ? value : null;
-    return { ...connection, ...(connection.mutual ? { mutual: false } : {}), name: supported(connection.name), company: supported(connection.company), title: supported(connection.title) };
+    // Company brands often differ only by spaces or punctuation in speech to text.
+    // Require the same letters in one cited segment; hints never supply evidence.
+    const brandKey = (text: string) => text.normalize("NFKC").toLowerCase().replace(/[\s.\-’']/gu, "");
+    const brand = (value: string | null) => supported(value) ?? (value && brandKey(value).length >= 3 &&
+      connection.evidence.some(({ segmentId }) => brandKey(segments.get(segmentId)!.text).includes(brandKey(value))) ? value : null);
+    return { ...connection, ...(connection.mutual ? { mutual: false } : {}), name: connection.kind === "organization" ? brand(connection.name) : supported(connection.name), company: brand(connection.company), title: supported(connection.title) };
   });
 }
 

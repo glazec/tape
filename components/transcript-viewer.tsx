@@ -80,6 +80,7 @@ import { NOTE_MOMENT_NAVIGATE, NOTE_PLAYBACK_POSITION, type NoteMomentNavigation
 import { cn } from "@/lib/utils";
 
 export type TranscriptSegment = {
+  translationCopies?: Partial<Record<TranslationLanguage, string>> | null;
   id: string;
   speaker: string | null;
   startMs: number;
@@ -161,6 +162,7 @@ type TranscriptViewerProps = {
   /** Keep the Transcript heading for screen readers only, when a tab already names the view. */
   hideHeading?: boolean;
   preferredTranslationLanguage?: TranslationLanguage;
+  translationMeetingId?: string;
   segments: TranscriptSegment[];
   speakerAliases?: SpeakerAlias[];
   speakerSuggestions?: SpeakerSuggestion[];
@@ -391,6 +393,7 @@ export function TranscriptViewer({
   speakerAliases = [],
   speakerSuggestions = [],
   translationLanguage = DEFAULT_TRANSLATION_LANGUAGE,
+  translationMeetingId,
   translationSummary,
   visualAssets = [],
 }: TranscriptViewerProps) {
@@ -492,11 +495,7 @@ export function TranscriptViewer({
   const [transcriptLanguage, setTranscriptLanguage] = useState<
     "original" | "translated"
   >(
-    hasOriginalPolish
-      ? "original"
-      : hasTranslations
-        ? "translated"
-        : "original",
+    hasTranslations && (preferredTranslationLanguage || !hasOriginalPolish) ? "translated" : "original",
   );
   const [textVersion, setTextVersion] = useState<"polished" | "raw">(
     hasOriginalPolish || hasTranslations ? "polished" : "raw",
@@ -999,8 +998,23 @@ export function TranscriptViewer({
     router.refresh();
   }
 
+  useEffect(() => {
+    if ((translationMeetingId ?? meetingId) && displayTranslationSummary && !translationRequestError && !translationRequestQueued &&
+      (translationTargetChanged || ["not_started", "partial"].includes(displayTranslationSummary.status))) {
+      void requestTranslation();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [translationMeetingId, meetingId, effectivePreferredTranslationLanguage, translationTargetChanged]);
+
+  useEffect(() => {
+    if (!translationRequestQueued || translationSummary?.status === "completed" || translationSummary?.status === "failed") return;
+    // The event may still be waiting for a worker when the first refresh arrives.
+    const timer = setInterval(() => router.refresh(), 5000);
+    return () => clearInterval(timer);
+  }, [router, translationRequestQueued, translationSummary?.status]);
+
   async function requestTranslation() {
-    if (!meetingId || isRequestingTranslation) {
+    if (!(translationMeetingId ?? meetingId) || isRequestingTranslation) {
       return;
     }
 
@@ -1009,7 +1023,7 @@ export function TranscriptViewer({
 
     try {
       const response = await fetch(
-        `/api/meetings/${encodeURIComponent(meetingId)}/translation`,
+        `/api/meetings/${encodeURIComponent(translationMeetingId ?? meetingId!)}/translation`,
         { method: "POST" },
       );
 
@@ -1336,7 +1350,7 @@ export function TranscriptViewer({
                     </p>
                     <p className="mt-1 text-sm leading-6 text-muted-foreground">
                       {translationTargetChanged ? (
-                        `This meeting is translated into ${storedTranslationLanguageLabel}. The team default is now ${preferredTranslationLanguageLabel}.`
+                        `This meeting is translated into ${storedTranslationLanguageLabel}. Your default is now ${preferredTranslationLanguageLabel}.`
                       ) : (
                         <>
                           {getTranslationProgressLabel(
@@ -1356,7 +1370,7 @@ export function TranscriptViewer({
                       </p>
                     ) : null}
                   </div>
-                  {meetingId &&
+                  {(translationMeetingId ?? meetingId) &&
                   shouldShowTranslationAction(
                     displayTranslationSummary,
                     translationTargetChanged,
