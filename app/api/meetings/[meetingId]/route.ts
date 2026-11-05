@@ -1,8 +1,11 @@
+import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 
 import { db } from "@/db/client";
 import { meetings } from "@/db/schema";
 import { getCurrentUser } from "@/lib/auth";
+import { getComposedMeetingForFollowup } from "@/lib/meeting-composition";
+import { upgradeFollowupHashesForRename } from "@/lib/meeting-followup-source";
 import { deleteMeetingMediaObjects } from "@/lib/meeting-media-cleanup";
 import { reconcileMeetingSharingForMeeting } from "@/lib/meeting-share-rules";
 import { revokeMeetingSharesSeededByMeeting } from "@/lib/meeting-share-service";
@@ -54,6 +57,11 @@ export async function PATCH(
     return Response.json({ error: "Meeting not found" }, { status: 404 });
   }
 
+  // Followups saved before hashes dropped the title are bound to the old one;
+  // carry them over so renaming never forces a regeneration.
+  const followupMeeting = await getComposedMeetingForFollowup(workspace, parsedMeetingId.data);
+  const upgradedFollowup = followupMeeting ? upgradeFollowupHashesForRename(followupMeeting) : null;
+
   await db
     .update(meetings)
     .set({
@@ -62,6 +70,18 @@ export async function PATCH(
       updatedAt: new Date(),
     })
     .where(getManageableMeetingCondition(workspace, parsedMeetingId.data));
+
+  if (followupMeeting && upgradedFollowup) {
+    await db
+      .update(meetings)
+      .set({ aiFollowup: upgradedFollowup })
+      .where(
+        and(
+          getManageableMeetingCondition(workspace, parsedMeetingId.data),
+          eq(meetings.aiFollowup, followupMeeting.aiFollowup),
+        ),
+      );
+  }
 
   await reconcileMeetingSharingForMeeting(parsedMeetingId.data);
 
