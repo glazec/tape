@@ -19,7 +19,7 @@ Completed meetings support Replace audio in the meeting actions menu. Uploading 
 The dashboard combines weekly activity, calendar capture status, and a searchable meeting library. First time users see a setup guide for Google Calendar, the macOS recorder, and MCP access, which they can hide or reopen later. Users can filter by meeting state, choose the search scope and sort order, save a default view, browse older history, and open related meetings.
 
 <p align="center">
-  <img src="assets/product/meeting-hub.png" alt="Tape dashboard with calendar capture and the searchable meeting library" width="900">
+  <img src="assets/product/dashboard.png" alt="Tape dashboard with weekly activity, calendar sync, and upcoming meetings" width="900">
 </p>
 
 ### Review the complete record
@@ -32,12 +32,16 @@ Settings → Preferences → Default language selects English or Simplified Chin
 
 Completed meetings include AI followup above the transcript, generated automatically after transcription. To do list contains explicit next actions. Dynamic contains concrete offers and needs. Both sections use explicit names and transcript evidence. Potential research suggests up to five unresolved questions. Click a research paragraph to copy a standalone AI research prompt with meeting context, attributed excerpts and evidence requests; a toast confirms successful copying. A meeting has one shared followup per transcript version. Readers see that result in their default language, with the same items and source quotes. Legacy summaries without research remain visible; source changes still invalidate them. Potential connections groups people, teams and project relationships by speaker, including unnamed contacts, known colleagues, financing teams and projects discussed, reviewed or invested in. Missing names, companies and titles remain unknown; every relationship links to transcript evidence. Saved speaker corrections update connection groups; failed saves preserve the previous attribution. Connections survive name changes but are hidden after transcript content or membership changes. New connection suggestions use up to 100 recent company hints from the meeting owner’s calendar and captured meetings to distinguish organizations from people, teams and projects. A hint alone cannot establish a relationship.
 
+<p align="center">
+  <img src="assets/product/followup-research-connections.png" alt="AI followup potential research prompt and potential connections with transcript sources" width="700">
+</p>
+
 Connection groups from identified members of the current organization appear last, using participant emails and configured organization domains. Mutual connection is confirmed by a user; generated and legacy AI markers are not treated as confirmation. Managers can edit contact details, description, relationship, mutual status and the attributed speaker. Corrections retain the original source and survive regeneration for unchanged transcript content; readers cannot edit.
 
 Each meeting brings together its status, synchronized audio, transcript, speaker corrections, transcript translations in the reader’s preferred language, detected entities, captured screen share images, related meetings, and access controls. Missing or failed content leads to the relevant recovery source instead of an empty transcript.
 
 <p align="center">
-  <img src="assets/product/meeting-workspace.png" alt="Tape meeting workspace with transcript, sharing, translation, and related meetings" width="900">
+  <img src="assets/product/meeting-notes-followup.webp" alt="Tape meeting page with My notes and AI followup to do list, dynamic, and potential research" width="900">
 </p>
 
 ### Inspect transcript context
@@ -45,7 +49,7 @@ Each meeting brings together its status, synchronized audio, transcript, speaker
 The transcript supports raw and polished text, synchronized playback, speaker previews, speaker correction, words per minute context, emotion signals, image timestamps, and per segment translation repair.
 
 <p align="center">
-  <img src="assets/product/transcript-review.png" alt="Tape transcript review with playback, speaker controls, translation, and captured images" width="900">
+  <img src="assets/product/transcript-mentions.png" alt="Tape transcript with translation, captured images, speaker shares, mentioned entities, and synchronized playback" width="900">
 </p>
 
 ### Record locally on macOS
@@ -59,7 +63,7 @@ The meeting selector shows dates, transcript state, and recording conflicts. An 
 When a linked meeting starts without its bot recording, an actionable notification offers local capture. The recorder asks whether to finish when the captured meeting window closes, after one minute of silence beyond a scheduled end, or after five minutes of silence for an ad hoc meeting. Silence never stops capture automatically. Uploads continue after Stop, with pending work visible in the recorder.
 
 <p align="center">
-  <img src="assets/product/macos-recorder.png" alt="Tape macOS recorder with meeting monitoring, permissions, recording, and upload state" width="405">
+  <img src="assets/product/recorder-menu.png" alt="Tape macOS menu bar recorder showing the next meeting and Record now" width="405">
 </p>
 
 ## Core Workflows
@@ -113,6 +117,10 @@ Recall recording recovery checks started bot meetings every five minutes, indepe
 ### Intel search
 
 `/intel` turns meeting intelligence into people matches. The left sidebar contains private search history; Intel and People sit beneath the search bar. Choose intel or paste text or a public HTTPS link to find interested people. Choose a person to find relevant intel and connections. Unconfirmed names remain separate by meeting, with an explicit identity selection step. Review the estimated AI cost in USD before running a search. Results and intel cards expose original transcript evidence. Searches continue after the tab closes. Reopen Intel to see progress or results, or open an earlier search from history. Extraction runs in the background without adding another meeting page section. See the [setup guide](docs/setup.md#intel-search-setup) for migration and provider requirements.
+
+<p align="center">
+  <img src="assets/product/intel-search.webp" alt="Tape Intel search with history, a pasted claim, and matching intel cards with sources" width="900">
+</p>
 
 ## Architecture
 
