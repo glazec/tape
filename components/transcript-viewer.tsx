@@ -1243,7 +1243,7 @@ export function TranscriptViewer({
 
   return (
     <>
-      <section className={activeAudioUrl ? "pb-48" : undefined}>
+      <section>
         <header className={hideHeading && !(hasOriginalPolish || hasTranslations || translationNotNeeded) ? undefined : "mb-5"}>
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <h2 className={hideHeading ? "sr-only" : "text-lg font-semibold tracking-[-0.01em]"}>Transcript</h2>
