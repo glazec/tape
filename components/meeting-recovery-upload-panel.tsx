@@ -36,10 +36,10 @@ import {
   getUploadMediaFromFile,
   isUploadMediaSizeAllowed,
   MAX_AUDIO_BATCH_FILES,
+  transcriptUploadAccept,
+  transcriptUploadFormatsLabel,
 } from "@/lib/upload-media";
 import { cn } from "@/lib/utils";
-
-const transcriptAccept = ".txt,.srt,.vtt,text/plain,text/vtt";
 
 type RecoveryState =
   | "idle"
@@ -520,7 +520,7 @@ export function MeetingRecoveryUploadPanel({
                   : "Drag and drop a transcript file here, or choose a file below."}
               </p>
               <Input
-                accept={transcriptAccept}
+                accept={transcriptUploadAccept}
                 className="bg-background"
                 disabled={isBusy}
                 id={transcriptInputId}
@@ -532,7 +532,9 @@ export function MeetingRecoveryUploadPanel({
               {transcriptFile ? (
                 <p className="break-all text-sm">{transcriptFile.name}</p>
               ) : null}
-              <p className="text-xs text-muted-foreground">TXT, SRT, or VTT</p>
+              <p className="text-xs text-muted-foreground">
+                {transcriptUploadFormatsLabel}
+              </p>
             </div>
             <Button type="submit" disabled={isBusy} size="sm" variant="ink">
               <FileText data-icon="inline-start" />

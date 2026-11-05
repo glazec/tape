@@ -44,6 +44,7 @@ import {
   getMeetingBotRecallCreateInput,
   getMeetingBotRecallUpdateInput,
 } from "@/lib/meeting-bot-profile";
+import { getBotProfileForMeeting } from "@/lib/meeting-bot-record-profile";
 import {
   retireRecallCalendarEventBot,
   retireScheduledRecallBot,
@@ -151,6 +152,7 @@ type ExistingMeeting = {
   recallBotId: string | null;
   recallRecordingId: string | null;
   meetingUrl: string | null;
+  meetingUrlSource?: string | null;
   startedAt: Date | null;
   endedAt: Date | null;
   status: MeetingStatus;
@@ -593,6 +595,23 @@ async function autoJoinCalendarEventInternal(input: AutoJoinInput) {
       workspaceDomain: input.connection.workspaceDomain,
     });
     shareRulesApplied = true;
+  }
+
+  // Someone replaced this meeting's link by hand. Keep that link and its bot,
+  // but still follow the calendar's time and title. Cancelling the event
+  // still flows through below.
+  if (
+    existingMeeting?.meetingUrlSource === "manual" &&
+    existingMeeting.meetingUrl &&
+    !input.event.isDeleted
+  ) {
+    return syncManualLinkCalendarMeeting({
+      calendarEventId: calendarEvent.id,
+      endsAt,
+      existingMeeting: { ...existingMeeting, meetingUrl: existingMeeting.meetingUrl },
+      startsAt,
+      title,
+    });
   }
 
   if (existingMeeting && ownedByActiveSiblingCalendarEvent) {
@@ -1319,6 +1338,7 @@ async function findMatchingManualLocalRecorderMeeting(input: {
       recallBotId: meetings.recallBotId,
       recallRecordingId: meetings.recallRecordingId,
       meetingUrl: meetings.meetingUrl,
+      meetingUrlSource: meetings.meetingUrlSource,
       startedAt: meetings.startedAt,
       endedAt: meetings.endedAt,
       status: meetings.status,
@@ -1718,6 +1738,75 @@ async function syncExistingCalendarMeeting(input: {
   };
 }
 
+// Recall needs lead time to move a join; closer than this the bot is already
+// on its way and keeps its original time.
+const MANUAL_LINK_RESCHEDULE_MIN_LEAD_MS = 10 * 60 * 1_000;
+
+async function syncManualLinkCalendarMeeting(input: {
+  calendarEventId: string;
+  endsAt: Date | null;
+  existingMeeting: ExistingMeeting & { meetingUrl: string };
+  startsAt: Date;
+  title: string;
+}) {
+  const meeting = input.existingMeeting;
+  const nextTitle = getCalendarMeetingTitle(meeting, input.title);
+  const isScheduled = meeting.status === "scheduled";
+  const startChanged =
+    isScheduled && meeting.startedAt?.getTime() !== input.startsAt.getTime();
+  const endChanged =
+    (meeting.endedAt?.getTime() ?? null) !== (input.endsAt?.getTime() ?? null);
+
+  if (!startChanged && !endChanged && nextTitle === meeting.title) {
+    return {
+      action: "skipped" as const,
+      calendarEventId: input.calendarEventId,
+      meetingId: meeting.id,
+      meetingUrl: meeting.meetingUrl,
+      reason: "already_scheduled" as const,
+    };
+  }
+
+  if (
+    startChanged &&
+    meeting.recallBotId &&
+    input.startsAt.getTime() - Date.now() > MANUAL_LINK_RESCHEDULE_MIN_LEAD_MS
+  ) {
+    const botProfile = await getBotProfileForMeeting(meeting.id);
+    await updateScheduledRecallBot({
+      botId: meeting.recallBotId,
+      meetingUrl: meeting.meetingUrl,
+      ...getMeetingBotRecallUpdateInput(botProfile),
+      startAt: input.startsAt.toISOString(),
+      metadata: {
+        ...getMeetingBotMetadata(botProfile),
+        calendarEventId: input.calendarEventId,
+        meetingId: meeting.id,
+      },
+    });
+  }
+
+  await db
+    .update(meetings)
+    .set({
+      endedAt: input.endsAt,
+      ...(startChanged ? { startedAt: input.startsAt } : {}),
+      title: nextTitle,
+      titleSource: getCalendarMeetingTitleSource(meeting),
+      updatedAt: new Date(),
+    })
+    .where(eq(meetings.id, meeting.id));
+
+  return {
+    action: "updated" as const,
+    calendarEventId: input.calendarEventId,
+    meetingId: meeting.id,
+    meetingUrl: meeting.meetingUrl,
+    platform: meeting.platform,
+    recallBotId: meeting.recallBotId,
+  };
+}
+
 async function updateMeetingFromCalendar(input: {
   calendarEventId: string;
   meetingId: string;
@@ -1807,6 +1896,7 @@ async function findExistingMeeting(input: {
       recallBotId: meetings.recallBotId,
       recallRecordingId: meetings.recallRecordingId,
       meetingUrl: meetings.meetingUrl,
+      meetingUrlSource: meetings.meetingUrlSource,
       startedAt: meetings.startedAt,
       endedAt: meetings.endedAt,
       status: meetings.status,

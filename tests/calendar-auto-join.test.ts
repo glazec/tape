@@ -2411,6 +2411,140 @@ describe("calendar auto join", () => {
     );
   });
 
+  function mockManualLinkMeeting(row: Record<string, unknown>) {
+    const calendarEventReturning = vi
+      .fn()
+      .mockResolvedValue([{ id: "33333333-3333-4333-8333-333333333333" }]);
+    const calendarEventOnConflictDoUpdate = vi
+      .fn()
+      .mockReturnValue({ returning: calendarEventReturning });
+    const calendarEventValues = vi
+      .fn()
+      .mockReturnValue({ onConflictDoUpdate: calendarEventOnConflictDoUpdate });
+    const existingLimit = vi.fn().mockResolvedValue([
+      {
+        id: "44444444-4444-4444-8444-444444444444",
+        recallBotId: "manual_bot",
+        meetingUrl: "https://zoom.us/j/123456789",
+        meetingUrlSource: "manual",
+        platform: "zoom",
+        title: "Partner sync",
+        titleSource: "calendar",
+        startedAt: new Date("2026-06-30T12:00:00.000Z"),
+        endedAt: null,
+        status: "scheduled",
+        ...row,
+      },
+    ]);
+    const updateWhere = vi.fn().mockResolvedValue(undefined);
+    const updateSet = vi.fn().mockReturnValue({ where: updateWhere });
+
+    insert.mockReturnValueOnce({ values: calendarEventValues });
+    select.mockReturnValue({
+      from: () => ({
+        where: () => ({
+          limit: existingLimit,
+        }),
+      }),
+    });
+    update.mockReturnValue({ set: updateSet });
+    vi.doMock("@/lib/meeting-bot-record-profile", () => ({
+      getBotProfileForMeeting: vi.fn().mockResolvedValue({
+        avatarJpegBase64: null,
+        botName: "IOSG Old Friend",
+      }),
+    }));
+
+    return updateSet;
+  }
+
+  const manualLinkConnection = {
+    id: "11111111-1111-4111-8111-111111111111",
+    teamId: "22222222-2222-4222-8222-222222222222",
+    userId: "55555555-5555-4555-8555-555555555555",
+    autoJoinEnabled: true,
+  };
+
+  it("keeps a manually replaced meeting link when the calendar link changes", async () => {
+    vi.stubEnv("NEXT_PUBLIC_APP_URL", "https://app.example.com");
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-06-30T09:00:00.000Z"));
+    const updateSet = mockManualLinkMeeting({});
+
+    const { autoJoinCalendarEvent } = await import("@/lib/calendar-auto-join");
+
+    await expect(
+      autoJoinCalendarEvent({
+        connection: manualLinkConnection,
+        event: {
+          externalEventId: "google_event_123",
+          title: "Partner sync",
+          startsAt: "2026-06-30T12:00:00.000Z",
+          endsAt: null,
+          location: "Google Meet https://meet.google.com/old-link",
+        },
+      }),
+    ).resolves.toMatchObject({
+      meetingId: "44444444-4444-4444-8444-444444444444",
+      meetingUrl: "https://zoom.us/j/123456789",
+    });
+
+    expect(updateScheduledRecallBot).not.toHaveBeenCalled();
+    expect(scheduleRecallBot).not.toHaveBeenCalled();
+    expect(scheduleRecallCalendarEventBot).not.toHaveBeenCalled();
+    expect(updateSet).not.toHaveBeenCalledWith(
+      expect.objectContaining({ meetingUrl: expect.anything() }),
+    );
+  });
+
+  it("moves a manually linked bot to the new calendar time without changing its link", async () => {
+    vi.stubEnv("NEXT_PUBLIC_APP_URL", "https://app.example.com");
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-06-30T09:00:00.000Z"));
+    const updateSet = mockManualLinkMeeting({});
+    updateScheduledRecallBot.mockResolvedValue({ id: "manual_bot" });
+
+    const { autoJoinCalendarEvent } = await import("@/lib/calendar-auto-join");
+
+    await expect(
+      autoJoinCalendarEvent({
+        connection: manualLinkConnection,
+        event: {
+          externalEventId: "google_event_123",
+          title: "Partner sync moved",
+          startsAt: "2026-06-30T14:00:00.000Z",
+          endsAt: "2026-06-30T15:00:00.000Z",
+          location: "Google Meet https://meet.google.com/old-link",
+        },
+      }),
+    ).resolves.toMatchObject({
+      action: "updated",
+      meetingUrl: "https://zoom.us/j/123456789",
+      platform: "zoom",
+      recallBotId: "manual_bot",
+    });
+
+    expect(updateScheduledRecallBot).toHaveBeenCalledWith(
+      expect.objectContaining({
+        botId: "manual_bot",
+        meetingUrl: "https://zoom.us/j/123456789",
+        startAt: "2026-06-30T14:00:00.000Z",
+      }),
+    );
+    expect(scheduleRecallBot).not.toHaveBeenCalled();
+    expect(scheduleRecallCalendarEventBot).not.toHaveBeenCalled();
+    expect(updateSet).toHaveBeenCalledWith(
+      expect.objectContaining({
+        endedAt: new Date("2026-06-30T15:00:00.000Z"),
+        startedAt: new Date("2026-06-30T14:00:00.000Z"),
+        title: "Partner sync moved",
+      }),
+    );
+    expect(updateSet).not.toHaveBeenCalledWith(
+      expect.objectContaining({ meetingUrl: expect.anything() }),
+    );
+  });
+
   it("refreshes an unchanged scheduled bot when its vendor config is stale", async () => {
     const calendarEventReturning = vi
       .fn()

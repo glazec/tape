@@ -9,10 +9,12 @@ import {
   Download,
   MoreHorizontal,
   Combine,
+  Link2,
   UploadCloud,
   Trash2,
 } from "lucide-react";
 
+import { MeetingLinkReplaceDialog } from "@/components/meeting-link-replace-dialog";
 import { MeetingMergeDialog } from "@/components/meeting-merge-dialog";
 import { MeetingRecoveryUploadPanel } from "@/components/meeting-recovery-upload-panel";
 import {
@@ -28,7 +30,9 @@ type MeetingActionsProps = {
   audioExportUrls?: string[];
   canDelete?: boolean;
   canReplaceAudio?: boolean;
+  canReplaceLink?: boolean;
   canMerge?: boolean;
+  meetingUrl?: string | null;
   meetingTitle?: string;
   hasAudio?: boolean;
   hasTranscript?: boolean;
@@ -43,7 +47,9 @@ export function MeetingActions({
   audioExportUrls,
   canDelete = true,
   canReplaceAudio = false,
+  canReplaceLink = false,
   canMerge = false,
+  meetingUrl = null,
   meetingTitle = "This meeting",
   hasAudio = true,
   hasTranscript = true,
@@ -56,6 +62,7 @@ export function MeetingActions({
   const actionsTriggerRef = useRef<HTMLElement>(null);
   const [isMergeOpen, setIsMergeOpen] = useState(false);
   const [isReplaceOpen, setIsReplaceOpen] = useState(false);
+  const [isLinkOpen, setIsLinkOpen] = useState(false);
   const [isReplacing, setIsReplacing] = useState(false);
   const exportMenuRef = useRef<HTMLDivElement>(null);
   const [isExportMenuOpen, setIsExportMenuOpen] = useState(false);
@@ -204,7 +211,10 @@ export function MeetingActions({
             aria-expanded={isExportMenuOpen}
             aria-haspopup="menu"
             className="text-muted-foreground"
-            onClick={() => setIsExportMenuOpen((current) => !current)}
+            onClick={() => {
+              if (actionsMenuRef.current) actionsMenuRef.current.open = false;
+              setIsExportMenuOpen((current) => !current);
+            }}
             type="button"
             variant="ghost"
           >
@@ -280,11 +290,12 @@ export function MeetingActions({
           {copyStatus === "copied" ? "Copied" : "Copy"}
         </Button>
       ) : null}
-      {canDelete || canReplaceAudio || canMerge ? (
+      {canDelete || canReplaceAudio || canReplaceLink || canMerge ? (
         <details className="group relative" ref={actionsMenuRef}>
           <summary
             ref={actionsTriggerRef}
             aria-label="More meeting actions"
+            onClick={() => setIsExportMenuOpen(false)}
             className={`${buttonVariants({ size: "icon", variant: "ghost" })} min-h-11 min-w-11 list-none text-muted-foreground`}
           >
             <MoreHorizontal />
@@ -297,6 +308,21 @@ export function MeetingActions({
                 setIsMergeOpen(true);
               }} type="button" variant="ghost">
                 <Combine data-icon="inline-start" />Merge meetings
+              </Button>
+            ) : null}
+            {canReplaceLink ? (
+              <Button
+                className="min-h-11 w-full justify-start"
+                onClick={() => {
+                  if (actionsMenuRef.current)
+                    actionsMenuRef.current.open = false;
+                  setIsLinkOpen(true);
+                }}
+                type="button"
+                variant="ghost"
+              >
+                <Link2 data-icon="inline-start" />
+                Change meeting link
               </Button>
             ) : null}
             {canReplaceAudio ? (
@@ -330,6 +356,15 @@ export function MeetingActions({
         </details>
       ) : null}
       {canMerge ? <MeetingMergeDialog meetingId={meetingId} title={meetingTitle} open={isMergeOpen} onOpenChange={setIsMergeOpen} finalFocus={actionsTriggerRef} /> : null}
+      {canReplaceLink ? (
+        <MeetingLinkReplaceDialog
+          currentMeetingUrl={meetingUrl}
+          finalFocus={actionsTriggerRef}
+          meetingId={meetingId}
+          onOpenChange={setIsLinkOpen}
+          open={isLinkOpen}
+        />
+      ) : null}
       {isReplaceOpen ? (
         <Dialog
           open

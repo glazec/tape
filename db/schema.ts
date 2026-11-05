@@ -386,6 +386,9 @@ export const meetings = pgTable(
     platform: meetingPlatform("platform").notNull(),
     status: meetingStatus("status").notNull().default("scheduled"),
     meetingUrl: text("meeting_url"),
+    // "manual" once someone replaces the link by hand. Calendar sync then
+    // leaves the link and its bot alone instead of restoring the event URL.
+    meetingUrlSource: text("meeting_url_source").$type<"manual">(),
     startedAt: timestamp("started_at", { withTimezone: true }),
     endedAt: timestamp("ended_at", { withTimezone: true }),
     recallBotId: text("recall_bot_id"),
