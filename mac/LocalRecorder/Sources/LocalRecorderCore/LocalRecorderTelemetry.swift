@@ -11,6 +11,7 @@ public enum LocalRecorderFailureOperation: String, Sendable, CaseIterable {
     case sdkStart = "recording.sdk.start"
     case sdkTermination = "recording.sdk.termination"
     case fallbackStart = "recording.fallback.start"
+    case audioProcessingStart = "audio.processing.start"
     case audioMeterStart = "audio.meter.start"
     case audioTestStart = "audio.test.start"
     case audioWrite = "audio.write"
