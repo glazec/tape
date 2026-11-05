@@ -1,3 +1,10 @@
+import { AppShell } from "@/components/app-shell";
+
+// Render the real shell so the header stays put while the page streams in.
 export default function IntelLoading() {
-  return <main className="mx-auto max-w-5xl px-6 py-20" role="status"><p className="text-sm text-muted-foreground">Loading Intel…</p></main>;
+  return (
+    <AppShell activeHref="/intel">
+      <p role="status" className="text-sm text-muted-foreground">Loading Intel…</p>
+    </AppShell>
+  );
 }
