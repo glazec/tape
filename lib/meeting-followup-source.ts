@@ -26,16 +26,41 @@ export function getFollowupSource(meeting: FollowupMeeting): FollowupSource {
   };
 }
 
+// Renaming a meeting must not discard its followup, so hashes bind the
+// transcript and date but not the title. Hashes saved before that change
+// included the title; they stay valid until the title changes, and renames
+// upgrade them (see upgradeFollowupHashesForRename).
 export function getFollowupSourceHash(meeting: FollowupMeeting) {
   return hashSource(meeting, FOLLOWUP_PROMPT_VERSION);
 }
 
 function hashSource(meeting: FollowupMeeting, version: number) {
+  const { startedAt, segments } = getFollowupSource(meeting);
+  return createHash("sha256")
+    .update(JSON.stringify(["untitled", version, { startedAt, segments }]))
+    .digest("hex");
+}
+
+function hashTitledSource(meeting: FollowupMeeting, version: number) {
   return createHash("sha256")
     .update(
       JSON.stringify([version, getFollowupSource(meeting)]),
     )
     .digest("hex");
+}
+
+function getMatchingFollowupVersion(
+  meeting: FollowupMeeting,
+  saved: z.infer<typeof storedFollowupSchema>,
+) {
+  // Keep existing summaries visible until a manager chooses to regenerate.
+  const legacy = !("research" in saved.result);
+  const versions = legacy ? [1] : saved.result.connections === undefined ? [2, 3, 4, FOLLOWUP_PROMPT_VERSION] : [4, FOLLOWUP_PROMPT_VERSION];
+  for (const version of versions) {
+    if (saved.sourceHash === hashSource(meeting, version)) return { version, titled: false };
+    if (saved.sourceHash === hashTitledSource(meeting, version)) return { version, titled: true };
+  }
+  return null;
 }
 
 export const storedFollowupSchema = z.strictObject({
@@ -55,12 +80,7 @@ export function getCurrentMeetingFollowup(
   if (!isFollowupReady(meeting)) return null;
   const saved = storedFollowupSchema.safeParse(meeting.aiFollowup);
   if (!saved.success) return null;
-  // Keep existing summaries visible until a manager chooses to regenerate.
-  const legacy = !("research" in saved.data.result);
-  const versions = legacy ? [1] : saved.data.result.connections === undefined ? [2, 3, 4, FOLLOWUP_PROMPT_VERSION] : [4, FOLLOWUP_PROMPT_VERSION];
-  if (!versions.some(version => saved.data.sourceHash === hashSource(meeting, version))) {
-    return null;
-  }
+  if (!getMatchingFollowupVersion(meeting, saved.data)) return null;
   try {
     const result = parseMeetingFollowup(
       JSON.stringify({ research: [], ...saved.data.result }),
@@ -74,9 +94,17 @@ export function getCurrentMeetingFollowup(
 }
 
 // Connections store their speaker's segment ID, so labels can change without
-// rerunning the model. All content, membership, timestamps and title still bind
-// the saved connections to the transcript and its access-filtered composition.
+// rerunning the model. All content, membership and timestamps still bind the
+// saved connections to the transcript and its access-filtered composition.
 export function getConnectionsSourceHash(meeting: FollowupMeeting) {
+  const { startedAt, segments } = getFollowupSource(meeting);
+  return createHash("sha256").update(JSON.stringify([2, {
+    startedAt,
+    segments: segments.map(({ id, startMs, text }) => ({ id, startMs, text })),
+  }])).digest("hex");
+}
+
+function getTitledConnectionsSourceHash(meeting: FollowupMeeting) {
   const source = getFollowupSource(meeting);
   return createHash("sha256").update(JSON.stringify([1, {
     ...source,
@@ -84,12 +112,37 @@ export function getConnectionsSourceHash(meeting: FollowupMeeting) {
   }])).digest("hex");
 }
 
+export function matchesConnectionsSourceHash(meeting: FollowupMeeting, hash: string | undefined) {
+  return hash !== undefined &&
+    (hash === getConnectionsSourceHash(meeting) || hash === getTitledConnectionsSourceHash(meeting));
+}
+
+/**
+ * A saved followup whose hashes still include the old title, rewritten to the
+ * title-free hashes so a rename keeps it. Null when nothing needs upgrading.
+ */
+export function upgradeFollowupHashesForRename(
+  meeting: Parameters<typeof getCurrentMeetingFollowup>[0],
+) {
+  const saved = storedFollowupSchema.safeParse(meeting.aiFollowup);
+  if (!saved.success) return null;
+  const match = getMatchingFollowupVersion(meeting, saved.data);
+  const titledConnections = saved.data.connectionsSourceHash !== undefined &&
+    saved.data.connectionsSourceHash === getTitledConnectionsSourceHash(meeting);
+  if (!match?.titled && !titledConnections) return null;
+  return {
+    ...saved.data,
+    ...(match?.titled ? { sourceHash: hashSource(meeting, match.version) } : {}),
+    ...(titledConnections ? { connectionsSourceHash: getConnectionsSourceHash(meeting) } : {}),
+  };
+}
+
 export function getCurrentMeetingConnectionEntries(
   meeting: Parameters<typeof getCurrentMeetingFollowup>[0],
 ) {
   if (!isFollowupReady(meeting)) return [];
   const saved = storedFollowupSchema.safeParse(meeting.aiFollowup);
-  if (!saved.success || saved.data.connectionsSourceHash !== getConnectionsSourceHash(meeting)) return [];
+  if (!saved.success || !matchesConnectionsSourceHash(meeting, saved.data.connectionsSourceHash)) return [];
   try {
     const source = getFollowupSource(meeting);
     const connections = parseMeetingConnections(saved.data.result.connections ?? [], source, { validateSpeakerLabels: false });

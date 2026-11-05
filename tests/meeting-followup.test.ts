@@ -6,9 +6,12 @@ import {
   type FollowupSource,
 } from "@/lib/meeting-followup";
 import {
+  getConnectionsSourceHash,
   getCurrentMeetingFollowup,
   getFollowupSourceHash,
+  upgradeFollowupHashesForRename,
 } from "@/lib/meeting-followup-source";
+import { FOLLOWUP_PROMPT_VERSION } from "@/lib/meeting-followup";
 
 const source: FollowupSource = {
   title: "Discussion",
@@ -244,7 +247,7 @@ describe("compact followup grounding", () => {
     ).toBeNull();
   });
 
-  it("invalidates saved content after replacement, correction, name, title or date changes", () => {
+  it("invalidates saved content after replacement, correction, name or date changes", () => {
     const meeting = {
       ...source,
       status: "ready",
@@ -267,7 +270,7 @@ describe("compact followup grounding", () => {
     }
     expect(
       getCurrentMeetingFollowup({ ...meeting, title: "Renamed" }),
-    ).toBeNull();
+    ).toEqual(result);
     expect(
       getCurrentMeetingFollowup({ ...meeting, startedAt: null }),
     ).toBeNull();
@@ -280,5 +283,30 @@ describe("compact followup grounding", () => {
     expect(
       getCurrentMeetingFollowup({ ...meeting, aiFollowup: { result } }),
     ).toBeNull();
+  });
+
+  it("keeps followups saved with the old title-bound hash until a rename upgrades them", () => {
+    const titledHash = createHash("sha256")
+      .update(JSON.stringify([FOLLOWUP_PROMPT_VERSION, source]))
+      .digest("hex");
+    const meeting = {
+      ...source,
+      status: "ready",
+      transcriptJobStatus: "completed",
+      aiFollowup: { sourceHash: titledHash, result },
+    };
+    expect(getCurrentMeetingFollowup(meeting)).toEqual(result);
+
+    const upgraded = upgradeFollowupHashesForRename(meeting);
+    expect(upgraded?.sourceHash).toBe(getFollowupSourceHash(source));
+    expect(
+      getCurrentMeetingFollowup({ ...meeting, title: "Renamed", aiFollowup: upgraded }),
+    ).toEqual(result);
+    expect(
+      upgradeFollowupHashesForRename({ ...meeting, aiFollowup: upgraded }),
+    ).toBeNull();
+    expect(getConnectionsSourceHash({ ...source, title: "Renamed" })).toBe(
+      getConnectionsSourceHash(source),
+    );
   });
 });

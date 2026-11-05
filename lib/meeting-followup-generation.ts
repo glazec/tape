@@ -15,6 +15,7 @@ import {
   getConnectionsRevision,
   storedFollowupSchema,
   getConnectionsSourceHash,
+  matchesConnectionsSourceHash,
   getFollowupSource,
   getFollowupSourceHash,
   isFollowupReady,
@@ -84,7 +85,7 @@ export async function generateAndSaveMeetingFollowup({
   }
 
   const previous = storedFollowupSchema.safeParse(current.aiFollowup);
-  const connectionEdits = previous.success && previous.data.connectionsSourceHash === getConnectionsSourceHash(source)
+  const connectionEdits = previous.success && matchesConnectionsSourceHash(source, previous.data.connectionsSourceHash)
     ? previous.data.connectionEdits : undefined;
   const aiFollowup = { sourceHash, connectionsSourceHash: getConnectionsSourceHash(source), result,
     ...(connectionEdits?.length ? { connectionEdits } : {}) };

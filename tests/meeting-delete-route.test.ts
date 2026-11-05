@@ -43,6 +43,14 @@ vi.mock("@/lib/meeting-media-cleanup", () => ({
   deleteMeetingMediaObjects,
 }));
 
+const { getComposedMeetingForFollowup } = vi.hoisted(() => ({
+  getComposedMeetingForFollowup: vi.fn(),
+}));
+
+vi.mock("@/lib/meeting-composition", () => ({
+  getComposedMeetingForFollowup,
+}));
+
 vi.mock("@/lib/meeting-share-service", () => ({
   revokeMeetingSharesSeededByMeeting,
 }));
@@ -115,6 +123,7 @@ async function patchMeetingRequest(body: unknown) {
 describe("DELETE /api/meetings/[meetingId]", () => {
   afterEach(() => {
     getCurrentUser.mockReset();
+    getComposedMeetingForFollowup.mockReset();
     getWorkspace.mockReset();
     deleteMeetingMediaObjects.mockReset();
     limit.mockReset();
@@ -186,6 +195,7 @@ describe("DELETE /api/meetings/[meetingId]", () => {
 describe("PATCH /api/meetings/[meetingId]", () => {
   afterEach(() => {
     getCurrentUser.mockReset();
+    getComposedMeetingForFollowup.mockReset();
     getWorkspace.mockReset();
     limit.mockReset();
     reconcileMeetingSharingForMeeting.mockReset();
@@ -194,6 +204,41 @@ describe("PATCH /api/meetings/[meetingId]", () => {
     updateMeeting.mockReset();
     where.mockReset();
     vi.resetModules();
+  });
+
+  it("carries a followup saved with the old title over to the new title", async () => {
+    const { createHash } = await import("node:crypto");
+    const { FOLLOWUP_PROMPT_VERSION } = await import("@/lib/meeting-followup");
+    const { getCurrentMeetingFollowup, getFollowupSourceHash } = await import("@/lib/meeting-followup-source");
+    const source = {
+      title: "Old title",
+      startedAt: "2026-10-22T14:00:00Z",
+      segments: [{ id: "one", speaker: "Ada", startMs: 0, text: "We will ship it." }],
+    };
+    const result = { todos: [], dynamics: [], research: [] };
+    const aiFollowup = {
+      sourceHash: createHash("sha256").update(JSON.stringify([FOLLOWUP_PROMPT_VERSION, source])).digest("hex"),
+      result,
+    };
+    getComposedMeetingForFollowup.mockResolvedValue({
+      ...source, status: "ready", transcriptJobStatus: "completed", aiFollowup,
+    });
+    getCurrentUser.mockResolvedValue({ id: "user_123", email: "user@example.com", name: null });
+    getWorkspace.mockResolvedValue({ teamId: "team_123" });
+    limit.mockResolvedValue([{ id: "11111111-1111-4111-8111-111111111111" }]);
+    const updateSet = vi.fn().mockReturnValue({ where });
+    updateMeeting.mockReturnValue({ set: updateSet });
+    where.mockResolvedValue(undefined);
+
+    const response = await patchMeetingRequest({ title: "New title" });
+
+    expect(response.status).toBe(200);
+    expect(updateSet).toHaveBeenCalledWith(expect.objectContaining({ title: "New title" }));
+    const upgraded = updateSet.mock.calls.find(([values]) => "aiFollowup" in values)?.[0].aiFollowup;
+    expect(upgraded.sourceHash).toBe(getFollowupSourceHash(source));
+    expect(getCurrentMeetingFollowup({
+      ...source, title: "New title", status: "ready", transcriptJobStatus: "completed", aiFollowup: upgraded,
+    })).toEqual(result);
   });
 
   it("renames an authenticated workspace meeting", async () => {

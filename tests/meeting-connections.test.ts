@@ -51,10 +51,13 @@ describe("potential connections", () => {
     expect(getCurrentMeetingFollowup(renamed)).toBeNull();
   });
 
-  it("invalidates connections after edits, added or removed segments, changed titles, or unfinished processing", () => {
+  it("keeps connections when the meeting is renamed", () => {
+    expect(getCurrentMeetingConnections({ ...saved(), title: "Other meeting" })).toEqual([connection]);
+  });
+
+  it("invalidates connections after edits, added or removed segments, or unfinished processing", () => {
     const meeting = saved();
     for (const change of [
-      { title: "Other meeting" },
       { segments: [{ ...source.segments[0], text: "We do not know that team." }, ...source.segments.slice(1)] },
       { segments: source.segments.slice(1) },
       { segments: [...source.segments, { ...source.segments[0], id: "new" }] },
