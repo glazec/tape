@@ -323,3 +323,30 @@ describe("meeting recovery uploads", () => {
     expect(insert).not.toHaveBeenCalled();
   });
 });
+
+describe("parseManualTranscriptText plain text safeguards", () => {
+  it("does not treat clock times in prose as speaker labels", () => {
+    const segments = parseManualTranscriptText(
+      "We met at 3:30 to review the plan.\nThen at 4:15 we wrapped up.",
+    );
+    expect(segments.map((segment) => segment.speaker)).not.toContain("We met at 3");
+    expect(segments).toHaveLength(1);
+  });
+
+  it("keeps a list introduced by a speaker in one utterance", () => {
+    const segments = parseManualTranscriptText(
+      "Alice: the plan is:\nStep one: ship it\nStep two: test",
+    );
+    expect(segments).toHaveLength(1);
+    expect(segments[0].text).toContain("Step two: test");
+  });
+
+  it("keeps transcript text under a leading divider that is not front matter", () => {
+    const segments = parseManualTranscriptText(
+      "---\nAlice: Hello there\nBob: Hi\n\n---\n\nBob: final",
+    );
+    expect(segments.map((segment) => segment.text)).toEqual(
+      expect.arrayContaining(["Hello there", "final"]),
+    );
+  });
+});

@@ -16,6 +16,9 @@ const markdownPreambleLinePattern = /^(?:#{1,6}\s+\S|[-*+]\s+\S|>\s*\S|[^:：\n]
 const speakerLinePattern = /^([^:：\n]{1,40}?)[:：][ \t]*(\S.*)$/;
 const speakerNameRejectPattern = /[。，,！!？?；;「」“”"()（）[\]<>]|^\d+$|^[-*+>#]/;
 const maxMarkdownPreambleLines = 40;
+// Front matter keys are lowercase identifiers ("title:", "date:"); capitalized
+// "Alice: Hello" lines are speaker labels.
+const yamlFrontMatterLinePattern = /^(?:[a-z_][a-z0-9_-]*\s*:(?:\s|$)|\s+\S|-\s)/;
 
 export function parseManualTranscriptText(
   transcriptText: string,
@@ -101,12 +104,24 @@ function stripMarkdownPreamble(text: string) {
 
   if (markdownRulePattern.test(lines[start]?.trim() ?? "")) {
     const frontMatterEnd = lines.findIndex(
-      (line, index) => index > start && markdownRulePattern.test(line.trim()),
+      (line, index) =>
+        index > start &&
+        index <= start + maxMarkdownPreambleLines &&
+        markdownRulePattern.test(line.trim()),
     );
+    // Only YAML-like "key: value" content counts as front matter; a leading
+    // "---" divider above real transcript text must not delete that text.
+    const isFrontMatter =
+      frontMatterEnd > start + 1 &&
+      lines
+        .slice(start + 1, frontMatterEnd)
+        .every(
+          (line) =>
+            !line.trim() ||
+            yamlFrontMatterLinePattern.test(line),
+        );
 
-    return frontMatterEnd > 0
-      ? lines.slice(frontMatterEnd + 1).join("\n")
-      : text;
+    return isFrontMatter ? lines.slice(frontMatterEnd + 1).join("\n") : text;
   }
 
   const ruleIndex = lines.findIndex(
@@ -153,7 +168,7 @@ function parseSpeakerLines(
   const lines = chunk
     .split("\n")
     .map((line) => line.trim())
-    .filter(Boolean);
+    .filter((line) => line && !markdownRulePattern.test(line));
 
   if (lines.length < 2) {
     return null;
@@ -163,6 +178,12 @@ function parseSpeakerLines(
   const labeledCount = labeledLines.filter(Boolean).length;
 
   if (!labeledLines[0] || labeledCount < 2 || labeledCount * 2 < lines.length) {
+    return null;
+  }
+
+  // "Alice: the plan is:" followed by "Step one: ship it" is one utterance
+  // introducing a list, not a change of speaker.
+  if (labeledLines.some((labeled) => labeled && /[:：]$/.test(labeled.text))) {
     return null;
   }
 
@@ -191,7 +212,9 @@ function matchSpeakerLine(line: string) {
     !speaker ||
     !text ||
     speakerNameRejectPattern.test(speaker) ||
-    text.startsWith("//")
+    text.startsWith("//") ||
+    // A clock time in prose ("We met at 3:30") is not a speaker label.
+    (/\d$/.test(speaker) && /^\d/.test(text))
   ) {
     return null;
   }
