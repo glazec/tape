@@ -2,13 +2,23 @@
 set -euo pipefail
 
 MODE="${1:-run}"
-APP_NAME="MeetingNoteLocalRecorder"
+PRODUCT_NAME="MeetingNoteLocalRecorder"
+APP_NAME="$PRODUCT_NAME"
 APP_DISPLAY_NAME="Tape Desktop"
 BUNDLE_ID="tech.inevitable.meeting-note.local-recorder"
 MIN_SYSTEM_VERSION="15.0"
 APP_VERSION="${APP_VERSION:-0.2.0}"
 BUILD_VERSION="${BUILD_VERSION:-$(date -u +%Y%m%d%H%M%S)}"
 BUILD_CONFIGURATION="${BUILD_CONFIGURATION:-debug}"
+LOGIN_SCHEME="meetingnote-local-recorder"
+AUTOMATIC_UPDATES=true
+if [[ "$BUILD_CONFIGURATION" != "release" ]]; then
+  APP_NAME="MeetingNoteLocalRecorderDev"
+  APP_DISPLAY_NAME="Tape Desktop Dev"
+  BUNDLE_ID="tech.inevitable.meeting-note.local-recorder.dev"
+  LOGIN_SCHEME="meetingnote-local-recorder-dev"
+  AUTOMATIC_UPDATES=false
+fi
 SENTRY_DSN="${SENTRY_DSN:-${NEXT_PUBLIC_SENTRY_DSN:-}}"
 if [[ "$BUILD_CONFIGURATION" == "release" ]]; then
   SENTRY_ENVIRONMENT="${SENTRY_ENVIRONMENT:-production}"
@@ -40,15 +50,23 @@ SIDECAR_DEST="$APP_RESOURCES/RecallDesktopSDKSidecar"
 
 # Check identity before stopping an app or replacing a bundle. The certificate
 # name is insufficient: a newly created certificate can reuse that name.
-RELEASE_CERT_SHA1="$(sed -n 's/.*certificate leaf = H"\([^" ]*\)".*/\1/p' "$ROOT_DIR/Resources/Release.requirement" | tr '[:lower:]' '[:upper:]')"
-CODESIGN_IDENTITY="$(printf '%s' "${CODESIGN_IDENTITY:-$RELEASE_CERT_SHA1}" | tr '[:lower:]' '[:upper:]')"
-if [[ "$CODESIGN_IDENTITY" != "$RELEASE_CERT_SHA1" ]]; then
-  echo "Refusing a different signing identity for the production app. Use the existing release certificate fingerprint." >&2
-  exit 1
-fi
-if ! security find-identity -v -p codesigning | grep -qF "$RELEASE_CERT_SHA1"; then
-  echo "The existing release certificate and private key are required. No app or permission was changed." >&2
-  exit 1
+if [[ "$BUILD_CONFIGURATION" == "release" ]]; then
+  RELEASE_CERT_SHA1="$(sed -n 's/.*certificate leaf = H"\([^" ]*\)".*/\1/p' "$ROOT_DIR/Resources/Release.requirement" | tr '[:lower:]' '[:upper:]')"
+  CODESIGN_IDENTITY="$(printf '%s' "${CODESIGN_IDENTITY:-$RELEASE_CERT_SHA1}" | tr '[:lower:]' '[:upper:]')"
+  if [[ "$CODESIGN_IDENTITY" != "$RELEASE_CERT_SHA1" ]]; then
+    echo "Refusing a different signing identity for the production app. Use the existing release certificate fingerprint." >&2
+    exit 1
+  fi
+  if ! security find-identity -v -p codesigning | grep -qF "$RELEASE_CERT_SHA1"; then
+    echo "The existing release certificate and private key are required. No app or permission was changed." >&2
+    exit 1
+  fi
+else
+  CODESIGN_IDENTITY="${CODESIGN_IDENTITY:-Meeting Note Local Dev}"
+  if ! security find-identity -v -p codesigning | grep -qF "$CODESIGN_IDENTITY"; then
+    echo "A stable development signing identity is required. Run script/create_signing_cert.sh once." >&2
+    exit 1
+  fi
 fi
 
 cd "$ROOT_DIR"
@@ -58,10 +76,11 @@ fi
 
 swift build -c "$BUILD_CONFIGURATION"
 BUILD_DIR="$(swift build -c "$BUILD_CONFIGURATION" --show-bin-path)"
-BUILD_BINARY="$BUILD_DIR/$APP_NAME"
+BUILD_BINARY="$BUILD_DIR/$PRODUCT_NAME"
 SPARKLE_FRAMEWORK="$BUILD_DIR/Sparkle.framework"
 
-rm -rf "$APP_BUNDLE" "$LEGACY_APP_BUNDLE"
+rm -rf "$APP_BUNDLE"
+if [[ "$BUILD_CONFIGURATION" == "release" ]]; then rm -rf "$LEGACY_APP_BUNDLE"; fi
 mkdir -p "$APP_MACOS" "$APP_RESOURCES" "$APP_FRAMEWORKS"
 cp "$BUILD_BINARY" "$APP_BINARY"
 chmod +x "$APP_BINARY"
@@ -112,9 +131,9 @@ cat >"$INFO_PLIST" <<PLIST
   <key>SUPublicEDKey</key>
   <string>$SPARKLE_PUBLIC_KEY</string>
   <key>SUEnableAutomaticChecks</key>
-  <true/>
+  <$AUTOMATIC_UPDATES/>
   <key>SUAutomaticallyUpdate</key>
-  <true/>
+  <$AUTOMATIC_UPDATES/>
   <key>CFBundleIconFile</key>
   <string>AppIcon</string>
   <key>LSMinimumSystemVersion</key>
@@ -122,11 +141,11 @@ cat >"$INFO_PLIST" <<PLIST
   <key>NSPrincipalClass</key>
   <string>NSApplication</string>
   <key>NSMicrophoneUsageDescription</key>
-  <string>Tape Desktop records your microphone for local meeting recordings.</string>
+  <string>$APP_DISPLAY_NAME records your microphone for local meeting recordings.</string>
   <key>NSScreenCaptureUsageDescription</key>
-  <string>Tape Desktop records meeting audio so local recordings include other speakers.</string>
+  <string>$APP_DISPLAY_NAME records meeting audio so local recordings include other speakers.</string>
   <key>NSAudioCaptureUsageDescription</key>
-  <string>Tape Desktop records meeting audio so local recordings include other speakers.</string>
+  <string>$APP_DISPLAY_NAME records meeting audio so local recordings include other speakers.</string>
   <key>CFBundleURLTypes</key>
   <array>
     <dict>
@@ -134,7 +153,7 @@ cat >"$INFO_PLIST" <<PLIST
       <string>$BUNDLE_ID.login</string>
       <key>CFBundleURLSchemes</key>
       <array>
-        <string>meetingnote-local-recorder</string>
+        <string>$LOGIN_SCHEME</string>
       </array>
     </dict>
   </array>
@@ -173,7 +192,11 @@ codesign \
   --entitlements "$ADHOC_APP_ENTITLEMENTS" \
   --sign "$CODESIGN_IDENTITY" \
   "$APP_BUNDLE"
-"$ROOT_DIR/script/verify_release_identity.sh" "$APP_BUNDLE"
+if [[ "$BUILD_CONFIGURATION" == "release" ]]; then
+  "$ROOT_DIR/script/verify_release_identity.sh" "$APP_BUNDLE"
+else
+  codesign --verify --deep --strict "$APP_BUNDLE"
+fi
 
 if [[ "$MODE" == "--package" || "$MODE" == "package" ]]; then
   printf '%s\n' "$APP_BUNDLE"
@@ -183,6 +206,7 @@ fi
 # Never reset macOS permissions as a side effect of building or launching.
 # A missing worktree cache does not mean the installed app identity changed.
 # Explicit recovery in the app resets only the permission the user selects.
+
 
 open_app() {
   /usr/bin/open -n "$APP_BUNDLE"

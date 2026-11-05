@@ -391,7 +391,7 @@ enum LocalRecorderFileLocations {
         ).first ?? FileManager.default.temporaryDirectory
 
         return baseURL
-            .appending(path: "MeetingNoteLocalRecorder", directoryHint: .isDirectory)
+            .appending(path: Bundle.main.bundleIdentifier?.hasSuffix(".dev") == true ? "MeetingNoteLocalRecorderDev" : "MeetingNoteLocalRecorder", directoryHint: .isDirectory)
     }
 }
 

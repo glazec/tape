@@ -66,7 +66,7 @@ describe("local recorder auth", () => {
     vi.resetModules();
   });
 
-  it("issues a device bound credential lasting 180 days from login", async () => {
+  it.each(["meetingnote-local-recorder", "meetingnote-local-recorder-dev"])("issues a device bound credential for %s lasting 180 days from login", async (scheme) => {
     vi.useFakeTimers();
     const now = new Date("2026-10-30T19:00:00Z");
     vi.setSystemTime(now);
@@ -76,12 +76,13 @@ describe("local recorder auth", () => {
     values.mockResolvedValue(undefined);
     const { createLocalRecorderDeviceSession } = await import("@/lib/local-recorder-auth");
     const result = await createLocalRecorderDeviceSession({
-      callbackUrl: "meetingnote-local-recorder://login", deviceId: "mac_123",
+      callbackUrl: `${scheme}://login`, deviceId: "mac_123",
       requestUrl: "https://app.example.com/api/local-recorder/device-login",
     });
     expect("redirectUrl" in result).toBe(true);
     if (!("redirectUrl" in result) || !result.redirectUrl) throw new Error("Missing device callback");
     const callback = new URL(result.redirectUrl);
+    expect(callback.protocol).toBe(`${scheme}:`);
     const token = callback.searchParams.get("token")!;
     expect(token).toBeTruthy();
     expect(values).toHaveBeenCalledWith({

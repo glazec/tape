@@ -42,6 +42,18 @@ describe("local recorder app packaging", () => {
     })).toThrow("Release builds require a valid HTTPS SENTRY_DSN");
   });
 
+  it.each([
+    ["debug", "Tape Desktop Dev|tech.inevitable.meeting-note.local-recorder.dev|MeetingNoteLocalRecorderDev|meetingnote-local-recorder-dev|false"],
+    ["release", "Tape Desktop|tech.inevitable.meeting-note.local-recorder|MeetingNoteLocalRecorder|meetingnote-local-recorder|true"],
+  ])("separates %s app identity before any build side effects", (configuration, expected) => {
+    const script = readFileSync(join(packageRoot, "script", "build_and_run.sh"), "utf8");
+    const setup = script.slice(0, script.indexOf('SENTRY_DSN='));
+    const output = execFileSync("bash", ["-c", setup + '\nprintf "%s|%s|%s|%s|%s" "$APP_DISPLAY_NAME" "$BUNDLE_ID" "$APP_NAME" "$LOGIN_SCHEME" "$AUTOMATIC_UPDATES"'], {
+      env: { ...process.env, BUILD_CONFIGURATION: configuration }, encoding: "utf8",
+    });
+    expect(output).toBe(expected);
+  });
+
   it("bundles a checksum verified official Node runtime", () => {
     const root = makeTemporaryDirectory();
     const version = "v24.18.0";
@@ -113,7 +125,7 @@ describe("local recorder app packaging", () => {
     expect(requirement).toContain('certificate leaf = H"e4f95f1c739561ab5e86758f54d9488bc8c1c5c0"');
     expect(buildScript).toContain('"$ROOT_DIR/script/verify_release_identity.sh" "$APP_BUNDLE"');
     expect(buildScript).not.toContain('CODESIGN_IDENTITY="-"');
-    expect(buildScript).not.toContain("Meeting Note Local Dev");
+    expect(buildScript).toContain('APP_DISPLAY_NAME="Tape Desktop Dev"');
     expect(verifier).toContain('--test-requirement "=$REQUIREMENT"');
     expect(verifier).toContain('"$ACTUAL_REQUIREMENT" != "$REQUIREMENT"');
   });
@@ -123,7 +135,7 @@ describe("local recorder app packaging", () => {
     (identity) => {
       const result = spawnSync("bash", [join(packageRoot, "script", "build_and_run.sh"), "--package"], {
         encoding: "utf8",
-        env: { ...process.env, BUILD_CONFIGURATION: "debug", CODESIGN_IDENTITY: identity },
+        env: { ...process.env, BUILD_CONFIGURATION: "release", SENTRY_DSN: "https://test@example.com/1", CODESIGN_IDENTITY: identity },
       });
       expect(result.status).toBe(1);
       expect(result.stderr).toContain("Refusing a different signing identity");
@@ -208,7 +220,7 @@ describe("local recorder app packaging", () => {
     expect(buildScript).toContain("<key>CFBundleDisplayName</key>");
     expect(buildScript).toContain("<string>$APP_DISPLAY_NAME</string>");
     expect(buildScript).toContain(
-      "Tape Desktop records your microphone for local meeting recordings.",
+      "$APP_DISPLAY_NAME records your microphone for local meeting recordings.",
     );
     expect(buildScript).toContain("<key>NSAudioCaptureUsageDescription</key>");
   });
@@ -217,7 +229,7 @@ describe("local recorder app packaging", () => {
     const viewSource = readRecorderViewSource();
 
     expect(viewSource).toContain('eyebrow: "Tape for Mac"');
-    expect(viewSource).toContain('window.title = "Tape Desktop"');
+    expect(viewSource).toContain('window.title = LocalRecorderAppIdentity.name');
     expect(viewSource).not.toContain("Meeting Note");
   });
 

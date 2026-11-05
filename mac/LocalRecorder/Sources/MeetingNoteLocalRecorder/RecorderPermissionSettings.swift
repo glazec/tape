@@ -43,7 +43,7 @@ struct PermissionList: View {
                 .labelsHidden()
                 .toggleStyle(.switch)
                 .controlSize(.mini)
-                .accessibilityLabel("Start Tape Desktop at login")
+                .accessibilityLabel("Start \(Bundle.main.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String ?? "Tape Desktop") at login")
             }
             if !checklist.allSetupGranted {
                 DisclosureGroup("Access still blocked?", isExpanded: $showsRecovery) {

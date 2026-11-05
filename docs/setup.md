@@ -502,7 +502,10 @@ swift test
 ./script/build_and_run.sh --verify
 ```
 
-The build script creates and opens `dist/Tape Desktop.app` using the existing release certificate. It refuses a different signing identity for the production bundle identifier, including an ad hoc signature or a newly created certificate with the same name. Import the existing release identity to build runnable packages; `swift test` and debug snapshots do not need it. Do not use `create_signing_cert.sh` for this app identity.
+Release builds create and open `dist/Tape Desktop.app` using the existing release certificate. It refuses a different signing identity for the production bundle identifier, including an ad hoc signature or a newly created certificate with the same name. Import the existing release identity to build runnable packages; `swift test` and debug snapshots do not need it. Do not use `create_signing_cert.sh` for this app identity.
+
+The default debug build creates and opens `dist/Tape Desktop Dev.app` with a separate `.dev` bundle identifier, executable, login callback scheme, Keychain entry, preferences, and recording directory. Release builds create `dist/Tape Desktop.app`. Development builds do not start Sparkle updates or replace the release app. The server must include support for the `meetingnote-local-recorder-dev://login` callback before browser pairing a development build. Run `script/create_signing_cert.sh` once for the separate development identity. Development packaging requires a stable signing identity and does not reset permissions.
+
 
 Tape Desktop initially connects to `https://tape.inevitable.tech`. Select `Sign in` to finish device login in the browser. In debug builds, open settings and expand `Development server` before signing in to use a local Tape origin. Release builds use browser pairing without editable server or token fields.
 

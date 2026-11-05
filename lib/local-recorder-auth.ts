@@ -242,7 +242,7 @@ function parseLocalRecorderCallbackUrl(value: string) {
     const callbackUrl = new URL(value);
 
     if (
-      callbackUrl.protocol !== "meetingnote-local-recorder:" ||
+      !["meetingnote-local-recorder:", "meetingnote-local-recorder-dev:"].includes(callbackUrl.protocol) ||
       callbackUrl.hostname !== "login"
     ) {
       return null;
