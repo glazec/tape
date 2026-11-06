@@ -56,12 +56,16 @@ jobs:
         run: |
           set -euo pipefail
           for migration in db/migrations/*.sql; do
+            if [[ "$migration" == "db/migrations/0070_speaker_person_identity.sql" ]]; then
+              psql "$DATABASE_URL" --set ON_ERROR_STOP=1 --file tests/speaker-identity-backfill.sql
+            fi
             psql "$DATABASE_URL" --set ON_ERROR_STOP=1 --file "$migration"
           done
       - name: Check Intel corpus and private history against PostgreSQL
         env:
           INTEL_TEST_DATABASE_URL: postgresql://ci:ci@127.0.0.1:5432/meeting_note
-        run: npx vitest run tests/intel-database.integration.test.ts tests/local-recorder-upload-scope.integration.test.ts
+          SPEAKER_TEST_DATABASE_URL: postgresql://ci:ci@127.0.0.1:5432/meeting_note
+        run: npx vitest run tests/intel-database.integration.test.ts tests/local-recorder-upload-scope.integration.test.ts tests/speaker-identity-database.integration.test.ts
       - name: Check meeting creation and access isolation
         run: psql "$DATABASE_URL" --set ON_ERROR_STOP=1 --file tests/meeting-insert-rls.sql
       - name: Check email sharing and organization suggestions

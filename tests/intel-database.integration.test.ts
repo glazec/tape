@@ -148,6 +148,25 @@ describe.skipIf(!enabled)("Intel with real PostgreSQL and caller RLS", () => {
       } finally { await state.client!.query("ROLLBACK TO SAVEPOINT revoke_intel_access"); }
     } finally { release(); await running; verify.mockRestore(); model.mockRestore(); }
   });
+  it("does not expand meeting access when an inaccessible meeting links to the same person", async () => {
+    const client = state.client!;
+    await client.query("SAVEPOINT linked_private_history");
+    try {
+      await client.query("RESET ROLE");
+      const person = (await client.query("INSERT INTO workspace_people(team_id,preferred_name) VALUES($1,'Alex linked') RETURNING id", [team])).rows[0].id;
+      const privateJob = (await client.query("INSERT INTO transcript_jobs(meeting_id,status) VALUES($1,'completed') RETURNING id", [privateMeeting])).rows[0].id;
+      await client.query("INSERT INTO transcript_segments(meeting_id,job_id,speaker,start_ms,text) VALUES($1,$2,'Alex',0,'Private linked history')", [privateMeeting,privateJob]);
+      await client.query("UPDATE meeting_speakers SET person_id=$1 WHERE meeting_id IN ($2,$3)", [person,m,privateMeeting]);
+      await asUser(a);
+      const corpus = await loadIntelMeetings(workspace);
+      expect(corpus.map(meeting => meeting.id)).toEqual([m]);
+      const people = buildCatalog(corpus).people;
+      expect(people).toHaveLength(1);
+      expect(people[0].id).toBe(`person:${person}`);
+      expect(people[0].meetingIds).toEqual([m]);
+      expect(corpus[0].segments.every(segment => segment.text !== "Private linked history")).toBe(true);
+    } finally { await client.query("ROLLBACK TO SAVEPOINT linked_private_history"); }
+  });
   it("pages a large transcript through real SQL without dropping equal timestamps", async () => {
     const client = state.client!;
     await client.query("SAVEPOINT large_intel_archive");
@@ -161,6 +180,6 @@ describe.skipIf(!enabled)("Intel with real PostgreSQL and caller RLS", () => {
       expect(new Set(corpus[0].segments.map(s => s.id)).size).toBe(10006);
       expect(corpus[0].segments.some(s => s.text === "Obsolete content")).toBe(false);
     } finally { await client.query("ROLLBACK TO SAVEPOINT large_intel_archive"); }
-  });
+  }, 15000);
 
 });

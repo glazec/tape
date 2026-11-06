@@ -41,11 +41,11 @@ describe("secondary pages", () => {
   });
 
   it("renders meeting creation and redirects read only users", async () => {
-    const html = renderToStaticMarkup(await NewMeetingPage());
+    const html = renderToStaticMarkup(await NewMeetingPage({}));
     expect(html).toContain("Add a meeting");
     expect(html).toContain("meeting sources");
     mocks.access.mockResolvedValue({ canCreateMeetings: false });
-    await expect(NewMeetingPage()).rejects.toThrow("REDIRECT");
+    await expect(NewMeetingPage({})).rejects.toThrow("REDIRECT");
     expect(mocks.redirect).toHaveBeenCalledWith("/dashboard");
   });
 });

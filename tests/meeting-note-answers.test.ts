@@ -1,8 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { PgDialect } from "drizzle-orm/pg-core";
 
-const mocks = vi.hoisted(() => ({ where: vi.fn(), orderBy: vi.fn(), generate: vi.fn() }));
-vi.mock("@/db/client", () => ({ db: { select: () => ({ from: () => ({ where: mocks.where }) }) } }));
+const mocks = vi.hoisted(() => ({ execute: vi.fn(), where: vi.fn(), orderBy: vi.fn(), generate: vi.fn() }));
+vi.mock("@/db/client", () => ({ db: { execute: mocks.execute, select: () => ({ from: () => ({ where: mocks.where }) }) } }));
 vi.mock("@/lib/vendors/openrouter", () => ({ generateMeetingNoteAnswer: mocks.generate }));
 import { answerMeetingNoteQuestion, getNoteTranscript, noteTranscriptRevision, parseNoteAnswer, NoteTranscriptTooLongError } from "@/lib/meeting-note-answers";
 
@@ -21,11 +21,24 @@ describe("transcript grounded note answers", () => {
     expect(query.sql).toContain("latest_replace");
     expect(query.sql).not.toContain("current_jobs.status = 'completed'");
   });
+  it("resolves cited source speaker display without changing the canonical transcript revision", async () => {
+    mocks.orderBy.mockResolvedValue([{ ...segments[0], meetingId: "meeting-one", meetingSpeakerId: "g1", attributionRevision: 0 }]);
+    mocks.execute.mockResolvedValue({ rows: [{ id: "s1", speaker: "Alex", sourceSpeaker: "Sam", meetingSpeakerId: "g1", personId: "p1", participantEmail: null, speakerRevision: 0 }] });
+    const loaded = await getNoteTranscript("meeting-one");
+    expect(loaded.segments[0].speaker).toBe("Alex");
+    expect(loaded.transcriptRevision).toBe(transcript.transcriptRevision);
+    expect(parseNoteAnswer(JSON.stringify(supported), "Check size?", loaded).sources[0].speaker).toBe("Alex");
+  });
   it("hashes exact text, identity, speaker and timestamp changes", () => {
     expect(noteTranscriptRevision([...segments])).toBe(transcript.transcriptRevision);
     for (const change of [{ text: "We invest $5 million." }, { id: "replacement" }, { startMs: 43_000 }, { speaker: "Jane" }]) {
       expect(noteTranscriptRevision([{ ...segments[0], ...change }])).not.toBe(transcript.transcriptRevision);
     }
+  });
+  it("preserves source revision for preferred names but invalidates attribution changes", () => {
+    const renamed = { ...segments[0], speaker: "Alex", sourceSpeaker: "Sam", attributionRevision: 0 };
+    expect(noteTranscriptRevision([renamed])).toBe(transcript.transcriptRevision);
+    expect(noteTranscriptRevision([{ ...renamed, attributionRevision: 1 }])).not.toBe(transcript.transcriptRevision);
   });
   it("returns only validated exact quotes with server owned source metadata", () => {
     expect(parseNoteAnswer(JSON.stringify(supported), "Check size and stage?", transcript)).toEqual({

@@ -7,6 +7,18 @@ from unittest.mock import AsyncMock, patch
 import main
 
 
+class SpeakerDisplayProjectionTests(unittest.TestCase):
+    def test_readable_transcript_resolves_only_authorized_display_names(self):
+        query = main._build_sql_tool_query(
+            "select speaker from readable_transcript_segments", "authorized_meeting", "'shared'"
+        )
+        self.assertIn("and authorized_meeting", query)
+        self.assertIn("coalesce(app_private.speaker_name(ts.meeting_speaker_id), ts.speaker) as speaker", query)
+        self.assertNotIn("participantEmail", query)
+        self.assertNotIn("person_emails", query)
+        self.assertNotIn("workspace_people", query)
+
+
 class ApiKeyAuthenticationTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         main._apikey_pool = None

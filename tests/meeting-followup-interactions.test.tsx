@@ -70,6 +70,16 @@ describe("meeting followup interaction", () => {
     speakerSegmentId: "one", evidence: [{ segmentId: "one" }],
   };
 
+  it("keeps identical display names in separate identity groups and editor options", () => {
+    render(<MeetingFollowup {...props} initialConnectionsRevision={"a".repeat(64)} segments={props.segments.map((segment, index) => ({
+      ...segment, speaker: "Alex", meetingSpeakerId: `group${index}`, personId: null,
+    }))} initialConnections={[connection, { ...connection, name: "Contact", speakerSegmentId: "two" }]} />);
+    expect(screen.getAllByRole("heading", { name: "@Alex" })).toHaveLength(2);
+    fireEvent.click(screen.getByRole("button", { name: "Edit connection: Citi" }));
+    expect(screen.getAllByRole("option", { name: "Alex" })).toHaveLength(2);
+    expect((screen.getByLabelText("Mentioned by") as HTMLSelectElement).value).toBe("one");
+  });
+
   it("shows external speakers before the current organization and displays mutual markers", () => {
     render(<MeetingFollowup {...props} initialConnections={[connection, { ...connection, name: "Contact", speakerSegmentId: "two", mutual: true }]} organizationDomains={["internal.test"]} participants={[{ name: "Momir Amidzic", email: "momir@internal.test" }, { name: "Kezhen Chen", email: "kezhen@external.test" }]} />);
     expect(screen.getAllByRole("heading", { level: 4 }).map(element => element.textContent)).toEqual(["@Kezhen Chen", "@Momir Amidzic"]);

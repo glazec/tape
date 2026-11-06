@@ -618,3 +618,11 @@ Search history retains up to 50 finished searches plus active jobs. Matching pro
 Local media upload recovery uses authenticated multipart requests; deploy the server before distributing the updated recorder. See [recorder upload recovery](recorder-upload-recovery.md) for scope and storage lifecycle requirements.
 
 Personal meeting language requires migration `0068_user_language_shared_followup`. Apply it with `npm run db:migrate` before deploying the updated web service. Run `npm run inngest:sync` to register `translate-shared-followup` for readers who need a translated copy. Confirm that a reader can change Settings → Preferences → Default language and open the same meeting in either language with identical evidence links.
+
+## Speaker person identity
+
+Apply migration `0070_speaker_person_identity` using `npm run db:migrate` before deploying this application version. It adds workspace contacts, associated emails, immutable speaker groups, assignment history and meeting attribution revisions. The backfill retains existing transcript speaker text and creates groups per transcription job and exact source label. It makes no automatic person links and cannot recover identities already merged by earlier label edits. New transcript inserts receive groups through a database trigger.
+
+Contact directory access requires actual workspace membership. Display projection for shared readers returns only accessible speaker labels; associated emails require identity management access. Mutation functions enforce membership, current transcript generation, segment ownership and revision checks atomically. Background reads bind the trusted meeting owner's workspace within an isolated database context. No new provider or environment variable is required. This migration does not grant meeting access or change private notes.
+
+Preferred name changes preserve canonical generated source hashes. Changing a person assignment or splitting a speaker group increments attribution revision and invalidates stale Intel and followups, including composed sources. Deploying old application code after the migration can still read historical labels, but cannot interpret the new preferred name and assignment metadata; rollback should not discard the additive tables.

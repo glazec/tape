@@ -166,6 +166,7 @@ describe("meeting followup API", () => {
     expect(response.headers.get("Cache-Control")).toBe("private, no-store");
     expect(mocks.set).toHaveBeenCalledWith({
       aiFollowup: {
+        speakerNames: { one: "Alex" },
         sourceHash: getFollowupSourceHash(meeting),
         connectionsSourceHash: getConnectionsSourceHash(meeting),
         result: { todos: [], dynamics: [], research: [] },
@@ -177,6 +178,7 @@ describe("meeting followup API", () => {
     );
     expect(query.sql).toContain('"owner_user_id"');
     expect(query.sql).toContain('"updated_at"');
+    expect(query.sql).toContain('"attribution_revision"');
   });
 
   it.each([

@@ -241,6 +241,7 @@ export function composeMeetingForFollowup(
     followupSource: {
       title: primary.title,
       startedAt: parts[0].startedAt,
+      attributionRevisions: parts.map(part => ({ meetingId: part.id, revision: part.attributionRevision ?? 0 })),
       segments: parts.flatMap(
         (part) => part.followupSource?.segments ?? part.segments,
       ),

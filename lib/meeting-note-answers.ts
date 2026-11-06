@@ -6,6 +6,7 @@ import { db } from "@/db/client";
 import { transcriptSegments } from "@/db/schema";
 import { activeTranscriptJobIdsSubquery } from "@/lib/current-transcript-job";
 import { noteAnswerSchema, type NoteAnswer } from "@/lib/meeting-note-document";
+import { attachSpeakerIdentities } from "@/lib/speaker-identity";
 import { generateMeetingNoteAnswer } from "@/lib/vendors/openrouter";
 
 export type NoteTranscriptSegment = {
@@ -13,19 +14,27 @@ export type NoteTranscriptSegment = {
   text: string;
   startMs: number;
   speaker: string | null;
+  sourceSpeaker?: string | null;
+  attributionRevision?: number;
 };
 
 export function noteTranscriptRevision(segments: NoteTranscriptSegment[]) {
-  return createHash("sha256").update(JSON.stringify(segments)).digest("hex");
+  return createHash("sha256").update(JSON.stringify(segments.map(({ id, text, startMs, speaker, sourceSpeaker, attributionRevision }) => ({
+    id, text, startMs, speaker: sourceSpeaker !== undefined ? sourceSpeaker : speaker,
+    ...(attributionRevision ? { attributionRevision } : {}),
+  })))).digest("hex");
 }
 
-export async function getNoteTranscript(meetingId: string) {
+export async function getNoteTranscript(meetingId: string): Promise<{ segments: NoteTranscriptSegment[]; transcriptRevision: string; hasTranscript: boolean }> {
   const segments = await db
     .select({
       id: transcriptSegments.id,
       text: transcriptSegments.text,
       startMs: transcriptSegments.startMs,
       speaker: transcriptSegments.speaker,
+      meetingId: transcriptSegments.meetingId,
+      meetingSpeakerId: transcriptSegments.meetingSpeakerId,
+      attributionRevision: sql<number>`(select attribution_revision from meetings where id = ${transcriptSegments.meetingId})`,
     })
     .from(transcriptSegments)
     .where(
@@ -45,8 +54,18 @@ export async function getNoteTranscript(meetingId: string) {
       asc(transcriptSegments.endMs),
       asc(transcriptSegments.id),
     );
+  const byMeeting = new Map<string, typeof segments>();
+  for (const segment of segments) {
+    if (!segment.meetingSpeakerId) continue;
+    const group = byMeeting.get(segment.meetingId) ?? [];
+    group.push(segment);
+    byMeeting.set(segment.meetingId, group);
+  }
+  const resolved = (await Promise.all([...byMeeting].map(([id, group]) => attachSpeakerIdentities(id, group)))).flat();
+  const byId = new Map(resolved.map(segment => [segment.id, segment]));
+  const displaySegments = segments.map(segment => byId.get(segment.id) ?? segment);
   return {
-    segments,
+    segments: displaySegments,
     transcriptRevision: noteTranscriptRevision(segments),
     hasTranscript: segments.some((segment) => segment.text.trim()),
   };

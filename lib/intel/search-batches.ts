@@ -33,9 +33,8 @@ export function buildSearchBatches(corpus: IntelMeeting[], catalog: IntelCatalog
   const required = new Set([...selected].flatMap(id => [...(groups.get(id) ?? [])]));
   function batch(ids: Set<string>) {
     return { input, source,
-      // Participant segment IDs are redundant with speaker + meeting identity.
-      people: catalog.people.filter(p => p.meetingIds.some(id => ids.has(id))).map(p =>
-        p.kind === "participant" ? { ...p, segmentIds: [] } : p),
+      // Membership distinguishes people who share a display name.
+      people: catalog.people.filter(p => p.meetingIds.some(id => ids.has(id))),
       intel: catalog.intel.filter(i => i.evidence.every(e => ids.has(e.meetingId))),
       meetings: context.filter(m => ids.has(m.id)),
     };

@@ -17,7 +17,7 @@ export default async function NewMeetingPage({
   searchParams,
 }: {
   searchParams?: Promise<{ source?: string | string[] }>;
-} = {}) {
+}) {
   const user = await requireCurrentUser();
   const workspace = await getOrCreateWorkspaceForSessionUser(user);
   const accessSummary = await getWorkspaceAccessSummary(workspace);

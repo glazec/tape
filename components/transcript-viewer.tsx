@@ -64,16 +64,10 @@ import {
   type TranslationLanguage,
 } from "@/lib/meeting-translation-language";
 import {
-  getSpeakerFirstName,
-  getSpeakerIdentityKey,
-  getUniqueFullNameByFirstName,
-  getUniqueFullNameForFirstNameAlias,
   isCleanSpeakerFullName,
   isEmailLikeSpeakerLabel,
 } from "@/lib/speaker-labels";
 import {
-  applySpeakerAliasesToSegments,
-  groupSpeakerAliasesByCanonicalKey,
   type SpeakerAlias,
 } from "@/lib/speaker-alias-normalization";
 import { NOTE_MOMENT_NAVIGATE, NOTE_PLAYBACK_POSITION, type NoteMomentNavigation } from "@/lib/note-moments";
@@ -83,6 +77,11 @@ export type TranscriptSegment = {
   translationCopies?: Partial<Record<TranslationLanguage, string>> | null;
   id: string;
   speaker: string | null;
+  meetingSpeakerId?: string | null;
+  personId?: string | null;
+  sourceSpeaker?: string | null;
+  participantEmail?: string | null;
+  speakerRevision?: number;
   startMs: number;
   endMs: number | null;
   text: string;
@@ -93,6 +92,7 @@ export type TranscriptSegment = {
 };
 
 export type SpeakerSuggestion = {
+  id?: string;
   email: string;
   name: string;
 };
@@ -105,6 +105,8 @@ export type MeetingVisualAsset = {
 };
 
 export type EditingSpeaker = {
+  meetingSpeakerId?: string | null;
+  speakerRevision?: number;
   allowSegmentScope: boolean;
   currentSpeaker: string | null;
   speakerAliases: string[];
@@ -130,6 +132,7 @@ export function matchesSpeakerSuggestion(
   );
 }
 
+const WORKSPACE_NAME_EDIT_HINT = "To change this linked name, enable Use edited name across this workspace or choose Unlink.";
 const WAVEFORM_DESKTOP_BAR_COUNT = 120;
 const WAVEFORM_MOBILE_BAR_COUNT = 56;
 const WAVEFORM_MOBILE_QUERY = "(max-width: 640px)";
@@ -172,6 +175,7 @@ type TranscriptViewerProps = {
 };
 
 type WaveformSection = {
+  speakerKey: string;
   emotionLabel: TranscriptSegment["emotionLabel"];
   id: string;
   label: string;
@@ -390,7 +394,6 @@ export function TranscriptViewer({
   hideHeading = false,
   preferredTranslationLanguage,
   segments: initialSegments,
-  speakerAliases = [],
   speakerSuggestions = [],
   translationLanguage = DEFAULT_TRANSLATION_LANGUAGE,
   translationMeetingId,
@@ -412,6 +415,11 @@ export function TranscriptViewer({
     [playbackParts],
   );
   const [segments, setSegments] = useState(initialSegments);
+  const [previousInitialSegments, setPreviousInitialSegments] = useState(initialSegments);
+  if (previousInitialSegments !== initialSegments) {
+    setPreviousInitialSegments(initialSegments);
+    setSegments(initialSegments);
+  }
   const [editingSpeaker, setEditingSpeaker] = useState<EditingSpeaker | null>(
     null,
   );
@@ -419,6 +427,14 @@ export function TranscriptViewer({
   const [initialDraftSpeaker, setInitialDraftSpeaker] = useState("");
   const [participantEmail, setParticipantEmail] = useState<string | null>(null);
   const [rememberName, setRememberName] = useState(true);
+  const [linkedPerson, setLinkedPerson] = useState<SpeakerSuggestion | null>(null);
+  const [linkAction, setLinkAction] = useState<"preserve" | "link" | "create" | "unlink">("preserve");
+  const [choosingPerson, setChoosingPerson] = useState(true);
+  const [nameEdited, setNameEdited] = useState(false);
+  const [directorySuggestions, setDirectorySuggestions] = useState<SpeakerSuggestion[]>([]);
+  const [meetingParticipants, setMeetingParticipants] = useState<SpeakerSuggestion[]>(speakerSuggestions);
+  const directoryRequestRef = useRef(0);
+  const needsWorkspaceNameConsent = Boolean(linkedPerson && nameEdited && !rememberName && draftSpeaker.trim() !== linkedPerson.name.trim());
   const [speakerError, setSpeakerError] = useState<string | null>(null);
   const [speakerApplyScope, setSpeakerApplyScope] =
     useState<SpeakerApplyScope>("matching_speaker");
@@ -506,10 +522,8 @@ export function TranscriptViewer({
   );
   const rawDisplaySegments = useMemo(
     () =>
-      getTranscriptDisplaySegments(
-        applySpeakerAliasesToSegments(segments, speakerAliases),
-      ),
-    [segments, speakerAliases],
+      getTranscriptDisplaySegments(segments),
+    [segments],
   );
   const speakerStats = useMemo(
     () => buildSpeakerStats(rawDisplaySegments),
@@ -522,31 +536,11 @@ export function TranscriptViewer({
   const speakerStatByRawKey = useMemo(() => {
     const statsByRawKey = new Map<string, SpeakerStat>();
 
-    for (const speaker of speakerStats) {
-      statsByRawKey.set(getSpeakerKey(speaker.speaker), speaker);
-
-      for (const alias of speaker.aliases) {
-        statsByRawKey.set(getSpeakerKey(alias), speaker);
-      }
-    }
-
+    for (const speaker of speakerStats) statsByRawKey.set(speaker.speakerKey, speaker);
     return statsByRawKey;
   }, [speakerStats]);
-  const savedAliasesByCanonicalKey = useMemo(
-    () => groupSpeakerAliasesByCanonicalKey(speakerAliases),
-    [speakerAliases],
-  );
-  const speakerRenameSuggestions = getSpeakerRenameSuggestions(speakerSuggestions);
-  const displaySegments = useMemo(
-    () =>
-      rawDisplaySegments.map((segment) => ({
-        ...segment,
-        speaker:
-          speakerStatByRawKey.get(getSpeakerKey(segment.speaker))?.speaker ??
-          segment.speaker,
-      })),
-    [rawDisplaySegments, speakerStatByRawKey],
-  );
+  const speakerRenameSuggestions = directorySuggestions.length ? directorySuggestions : getSpeakerRenameSuggestions(speakerSuggestions);
+  const displaySegments = rawDisplaySegments;
   const activeSegmentId = useMemo(() => {
     const currentMs = currentTime * 1000;
 
@@ -897,44 +891,40 @@ export function TranscriptViewer({
     });
   }
 
-  function startEditing(speaker: string | null, segmentId?: string) {
-    const speakerStat = speakerStatByRawKey.get(getSpeakerKey(speaker));
-    const speakerKey = speakerStat?.speakerKey ?? getSpeakerKey(speaker);
-    const targetSegmentId =
-      segmentId ??
-      rawDisplaySegments.find((segment) =>
-        speakerStat
-          ? isSpeakerInStat(segment.speaker, speakerStat)
-          : getSpeakerKey(segment.speaker) === speakerKey,
-      )?.id;
-
-    if (!targetSegmentId) {
-      return;
-    }
-
-    setEditingSpeaker({
-      allowSegmentScope: Boolean(segmentId),
-      currentSpeaker: speaker,
-      speakerAliases: Array.from(
-        new Set([
-          ...(speakerStat?.aliases ?? []),
-          ...(savedAliasesByCanonicalKey.get(
-            getNormalizedSpeakerKey(speakerStat?.speaker ?? speaker),
-          ) ?? []),
-        ]),
-      ),
-      segmentId: targetSegmentId,
-      speakerKey,
-    });
-    const initialSpeaker = speakerStat?.speaker ?? speaker ?? "";
-
-    setParticipantEmail(getFullParticipantEmail(speaker) ?? getFullParticipantEmail(initialSpeaker));
+  function startEditing(speaker: string | null, segmentId?: string, groupKey?: string) {
+    const anchor = segments.find(segment => segmentId ? segment.id === segmentId : getSegmentSpeakerKey(segment) === groupKey);
+    if (!anchor) return;
+    const speakerKey = getSegmentSpeakerKey(anchor);
+    setEditingSpeaker({ allowSegmentScope: Boolean(segmentId), currentSpeaker: anchor.speaker, speakerAliases: [], segmentId: anchor.id, speakerKey, meetingSpeakerId: anchor.meetingSpeakerId, speakerRevision: anchor.speakerRevision });
+    const initialSpeaker = anchor.speaker ?? "";
+    setParticipantEmail(null);
+    setLinkedPerson(anchor.personId ? { id: anchor.personId, name: initialSpeaker, email: anchor.participantEmail ?? "" } : null);
+    setLinkAction("preserve");
+    setChoosingPerson(!anchor.personId);
+    setNameEdited(false);
     setRememberName(true);
     setSpeakerError(null);
     setDraftSpeaker(initialSpeaker);
     setInitialDraftSpeaker(initialSpeaker);
     setSpeakerApplyScope("matching_speaker");
     setErrorSpeakerKey(null);
+    setDirectorySuggestions([]);
+    setMeetingParticipants(speakerSuggestions);
+    const request = ++directoryRequestRef.current;
+    if (anchor.meetingSpeakerId && meetingId) {
+      void fetch(`/api/meetings/${encodeURIComponent(meetingId)}/speakers/people`)
+        .then(response => response.ok ? response.json() : null)
+        .then(data => {
+          if (!data || request !== directoryRequestRef.current) return;
+          const people: SpeakerSuggestion[] = (data.people ?? []).map((person: { id: string; name: string; emails: string[] }) => ({ id: person.id, name: person.name, email: person.emails.join(", ") }));
+          const participants: SpeakerSuggestion[] = (data.participants ?? []).map((participant: { name: string | null; email: string }) => ({
+            name: participant.name?.trim() || participant.email,
+            email: participant.email,
+          }));
+          setDirectorySuggestions([...people, ...participants]);
+          setMeetingParticipants(participants);
+        }).catch(() => {});
+    }
   }
 
   async function saveSpeaker(event: FormEvent<HTMLFormElement>) {
@@ -953,9 +943,16 @@ export function TranscriptViewer({
       return;
     }
 
+    if (needsWorkspaceNameConsent) {
+      setSpeakerError(WORKSPACE_NAME_EDIT_HINT);
+      setErrorSpeakerKey(speakerKey);
+      return;
+    }
+
     setSavingSpeakerKey(speakerKey);
     setErrorSpeakerKey(null);
 
+    let returnedSegments: TranscriptSegment[] | undefined;
     try {
       const response = await fetch(
         `/api/meetings/${encodeURIComponent(meetingId)}/speakers`,
@@ -964,36 +961,36 @@ export function TranscriptViewer({
           headers: { "content-type": "application/json" },
           body: JSON.stringify({
             applyTo: speakerApplyScope,
-            currentSpeakerAliases: editingSpeaker.speakerAliases,
             currentSpeaker: editingSpeaker.currentSpeaker,
             segmentId: editingSpeaker.segmentId,
             speaker,
-            ...(speakerApplyScope === "matching_speaker" && participantEmail ? { participantEmail } : {}),
-            rememberName: speakerApplyScope === "matching_speaker" && Boolean(participantEmail) && rememberName,
+            meetingSpeakerId: editingSpeaker.meetingSpeakerId,
+            expectedRevision: editingSpeaker.speakerRevision,
+            linkAction,
+            ...(linkAction === "link" ? { personId: linkedPerson?.id } : {}),
+            ...(participantEmail && (linkAction === "create" || linkAction === "link") ? { participantEmail } : {}),
+            ...(nameEdited && linkedPerson && rememberName ? { preferredName: speaker } : {}),
           }),
         },
       );
+      if (response.status === 409) {
+        router.refresh();
+        throw new Error("This speaker changed. Cancel and reopen the editor to use the latest version.");
+      }
       if (!response.ok) throw new Error("Speaker name could not be saved. Try again.");
-    } catch {
+      returnedSegments = (await response.json().catch(() => null))?.segments;
+    } catch (error) {
       setErrorSpeakerKey(speakerKey);
-      setSpeakerError("Speaker name could not be saved. Try again.");
+      setSpeakerError(error instanceof Error ? error.message : "Speaker name could not be saved. Try again.");
       return;
     } finally {
       setSavingSpeakerKey(null);
     }
 
-    const updatedSegments = applySpeakerUpdateToSegments(segments, editingSpeaker, speakerApplyScope, speaker);
-    const affectedIds = new Set(segments.filter(segment => speakerApplyScope === "segment"
-      ? segment.id === editingSpeaker.segmentId
-      : getSpeakerKey(segment.speaker) === getSpeakerKey(editingSpeaker.currentSpeaker) ||
-        Boolean(segment.speaker && editingSpeaker.speakerAliases.includes(segment.speaker))).map(segment => segment.id));
-    setSegments(currentSegments => applySpeakerUpdateToSegments(currentSegments, editingSpeaker, speakerApplyScope, speaker));
-    window.dispatchEvent(new CustomEvent(SPEAKER_LABELS_CHANGED, {
-      detail: updatedSegments.filter(segment => affectedIds.has(segment.id)).map(({ id, speaker }) => ({
-        id, speaker,
-        ...(speakerApplyScope === "matching_speaker" && participantEmail ? { participantEmail } : {}),
-      })),
-    }));
+    const updates = returnedSegments ?? applySpeakerUpdateToSegments(segments.filter(segment => shouldApplySpeakerUpdate(segment, editingSpeaker, speakerApplyScope)), editingSpeaker, speakerApplyScope, speaker);
+    const byId = new Map(updates.map(segment => [segment.id, segment]));
+    setSegments(current => current.map(segment => byId.has(segment.id) ? { ...segment, ...byId.get(segment.id) } : segment));
+    window.dispatchEvent(new CustomEvent(SPEAKER_LABELS_CHANGED, { detail: updates.map(({ id, speaker, meetingSpeakerId, personId, sourceSpeaker, participantEmail, speakerRevision }) => ({ id, speaker, meetingSpeakerId, personId, sourceSpeaker, participantEmail, speakerRevision })) }));
     setEditingSpeaker(null);
     router.refresh();
   }
@@ -1055,7 +1052,7 @@ export function TranscriptViewer({
     return (
       <form className="flex w-full max-w-xl flex-col gap-2" onSubmit={saveSpeaker}>
         <div className="flex min-w-0 flex-wrap items-start gap-1.5">
-          <div className="relative min-w-[min(100%,18rem)] flex-1">
+          <div className="relative min-w-[min(100%,12rem)] flex-1">
             <Combobox<SpeakerSuggestion>
               filter={(suggestion, query) =>
                 matchesSpeakerSuggestion(
@@ -1067,20 +1064,22 @@ export function TranscriptViewer({
               inline
               inputValue={draftSpeaker}
               isItemEqualToValue={(suggestion, value) =>
-                suggestion.email === value.email
+                suggestion.id ? suggestion.id === value.id : suggestion.email === value.email
               }
               items={speakerRenameSuggestions}
               itemToStringLabel={(suggestion) => suggestion.name}
               itemToStringValue={(suggestion) => suggestion.name}
-              onInputValueChange={setDraftSpeaker}
+              onInputValueChange={(value) => { setDraftSpeaker(value); setNameEdited(true); }}
               onValueChange={(suggestion) => {
                 if (suggestion) {
-                  setDraftSpeaker(suggestion.name);
-                  setParticipantEmail(getFullParticipantEmail(suggestion.email));
-                  setRememberName(true);
+                  if (!nameEdited || !draftSpeaker.trim() || getFullParticipantEmail(draftSpeaker)) setDraftSpeaker(suggestion.name);
+                  setLinkedPerson(suggestion);
+                  setParticipantEmail(suggestion.id ? null : getFullParticipantEmail(suggestion.email));
+                  setLinkAction(suggestion.id ? "link" : "create");
+                  setChoosingPerson(false);
                 }
               }}
-              open
+              open={choosingPerson}
             >
               <ComboboxInput
                 aria-label="Speaker name"
@@ -1100,13 +1099,13 @@ export function TranscriptViewer({
                 }}
                 placeholder="Speaker name"
               />
-              <div className="absolute inset-x-0 top-full z-30 mt-1 max-h-44 overflow-y-auto rounded-lg bg-popover shadow-md ring-1 ring-foreground/10 empty:hidden">
+              {choosingPerson ? <div className="absolute inset-x-0 top-full z-30 mt-1 max-h-44 overflow-y-auto rounded-lg bg-popover shadow-md ring-1 ring-foreground/10 empty:hidden">
                 <ComboboxEmpty>
                   No matching participant. You can still use this name.
                 </ComboboxEmpty>
                 <ComboboxList>
                   {(suggestion: SpeakerSuggestion) => (
-                    <ComboboxItem key={suggestion.email} value={suggestion}>
+                    <ComboboxItem key={suggestion.id ?? suggestion.email} value={suggestion}>
                       <span className="min-w-0">
                         <span className="block truncate font-medium">
                           {suggestion.name}
@@ -1118,7 +1117,7 @@ export function TranscriptViewer({
                     </ComboboxItem>
                   )}
                 </ComboboxList>
-              </div>
+              </div> : null}
             </Combobox>
           </div>
           {previewClips.length > 0 && canSeekTranscript ? (
@@ -1167,7 +1166,7 @@ export function TranscriptViewer({
                   ? "bg-muted text-foreground"
                   : "text-muted-foreground hover:text-foreground",
               )}
-              onClick={() => setSpeakerApplyScope("matching_speaker")}
+              onClick={() => { setSpeakerApplyScope("matching_speaker"); setRememberName(true); }}
               type="button"
             >
               Same speaker
@@ -1180,22 +1179,41 @@ export function TranscriptViewer({
                   ? "bg-muted text-foreground"
                   : "text-muted-foreground hover:text-foreground",
               )}
-              onClick={() => setSpeakerApplyScope("segment")}
+              onClick={() => { setSpeakerApplyScope("segment"); setRememberName(false); }}
               type="button"
             >
               This line
             </button>
           </div>
         ) : null}
-        {participantEmail && speakerApplyScope === "matching_speaker" ? (
-          <label className="flex min-h-11 cursor-pointer items-start gap-2.5 rounded-md bg-muted/35 px-3 py-2.5 text-sm">
-            <input className="mt-0.5 size-4 shrink-0 accent-primary" type="checkbox" checked={rememberName} disabled={isSaving} onChange={(event) => setRememberName(event.target.checked)} />
-            <span className="min-w-0">Remember for future meetings
-              <span className="mt-1 block break-all text-xs leading-5 text-muted-foreground">{participantEmail}</span>
-              <span className="block text-xs leading-5 text-muted-foreground">For this email in this workspace.</span>
-            </span>
+        {linkedPerson ? (
+          <div className="flex flex-wrap items-center gap-2 text-sm">
+            <span>Linked to {linkedPerson.name}{linkedPerson.email ? ` · ${linkedPerson.email}` : ""}</span>
+            <button type="button" onClick={() => setChoosingPerson(true)}>Change person</button>
+            <button type="button" onClick={() => { setLinkedPerson(null); setParticipantEmail(null); setLinkAction("unlink"); setChoosingPerson(true); }}>Unlink</button>
+          </div>
+        ) : (
+          <button className="w-fit text-sm underline" type="button" onClick={() => { setLinkedPerson({ name: draftSpeaker, email: "" }); setLinkAction("create"); setChoosingPerson(false); }}>Create contact without email</button>
+        )}
+        {linkedPerson?.id && meetingParticipants.length > 0 ? (
+          <label className="flex flex-wrap items-center gap-2 text-sm">
+            Associate meeting email
+            <select className="min-h-11 max-w-full rounded-md border bg-background px-2" value={participantEmail ?? ""} onChange={event => {
+              setParticipantEmail(event.target.value || null);
+              if (event.target.value) setLinkAction("link");
+            }}>
+              <option value="">No additional email</option>
+              {meetingParticipants.map(participant => <option key={participant.email} value={participant.email}>{participant.email}</option>)}
+            </select>
           </label>
         ) : null}
+        {linkedPerson ? (
+          <label className="flex min-h-11 items-center gap-2 text-sm">
+            <input type="checkbox" checked={rememberName} disabled={isSaving} onChange={event => setRememberName(event.target.checked)} />
+            Use edited name across this workspace
+          </label>
+        ) : <p className="text-xs text-muted-foreground">Save a name only, or choose a person to link.</p>}
+        {needsWorkspaceNameConsent && !hasError ? <p className="text-xs text-muted-foreground">{WORKSPACE_NAME_EDIT_HINT}</p> : null}
         {hasError ? (
           <p className="text-xs font-medium text-destructive" role="alert">
             {speakerError ?? "Speaker name could not be saved. Try again."}
@@ -1410,6 +1428,7 @@ export function TranscriptViewer({
                     displaySegments,
                     speaker.speaker,
                     speaker.aliases,
+                    speaker.speakerKey,
                   );
                   const isSummaryEditing =
                     editingSpeaker?.speakerKey === speakerKey &&
@@ -1442,7 +1461,7 @@ export function TranscriptViewer({
                           className="size-2.5 rounded-full"
                           style={{
                             backgroundColor: getWaveformSpeakerColor(
-                              speaker.speaker,
+                              speaker.speakerKey,
                               speakerColorByKey,
                             ),
                           }}
@@ -1479,7 +1498,7 @@ export function TranscriptViewer({
                         {canEditSpeakers ? (
                           <Button
                             aria-label={`Rename ${speakerLabel} everywhere`}
-                            onClick={() => startEditing(speaker.speaker)}
+                            onClick={() => startEditing(speaker.speaker, undefined, speaker.speakerKey)}
                             size="icon-xs"
                             title={`Rename ${speakerLabel} everywhere`}
                             type="button"
@@ -1518,7 +1537,7 @@ export function TranscriptViewer({
                 : null}
               {displaySegments.map((segment, index) => {
                 const speakerStat = speakerStatByRawKey.get(
-                  getSpeakerKey(segment.speaker),
+                  getSegmentSpeakerKey(segment),
                 );
                 const displaySpeaker = speakerStat?.speaker ?? segment.speaker;
                 const speakerLabel = displaySpeaker ?? "Unknown speaker";
@@ -1577,8 +1596,8 @@ export function TranscriptViewer({
                 const isContinuation =
                   !isEditing &&
                   previousSegment !== null &&
-                  getSpeakerKey(previousSegment.speaker) ===
-                    getSpeakerKey(segment.speaker) &&
+                  getSegmentSpeakerKey(previousSegment) ===
+                    getSegmentSpeakerKey(segment) &&
                   !visualAssetPlacements.bySegmentId.has(previousSegment.id);
 
                 return (
@@ -1637,7 +1656,7 @@ export function TranscriptViewer({
                           className="size-2 shrink-0 rounded-full"
                           style={{
                             backgroundColor: getWaveformSpeakerColor(
-                              displaySpeaker,
+                              getSegmentSpeakerKey(segment),
                               speakerColorByKey,
                             ),
                           }}
@@ -1878,7 +1897,7 @@ function getTranscriptDisplaySegments(segments: TranscriptSegment[]) {
 
 function getTranscriptDisplayKeys(segment: TranscriptSegment) {
   const baseParts = [
-    getSpeakerKey(segment.speaker).trim().toLowerCase(),
+    getSegmentSpeakerKey(segment),
     formatTimestamp(segment.startMs),
     getDisplayedEmotionKey(segment.emotionLabel),
   ];
@@ -2699,7 +2718,7 @@ function TranscriptAudioPlayer({
                     className="absolute inset-x-0 top-1 h-1 rounded-full"
                     style={{
                       backgroundColor: getWaveformSpeakerColor(
-                        section.speaker,
+                        section.speakerKey,
                         speakerColorByKey,
                       ),
                       opacity: section.id === activeSegmentId ? 0.96 : 0.78,
@@ -3095,6 +3114,7 @@ function buildWaveformSections(
         left,
         speaker: segment.speaker,
         speakerLabel,
+        speakerKey: getSegmentSpeakerKey(segment),
         width,
       };
     })
@@ -3372,10 +3392,11 @@ export function getSpeakerPreviewClips(
   segments: TranscriptSegment[],
   speaker: string | null,
   aliases: string[],
+  groupKey?: string,
 ) {
   const speakerKeys = new Set([speaker, ...aliases].map(getSpeakerKey));
   const clips = segments.flatMap((segment, index) => {
-    if (!speakerKeys.has(getSpeakerKey(segment.speaker))) {
+    if (groupKey ? getSegmentSpeakerKey(segment) !== groupKey : !speakerKeys.has(getSpeakerKey(segment.speaker))) {
       return [];
     }
 
@@ -3431,7 +3452,7 @@ function buildSpeakerColorMap(speakers: SpeakerStat[]) {
   const usedColors = new Set<string>();
 
   for (const [speakerIndex, speaker] of speakers.entries()) {
-    const speakerKey = getSpeakerKey(speaker.speaker);
+    const speakerKey = speaker.speakerKey;
     const preferredIndex = getSpeakerColorHash(speakerKey) %
       WAVEFORM_SECTION_COLORS.length;
     let color = WAVEFORM_SECTION_COLORS[preferredIndex];
@@ -3452,9 +3473,6 @@ function buildSpeakerColorMap(speakers: SpeakerStat[]) {
     usedColors.add(color);
     colorByKey.set(speakerKey, color);
 
-    for (const alias of speaker.aliases) {
-      colorByKey.set(getSpeakerKey(alias), color);
-    }
   }
 
   return colorByKey;
@@ -3555,9 +3573,6 @@ function getSegmentTimelineDuration(segments: TranscriptSegment[]) {
 
 function buildSpeakerStats(segments: TranscriptSegment[]): SpeakerStat[] {
   const drafts: SpeakerStatDraft[] = [];
-  const uniqueFullNameByFirstName = getUniqueFullNameByFirstName(
-    segments.flatMap((segment) => (segment.speaker ? [segment.speaker] : [])),
-  );
   let allSpeakerMs = 0;
 
   segments.forEach((segment, index) => {
@@ -3565,16 +3580,9 @@ function buildSpeakerStats(segments: TranscriptSegment[]): SpeakerStat[] {
       1,
       (segment.endMs ?? segment.startMs) - segment.startMs,
     );
-    const matchingDraft = drafts.find((draft) =>
-      shouldMergeSpeakerLabels(
-        draft.speaker,
-        segment.speaker,
-        uniqueFullNameByFirstName,
-      ),
-    );
-    const draft =
-      matchingDraft ??
-      createSpeakerStatDraft(segment.speaker, segment.startMs, index);
+    const matchingDraft = drafts.find(draft => draft.speakerKey === getSegmentSpeakerKey(segment));
+    const draft = matchingDraft ?? createSpeakerStatDraft(segment.speaker, segment.startMs, index);
+    draft.speakerKey = getSegmentSpeakerKey(segment);
 
     if (!matchingDraft) {
       drafts.push(draft);
@@ -3597,7 +3605,7 @@ function buildSpeakerStats(segments: TranscriptSegment[]): SpeakerStat[] {
       currentAlias.totalMs += durationMs;
       draft.aliases.set(alias, currentAlias);
       draft.speaker = chooseSpeakerDisplay(draft);
-      draft.speakerKey = getSpeakerKey(draft.speaker);
+
     }
   });
 
@@ -3683,14 +3691,6 @@ function getSpeakerLabelQuality(label: string) {
   return 1;
 }
 
-function isSpeakerInStat(speaker: string | null, stat: SpeakerStat) {
-  if (getSpeakerKey(speaker) === stat.speakerKey) {
-    return true;
-  }
-
-  return Boolean(speaker && stat.aliases.includes(speaker));
-}
-
 export function applySpeakerUpdateToSegments(
   segments: TranscriptSegment[],
   editingSpeaker: EditingSpeaker,
@@ -3698,7 +3698,7 @@ export function applySpeakerUpdateToSegments(
   speaker: string,
 ) {
   return segments.map((segment) =>
-    shouldApplySpeakerUpdate(segment, editingSpeaker, speakerApplyScope, speaker)
+    shouldApplySpeakerUpdate(segment, editingSpeaker, speakerApplyScope)
       ? { ...segment, speaker }
       : segment,
   );
@@ -3708,70 +3708,10 @@ function shouldApplySpeakerUpdate(
   segment: TranscriptSegment,
   editingSpeaker: EditingSpeaker,
   speakerApplyScope: SpeakerApplyScope,
-  nextSpeaker: string,
 ) {
-  const normalizedNextSpeaker = getNormalizedSpeakerKey(nextSpeaker);
-
-  if (speakerApplyScope === "segment") {
-    return segment.id === editingSpeaker.segmentId;
-  }
-
-  if (getNormalizedSpeakerKey(segment.speaker) === normalizedNextSpeaker) {
-    return true;
-  }
-
-  return (
-    getSpeakerKey(segment.speaker) ===
-      getSpeakerKey(editingSpeaker.currentSpeaker) ||
-    Boolean(
-      segment.speaker && editingSpeaker.speakerAliases.includes(segment.speaker),
-    )
-  );
-}
-
-function shouldMergeSpeakerLabels(
-  left: string | null,
-  right: string | null,
-  uniqueFullNameByFirstName = new Map<string, string>(),
-) {
-  if (getNormalizedSpeakerKey(left) === getNormalizedSpeakerKey(right)) {
-    return true;
-  }
-
-  if (!left || !right) {
-    return false;
-  }
-
-  const leftFullName = getUniqueFullNameForFirstNameAlias(
-    left,
-    uniqueFullNameByFirstName,
-  );
-  const rightFullName = getUniqueFullNameForFirstNameAlias(
-    right,
-    uniqueFullNameByFirstName,
-  );
-
-  if (
-    (leftFullName &&
-      getNormalizedSpeakerKey(leftFullName) === getNormalizedSpeakerKey(right)) ||
-    (rightFullName &&
-      getNormalizedSpeakerKey(rightFullName) === getNormalizedSpeakerKey(left))
-  ) {
-    return true;
-  }
-
-  return (
-    isLikelyNoisyAliasForFullName(left, right) ||
-    isLikelyNoisyAliasForFullName(right, left)
-  );
-}
-
-function isLikelyNoisyAliasForFullName(fullName: string, alias: string) {
-  return (
-    isCleanSpeakerFullName(fullName) &&
-    isNoisySpeakerHandle(alias) &&
-    getSpeakerFirstName(fullName) === getSpeakerHandlePrefix(alias)
-  );
+  if (speakerApplyScope === "segment") return segment.id === editingSpeaker.segmentId;
+  if (editingSpeaker.meetingSpeakerId) return segment.meetingSpeakerId === editingSpeaker.meetingSpeakerId;
+  return !segment.meetingSpeakerId && segment.speaker === editingSpeaker.currentSpeaker;
 }
 
 function isNoisySpeakerHandle(label: string) {
@@ -3782,10 +3722,6 @@ function isNoisySpeakerHandle(label: string) {
     (/\d/.test(trimmed) ||
       /(desktop|home|ipad|iphone|macbook|phone|work)$/i.test(trimmed))
   );
-}
-
-function getSpeakerHandlePrefix(label: string) {
-  return label.trim().match(/^[A-Za-z]+/)?.[0].toLowerCase() ?? "";
 }
 
 function formatLineCount(count: number) {
@@ -3843,8 +3779,8 @@ function getSpeakerKey(speaker: string | null) {
   return speaker ?? "__unknown__";
 }
 
-function getNormalizedSpeakerKey(speaker: string | null) {
-  return getSpeakerIdentityKey(speaker);
+function getSegmentSpeakerKey(segment: TranscriptSegment) {
+  return segment.meetingSpeakerId ?? getSpeakerKey(segment.sourceSpeaker ?? segment.speaker);
 }
 
 function getFullParticipantEmail(value: string | null) {

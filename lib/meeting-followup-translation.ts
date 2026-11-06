@@ -2,8 +2,9 @@ import { and, eq } from "drizzle-orm";
 import { db } from "@/db/client";
 import { meetings } from "@/db/schema";
 import { getComposedMeetingForFollowup } from "@/lib/meeting-composition";
+import { getFollowupAttributionCondition } from "@/lib/meeting-followup-generation";
 import { acquireFollowupLease, releaseFollowupLease } from "@/lib/meeting-followup-lease";
-import { getCurrentMeetingFollowup, getFollowupSourceHash, storedFollowupSchema } from "@/lib/meeting-followup-source";
+import { getCurrentMeetingFollowup, getFollowupSourceHash, storedFollowupSchema, resolveTranslatedFollowupSubjects } from "@/lib/meeting-followup-source";
 import { meetingFollowupSchema, type MeetingFollowup } from "@/lib/meeting-followup";
 import type { TranslationLanguage } from "@/lib/meeting-translation-language";
 import { assertWorkspaceHasProviderCredit } from "@/lib/provider-credit";
@@ -42,13 +43,13 @@ export async function getOrTranslateFollowupCopy(workspace: WorkspaceContext, me
   const initial = await load();
   if (!initial) return null;
   if (language === "en") return initial.result;
-  if (initial.saved.translations?.[language]) return initial.saved.translations[language]!;
+  if (initial.saved.translations?.[language]) return resolveTranslatedFollowupSubjects(initial.saved.translations[language]!, initial.result);
   const token = await acquireFollowupLease(meetingId);
   if (!token) return "in_progress" as const;
   try {
     const current = await load();
     if (!current) return null;
-    if (current.saved.translations?.[language]) return current.saved.translations[language]!;
+    if (current.saved.translations?.[language]) return resolveTranslatedFollowupSubjects(current.saved.translations[language]!, current.result);
     await assertWorkspaceHasProviderCredit(workspace);
     const translated = await translateFollowupCopy(current.result, language, meetingId);
     if (!await load()) return null; // Access and composition can change during translation.
@@ -56,6 +57,7 @@ export async function getOrTranslateFollowupCopy(workspace: WorkspaceContext, me
       ...current.saved, translations: { ...current.saved.translations, [language]: translated },
     } }).where(and(eq(meetings.id, meetingId), eq(meetings.followupLeaseToken, token),
       eq(meetings.updatedAt, new Date(current.meeting.updatedAt)),
+      getFollowupAttributionCondition(current.meeting),
       eq(meetings.aiFollowup, current.meeting.aiFollowup),
     )).returning({ id: meetings.id });
     return saved ? translated : null;

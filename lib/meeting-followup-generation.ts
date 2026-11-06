@@ -1,6 +1,6 @@
 import { acquireFollowupLease, releaseFollowupLease } from "@/lib/meeting-followup-lease";
 import { getRecentMeetingCompanies } from "@/lib/recent-meeting-companies";
-import { and, eq, isNull } from "drizzle-orm";
+import { and, eq, isNull, sql } from "drizzle-orm";
 
 import { db } from "@/db/client";
 import { meetings, users } from "@/db/schema";
@@ -96,7 +96,8 @@ async function generateLockedMeetingFollowup({
   const previous = storedFollowupSchema.safeParse(current.aiFollowup);
   const connectionEdits = previous.success && matchesConnectionsSourceHash(source, previous.data.connectionsSourceHash)
     ? previous.data.connectionEdits : undefined;
-  const aiFollowup = { sourceHash, connectionsSourceHash: getConnectionsSourceHash(source), result,
+  const speakerNames = Object.fromEntries(source.segments.map(segment => [segment.id, segment.speaker]));
+  const aiFollowup = { sourceHash, speakerNames, connectionsSourceHash: getConnectionsSourceHash(source), result,
     ...(connectionEdits?.length ? { connectionEdits } : {}) };
   const saved = await db
     .update(meetings)
@@ -107,6 +108,7 @@ async function generateLockedMeetingFollowup({
         eq(meetings.status, "ready"),
         eq(meetings.followupLeaseToken, leaseToken),
         eq(meetings.updatedAt, new Date(current.updatedAt)),
+        getFollowupAttributionCondition(current),
         current.aiFollowup == null ? isNull(meetings.aiFollowup) : eq(meetings.aiFollowup, current.aiFollowup),
       ),
     )
@@ -193,4 +195,17 @@ export async function generateAndSaveMeetingFollowup(input: Omit<Parameters<type
   } finally {
     await releaseFollowupLease(input.meetingId, token);
   }
+}
+
+// Compare all source meetings, including secondary parts, at the persistence boundary.
+export function getFollowupAttributionCondition(meeting: { id?: string; attributionRevision?: number; followupSource?: { attributionRevisions?: Array<{ meetingId: string; revision: number }> } }) {
+  const parts = meeting.followupSource?.attributionRevisions;
+  return and(
+    eq(meetings.attributionRevision, meeting.attributionRevision ?? 0),
+    ...(parts ?? []).map(part => sql`exists (
+      select 1 from meetings source_meeting
+      where source_meeting.id = ${part.meetingId}::uuid
+        and source_meeting.attribution_revision = ${part.revision}
+    )`),
+  );
 }

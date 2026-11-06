@@ -110,7 +110,7 @@ Use the organization control in navigation for new uploads, phone recordings, ca
 
 Continue recording accepts a Zoom or Google Meet link for one hour after the last recording ends. It keeps the previous recording bot name; new joins use the bot configured in organization settings. Merge meetings is available before transcripts finish, preserves original recordings and private notes, and can be undone from the merge dialog. Compatible meetings must share their workspace, owner, organization visibility, and current recipients.
 
-Combined meetings show chronological recording parts with separate audio and transcript controls. Note questions, text and image exports, and completed followups include readable parts. Sharing a combined meeting does not grant access to its original sources. Speaker corrections can explicitly remember a verified participant email for future meetings in the workspace.
+Combined meetings show chronological recording parts with separate audio and transcript controls. Note questions, text and image exports, and completed followups include readable parts. Sharing a combined meeting does not grant access to its original sources. Speaker corrections link an immutable speaker group to a workspace contact. Select a name or meeting email, customize the preferred name, and reopen without losing the link. Change person and Unlink are explicit actions; contacts can have multiple confirmed emails or no email.
 
 Recall recording recovery checks started bot meetings every five minutes, independently of webhooks. Missing completion notifications and queued transcription dispatches are retried without creating another job. Started and unfinished meetings remain visible in the library.
 

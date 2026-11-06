@@ -1,9 +1,13 @@
 import { createHash } from "node:crypto";
 import { getCurrentMeetingFollowup, getCurrentMeetingConnections, getCurrentMeetingConnectionIds } from "@/lib/meeting-followup-source";
-import { intelExtractionSchema, rankingSchema, type IntelMeeting, type IntelCard, type Person, type Evidence, type SearchInput, type Match } from "./types";
+import { intelExtractionSchema, rankingSchema, type IntelMeeting, type IntelCard, type Person, type Evidence, type SearchInput, type Match, type Segment } from "./types";
 
 export function intelSourceHash(meeting: IntelMeeting) {
-  return createHash("sha256").update(JSON.stringify([1, meeting.title, meeting.startedAt, meeting.segments])).digest("hex");
+  // Preserve the original store projection and property order for existing hashes.
+  const segments = meeting.segments.map(s => ({ id: s.id, speaker: s.sourceSpeaker !== undefined ? s.sourceSpeaker : s.speaker, text: s.text, startMs: s.startMs }));
+  const source: unknown[] = [1, meeting.title, meeting.startedAt, segments];
+  if (meeting.attributionRevision) source.push(["attribution", meeting.attributionRevision]);
+  return createHash("sha256").update(JSON.stringify(source)).digest("hex");
 }
 export function validateExtraction(value: unknown, meeting: IntelMeeting) {
   const result = intelExtractionSchema.parse(value);
@@ -32,6 +36,11 @@ export function personId(meetingId: string, speaker: string) {
     ? `email:${label.toLowerCase()}`
     : `speaker:${meetingId}:${createHash("sha256").update(label).digest("hex").slice(0, 20)}`;
 }
+export function segmentPersonId(meetingId: string, segment: Segment) {
+  if (segment.personId) return `person:${segment.personId}`;
+  if (segment.meetingSpeakerId) return `meeting-speaker:${segment.meetingSpeakerId}`;
+  return personId(meetingId, segment.speaker ?? "");
+}
 export function buildCatalog(meetings: IntelMeeting[], now = new Date()) {
   const since = new Date(now); since.setMonth(since.getMonth() - 6);
   const sourceMeetings = new Map(meetings.flatMap(m => m.segments.map(s => [s.id, m] as const)));
@@ -40,7 +49,7 @@ export function buildCatalog(meetings: IntelMeeting[], now = new Date()) {
   for (const meeting of meetings) {
     for (const segment of meeting.segments) {
       if (!segment.speaker || /^(?:unknown(?:\s+speaker)?|speaker(?:[\s_-]*(?:\d+|[a-z]))?)$/i.test(segment.speaker.trim())) continue;
-      const id = personId(meeting.id, segment.speaker);
+      const id = segmentPersonId(meeting.id, segment);
       let person = people.get(id);
       if (!person) {
         person = { id, name: segment.speaker, detail: meeting.title, kind: "participant", meetingIds: [], segmentIds: [], sourceDate: meeting.date, sourceMeetingId: meeting.id, sourceSegmentId: segment.id };
@@ -69,7 +78,7 @@ export function buildCatalog(meetings: IntelMeeting[], now = new Date()) {
   }
   return { intel: intel.sort((a,b) => b.date.localeCompare(a.date)), people: [...people.values()],
     pending: meetings.filter(m => new Date(m.date) >= since && !currentIntel(m)).length,
-    coverage: `${meetings.length} accessible meetings. Intel from the past six months; matching includes initial and latest available meetings. Names without a confirmed email stay separate by meeting.` };
+    coverage: `${meetings.length} accessible meetings. Intel from the past six months; matching includes initial and latest available meetings. Only confirmed person links combine speaker histories across meetings.` };
 }
 
 export function buildMatchingContext(meetings: IntelMeeting[], people: Person[], now = new Date()) {
@@ -82,6 +91,7 @@ export function buildMatchingContext(meetings: IntelMeeting[], people: Person[],
   }
   return meetings.filter(m => included.has(m.id)).map(m => ({
     id: m.id, title: m.title, date: m.date, segments: m.segments,
+    ...(m.attributionRevision ? { attributionRevision: m.attributionRevision } : {}),
     dynamics: new Date(m.date) >= since ? getCurrentMeetingFollowup(m)?.dynamics ?? [] : [],
     connections: new Date(m.date) >= since ? getCurrentMeetingConnections(m) : [],
   }));
@@ -97,7 +107,8 @@ export function validateMatches(value: unknown, input: SearchInput, meetings: In
     if (!target || seen.has(match.id) || (input.kind !== "person" && match.type !== "person")) throw new Error("Invalid matching target");
     if (input.kind === "intel") {
       const selectedIntel = catalog.intel.find(i => i.id === input.id);
-      if (selectedIntel && match.id === personId(selectedIntel.evidence[0].meetingId, selectedIntel.speaker)) throw new Error("Do not recommend the source speaker");
+      const anchor = selectedIntel?.evidence.find(s => s.id === selectedIntel.speakerSegmentId);
+      if (anchor && match.id === segmentPersonId(anchor.meetingId, anchor)) throw new Error("Do not recommend the source speaker");
     }
     if (input.kind === "person" && input.ids.includes(match.id)) throw new Error("A person cannot match themselves");
     seen.add(match.id);

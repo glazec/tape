@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { PgDialect } from "drizzle-orm/pg-core";
 
-const { select, update } = vi.hoisted(() => ({ select: vi.fn(), update: vi.fn() }));
-vi.mock("@/db/client", () => ({ db: { select, update } }));
+const { select, update, execute } = vi.hoisted(() => ({ select: vi.fn(), update: vi.fn(), execute: vi.fn() }));
+vi.mock("@/db/client", () => ({ db: { select, update, execute }, withDatabaseWorkspace: (_workspace: unknown, operation: () => unknown) => operation() }));
 import { listPendingMeetingEmails, loadMeetingEmailSnapshot, isMeetingEmailCurrent, markMeetingEmailSent, prepareMeetingEmail } from "@/lib/meeting-email-records";
 
 const meetingId = "11111111-1111-4111-8111-111111111111";
@@ -52,6 +52,13 @@ describe("meeting email records", () => {
     expect(segmentsSql.params).toEqual([meetingId, jobId]);
   });
 
+  it("uses the owner workspace to resolve preferred speaker names in email transcripts", async () => {
+    mockRows([{ ...meeting, teamId: "team", userId: "owner" }], [job()], [{ ...segments[0], id: "s1", meetingSpeakerId: "g1" }]);
+    execute.mockResolvedValue({ rows: [{ id: "s1", speaker: "Alex", sourceSpeaker: "Jocy", personId: "p1", meetingSpeakerId: "g1", participantEmail: null, speakerRevision: 0 }] });
+    const loaded = await loadMeetingEmailSnapshot({ meetingId, transcriptJobId: jobId });
+    expect(loaded).toMatchObject({ segments: [{ startMs: 0, speaker: "Alex", text: "Ship Monday." }] });
+    expect(execute).toHaveBeenCalledOnce();
+  });
   it("waits for all batch jobs, including queued append jobs", async () => {
     mockRows([meeting], [job(), { ...job(), id: "part-two", mode: "append", status: "queued" }]);
     expect(await loadMeetingEmailSnapshot({ meetingId, transcriptJobId: jobId })).toEqual({ action: "waiting" });

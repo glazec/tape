@@ -231,47 +231,51 @@ describe("TranscriptViewer interactions", () => {
     }
   });
 
-  it("remembers a corrected name for the exact full email", async () => {
+  it("requires explicit identity selection even for literal email labels", async () => {
     vi.mocked(fetch).mockResolvedValueOnce(new Response(null, { status: 200 }));
     render(<TranscriptViewer meetingId="meeting" segments={[{ ...segments[0]!, speaker: "yiping@iosf.vc" }]} />);
     fireEvent.click(screen.getByRole("button", { name: "Edit speaker yiping@iosf.vc" }));
-    expect(screen.getByRole("checkbox", { name: /Remember for future meetings/ })).toHaveProperty("checked", true);
+    expect(screen.queryByRole("checkbox", { name: /Use edited name across this workspace/ })).toBeNull();
     fireEvent.change(screen.getByLabelText("Speaker name"), { target: { value: "Yiping" } });
     fireEvent.click(screen.getByRole("button", { name: "Save speaker" }));
     await waitFor(() => expect(fetch).toHaveBeenCalledTimes(1));
-    expect(JSON.parse(String(vi.mocked(fetch).mock.calls[0]?.[1]?.body))).toMatchObject({ speaker: "Yiping", participantEmail: "yiping@iosf.vc", rememberName: true });
+    expect(JSON.parse(String(vi.mocked(fetch).mock.calls[0]?.[1]?.body))).toMatchObject({ speaker: "Yiping", linkAction: "preserve" });
   });
 
-  it("retains the chosen email while editing its preferred name, and supports meeting only correction", async () => {
+  it("retains the chosen email and requires workspace consent for its edited name", async () => {
     vi.mocked(fetch).mockResolvedValueOnce(new Response(null, { status: 200 }));
     render(<TranscriptViewer meetingId="meeting" segments={segments} speakerSuggestions={[{ name: "Yiping", email: "yiping@iosf.vc" }, { name: "Yiping", email: "yiping@other.vc" }]} />);
     fireEvent.click(screen.getByRole("button", { name: "Edit speaker Speaker 1" }));
-    expect(screen.queryByRole("checkbox", { name: /Remember for future meetings/ })).toBeNull();
+    expect(screen.queryByRole("checkbox", { name: /Use edited name across this workspace/ })).toBeNull();
     const choice = await screen.findByRole("option", { name: /Yiping.*yiping@iosf.vc/ });
     fireEvent.pointerDown(choice, { pointerType: "mouse" });
     fireEvent.click(choice);
     fireEvent.change(screen.getByLabelText("Speaker name"), { target: { value: "Yiping Chen" } });
-    fireEvent.click(screen.getByRole("checkbox", { name: /Remember for future meetings/ }));
+    fireEvent.click(screen.getByRole("checkbox", { name: /Use edited name across this workspace/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Save speaker" }));
+    expect(await screen.findByRole("alert")).toHaveProperty("textContent", "To change this linked name, enable Use edited name across this workspace or choose Unlink.");
+    expect(fetch).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("checkbox", { name: /Use edited name across this workspace/ }));
     fireEvent.click(screen.getByRole("button", { name: "Save speaker" }));
     await waitFor(() => expect(fetch).toHaveBeenCalledTimes(1));
-    expect(JSON.parse(String(vi.mocked(fetch).mock.calls[0]?.[1]?.body))).toMatchObject({ speaker: "Yiping Chen", participantEmail: "yiping@iosf.vc", rememberName: false });
+    expect(JSON.parse(String(vi.mocked(fetch).mock.calls[0]?.[1]?.body))).toMatchObject({ speaker: "Yiping Chen", participantEmail: "yiping@iosf.vc", linkAction: "create" });
   });
 
   it("does not infer email from a local part or remember this line corrections", async () => {
     vi.mocked(fetch).mockResolvedValueOnce(new Response(null, { status: 200 }));
     const view = render(<TranscriptViewer meetingId="meeting" segments={[{ ...segments[0]!, speaker: "yiping" }]} speakerSuggestions={[{ name: "Yiping", email: "yiping@iosf.vc" }]} />);
     fireEvent.click(screen.getByRole("button", { name: "Edit speaker yiping" }));
-    expect(screen.queryByRole("checkbox", { name: /Remember for future meetings/ })).toBeNull();
+    expect(screen.queryByRole("checkbox", { name: /Use edited name across this workspace/ })).toBeNull();
     view.unmount();
     render(<TranscriptViewer meetingId="meeting" segments={[{ ...segments[0]!, speaker: "yiping@iosf.vc" }]} />);
     fireEvent.click(screen.getByRole("button", { name: "Edit speaker yiping@iosf.vc" }));
     fireEvent.click(screen.getByRole("button", { name: "This line" }));
-    expect(screen.queryByRole("checkbox", { name: /Remember for future meetings/ })).toBeNull();
+    expect(screen.queryByRole("checkbox", { name: /Use edited name across this workspace/ })).toBeNull();
     fireEvent.change(screen.getByLabelText("Speaker name"), { target: { value: "Yiping" } });
     fireEvent.click(screen.getByRole("button", { name: "Save speaker" }));
     await waitFor(() => expect(fetch).toHaveBeenCalledTimes(1));
     const payload = JSON.parse(String(vi.mocked(fetch).mock.calls[0]?.[1]?.body));
-    expect(payload.rememberName).toBe(false);
+    expect(payload.preferredName).toBeUndefined();
     expect(payload.participantEmail).toBeUndefined();
   });
 
