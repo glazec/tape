@@ -383,6 +383,7 @@ export const meetings = pgTable(
     followupLeaseToken: uuid("followup_lease_token"),
     followupLeaseExpiresAt: timestamp("followup_lease_expires_at", { withTimezone: true }),
     aiIntel: jsonb("ai_intel"),
+    attributionRevision: integer("attribution_revision").notNull().default(0),
     platform: meetingPlatform("platform").notNull(),
     status: meetingStatus("status").notNull().default("scheduled"),
     meetingUrl: text("meeting_url"),
@@ -1005,6 +1006,43 @@ export const providerUsageEvents = pgTable(
   ],
 );
 
+export const workspacePeople = pgTable("workspace_people", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  teamId: uuid("team_id").notNull().references(() => teams.id, { onDelete: "cascade" }),
+  preferredName: text("preferred_name").notNull(),
+  createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
+  ...timestamps,
+});
+
+export const personEmails = pgTable("person_emails", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  personId: uuid("person_id").notNull().references(() => workspacePeople.id, { onDelete: "cascade" }),
+  teamId: uuid("team_id").notNull().references(() => teams.id, { onDelete: "cascade" }),
+  email: text("email").notNull(),
+  confirmedBy: uuid("confirmed_by").references(() => users.id, { onDelete: "set null" }),
+  confirmedAt: timestamp("confirmed_at", { withTimezone: true }).notNull().defaultNow(),
+}, table => [uniqueIndex("person_emails_person_email_unique").on(table.personId, table.email)]);
+
+export const meetingSpeakers = pgTable("meeting_speakers", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  meetingId: uuid("meeting_id").notNull().references(() => meetings.id, { onDelete: "cascade" }),
+  jobId: uuid("job_id").notNull().references(() => transcriptJobs.id, { onDelete: "cascade" }),
+  sourceBucketKey: text("source_bucket_key"),
+  sourceLabel: text("source_label"),
+  displayName: text("display_name"),
+  personId: uuid("person_id").references(() => workspacePeople.id),
+  revision: integer("revision").notNull().default(0),
+  ...timestamps,
+}, table => [uniqueIndex("meeting_speakers_source_bucket_unique").on(table.meetingId, table.jobId, table.sourceBucketKey).where(sql`${table.sourceBucketKey} is not null`)]);
+
+export const meetingSpeakerChanges = pgTable("meeting_speaker_changes", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  meetingId: uuid("meeting_id").notNull().references(() => meetings.id, { onDelete: "cascade" }),
+  actorUserId: uuid("actor_user_id").references(() => users.id, { onDelete: "set null" }),
+  metadata: jsonb("metadata").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
 export const transcriptSegments = pgTable(
   "transcript_segments",
   {
@@ -1016,6 +1054,7 @@ export const transcriptSegments = pgTable(
       .notNull()
       .references(() => transcriptJobs.id, { onDelete: "cascade" }),
     speaker: text("speaker"),
+    meetingSpeakerId: uuid("meeting_speaker_id").references(() => meetingSpeakers.id),
     startMs: integer("start_ms").notNull(),
     endMs: integer("end_ms"),
     text: text("text").notNull(),

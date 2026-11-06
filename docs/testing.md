@@ -295,7 +295,7 @@ Web session persistence is covered by `tests/auth-server.test.ts` against a disp
 
 Desktop session lifetime is checked by `tests/local-recorder-auth.test.ts` at credential issuance. `tests/local-recorder-session-lifetime.sql` replays migration `0064` twice and checks active session extension, retained token and device hashes, unchanged login date, and preservation of expired, revoked, and longer sessions. CI runs this SQL on its disposable PostgreSQL database.
 
-Astra review on 2026-10-31 also checks conflict recovery after reordered entries, manual-only Mutual confirmation, source anchors after deduplication, and truthful share-access copy. Remaining acceptance gaps include per-meeting speaker identity after an unremembered nickname and full reload, and delayed automatic followup visibility after transcription is ready. Local component fixtures do not establish production persistence or multi-account permissions.
+Astra review on 2026-10-31 also checks conflict recovery after reordered entries, manual-only Mutual confirmation, source anchors after deduplication, and truthful share-access copy. The speaker identity gap from that review is covered by the speaker identity checks below. Delayed automatic followup visibility after transcription is ready remains a separate acceptance concern. Local component fixtures do not establish production persistence or multi-account permissions.
 
 ## Intel verification
 
@@ -324,3 +324,13 @@ For release acceptance, use a clean macOS VM snapshot to install in `/Applicatio
 The native gate also runs `mac/LocalRecorder/script/test_microphone_start.mjs`. It compiles the actual microphone controller against fake audio devices to verify recovery from voice processing setup and engine start failures, selected device preservation, cleanup of failed taps, retry failure propagation, and repeated stop. It does not prove physical microphone capture.
 
 To check personal meeting language and shared followups, run `npx vitest run tests/user-language-route.test.ts tests/followup-language-copy.test.ts tests/meeting-followup-generation.test.ts`. Set `FOLLOWUP_TEST_DATABASE_URL` to a disposable local PostgreSQL database and run `npx vitest run tests/followup-lease.integration.test.ts` to verify migration backfill and concurrent generation claims. The integration test creates and removes its own schema.
+
+## Speaker person identity
+
+Run `npx vitest run tests/speaker-*.test.ts tests/speaker-*.test.tsx tests/transcript-viewer*.test.tsx tests/intel-person-identity.test.ts tests/meeting-followup-identity.test.ts tests/speaker-identity-context.test.ts`. Coverage includes explicit name/email selection, persisted links, multiple associated emails, single line scope, identical names, concurrent edits, preferred name refresh, canonical legacy hashes and attribution invalidation.
+
+Replay all migrations into a disposable local PostgreSQL database, then set `SPEAKER_TEST_DATABASE_URL` to that database and run `npx vitest run tests/speaker-identity-database.integration.test.ts`. Remote hosts are rejected. The suite rolls back its fixtures and checks actual authenticated role permissions, shared readers, contact isolation, stable ingestion groups, same mailbox contacts, stale revisions, assignment history and replacement generations. Run `npm run test:migrations` for journal, snapshot and schema drift checks.
+
+Run `node tests/fixtures/speaker-identity/serve.mjs` and then `node tests/fixtures/speaker-identity/verify.mjs` for desktop and mobile interaction checks with fictional data. This exercises the actual component and checks browser errors and overflow; it does not establish production migration or authenticated persistence. Production rollout still needs migration application and a real save, reload, Change person and Unlink check in an authorized meeting.
+
+Before applying migration 0070 in a disposable database, run `psql "$TEST_DATABASE_URL" --set ON_ERROR_STOP=1 --file tests/speaker-identity-backfill.sql`. It checks historical source preservation, exact groups across jobs, distinct null and empty labels, and no inferred contacts. The migration and fixtures roll back. CI runs this check during migration replay and then the actual role integration suite.

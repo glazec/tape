@@ -2,16 +2,17 @@ import { and, asc, desc, eq, gt, inArray, isNull, ne, or } from "drizzle-orm";
 import { db } from "@/db/client";
 import { meetings, meetingParts, transcriptSegments, intelSearches } from "@/db/schema";
 import { getComposedMeetingForFollowup } from "@/lib/meeting-composition";
+import { attachSpeakerIdentitiesForMeetings } from "@/lib/speaker-identity";
 import { currentTranscriptJobIdsSubquery } from "@/lib/current-transcript-job";
 import { getPersonalReadableMeetingsCondition } from "@/lib/meeting-access-policy";
 import type { WorkspaceContext } from "@/lib/workspace";
 import { IntelCapacityError } from "./content";
 import { buildCatalog } from "./provenance";
-import { searchInputSchema, type IntelMeeting, type SearchInput, type HistoryEntry } from "./types";
+import { searchInputSchema, type Segment, type IntelMeeting, type SearchInput, type HistoryEntry } from "./types";
 
 export async function loadIntelMeetings(workspace: WorkspaceContext, meetingId?: string): Promise<IntelMeeting[]> {
   const rows = await db.select({ id: meetings.id, title: meetings.title, startedAt: meetings.startedAt,
-    createdAt: meetings.createdAt, status: meetings.status, aiIntel: meetings.aiIntel, aiFollowup: meetings.aiFollowup,
+    createdAt: meetings.createdAt, attributionRevision: meetings.attributionRevision, status: meetings.status, aiIntel: meetings.aiIntel, aiFollowup: meetings.aiFollowup,
   }).from(meetings).where(and(
     eq(meetings.teamId, workspace.teamId), getPersonalReadableMeetingsCondition(workspace),
     eq(meetings.status, "ready"), meetingId ? eq(meetings.id, meetingId) : undefined,
@@ -20,12 +21,12 @@ export async function loadIntelMeetings(workspace: WorkspaceContext, meetingId?:
   if (!rows.length) return [];
   // Page the transcript rows so large archives do not hit a response-size limit.
   // Keep the existing chronological order: stored extraction hashes depend on it.
-  const segments: { id: string; meetingId: string; speaker: string | null; text: string; startMs: number }[] = [];
+  const segments: (Segment & { meetingId: string })[] = [];
   const pageSize = 10000;
   let cursor: { id: string; startMs: number } | undefined;
   while (true) {
     const page = await db.select({ id: transcriptSegments.id, meetingId: transcriptSegments.meetingId,
-      speaker: transcriptSegments.speaker, text: transcriptSegments.text, startMs: transcriptSegments.startMs,
+      meetingSpeakerId: transcriptSegments.meetingSpeakerId, speaker: transcriptSegments.speaker, text: transcriptSegments.text, startMs: transcriptSegments.startMs,
     }).from(transcriptSegments).innerJoin(meetings, eq(meetings.id, transcriptSegments.meetingId))
       .where(and(eq(meetings.teamId, workspace.teamId),
         inArray(meetings.id, rows.map(m => m.id)), getPersonalReadableMeetingsCondition(workspace),
@@ -41,10 +42,11 @@ export async function loadIntelMeetings(workspace: WorkspaceContext, meetingId?:
   for (const segment of segments) {
     const group = byMeeting.get(segment.meetingId) ?? []; group.push(segment); byMeeting.set(segment.meetingId, group);
   }
-  const corpus: IntelMeeting[] = rows.map(row => ({ ...row, startedAt: (row.startedAt ?? row.createdAt).toISOString(),
+  let corpus: IntelMeeting[] = rows.map(row => ({ ...row, startedAt: (row.startedAt ?? row.createdAt).toISOString(),
     date: (row.startedAt ?? row.createdAt).toISOString(), transcriptJobStatus: null,
-    segments: (byMeeting.get(row.id) ?? []).map(({ id, speaker, text, startMs }) => ({ id, speaker, text, startMs })),
+    segments: (byMeeting.get(row.id) ?? []).map(({ id, speaker, text, startMs, meetingSpeakerId }) => ({ id, speaker, text, startMs, meetingSpeakerId })),
   })).filter(m => m.segments.length > 0);
+  corpus = await attachSpeakerIdentitiesForMeetings(corpus, workspace);
   const parts = await db.select({ meetingId: meetingParts.meetingId, sourceMeetingId: meetingParts.sourceMeetingId }).from(meetingParts)
     .where(inArray(meetingParts.meetingId, rows.map(m => m.id)));
   const authorizedSegments = new Set(corpus.flatMap(m => m.segments.map(s => s.id)));

@@ -67,6 +67,7 @@ export async function generateMeetingIntel(meetingId: string) {
   if (!current || intelSourceHash(current) !== sourceHash) return { status: "transcript_changed" };
   const saved = await db.update(meetings).set({ aiIntel: { sourceHash, result, checkedAt, generatedAt: new Date().toISOString() } }).where(and(
     getOwnedMeetingCondition(workspace, meetingId), eq(meetings.status, "ready"),
+    eq(meetings.attributionRevision, current.attributionRevision ?? 0),
     current.aiIntel == null ? isNull(meetings.aiIntel) : eq(meetings.aiIntel, current.aiIntel),
   )).returning({ id: meetings.id });
   // Every read also validates the transcript hash, including a concurrent edit after this check.

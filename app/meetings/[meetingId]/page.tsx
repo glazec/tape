@@ -14,7 +14,7 @@ import { MeetingHeaderMetadata } from "@/components/meeting-header-metadata";
 import { MeetingNotes } from "@/components/meeting-notes";
 import { applyPreferredTranscriptLanguage } from "@/lib/preferred-transcript-language";
 import { getUserLanguage } from "@/lib/user-language";
-import { storedFollowupSchema } from "@/lib/meeting-followup-source";
+import { storedFollowupSchema, resolveTranslatedFollowupSubjects } from "@/lib/meeting-followup-source";
 import { MeetingFollowup } from "@/components/meeting-followup";
 import { MeetingRecoveryUploadPanel } from "@/components/meeting-recovery-upload-panel";
 import { MeetingRecordingResume } from "@/components/meeting-recording-resume";
@@ -99,7 +99,8 @@ export default async function MeetingPage({
     : [[], [], null];
   const preferredLanguage = await getUserLanguage(workspace.userId, teamConfiguration?.translationLanguage);
   const savedFollowup = storedFollowupSchema.safeParse(followupMeeting.aiFollowup);
-  const translatedFollowup = followupResult && savedFollowup.success ? savedFollowup.data.translations?.[preferredLanguage] : undefined;
+  const cachedFollowup = followupResult && savedFollowup.success ? savedFollowup.data.translations?.[preferredLanguage] : undefined;
+  const translatedFollowup = cachedFollowup && followupResult ? resolveTranslatedFollowupSubjects(cachedFollowup, followupResult) : undefined;
   for (const part of parts) applyPreferredTranscriptLanguage(part, preferredLanguage);
   const primaryDisplayStatus = getMeetingDisplayStatus({
     botState: meeting.botState,
@@ -210,7 +211,7 @@ export default async function MeetingPage({
           meetingId={meetingId}
           meetingTitle={followupMeeting.title}
           meetingStartedAt={followupSource.startedAt}
-          segments={followupMeeting.segments.map(({ id, startMs, speaker, text }) => ({ id, startMs, speaker, text }))}
+          segments={followupMeeting.segments.map(({ id, startMs, speaker, text, meetingSpeakerId, personId }) => ({ id, startMs, speaker, text, meetingSpeakerId, personId }))}
           sourceHash={followupSourceHash}
         />
       ) : null}

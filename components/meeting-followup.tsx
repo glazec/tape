@@ -52,11 +52,12 @@ export function MeetingFollowup({
   meetingTitle: string;
   meetingStartedAt: string | null;
   sourceHash: string;
-  segments: Array<{ id: string; startMs: number; speaker: string | null; text?: string }>;
+  segments: Array<{ id: string; startMs: number; speaker: string | null; meetingSpeakerId?: string | null; personId?: string | null; text?: string }>;
 }) {
   const [retryCount, setRetryCount] = useState(0);
   const [result, setResult] = useState(initialResult);
   const [connections, setConnections] = useState(initialResult?.connections ?? initialConnections);
+  const [groupOverrides, setGroupOverrides] = useState<Record<string, { personId?: string | null; meetingSpeakerId?: string | null }>>({});
   const [speakerOverrides, setSpeakerOverrides] = useState<Record<string, string | null>>({});
   const [speakerIdentities, setSpeakerIdentities] = useState<Record<string, { label: string | null; identity: string | null }>>({});
   const [connectionsRevision, setConnectionsRevision] = useState(initialConnectionsRevision);
@@ -92,6 +93,7 @@ export function MeetingFollowup({
       const changes = (event as CustomEvent<SpeakerLabelsChanged>).detail;
       const visible = changes.filter(change => segments.some(segment => segment.id === change.id));
       if (visible.length) {
+        setGroupOverrides(current => ({ ...current, ...Object.fromEntries(visible.filter(change => change.meetingSpeakerId !== undefined).map(change => [change.id, { meetingSpeakerId: change.meetingSpeakerId, personId: change.personId }])) }));
         setSpeakerOverrides(current => ({ ...current, ...Object.fromEntries(visible.map(change => [change.id, change.speaker])) }));
         setSpeakerIdentities(current => ({ ...current, ...Object.fromEntries(visible.map(change => [change.id,
           { label: change.speaker, identity: change.participantEmail ?? (participants.some(person => person.name === change.speaker || person.email === change.speaker)
@@ -132,6 +134,13 @@ export function MeetingFollowup({
   const [previousSegments, setPreviousSegments] = useState(segments);
   if (segments !== previousSegments) {
     setPreviousSegments(segments);
+    setGroupOverrides(current => {
+      const next = { ...current };
+      for (const segment of segments) {
+        if (next[segment.id]?.meetingSpeakerId === segment.meetingSpeakerId && next[segment.id]?.personId === segment.personId) delete next[segment.id];
+      }
+      return next;
+    });
     setSpeakerOverrides(current => {
       const acknowledged = segments.filter(segment => segment.id in current && current[segment.id] === segment.speaker);
       if (!acknowledged.length) return current;
@@ -336,14 +345,21 @@ export function MeetingFollowup({
     );
   }
 
+  const groupKey = (segment: (typeof segments)[number]) => {
+    const identity = groupOverrides[segment.id] ?? segment;
+    return identity.personId ?? identity.meetingSpeakerId ?? segment.speaker ?? "Unknown speaker";
+  };
+  const connectionLabels = new Map<string, string>();
   const connectionGroups = new Map<string, MeetingConnection[]>();
   for (const connection of connections) {
     const segment = segments.find(segment => segment.id === connection.speakerSegmentId);
     if (!segment) continue;
     const speaker = (segment.id in speakerOverrides ? speakerOverrides[segment.id] : segment.speaker) || "Unknown speaker";
-    const group = connectionGroups.get(speaker) ?? [];
+    const key = groupKey(segment);
+    connectionLabels.set(key, speaker);
+    const group = connectionGroups.get(key) ?? [];
     group.push(connection);
-    connectionGroups.set(speaker, group);
+    connectionGroups.set(key, group);
   }
 
   const orderedGroups = [...connectionGroups].sort(([, first], [, second]) => {
@@ -358,7 +374,8 @@ export function MeetingFollowup({
   const speakerOptions = new Map<string, { id: string; name: string }>();
   for (const segment of segments) {
     const name = (segment.id in speakerOverrides ? speakerOverrides[segment.id] : segment.speaker) || "Unknown speaker";
-    if (!speakerOptions.has(name) || segment.id === editorConnection?.speakerSegmentId) speakerOptions.set(name, { id: segment.id, name });
+    const key = groupKey(segment);
+    if (!speakerOptions.has(key) || segment.id === editorConnection?.speakerSegmentId) speakerOptions.set(key, { id: segment.id, name });
   }
 
   function renderConnections(items: MeetingConnection[]) {
@@ -485,8 +502,8 @@ export function MeetingFollowup({
             <h3 className={SUBHEAD}>Potential connections</h3>
             <div className="max-w-[60ch] space-y-5">
               {orderedGroups.map(([speaker, items]) => (
-                <section key={speaker} aria-label={`Connections mentioned by ${speaker}`}>
-                  <h4 className="mb-1.5 text-sm font-semibold">@{speaker}</h4>
+                <section key={speaker} aria-label={`Connections mentioned by ${connectionLabels.get(speaker)}`}>
+                  <h4 className="mb-1.5 text-sm font-semibold">@{connectionLabels.get(speaker)}</h4>
                   {renderConnections(items.slice(0, 3))}
                   {items.length > 3 ? (
                     <details className="mt-2">

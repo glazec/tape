@@ -73,7 +73,7 @@ export function parseMeetingConnections(
 
 // Segment IDs are globally unique, including within composed meetings.
 export const SPEAKER_LABELS_CHANGED = "tape:speaker-labels-changed";
-export type SpeakerLabelsChanged = Array<{ id: string; speaker: string | null; participantEmail?: string | null }>;
+export type SpeakerLabelsChanged = Array<{ id: string; speaker: string | null; participantEmail?: string | null; meetingSpeakerId?: string | null; personId?: string | null; sourceSpeaker?: string | null; speakerRevision?: number }>;
 
 
 export const connectionChangesSchema = meetingConnectionSchema.omit({ evidence: true }).extend({ mutual: z.boolean() });

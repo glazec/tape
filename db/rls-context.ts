@@ -103,3 +103,17 @@ function getOrCreateContext() {
   databaseClaimsStorage.enterWith(nextContext);
   return nextContext;
 }
+
+// Only use with workspace contexts derived by trusted server authorization.
+// ALS.run restores the caller context and keeps parallel background jobs isolated.
+export function withDatabaseWorkspace<T>(
+  workspace: {teamId: string; userId: string},
+  operation: () => T,
+): T {
+  return databaseClaimsStorage.run({claims:{
+    app_context_trusted: true,
+    app_team_id: workspace.teamId,
+    app_user_id: workspace.userId,
+    sub: `workspace:${workspace.userId}`,
+  }}, operation);
+}

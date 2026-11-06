@@ -3,6 +3,7 @@ import { alias } from "drizzle-orm/pg-core";
 
 import { db } from "@/db/client";
 import { meetings, transcriptJobs, transcriptSegments, users } from "@/db/schema";
+import { attachSpeakerIdentities } from "@/lib/speaker-identity";
 import { activeTranscriptJobIdsSubquery } from "@/lib/current-transcript-job";
 import type { MeetingEmail, MeetingEmailSegment } from "@/lib/meeting-email";
 
@@ -23,7 +24,7 @@ export async function loadMeetingEmailSnapshot(input: {
   transcriptJobId?: string;
   eventTimestamp?: number;
 }): Promise<MeetingEmailSnapshot | { action: "waiting" } | { action: "skipped"; reason: string }> {
-  const [meeting] = await db.select({ title: meetings.title, recipientEmail: users.email })
+  const [meeting] = await db.select({ title: meetings.title, recipientEmail: users.email, teamId: meetings.teamId, userId: meetings.ownerUserId })
     .from(meetings).innerJoin(users, eq(meetings.ownerUserId, users.id))
     .where(eq(meetings.id, input.meetingId)).limit(1);
   if (!meeting) return { action: "skipped", reason: "meeting_deleted" };
@@ -49,6 +50,7 @@ export async function loadMeetingEmailSnapshot(input: {
 
   const jobIds = jobs.map((job) => job.id);
   const segments = await db.select({
+    id: transcriptSegments.id, meetingSpeakerId: transcriptSegments.meetingSpeakerId,
     startMs: transcriptSegments.startMs, speaker: transcriptSegments.speaker, text: transcriptSegments.text,
   }).from(transcriptSegments).where(and(
     eq(transcriptSegments.meetingId, input.meetingId), inArray(transcriptSegments.jobId, jobIds),
@@ -56,7 +58,8 @@ export async function loadMeetingEmailSnapshot(input: {
   if (segments.length === 0) return { action: "skipped", reason: "empty_transcript" };
   return {
     action: "ready", meetingId: input.meetingId, anchorId: anchor.id, jobIds,
-    ...meeting, segments,
+    title: meeting.title, recipientEmail: meeting.recipientEmail,
+    segments: (await attachSpeakerIdentities(input.meetingId, segments, { workspace: meeting })).map(({ startMs, speaker, text }) => ({ startMs, speaker, text })),
     delivery: anchor.payload && anchor.preparedAt
       ? { ...anchor.payload, preparedAt: anchor.preparedAt.toISOString() } : null,
   };

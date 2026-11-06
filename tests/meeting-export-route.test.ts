@@ -3,14 +3,17 @@ import type { SQL } from "drizzle-orm";
 import { PgDialect } from "drizzle-orm/pg-core";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-const { createReadUrl, getCurrentUser, getWorkspace, select } = vi.hoisted(
+const { attachSpeakerIdentities, createReadUrl, getCurrentUser, getWorkspace, select } = vi.hoisted(
   () => ({
+    attachSpeakerIdentities: vi.fn(async (_id: string, segments: unknown[]) => segments),
     createReadUrl: vi.fn(),
     getCurrentUser: vi.fn(),
     getWorkspace: vi.fn(),
     select: vi.fn(),
   }),
 );
+
+vi.mock("@/lib/speaker-identity", () => ({ attachSpeakerIdentities }));
 
 vi.mock("@/lib/auth", () => ({
   getCurrentUser,
@@ -50,6 +53,7 @@ async function getMeetingExport(
 
 describe("GET /api/meetings/[meetingId]/export", () => {
   afterEach(() => {
+    attachSpeakerIdentities.mockClear();
     createReadUrl.mockReset();
     getCurrentUser.mockReset();
     getWorkspace.mockReset();
@@ -139,6 +143,30 @@ describe("GET /api/meetings/[meetingId]/export", () => {
     expect(segmentQuery.sql).toContain('"transcript_segments"."job_id"');
     expect(segmentQuery.sql).toContain("from transcript_jobs");
     expect(segmentQuery.sql).toContain("current_jobs.status = 'completed'");
+  });
+
+  it("exports preferred names for every authorized source part without identity metadata", async () => {
+    const primaryId = "11111111-1111-4111-8111-111111111111";
+    const sourceId = "22222222-2222-4222-8222-222222222222";
+    const workspace = { teamId: "team", userId: "viewer" };
+    const { listReadableMeetingSources } = await import("@/lib/meeting-composition");
+    vi.mocked(listReadableMeetingSources).mockResolvedValueOnce([{ id: sourceId, title: "Source", startedAt: new Date("2026-11-02"), createdAt: new Date("2026-11-02") }] as Awaited<ReturnType<typeof listReadableMeetingSources>>);
+    getCurrentUser.mockResolvedValue({ id: "viewer", email: "viewer@example.test" });
+    getWorkspace.mockResolvedValue(workspace);
+    const segment = { id: "s1", meetingSpeakerId: "g1", speaker: "Speaker 1", startMs: 0, endMs: 1000, text: "Original evidence.", emotionLabel: null };
+    select.mockReturnValueOnce({ from: () => ({ where: () => ({ limit: async () => [{ id: primaryId, title: "Primary", startedAt: new Date("2026-11-01"), createdAt: new Date("2026-11-01") }] }) }) });
+    for (let index = 0; index < 2; index++) select.mockReturnValueOnce({ from: () => ({ where: () => ({ orderBy: async () => [segment] }) }) });
+    attachSpeakerIdentities.mockResolvedValueOnce([{ ...segment, speaker: "Alice Q", participantEmail: "private@example.test" }]);
+    attachSpeakerIdentities.mockResolvedValueOnce([{ ...segment, speaker: "Maya", participantEmail: "private@example.test" }]);
+    const response = await getMeetingExport();
+    const body = await response.text();
+    expect(body).toContain("Alice Q | emotion:");
+    expect(body).toContain("Maya | emotion:");
+    expect(body).toContain("Original evidence.");
+    expect(body).not.toContain("Speaker 1");
+    expect(body).not.toContain("private@example.test");
+    expect(attachSpeakerIdentities).toHaveBeenNthCalledWith(1, primaryId, [segment], { workspace });
+    expect(attachSpeakerIdentities).toHaveBeenNthCalledWith(2, sourceId, [segment], { workspace });
   });
 
   it("keeps text export raw when a language query is present", async () => {

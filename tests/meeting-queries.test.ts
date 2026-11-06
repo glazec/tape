@@ -44,6 +44,7 @@ function expectSearchesTranslatedTranscriptText(condition: SQL, search: string) 
     /"transcript_segments"\."text" ilike \$\d+ or "transcript_segments"\."translated_text" ilike \$\d+ or "transcript_segments"\."speaker" ilike \$\d+/,
   );
   expect(query.params).toContain(`%${search}%`);
+  expect(sql).toContain('app_private.speaker_name("transcript_segments"."meeting_speaker_id") ilike');
 }
 
 function expectScopesDashboardToUser(condition: SQL, userId: string) {

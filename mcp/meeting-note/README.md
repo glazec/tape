@@ -20,6 +20,8 @@ Meetings restored by the web calendar background repair appear in the authorized
 
 Eligible invitations include those with at least two distinct participant emails and no meeting link or location. Historical repair exposes these as missed meetings available for recording recovery.
 
+Transcript speaker labels resolve the current workspace preferred name or local meeting name through the authorized speaker display projection. Raw source labels remain unchanged. This requires database migration `0070_speaker_person_identity.sql`; shared readers receive display names only, without contact directory or email fields.
+
 ## Local run
 
 ```bash

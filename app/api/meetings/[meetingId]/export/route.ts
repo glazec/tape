@@ -1,3 +1,4 @@
+import { attachSpeakerIdentities } from "@/lib/speaker-identity";
 import { listReadableMeetingSources } from "@/lib/meeting-composition";
 import { currentVisualAssetCondition } from "@/lib/current-audio-asset";
 import { and, asc, eq, inArray, or } from "drizzle-orm";
@@ -88,6 +89,8 @@ export async function GET(
   for (const [index, part] of exportParts.entries()) {
   const segments = await db
     .select({
+      id: transcriptSegments.id,
+      meetingSpeakerId: transcriptSegments.meetingSpeakerId,
       speaker: transcriptSegments.speaker,
       startMs: transcriptSegments.startMs,
       endMs: transcriptSegments.endMs,
@@ -105,7 +108,8 @@ export async function GET(
       ),
     )
     .orderBy(asc(transcriptSegments.startMs));
-  sections.push(formatTranscriptExport(exportParts.length > 1 ? `Part ${index + 1}: ${part.title}` : part.title, segments));
+  const displaySegments = await attachSpeakerIdentities(part.id, segments, { workspace });
+  sections.push(formatTranscriptExport(exportParts.length > 1 ? `Part ${index + 1}: ${part.title}` : part.title, displaySegments));
   if (segments.length === 0) sections.push("Transcript not available yet.\n");
   }
   const filename = getTranscriptFilename(meeting.title);

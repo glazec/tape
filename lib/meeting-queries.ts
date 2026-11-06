@@ -84,6 +84,7 @@ import {
   applySpeakerAliasesToSegments,
   type SpeakerAlias,
 } from "@/lib/speaker-alias-normalization";
+import { attachSpeakerIdentities } from "@/lib/speaker-identity";
 import { listMeetingSpeakerAliases } from "@/lib/speaker-aliases";
 import type { FollowupSource } from "@/lib/meeting-followup";
 import {
@@ -125,6 +126,7 @@ const genericMeetingGroupTitles = new Set([
 export type MeetingTranscript = {
   aiFollowup?: unknown;
   followupSource?: FollowupSource;
+  attributionRevision?: number;
   id: string;
   title: string;
   platform: MeetingListItem["platform"];
@@ -975,6 +977,7 @@ function getMeetingLibrarySearchCondition(
         ${transcriptSegments.text} ilike ${pattern}
         or ${transcriptSegments.translatedText} ilike ${pattern}
         or ${transcriptSegments.speaker} ilike ${pattern}
+        or app_private.speaker_name(${transcriptSegments.meetingSpeakerId}) ilike ${pattern}
       )
   )`;
 
@@ -1208,7 +1211,9 @@ export async function getMeetingDashboardSummaryForWorkspace(
   const now = options.now ?? new Date();
   const statsCutoff = new Date(now.getTime() - 14 * 24 * 60 * 60 * 1000);
   const userAliases = [...getDashboardUserSpeakerAliases(options)];
-  const normalizedSpeaker = sql<string>`lower(regexp_replace(btrim(coalesce(${transcriptSegments.speaker}, '')), '[[:space:]]+', ' ', 'g'))`;
+  const normalizedSpeaker = sql<string>`lower(regexp_replace(btrim(coalesce(
+    app_private.speaker_name(${transcriptSegments.meetingSpeakerId}),
+    ${transcriptSegments.speaker}, '')), '[[:space:]]+', ' ', 'g'))`;
   const userSpeakerCondition =
     userAliases.length > 0
       ? inArray(normalizedSpeaker, userAliases)
@@ -1366,6 +1371,7 @@ export async function getMeetingTranscriptForWorkspace(
           and ${transcriptSegments.jobId} in ${currentTranscriptJobIdsSubquery(meetings.id)}
       )`,
       aiFollowup: meetings.aiFollowup,
+      attributionRevision: meetings.attributionRevision,
       recordedDurationMs: latestRecordingDurationMsSubquery(meetings.id),
       recordedStartedAt: latestRecordingStartedAtSubquery(meetings.id),
       recordedEndedAt: latestRecordingEndedAtSubquery(meetings.id),
@@ -1432,6 +1438,7 @@ export async function getMeetingTranscriptForWorkspace(
       .select({
         id: transcriptSegments.id,
         speaker: transcriptSegments.speaker,
+        meetingSpeakerId: transcriptSegments.meetingSpeakerId,
         startMs: transcriptSegments.startMs,
         endMs: transcriptSegments.endMs,
         text: transcriptSegments.text,
@@ -1554,19 +1561,20 @@ export async function getMeetingTranscriptForWorkspace(
         )`,
       ),
   ]);
-  const displaySegments = applySpeakerAliasesToSegments(
-    segments,
-    speakerAliases,
-  );
+  const identitySegments = await attachSpeakerIdentities(meeting.id, segments, { includeEmails: canManage, workspace });
+  const displaySegments = identitySegments.map(segment => segment.meetingSpeakerId ? segment
+    : applySpeakerAliasesToSegments([segment], speakerAliases)[0]);
 
   return {
     lastRecordingEndedAt: meeting.recordedEndedAt?.toISOString() ?? null,
     aiFollowup: meeting.aiFollowup,
+    attributionRevision: meeting.attributionRevision ?? 0,
     followupSource: {
       title: meeting.title,
       startedAt: (meeting.startedAt ?? meeting.createdAt)?.toISOString() ?? null,
-      segments: segments.map(({ id, speaker, startMs, text }) => ({
-        id, speaker, startMs, text,
+      attributionRevision: meeting.attributionRevision ?? 0,
+      segments: identitySegments.map(({ id, speaker, sourceSpeaker, meetingSpeakerId, personId, speakerRevision, startMs, text }) => ({
+        id, speaker, sourceSpeaker, meetingSpeakerId, personId, speakerRevision, startMs, text,
       })),
     },
     id: meeting.id,
@@ -1723,6 +1731,7 @@ export async function listMeetingDetailRelatedMeetingsForWorkspace(
         .select({
           id: transcriptSegments.id,
           speaker: transcriptSegments.speaker,
+          meetingSpeakerId: transcriptSegments.meetingSpeakerId,
           startMs: transcriptSegments.startMs,
           text: transcriptSegments.text,
         })
@@ -1739,7 +1748,8 @@ export async function listMeetingDetailRelatedMeetingsForWorkspace(
         .orderBy(asc(transcriptSegments.startMs))
         .limit(MEETING_DETAIL_RELATED_TRANSCRIPT_SEGMENT_LIMIT + 1);
 
-      return [relatedMeetingId, segments] as const;
+      const resolved = await attachSpeakerIdentities(relatedMeetingId, segments, { workspace });
+      return [relatedMeetingId, resolved.map(({ id, speaker, startMs, text }) => ({ id, speaker, startMs, text }))] as const;
     }),
   );
   const transcriptPreviewByMeetingId = new Map(transcriptPreviewEntries);
