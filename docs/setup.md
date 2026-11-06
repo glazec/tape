@@ -593,6 +593,18 @@ A provider 404 is treated as an unavailable bot and marks the unresolved meeting
 
 ## Intel search setup
 
+The Sentry **Tape Search Latency** dashboard uses browser spans with `span.op:search`,
+`search.flow:meeting_library` or `search.flow:intel`, and `search.outcome:complete`.
+Both flows report p50 and p95 of `span.duration` and completed search counts.
+Meeting library timing runs from submitting the search to rendering the results.
+Intel timing starts when the accepted search is submitted and ends when final results
+render, including queueing and polling. Cost estimation and time waiting for approval
+are excluded. Saved history views do not create new search measurements. Failed,
+superseded, or abandoned searches are excluded from the completed panels. Measurements
+require the browser to stay open; counts represent observed completions, not all jobs.
+These search spans are sampled at 100%; other browser tracing keeps its existing rate.
+No search text or meeting content is attached to these spans. Filters use production.
+
 Apply migration `0066_intel_search.sql` before deploying this code. It adds `meetings.ai_intel` and private `intel_searches` with caller scoped row level security. Apply migration `0067_intel_background.sql` for saved search jobs. Register `run-intel-search` to process `intel/search.requested` events. Deploy and register `generate-meeting-intel` and `reconcile-meeting-intel` with Inngest. Extraction listens to `meeting/enrich.transcript` and `meeting/intel.generate`; the repair job queues up to 50 meetings at minute 17 each hour. Attempts persist a checked time; failed or oversized records wait six hours before another scheduled attempt, and unattempted records are processed first. Extraction concurrency is three overall and one per meeting.
 
 Intel uses the existing `OPENROUTER_API_KEY` with `typesafe/jev-router` for generation and ranking and `typesafe/jev-1.14` for independent verification, separately from the general `OPENROUTER_MODEL` setting. Verification sends one typed question per claim against shared evidence in one Decisions API request. Claims require a support score of at least 0.90. Both generation and independent verification record assistant usage and respect workspace credit. The shared adapter still requires the general model setting to be configured. Web search requests are limited to 10 per user and workspace per minute.
