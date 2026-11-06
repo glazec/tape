@@ -7,6 +7,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { MeetingLibrarySearch } from "@/components/meeting-library-search";
 
 const replace = vi.fn();
+const timing = vi.hoisted(() => ({ start: vi.fn(), finish: vi.fn() }));
+vi.mock("@/lib/sentry/search-timing", () => ({ startSearchTiming: timing.start }));
 const pendingNavigation = new Promise<never>(() => {});
 let beginNavigation: (() => void) | null = null;
 
@@ -23,6 +25,8 @@ describe("MeetingLibrarySearch", () => {
   beforeEach(() => {
     beginNavigation = null;
     replace.mockReset();
+    timing.start.mockReset().mockReturnValue(timing.finish);
+    timing.finish.mockReset();
   });
 
   it("updates the dashboard search without a document navigation", () => {
@@ -47,6 +51,8 @@ describe("MeetingLibrarySearch", () => {
       { scroll: false },
     );
     expect(screen.getByText("Current meeting results")).toBeTruthy();
+    expect(timing.start).toHaveBeenCalledWith("meeting_library");
+    expect(timing.finish).toHaveBeenCalledWith("complete");
     expect(
       screen.getByLabelText("Meeting results").getAttribute("aria-busy"),
     ).toBe(
@@ -111,6 +117,8 @@ describe("MeetingLibrarySearch", () => {
 
     expect(screen.getByText("Dashboard overview")).toBeTruthy();
     expect(screen.getByLabelText("Searching meetings")).toBeTruthy();
+    expect(timing.start).toHaveBeenCalledWith("meeting_library");
+    expect(timing.finish).not.toHaveBeenCalledWith("complete");
     expect(
       screen.getByLabelText("Meeting results").getAttribute("aria-busy"),
     ).toBe("true");

@@ -1,5 +1,6 @@
 import * as amplitude from "@amplitude/unified";
 import * as Sentry from "@sentry/nextjs";
+import { sampleSearchTraces } from "@/lib/sentry/search-timing";
 
 import { captureAmplitudeInitializationFailure } from "@/lib/amplitude/client";
 import {
@@ -39,6 +40,7 @@ Sentry.init({
       process.env.NEXT_PUBLIC_VERCEL_ENV || process.env.NODE_ENV,
   }),
   ...getSentryReplaySampleRates({ development: sentryDevelopment }),
+  tracesSampler: (context) => sampleSearchTraces(context, sentryDevelopment),
   integrations: [Sentry.replayIntegration(getSentryReplayOptions())],
 });
 

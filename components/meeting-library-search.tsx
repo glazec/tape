@@ -11,6 +11,7 @@ import { LoaderCircle } from "lucide-react";
 import { useRouter } from "next/navigation";
 
 import { captureClientAction } from "@/lib/telemetry/client";
+import { startSearchTiming } from "@/lib/sentry/search-timing";
 
 export function MeetingLibrarySearch({
   children,
@@ -22,9 +23,18 @@ export function MeetingLibrarySearch({
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const typingTimerRef = useRef<number | null>(null);
+  const finishSearchRef = useRef<ReturnType<typeof startSearchTiming> | null>(null);
+
+  useEffect(() => {
+    if (!isPending) {
+      finishSearchRef.current?.("complete");
+      finishSearchRef.current = null;
+    }
+  }, [isPending]);
 
   useEffect(
     () => () => {
+      finishSearchRef.current?.("cancelled");
       if (typingTimerRef.current !== null) {
         window.clearTimeout(typingTimerRef.current);
       }
@@ -62,6 +72,8 @@ export function MeetingLibrarySearch({
 
     const query = params.toString();
     captureClientAction("meeting_library_search_applied");
+    finishSearchRef.current?.("cancelled");
+    finishSearchRef.current = startSearchTiming("meeting_library");
 
     startTransition(() => {
       router.replace(query ? `/dashboard?${query}` : "/dashboard", {
