@@ -70,7 +70,9 @@ export const TRANSLATION_BATCH_SIZE = 10;
 const TRANSLATION_BATCH_CHARACTER_LIMIT = 1800;
 const OPENROUTER_COMPLETION_ATTEMPTS = 3;
 const MEETING_CHAT_MAX_TOKENS = 900;
-const TRANSCRIPT_MODEL = "google/gemini-3.8-flash";
+const FOLLOWUP_MODEL = "google/gemini-3.8-flash";
+const TRANSLATION_MODEL = "z-ai/glm-5.3-flash";
+const POLISH_MODEL = "deepseek/deepseek-v4.1-flash";
 
 class OpenRouterHttpError extends Error {
   constructor(
@@ -146,7 +148,7 @@ export async function generateMeetingFollowup(
   for (let attempt = 0; attempt < 2; attempt += 1) {
     const content = await createOpenRouterChatCompletion({
       attempts: 1,
-      model: TRANSCRIPT_MODEL,
+      model: FOLLOWUP_MODEL,
       messages: [
         {
           role: "system",
@@ -458,7 +460,7 @@ async function translateBatchWithRecovery(
       const content = await createOpenRouterChatCompletion({
         attempts: 1,
         messages: buildTranslationMessages(batch, targetLanguage),
-        model: TRANSCRIPT_MODEL,
+        model: TRANSLATION_MODEL,
         maxTokens: 3000,
         plugins: [{ id: "response-healing" }],
         provider: { require_parameters: true },
@@ -611,7 +613,7 @@ export async function polishTranscriptSegmentsInOriginalLanguage(
   })) {
     const content = await createOpenRouterChatCompletion({
       messages: buildOriginalTranscriptPolishMessages(batch),
-      model: TRANSCRIPT_MODEL,
+      model: POLISH_MODEL,
       maxTokens: 3000,
       provider: { require_parameters: true },
       responseFormat: buildTranslationJsonSchema(batch),
@@ -678,6 +680,7 @@ export async function createOpenRouterChatCompletion(input: {
   model?: string;
   messages: Array<{ role: "system" | "user" | "assistant"; content: string }>;
   maxTokens: number;
+  reasoningEffort?: "none" | "low" | "medium" | "high" | "max";
   plugins?: Array<{ id: string }>;
   provider?: { require_parameters: boolean };
   responseFormat?: Record<string, unknown>;
@@ -710,7 +713,7 @@ export async function createOpenRouterChatCompletion(input: {
             messages: input.messages,
             temperature: input.temperature,
             max_tokens: input.maxTokens,
-            reasoning: { effort: model === TRANSCRIPT_MODEL || model.startsWith("z-ai/glm-5.3") ? "low" : "none" },
+            reasoning: { effort: input.reasoningEffort ?? (model === FOLLOWUP_MODEL || model.startsWith("z-ai/glm-5.3") ? "low" : "none") },
             response_format: input.responseFormat ?? { type: "json_object" },
             ...(input.plugins ? { plugins: input.plugins } : {}),
             ...(input.provider ? { provider: input.provider } : {}),

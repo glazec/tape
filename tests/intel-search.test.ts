@@ -4,7 +4,7 @@ vi.mock("@/lib/intel/store", async importOriginal => ({ ...await importOriginal<
 vi.mock("@/lib/telemetry/server", () => mocks);
 vi.mock("@/db/client", () => ({ db: {} }));
 vi.mock("@/lib/meeting-composition", () => ({}));
-vi.mock("@/lib/intel/generation", () => ({ INTEL_MODEL: "typesafe/jev-router" }));
+vi.mock("@/lib/intel/generation", () => ({ INTEL_MODEL: "z-ai/glm-5.3-flash" }));
 vi.mock("@/lib/intel/verification", () => mocks);
 vi.mock("@/lib/vendors/openrouter", () => mocks);
 vi.mock("@/lib/provider-credit", () => mocks);
@@ -26,6 +26,7 @@ describe("Intel matching boundaries", () => {
  it("gives the verifier resolved article content, not just the URL", async () => {
   await searchIntel(workspace, { kind: "content", text: "https://example.com/article" }, [m]);
   expect(mocks.verifyIntelClaims.mock.calls[0][1].source.text).toBe("Actual article content about inference");
+  expect(mocks.createOpenRouterChatCompletion.mock.calls[0][0].model).toBe("typesafe/jev-router");
  });
  it("includes the selected intel record in the independent verification context", async () => {
   const indexed = { ...m, aiIntel: { sourceHash: intelSourceHash(m), result: { items: [{ kind: "plan", text: "Alex needs inference partners", importance: "high", speakerSegmentId: "s1", segmentIds: ["s1"] }] } } };
@@ -72,6 +73,7 @@ it("ranks verified candidates across batches without rewriting their claims", as
  expect(result.matches.map(m => m.title)).toEqual(["Person 2-5", "Person 0-0"]);
  expect(result.matches.every(m => m.reason === "Supported interest")).toBe(true);
  expect(mocks.createOpenRouterChatCompletion).toHaveBeenCalledTimes(4);
+ expect(mocks.createOpenRouterChatCompletion.mock.calls.every(([call]) => call.model === "typesafe/jev-router")).toBe(true);
 });
 it("drops unsupported attribution before independently verifying valid candidates", async () => {
  const corpus = [m, { ...m, id: "m2", segments: [{ ...m.segments[0], id: "s2", speaker: "Maya" }] }];

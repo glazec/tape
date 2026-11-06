@@ -285,6 +285,20 @@ describe("compact followup grounding", () => {
     ).toBeNull();
   });
 
+  it("uses version 6 for new followups while preserving version 5 saved results", () => {
+    expect(FOLLOWUP_PROMPT_VERSION).toBe(6);
+    for (const savedResult of [result, { ...result, connections: [] }]) {
+      const sourceHash = createHash("sha256")
+        .update(JSON.stringify(["untitled", 5, { startedAt: source.startedAt, segments: source.segments }]))
+        .digest("hex");
+      expect(getCurrentMeetingFollowup({
+        ...source, status: "ready", transcriptJobStatus: "completed",
+        aiFollowup: { sourceHash, result: savedResult },
+      })).toEqual(savedResult);
+      expect(getFollowupSourceHash(source)).not.toBe(sourceHash);
+    }
+  });
+
   it("keeps followups saved with the old title-bound hash until a rename upgrades them", () => {
     const titledHash = createHash("sha256")
       .update(JSON.stringify([FOLLOWUP_PROMPT_VERSION, source]))

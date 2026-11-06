@@ -11,9 +11,9 @@ import { verifyIntelClaims } from "./verification";
 import { currentIntel, intelSourceHash, validateExtraction } from "./provenance";
 import { intelExtractionSchema } from "./types";
 
-// Jev routes each request to a serving model. Generation and ranking use the
-// router; verification uses the Jev decision model (see verification.ts).
-export const INTEL_MODEL = "typesafe/jev-router";
+// GLM extracts candidate claims; Jev verifies them independently. Search
+// keeps its separate model selection in search.ts.
+export const INTEL_MODEL = "z-ai/glm-5.3-flash";
 // A transcript that fails extraction this many times is not retried until it changes.
 export const INTEL_MAX_FAILURES = 2;
 const extractionFormat = { type: "json_schema", json_schema: { name: "intel_extraction", strict: true, schema: z.toJSONSchema(intelExtractionSchema) } };
@@ -76,7 +76,7 @@ export async function generateMeetingIntel(meetingId: string) {
 
 async function extractVerifiedIntel(meeting: Awaited<ReturnType<typeof loadIntelMeetings>>[number], meetingId: string) {
   // One provider attempt: Inngest step retries already cover transient failures.
-  const response = await createOpenRouterChatCompletion({ model: INTEL_MODEL, maxTokens: 10000, temperature: 0, attempts: 1,
+  const response = await createOpenRouterChatCompletion({ model: INTEL_MODEL, reasoningEffort: "max", maxTokens: 10000, temperature: 0, attempts: 1,
     provider: { require_parameters: true }, responseFormat: extractionFormat,
     usageContext: { category: "assistant", meetingId }, timeoutMs: 90000,
     messages: [

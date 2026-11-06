@@ -74,7 +74,7 @@ function getMatchingFollowupVersion(
 ) {
   // Keep existing summaries visible until a manager chooses to regenerate.
   const legacy = !("research" in saved.result);
-  const versions = legacy ? [1] : saved.result.connections === undefined ? [2, 3, 4, FOLLOWUP_PROMPT_VERSION] : [4, FOLLOWUP_PROMPT_VERSION];
+  const versions = legacy ? [1] : saved.result.connections === undefined ? [2, 3, 4, 5, FOLLOWUP_PROMPT_VERSION] : [4, 5, FOLLOWUP_PROMPT_VERSION];
   for (const version of versions) {
     if (saved.sourceHash === hashSource(meeting, version)) return { version, titled: false };
     if (saved.sourceHash === hashTitledSource(meeting, version)) return { version, titled: true };
