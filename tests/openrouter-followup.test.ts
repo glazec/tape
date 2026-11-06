@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { generateMeetingFollowup } from "@/lib/vendors/openrouter";
+import { createOpenRouterChatCompletion, generateMeetingFollowup } from "@/lib/vendors/openrouter";
 
 const { recordUsage } = vi.hoisted(() => ({ recordUsage: vi.fn() }));
 vi.mock("@/lib/provider-usage", () => ({
@@ -49,12 +49,23 @@ function setup() {
 }
 
 describe("followup provider", () => {
+  it("sends explicit extraction reasoning instead of the assistant default", async () => {
+    const fetch = setup().mockResolvedValue(completion({ items: [] }));
+    await createOpenRouterChatCompletion({
+      model: "z-ai/glm-5.3-flash", reasoningEffort: "max",
+      messages: [{ role: "user", content: "Extract claims" }], maxTokens: 10000, temperature: 0,
+    });
+    expect(JSON.parse(fetch.mock.calls[0][1].body).reasoning).toEqual({ effort: "max" });
+  });
+
   it("uses the tested model and full transcript with strict output and usage accounting", async () => {
     const fetch = setup().mockResolvedValue(completion(output));
     expect(await generateMeetingFollowup(source, "meeting-id")).toEqual(output);
     const request = JSON.parse(fetch.mock.calls[0][1].body);
     expect(request.model).toBe("google/gemini-3.8-flash");
     expect(request.reasoning).toEqual({ effort: "low" });
+    expect(request.messages[0].content).toContain("Example 1: Do not infer a relationship from reported speech.");
+    expect(request.messages[0].content).toContain("For each research item, choose evidence FIRST.");
     expect(request.response_format.json_schema.strict).toBe(true);
     expect(request.response_format.json_schema.schema.required).toContain("research");
     expect(request.response_format.json_schema.schema.required).toContain("connections");

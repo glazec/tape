@@ -11,7 +11,7 @@ describe("OpenRouter translation", () => {
     vi.resetModules();
   });
 
-  it("translates transcript segments through Gemini independently of the assistant model", async () => {
+  it("translates transcript segments through GLM independently of the assistant model", async () => {
     vi.stubEnv("OPENROUTER_API_KEY", "openrouter-key");
     vi.stubEnv("OPENROUTER_MODEL", "anthropic/claude-sonnet-4.5");
     const fetchMock = vi.fn().mockResolvedValue(
@@ -48,7 +48,7 @@ describe("OpenRouter translation", () => {
       "https://openrouter.ai/api/v1/chat/completions",
     );
     expect(JSON.parse(String(fetchMock.mock.calls[0][1]?.body))).toMatchObject({
-      model: "google/gemini-3.8-flash",
+      model: "z-ai/glm-5.3-flash",
       reasoning: { effort: "low" },
       provider: { require_parameters: true },
       plugins: [{ id: "response-healing" }],
@@ -453,8 +453,8 @@ describe("OpenRouter translation", () => {
     ).resolves.toEqual([{ id: "segment_1", text: "我们先看 pipeline。" }]);
 
     const body = JSON.parse(String(fetchMock.mock.calls[0][1]?.body));
-    expect(body.model).toBe("google/gemini-3.8-flash");
-    expect(body.reasoning).toEqual({ effort: "low" });
+    expect(body.model).toBe("deepseek/deepseek-v4.1-flash");
+    expect(body.reasoning).toEqual({ effort: "none" });
     expect(body.messages[0].content).toContain("Do not translate");
     expect(body.response_format.type).toBe("json_schema");
     expect(body.response_format.json_schema.strict).toBe(true);
