@@ -412,6 +412,14 @@ export function TranscriptViewer({
     [playbackParts],
   );
   const [segments, setSegments] = useState(initialSegments);
+  const [syncedInitialSegments, setSyncedInitialSegments] =
+    useState(initialSegments);
+  // Fresh server segments (translation / polish progress) replace local state
+  // in place, so a background refresh never remounts the audio player.
+  if (syncedInitialSegments !== initialSegments) {
+    setSyncedInitialSegments(initialSegments);
+    setSegments(initialSegments);
+  }
   const [editingSpeaker, setEditingSpeaker] = useState<EditingSpeaker | null>(
     null,
   );
@@ -492,14 +500,27 @@ export function TranscriptViewer({
     { label: "Original language", value: "original" },
     { label: storedTranslationLanguageLabel, value: "translated" },
   ] as const;
+  const defaultTranscriptLanguage =
+    hasTranslations && (preferredTranslationLanguage || !hasOriginalPolish)
+      ? "translated"
+      : "original";
+  const defaultTextVersion =
+    hasOriginalPolish || hasTranslations ? "polished" : "raw";
   const [transcriptLanguage, setTranscriptLanguage] = useState<
     "original" | "translated"
-  >(
-    hasTranslations && (preferredTranslationLanguage || !hasOriginalPolish) ? "translated" : "original",
-  );
+  >(defaultTranscriptLanguage);
   const [textVersion, setTextVersion] = useState<"polished" | "raw">(
-    hasOriginalPolish || hasTranslations ? "polished" : "raw",
+    defaultTextVersion,
   );
+  const [hasChosenTextView, setHasChosenTextView] = useState(false);
+  // Until the reader picks a view, follow the defaults as translation and
+  // polish land, the way a remount used to.
+  if (!hasChosenTextView && transcriptLanguage !== defaultTranscriptLanguage) {
+    setTranscriptLanguage(defaultTranscriptLanguage);
+  }
+  if (!hasChosenTextView && textVersion !== defaultTextVersion) {
+    setTextVersion(defaultTextVersion);
+  }
   const canSeekTranscript = Boolean(activeAudioUrl);
   const hasPlaybackError = Boolean(
     activeAudioUrl && failedPlaybackAudioUrl === activeAudioUrl,
@@ -1285,6 +1306,7 @@ export function TranscriptViewer({
                       const language =
                         value === "translated" ? "translated" : "original";
 
+                      setHasChosenTextView(true);
                       setTranscriptLanguage(language);
                       if (language === "translated") {
                         setTextVersion("polished");
@@ -1299,9 +1321,10 @@ export function TranscriptViewer({
                 {transcriptLanguage === "original" && hasOriginalPolish ? (
                   <TranscriptControlSelect
                     ariaLabel="Transcript style"
-                    onChange={(value) =>
-                      setTextVersion(value === "raw" ? "raw" : "polished")
-                    }
+                    onChange={(value) => {
+                      setHasChosenTextView(true);
+                      setTextVersion(value === "raw" ? "raw" : "polished");
+                    }}
                     options={transcriptStyleOptions}
                     value={textVersion}
                   />

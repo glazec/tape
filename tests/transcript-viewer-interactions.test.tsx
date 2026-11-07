@@ -54,6 +54,20 @@ describe("TranscriptViewer interactions", () => {
     vi.unstubAllGlobals();
   });
 
+  it("keeps the same audio element and shows new translations when refreshed segments arrive", () => {
+    const untranslated = segments.map((segment) => ({ ...segment, polishedText: null, translatedText: null }));
+    const props = { audioUrl: "/api/meetings/m/audio?proxy=1", preferredTranslationLanguage: "zh-CN" as const };
+    const { rerender } = render(<TranscriptViewer {...props} segments={untranslated} />);
+    const audio = document.querySelector("audio");
+    expect(audio).toBeTruthy();
+    expect(screen.queryByText("开场白")).toBeNull();
+
+    rerender(<TranscriptViewer {...props} segments={segments} />);
+
+    expect(document.querySelector("audio")).toBe(audio);
+    expect(screen.getByText("开场白")).toBeTruthy();
+  });
+
   it("keeps every cited source target when duplicate transcript lines collapse", () => {
     render(<TranscriptViewer segments={[segments[0], { ...segments[0], id: "duplicate-source" }]} />);
     expect(document.getElementById("duplicate-source")).toBeTruthy();

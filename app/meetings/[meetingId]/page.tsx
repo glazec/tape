@@ -229,13 +229,6 @@ export default async function MeetingPage({
         key={getTranscriptViewerRenderKey({
           displayStatus,
           meetingId,
-          polishedSegments: meeting.segments.filter((segment) =>
-            Boolean(segment.polishedText?.trim()),
-          ).length,
-          segmentCount: meeting.segments.length,
-          translatedSegments:
-            meeting.translationSummary.translatedSegments,
-          translationStatus: meeting.translationSummary.status,
         })}
         meetingId={canManage ? meetingId : null}
         navigationMeetingId={meetingId}

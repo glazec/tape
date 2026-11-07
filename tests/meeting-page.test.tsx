@@ -576,17 +576,13 @@ describe("meeting page", () => {
     expect(shared).not.toContain("Regenerate");
   });
 
-  it("builds a render key from all transcript changing fields", () => {
+  it("builds a render key from meeting and display status only", () => {
     expect(
       getTranscriptViewerRenderKey({
         displayStatus: "completed",
         meetingId: "meeting",
-        polishedSegments: 2,
-        segmentCount: 3,
-        translatedSegments: 1,
-        translationStatus: null,
       }),
-    ).toBe("meeting:completed:3:2:unknown:1");
+    ).toBe("meeting:completed");
   });
 });
 

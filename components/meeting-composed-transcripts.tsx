@@ -73,13 +73,6 @@ export function MeetingComposedTranscripts({
                 key={getTranscriptViewerRenderKey({
                   displayStatus: status,
                   meetingId: meeting.id,
-                  polishedSegments: meeting.segments.filter((segment) =>
-                    Boolean(segment.polishedText?.trim()),
-                  ).length,
-                  segmentCount: meeting.segments.length,
-                  translatedSegments:
-                    meeting.translationSummary.translatedSegments,
-                  translationStatus: meeting.translationSummary.status,
                 })}
                 meetingId={meeting.canManage ? meeting.id : null}
                 translationMeetingId={meeting.id}
