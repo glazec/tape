@@ -108,7 +108,7 @@ describe.skipIf(!url)("person pages PostgreSQL", () => {
 
     expect(await personOf(old.segments[0].meeting_speaker_id)).toBe(keep);
     expect((await db.query("select merged_into_id from workspace_people where id=$1", [duplicate])).rows[0].merged_into_id).toBe(keep);
-    expect((await db.query("select email from person_emails where person_id=$1 order by email", [keep])).rows.map(row => row.email)).toEqual(["hana.sato@gmail.test", "hana@acme.test"]);
+    expect((await db.query("select email from person_emails where person_id=$1 order by email", [keep])).rows.map(row => row.email).sort()).toEqual(["hana.sato@gmail.test", "hana@acme.test"]);
     expect((await db.query("select attribution_revision from meetings where id=$1", [old.meeting])).rows[0].attribution_revision).toBe(0);
     expect((await db.query("select count(*)::int n from person_profiles where person_id=$1", [keep])).rows[0].n).toBe(0);
     expect((await db.query("select count(*)::int n from person_merges where target_person_id=$1", [keep])).rows[0].n).toBe(1);
