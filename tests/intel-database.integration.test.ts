@@ -69,7 +69,7 @@ describe.skipIf(!enabled)("Intel with real PostgreSQL and caller RLS", () => {
     expect((await state.client!.query("SELECT * FROM intel_searches")).rows).toHaveLength(0);
     await asUser(a);
   });
-  it.skipIf(!process.env.INTEL_LIVE_MODEL_CHECK)("matches through the live model and verifier against the real authorized corpus", async () => {
+  it.skipIf(!process.env.INTEL_LIVE_MODEL_CHECK)("scores recipients through the live model against the real authorized corpus", async () => {
     const corpus = await loadIntelMeetings(workspace);
     const result = await searchIntel(workspace, { kind: "content", text: "An inference infrastructure provider is looking for partners. Who has expressed a need for inference partners?" }, corpus);
     expect(result.matches.some(match => match.title === "Alex" && match.evidence.some(e => e.id === segment))).toBe(true);
@@ -119,12 +119,12 @@ describe.skipIf(!enabled)("Intel with real PostgreSQL and caller RLS", () => {
     await asUser(a);
   });
   it("saves scored results without an acceptance step and withholds a real match after access is revoked", async () => {
-    const router = await import("@/lib/vendors/openrouter");
+    const scorer = await import("@/lib/intel/scoring");
     const verifier = await import("@/lib/intel/verification");
     const [meeting] = await loadIntelMeetings(workspace);
     const target = buildCatalog([meeting]).people[0];
     const match = { id: target.id, type: "person", score: 35, relevance: "expressed_interest", reason: "Alex needs inference partners.", caveat: "", segmentIds: [segment], counterEvidenceIds: [] };
-    const model = vi.spyOn(router, "createOpenRouterChatCompletion").mockResolvedValue(JSON.stringify({ matches: [match] }));
+    const model = vi.spyOn(scorer, "scoreIntelBatch").mockResolvedValue({ matches: [{ ...match, type: "person", relevance: "expressed_interest" }] });
     const verify = vi.spyOn(verifier, "verifyIntelClaims");
     const { id } = await enqueueIntelSearch(workspace, { kind: "content", text: "Inference partners" });
     try {
