@@ -7,6 +7,7 @@ import { authenticatedDashboardFixture } from "./authenticated-dashboard-fixture
 import {
   pageRenderContractRoutes,
   publicPageRenderHeadings,
+  protectedPageRedirectRoutes,
 } from "./page-render-contracts";
 
 const appDirectory = resolve(process.cwd(), "app");
@@ -30,6 +31,15 @@ for (const [route, heading] of Object.entries(publicPageRenderHeadings)) {
     ).toHaveCount(0);
     expect(pageErrors).toEqual([]);
     await expect(page.getByRole("heading", { name: heading })).toBeVisible();
+  });
+}
+
+for (const route of protectedPageRedirectRoutes) {
+  test(`${route} requires sign in`, async ({ page }) => {
+    const response = await page.goto(route);
+    expect(response?.status()).toBeLessThan(500);
+    await expect(page).toHaveURL(/\/auth\/sign-in(?:\?|$)/);
+    await expect(page.getByRole("heading", { name: "Sign in to Tape." })).toBeVisible();
   });
 }
 

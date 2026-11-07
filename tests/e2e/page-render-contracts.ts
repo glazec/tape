@@ -19,11 +19,14 @@ export const authenticatedPageRenderHeadings = {
   "/usage": "Billing & credits",
 } as const;
 
+export const protectedPageRedirectRoutes = ["/people/smoke-test-value"] as const;
+
 export const adminPageRenderHeading = "User view control";
 
 export const pageRenderContractRoutes = [
   ...Object.keys(publicPageRenderHeadings),
   ...Object.keys(authenticatedPageRenderHeadings),
+  ...protectedPageRedirectRoutes,
   "/admin",
   "/blog/smoke-test-value",
   "/dashboard",
