@@ -26,7 +26,7 @@ export function buildTranslationMessages(
   return [
     {
       role: "system" as const,
-      content: `Translate each meeting transcript segment into polished, concise ${language}. Return exactly one nonempty translation for every input segment with the same id. Translate each segment from only its own text. Never move, merge, split, or complete content across segment ids, even when a segment is a short fragment. Translate short fragments and filler minimally instead of returning an empty string. Remove filler words such as 然后, then, um, and uh when they do not change meaning. Preserve speaker intent, team tone, product names, company names, numbers, and tickers.`,
+      content: `Translate each meeting transcript segment into polished, concise ${language}. Return exactly one nonempty translation for every input segment with the same id. Translate each segment from only its own text. Never move, merge, split, or complete content across segment ids, even when a segment is a short fragment. Translate short fragments and filler minimally instead of returning an empty string. Remove filler words such as 然后, then, um, and uh when they do not change meaning. Preserve speaker intent, team tone, product names, company names, numbers, and tickers.\nPreserve deadline inclusivity explicitly. For Chinese, translate "by [day]" as "[day]当天或之前" or "不晚于[day]", and translate "before [day]" as "[day]之前". Do not turn a one period amount into a recurring amount, or infer that other periods have no spending. Keep an offer distinct from completing an introduction. Add spaces between English words and Chinese characters.`,
     },
     {
       role: "user" as const,

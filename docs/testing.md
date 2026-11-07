@@ -336,3 +336,5 @@ Run `node tests/fixtures/speaker-identity/serve.mjs` and then `node tests/fixtur
 Before applying migration 0070 in a disposable database, run `psql "$TEST_DATABASE_URL" --set ON_ERROR_STOP=1 --file tests/speaker-identity-backfill.sql`. It checks historical source preservation, exact groups across jobs, distinct null and empty labels, and no inferred contacts. The migration and fixtures roll back. CI runs this check during migration replay and then the actual role integration suite.
 
 Followup provider routing is covered by `tests/openrouter-followup.test.ts`: gateway success, the 30 second timeout configuration, HTTP failure, empty or incomplete output, invalid JSON and evidence, OpenRouter fallback, and credential isolation. Live provider probes use synthetic transcripts; unit tests do not establish provider availability.
+
+`tests/ai-gateway-workflows.test.ts` covers Luna low translations and chat, medium note answers, citation and completeness fallback, Responses web tool round trips, timeout fallback, and preserving non-Luna providers. Intel extraction routing is checked in `tests/intel-generation.test.ts`; Jev verification remains separate.
