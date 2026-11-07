@@ -1381,6 +1381,7 @@ describe("vendor job creation", () => {
     vi.stubEnv("RECALL_API_KEY", "recall-key\n");
     vi.stubEnv("RECALL_WEBHOOK_SECRET", recallWebhookSecret);
     vi.stubEnv("NEXT_PUBLIC_APP_URL", "https://app.example.com");
+    vi.stubEnv("RECALL_REALTIME_WEBHOOK_URL", "https://app.example.com/api/recall/realtime/webhook");
     const fetchMock = vi.fn().mockResolvedValue(
       new Response(
         JSON.stringify({
@@ -1404,7 +1405,7 @@ describe("vendor job creation", () => {
           source: "local_recorder_sdk",
         },
         webhookUrl:
-          "https://app.example.com/api/local-recorder/recordings/sdk-upload",
+          "http://0.0.0.0:8080/api/local-recorder/recordings/sdk-upload",
       }),
     ).resolves.toEqual({
       id: "33333333-3333-4333-8333-333333333333",
@@ -1413,6 +1414,7 @@ describe("vendor job creation", () => {
 
     const [url, init] = fetchMock.mock.calls[0];
     const body = JSON.parse(String(init.body));
+    expect(String(init.body)).not.toContain("0.0.0.0");
 
     expect(url).toBe("https://us-east-1.recall.ai/api/v1/sdk_upload/");
     expect(init).toMatchObject({
@@ -1428,8 +1430,6 @@ describe("vendor job creation", () => {
         clientRecordingId: "local_recording_123",
         fallbackIntentId: "intent_123",
         meetingId: "11111111-1111-4111-8111-111111111111",
-        requested_webhook_url:
-          "https://app.example.com/api/local-recorder/recordings/sdk-upload",
         source: "local_recorder_sdk",
       },
       recording_config: {

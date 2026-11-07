@@ -33,8 +33,10 @@ export async function POST(request: Request) {
     );
   }
 
+  let phase = "credit";
   try {
     await assertWorkspaceHasProviderCredit(deviceContext.workspace);
+    phase = "rate_limit";
     await assertRequestRateLimit({
       ...requestRateLimitPolicies.localRecorderProviderUpload,
       subject: `${deviceContext.workspace.teamId}:${deviceContext.workspace.userId}`,
@@ -49,6 +51,7 @@ export async function POST(request: Request) {
       );
     }
 
+    phase = "create_sdk_upload";
     const result = await createRecallDesktopSdkUploadForLocalRecorder({
       ...parsed.data,
       deviceId: deviceContext.deviceId,
@@ -74,6 +77,11 @@ export async function POST(request: Request) {
       return Response.json({ error: error.message }, { status: 409 });
     }
 
+    console.error("local_recorder_sdk_upload_failed", {
+      phase,
+      errorName: error instanceof Error ? error.name : "UnknownError",
+      errorMessage: error instanceof Error ? error.message : "Unknown failure",
+    });
     return Response.json(
       { error: "Recall Desktop SDK upload unavailable" },
       { status: 500 },
