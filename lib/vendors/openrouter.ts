@@ -19,6 +19,7 @@ import {
 import type { TranslationLanguage } from "@/lib/meeting-translation-language";
 import type { ProviderUsageCategory } from "@/lib/provider-usage";
 import { searchWebWithExa } from "@/lib/vendors/exa";
+import { generateGatewayFollowup } from "@/lib/vendors/ai-gateway";
 
 const optionalUrl = z.preprocess(
   (value) =>
@@ -70,7 +71,7 @@ export const TRANSLATION_BATCH_SIZE = 10;
 const TRANSLATION_BATCH_CHARACTER_LIMIT = 1800;
 const OPENROUTER_COMPLETION_ATTEMPTS = 3;
 const MEETING_CHAT_MAX_TOKENS = 900;
-const FOLLOWUP_MODEL = "google/gemini-3.8-flash";
+const FOLLOWUP_MODEL = "openai/gpt-6-luna";
 const TRANSLATION_MODEL = "z-ai/glm-5.3-flash";
 const POLISH_MODEL = "deepseek/deepseek-v4.1-flash";
 
@@ -146,9 +147,10 @@ export async function generateMeetingFollowup(
   let validationError = "";
   let previousContent = "";
   for (let attempt = 0; attempt < 2; attempt += 1) {
-    const content = await createOpenRouterChatCompletion({
+    const input: Parameters<typeof createOpenRouterChatCompletion>[0] = {
       attempts: 1,
       model: FOLLOWUP_MODEL,
+      reasoningEffort: "low",
       messages: [
         {
           role: "system",
@@ -176,7 +178,17 @@ export async function generateMeetingFollowup(
         },
       },
       usageContext: { category: "assistant", meetingId },
-    });
+    };
+    if (attempt === 0) {
+      try {
+        const gatewayContent = await generateGatewayFollowup({ messages: input.messages, schema, maxTokens: input.maxTokens });
+        if (gatewayContent !== null) return parseMeetingFollowup(gatewayContent, source);
+      } catch {
+        // Never log provider bodies, prompts, or credentials on fallback.
+        console.warn("meeting_followup_gateway_fallback", { meetingId });
+      }
+    }
+    const content = await createOpenRouterChatCompletion(input);
     const finalAttempt = attempt === 1;
     try {
       return parseMeetingFollowup(content, source, { lenient: finalAttempt });
@@ -711,7 +723,7 @@ export async function createOpenRouterChatCompletion(input: {
           body: JSON.stringify({
             model,
             messages: input.messages,
-            temperature: input.temperature,
+            ...(model === FOLLOWUP_MODEL ? {} : { temperature: input.temperature }),
             max_tokens: input.maxTokens,
             reasoning: { effort: input.reasoningEffort ?? (model === FOLLOWUP_MODEL || model.startsWith("z-ai/glm-5.3") ? "low" : "none") },
             response_format: input.responseFormat ?? { type: "json_object" },

@@ -27,7 +27,7 @@ const output = {
 const completion = (result: unknown) =>
   Response.json({
     id: "generation",
-    model: "google/gemini-3.8-flash",
+    model: "openai/gpt-6-luna",
     choices: [
       { finish_reason: "stop", message: { content: JSON.stringify(result) } },
     ],
@@ -41,6 +41,7 @@ afterEach(() => {
 });
 
 function setup() {
+  vi.stubEnv("AI_GATEWAY_API_KEY", "");
   vi.stubEnv("OPENROUTER_API_KEY", "test-key");
   vi.stubEnv("OPENROUTER_MODEL", "assistant-model");
   const fetch = vi.fn();
@@ -49,6 +50,49 @@ function setup() {
 }
 
 describe("followup provider", () => {
+  const gatewayResponse = (content: string, status = "completed") => Response.json({
+    status, model: "gpt-6-luna",
+    output: [{ type: "message", content: [{ type: "output_text", text: content }] }],
+    usage: { input_tokens: 100, output_tokens: 50 },
+  });
+
+  it("uses the gateway first without recording a fabricated OpenRouter charge", async () => {
+    const fetch = setup().mockResolvedValue(gatewayResponse(JSON.stringify(output)));
+    vi.stubEnv("AI_GATEWAY_API_KEY", "gateway-test-key");
+    expect(await generateMeetingFollowup(source, "meeting-id")).toEqual(output);
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(fetch.mock.calls[0][0]).toBe("https://aigateway.inevitable.tech/v1/responses");
+    const request = JSON.parse(fetch.mock.calls[0][1].body);
+    expect(request.model).toBe("cx/gpt-6-luna-low");
+    expect(request.reasoning).toEqual({ effort: "low" });
+    expect(request.store).toBe(false);
+    expect(request.text.format.schema.properties.connections.items.required).toContain("mutual");
+    expect(recordUsage).not.toHaveBeenCalled();
+  });
+
+  it.each(["timeout", "http", "empty", "incomplete", "invalid_json", "invalid_evidence"])(
+    "falls back to OpenRouter when the gateway returns %s", async (failure) => {
+      const fetch = setup();
+      vi.stubEnv("AI_GATEWAY_API_KEY", "gateway-test-key");
+      const timeout = vi.spyOn(AbortSignal, "timeout");
+      if (failure === "timeout") fetch.mockRejectedValueOnce(new DOMException("Timed out", "TimeoutError"));
+      else if (failure === "http") fetch.mockResolvedValueOnce(new Response(null, { status: 503 }));
+      else if (failure === "empty") fetch.mockResolvedValueOnce(gatewayResponse(""));
+      else if (failure === "incomplete") fetch.mockResolvedValueOnce(gatewayResponse(JSON.stringify(output), "incomplete"));
+      else if (failure === "invalid_json") fetch.mockResolvedValueOnce(gatewayResponse("not JSON"));
+      else fetch.mockResolvedValueOnce(gatewayResponse(JSON.stringify({ ...output, todos: [{ ...output.todos[0], evidence: [{ segmentId: "missing", quote: "invented" }] }] })));
+      fetch.mockResolvedValueOnce(completion(output));
+      expect(await generateMeetingFollowup(source, "meeting-id")).toEqual(output);
+      expect(timeout).toHaveBeenNthCalledWith(1, 30_000);
+      expect(fetch).toHaveBeenCalledTimes(2);
+      expect(fetch.mock.calls[1][0]).toBe("https://openrouter.ai/api/v1/chat/completions");
+      expect(fetch.mock.calls[1][1].headers.Authorization).toBe("Bearer test-key");
+      expect(JSON.parse(fetch.mock.calls[1][1].body).model).toBe("openai/gpt-6-luna");
+      expect(recordUsage).toHaveBeenCalledOnce();
+      timeout.mockRestore();
+    },
+  );
+
   it("sends explicit extraction reasoning instead of the assistant default", async () => {
     const fetch = setup().mockResolvedValue(completion({ items: [] }));
     await createOpenRouterChatCompletion({
@@ -62,7 +106,8 @@ describe("followup provider", () => {
     const fetch = setup().mockResolvedValue(completion(output));
     expect(await generateMeetingFollowup(source, "meeting-id")).toEqual(output);
     const request = JSON.parse(fetch.mock.calls[0][1].body);
-    expect(request.model).toBe("google/gemini-3.8-flash");
+    expect(request.model).toBe("openai/gpt-6-luna");
+    expect(request.temperature).toBeUndefined();
     expect(request.reasoning).toEqual({ effort: "low" });
     expect(request.messages[0].content).toContain("Example 1: Do not infer a relationship from reported speech.");
     expect(request.messages[0].content).toContain("For each research item, choose evidence FIRST.");
