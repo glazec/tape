@@ -23,6 +23,7 @@ export type RecordingMeeting = {
 type RecordingTarget = {
   meetingId: string;
   meetingTitle: string;
+  meetingUrl: string | null;
   startsAt: string | null;
   endsAt: string | null;
 };
@@ -190,11 +191,11 @@ export async function setLocalRecorderRecordingTarget(input: {
           from target where not ${Boolean(input.fallbackIntentId)}
           returning meeting_id
         )
-        select target.id as "meetingId", target.title as "meetingTitle",
+        select target.id as "meetingId", target.title as "meetingTitle", target.meeting_url as "meetingUrl",
           target.started_at as "startsAt", target.ended_at as "endsAt"
         from target where target.id in (select meeting_id from switched union all select meeting_id from started)
         union all
-        select replayed.id as "meetingId", replayed.title as "meetingTitle",
+        select replayed.id as "meetingId", replayed.title as "meetingTitle", replayed.meeting_url as "meetingUrl",
           replayed.started_at as "startsAt", replayed.ended_at as "endsAt" from replayed
       `,
     ]);
@@ -236,7 +237,7 @@ export async function finishLocalRecorderRecordingTarget(input: {
         and a.attempt_state in ('started', 'sealed', 'uploading', 'uploaded', 'completed')
       returning a.meeting_id
     )
-    select m.id as "meetingId", m.title as "meetingTitle", m.started_at as "startsAt", m.ended_at as "endsAt"
+    select m.id as "meetingId", m.title as "meetingTitle", m.meeting_url as "meetingUrl", m.started_at as "startsAt", m.ended_at as "endsAt"
     from meetings m join frozen on frozen.meeting_id = m.id
     `,
   ]);
