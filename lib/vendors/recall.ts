@@ -444,7 +444,6 @@ export async function createRecallDesktopSdkUpload(input: {
         parsedInput.metadata,
       ),
       metadata: {
-        requested_webhook_url: parsedInput.webhookUrl,
         ...parsedInput.metadata,
       },
     }),
