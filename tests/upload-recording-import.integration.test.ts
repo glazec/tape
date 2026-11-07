@@ -49,7 +49,7 @@ describe.skipIf(!dsn)("recording imports in isolated PostgreSQL", () => {
       create type asset_type as enum ('audio', 'transcript_source');
       create table team_memberships (team_id uuid, user_id uuid, role text);
       create table calendar_events (id uuid primary key, team_id uuid, starts_at timestamptz, ends_at timestamptz);
-      create table meetings (id uuid primary key default gen_random_uuid(), team_id uuid, owner_user_id uuid, title text, title_source text default 'calendar', platform text, status text, calendar_event_id uuid, started_at timestamptz, ended_at timestamptz, recall_bot_id text, recall_recording_id text, bot_state text, updated_at timestamptz, created_at timestamptz default now(), organization_access_enabled boolean default false);
+      create table meetings (id uuid primary key default gen_random_uuid(), team_id uuid, owner_user_id uuid, title text, title_source text default 'calendar', platform text, status text, calendar_event_id uuid, started_at timestamptz, ended_at timestamptz, recall_bot_id text, recall_recording_id text, meeting_url text, bot_state text, updated_at timestamptz, created_at timestamptz default now(), organization_access_enabled boolean default false);
       create table meeting_access (meeting_id uuid, user_id uuid, source text, revoked_at timestamptz);
       create table users (id uuid primary key, email text);
       create table meeting_access_sources (meeting_id uuid, recipient_email text, source text, revoked_at timestamptz);
