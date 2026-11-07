@@ -5,7 +5,7 @@ it("estimates zero for searches that make no model calls", () => {
   expect(estimateSearchCost([])).toEqual({ lowUsd: 0, highUsd: 0, expectedUsd: 0, seconds: 0, batches: 0 });
 });
 
-it("accounts for repeated evidence, verification, and possible final ranking", () => {
+it("accounts for every scoring batch without verifier or model ranking charges", () => {
   const batch = { text: "evidence".repeat(1000) };
   const single = estimateSearchCost([batch]);
   const double = estimateSearchCost([batch, batch]);
@@ -13,19 +13,16 @@ it("accounts for repeated evidence, verification, and possible final ranking", (
   expect(single.expectedUsd).toBeGreaterThan(single.lowUsd);
   expect(single.highUsd).toBeGreaterThan(single.expectedUsd);
   expect(double.lowUsd).toBe(single.lowUsd * 2);
-  expect(double.highUsd).toBeGreaterThan(single.highUsd * 2);
+  expect(double.highUsd).toBe(single.highUsd * 2);
 });
 
-it("brackets the measured Nov 5 production search", () => {
-  // Six ~336 KB batches; the real run cost $0.217 and the matching wave took up to 3.5 minutes.
+it("estimates direct Jev input pricing instead of historical router charges", () => {
   const batches = Array.from({ length: 6 }, () => ({ text: "x".repeat(336_000) }));
   const estimate = estimateSearchCost(batches);
-  expect(estimate.lowUsd).toBeLessThan(0.217);
-  expect(estimate.highUsd).toBeGreaterThan(0.217);
-  expect(estimate.expectedUsd).toBeGreaterThan(0.2);
-  expect(estimate.expectedUsd).toBeLessThan(0.35);
-  expect(estimate.highUsd / estimate.lowUsd).toBeLessThan(6);
-  expect(estimate.seconds).toBe(320);
+  expect(DEFAULT_INTEL_PRICING.typicalUsdPerMTok).toBe(0.042);
+  expect(estimate.expectedUsd).toBeGreaterThan(0.028);
+  expect(estimate.expectedUsd).toBeLessThan(0.04);
+  expect(estimate.highUsd).toBeGreaterThan(estimate.expectedUsd);
 });
 
 it("learns per-token prices from tagged usage once enough calls exist", () => {

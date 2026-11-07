@@ -1,7 +1,7 @@
 import { NonRetriableError } from "inngest";
 import { z } from "zod";
 import { initializeDatabaseClaimsContext, setDatabaseWorkspace } from "@/db/rls-context";
-import { failIntelJob, finalizeIntelJob, IntelStepStopped, markIntelJobInterrupted, matchIntelBatch, planIntelJob, verifyIntelBatch } from "@/lib/intel/jobs";
+import { failIntelJob, finalizeIntelJob, IntelStepStopped, markIntelJobInterrupted, matchIntelBatch, planIntelJob } from "@/lib/intel/jobs";
 import { inngest } from "./client";
 
 const jobSchema = z.object({ id: z.uuid(), userId: z.uuid(), teamId: z.uuid() });
@@ -34,9 +34,7 @@ export const runIntelSearch = inngest.createFunction({
   }
   const plan = await step.run("plan", () => guarded(() => planIntelJob(workspace, job.id)));
   if (!plan) return;
-  const candidates = await Promise.all(plan.batches.map(async (ids, index) => {
-    const matched = await step.run(`match-${index}`, () => guarded(() => matchIntelBatch(workspace, job.id, index, ids, plan.meetingId)));
-    return step.run(`verify-${index}`, () => guarded(() => verifyIntelBatch(workspace, job.id, index, ids, plan.meetingId, matched)));
-  }));
-  await step.run("finalize", () => guarded(() => finalizeIntelJob(workspace, job.id, candidates, plan.snapshot, plan.meetingId)));
+  const candidates = await Promise.all(plan.batches.map((ids, index) =>
+    step.run(`match-${index}`, () => guarded(() => matchIntelBatch(workspace, job.id, index, ids, plan.meetingId)))));
+  await step.run("finalize", () => guarded(() => finalizeIntelJob(workspace, job.id, candidates, plan.snapshot)));
 });

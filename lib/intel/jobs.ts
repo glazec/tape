@@ -9,7 +9,7 @@ import { IntelInputError } from "./content";
 import { browserCatalog, buildCatalog, buildMatchingContext } from "./provenance";
 import { estimateSearchCost, pricingFromUsage, type SearchEstimate } from "./cost";
 import { assertWorkspaceHasProviderCredit } from "@/lib/provider-credit";
-import { corpusSnapshot, finalizeIntelSearch, matchBatch, prepareIntelSearch, searchIntel, verifyBatch } from "./search";
+import { corpusSnapshot, finalizeIntelSearch, matchBatch, prepareIntelSearch, searchIntel } from "./search";
 import { loadIntelMeetings } from "./store";
 import { searchInputSchema, type IntelMeeting, type Match, type SearchInput, type SearchResult } from "./types";
 
@@ -30,7 +30,7 @@ type Preview = {
 // calibration applies until enough history exists.
 async function intelPricing(w: WorkspaceContext) {
   const rows = await db.select({ costUsdMicros: providerUsageEvents.costUsdMicros, quantity: providerUsageEvents.quantity }).from(providerUsageEvents)
-    .where(and(eq(providerUsageEvents.teamId, w.teamId), eq(providerUsageEvents.operation, "chat_completion"),
+    .where(and(eq(providerUsageEvents.teamId, w.teamId), eq(providerUsageEvents.operation, "decisions"),
       sql`${providerUsageEvents.metadata} ? 'intelSearchId'`, gt(providerUsageEvents.occurredAt, sql`now() - interval '30 days'`)))
     .orderBy(desc(providerUsageEvents.occurredAt)).limit(200);
   return pricingFromUsage(rows);
@@ -77,7 +77,7 @@ export async function enqueueIntelSearch(w: WorkspaceContext, input: SearchInput
 // the matching context, including selected intel, before returning any saved text.
 function fingerprint(corpus: IntelMeeting[], catalog: ReturnType<typeof buildCatalog>, input: SearchInput, result: SearchResult) {
   const ids = new Set([...(input.kind === "intel" ? [input.id] : []), ...result.matches.map(m => m.id)]);
-  return createHash("sha256").update(JSON.stringify([catalog.people, catalog.intel.filter(i => ids.has(i.id)), buildMatchingContext(corpus, catalog.people)])).digest("hex");
+  return createHash("sha256").update(JSON.stringify([catalog.people, catalog.intel.filter(i => ids.has(i.id)), buildMatchingContext(corpus, catalog.people), corpus.map(m => [m.id, m.notes ?? null, m.aiFollowup])])).digest("hex");
 }
 export async function executeIntelSearch(w: WorkspaceContext, id: string) {
   const scope = and(owner(w), eq(jobs.id, id));
@@ -158,7 +158,7 @@ export async function planIntelJob(w: WorkspaceContext, id: string) {
   const estimate = preview?.estimate ?? estimateSearchCost(plan.batches, await intelPricing(w));
   const linkSource = preview?.linkSource ?? ("url" in plan.source && typeof plan.source.url === "string" ? { text: plan.source.text, url: plan.source.url } : undefined);
   const next: Preview = { estimate, linkSource, startedAt: new Date().toISOString(), partial: [], batchesDone: 0 };
-  await db.update(jobs).set({ status: "running", completed: 0, total: plan.batches.length * 2, result: next }).where(scope);
+  await db.update(jobs).set({ status: "running", completed: 0, total: plan.batches.length, result: next }).where(scope);
   if (plan.batches.length) await assertWorkspaceHasProviderCredit(w);
   return { batches: plan.batches.map(b => b.meetings.map(m => m.id)), snapshot: corpusSnapshot(corpus), meetingId: corpus[0]?.id ?? "" };
 }
@@ -177,22 +177,15 @@ async function batchFor(w: WorkspaceContext, id: string, index: number, meetingI
 export async function matchIntelBatch(w: WorkspaceContext, id: string, index: number, meetingIds: string[], meetingId: string) {
   const { scope, input, corpus, batch } = await batchFor(w, id, index, meetingIds);
   const matched = await matchBatch(input, batch, corpus, { meetingId, searchId: id });
-  await db.update(jobs).set({ completed: sql`least(${jobs.completed} + 1, ${jobs.total})` }).where(scope);
+  // Publish scored candidates as each batch finishes. No acceptance threshold.
+  await db.update(jobs).set({
+    completed: sql`least(${jobs.completed} + 1, ${jobs.total})`,
+    result: sql`jsonb_set(jsonb_set(coalesce(${jobs.result}, '{}'::jsonb), '{partial}', coalesce(${jobs.result}->'partial', '[]'::jsonb) || ${JSON.stringify(matched)}::jsonb), '{batchesDone}', to_jsonb(coalesce((${jobs.result}->>'batchesDone')::int, 0) + 1))`,
+  }).where(and(scope, eq(jobs.status, "running")));
   return matched;
 }
 
-export async function verifyIntelBatch(w: WorkspaceContext, id: string, index: number, meetingIds: string[], meetingId: string, matched: Match[]) {
-  const { scope, batch } = await batchFor(w, id, index, meetingIds);
-  const verified = await verifyBatch(matched, batch, { meetingId, searchId: id });
-  // Stream verified matches to the page while other batches are still running.
-  await db.update(jobs).set({
-    completed: sql`least(${jobs.completed} + 1, ${jobs.total})`,
-    result: sql`jsonb_set(jsonb_set(coalesce(${jobs.result}, '{}'::jsonb), '{partial}', coalesce(${jobs.result}->'partial', '[]'::jsonb) || ${JSON.stringify(verified)}::jsonb), '{batchesDone}', to_jsonb(coalesce((${jobs.result}->>'batchesDone')::int, 0) + 1))`,
-  }).where(and(scope, eq(jobs.status, "running")));
-  return verified;
-}
-
-export async function finalizeIntelJob(w: WorkspaceContext, id: string, candidates: Match[][], snapshot: string, meetingId: string) {
+export async function finalizeIntelJob(w: WorkspaceContext, id: string, candidates: Match[][], snapshot: string) {
   const { scope, row, active } = await stepScope(w, id);
   if (!active) return;
   const input = searchInputSchema.parse(row!.input);
@@ -200,7 +193,7 @@ export async function finalizeIntelJob(w: WorkspaceContext, id: string, candidat
   await db.update(jobs).set({ result: sql`jsonb_set(coalesce(${jobs.result}, '{}'::jsonb), '{stage}', '"finalizing"'::jsonb)` }).where(scope);
   const { corpus, plan } = await loadPlan(w, input, preview);
   const { matches, catalog } = candidates.length
-    ? await finalizeIntelSearch(w, input, plan.source, candidates, snapshot, { meetingId, searchId: id })
+    ? await finalizeIntelSearch(w, input, plan.source, candidates, snapshot)
     : { matches: [], catalog: plan.catalog };
   const result: SearchResult = { matches, source: plan.source, coverage: plan.coverage };
   await db.update(jobs).set({ status: "complete", completed: sql`${jobs.total}`, result: {

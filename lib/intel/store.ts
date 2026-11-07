@@ -1,6 +1,6 @@
 import { and, asc, desc, eq, gt, inArray, isNull, ne, or } from "drizzle-orm";
 import { db } from "@/db/client";
-import { meetings, meetingParts, transcriptSegments, intelSearches } from "@/db/schema";
+import { meetings, meetingNotes, meetingParts, transcriptSegments, intelSearches } from "@/db/schema";
 import { getComposedMeetingForFollowup } from "@/lib/meeting-composition";
 import { currentTranscriptJobIdsSubquery } from "@/lib/current-transcript-job";
 import { getPersonalReadableMeetingsCondition } from "@/lib/meeting-access-policy";
@@ -11,8 +11,9 @@ import { searchInputSchema, type IntelMeeting, type SearchInput, type HistoryEnt
 
 export async function loadIntelMeetings(workspace: WorkspaceContext, meetingId?: string): Promise<IntelMeeting[]> {
   const rows = await db.select({ id: meetings.id, title: meetings.title, startedAt: meetings.startedAt,
+    notes: { content: meetingNotes.content, blocks: meetingNotes.blocks },
     createdAt: meetings.createdAt, status: meetings.status, aiIntel: meetings.aiIntel, aiFollowup: meetings.aiFollowup,
-  }).from(meetings).where(and(
+  }).from(meetings).leftJoin(meetingNotes, and(eq(meetingNotes.meetingId, meetings.id), eq(meetingNotes.userId, workspace.userId))).where(and(
     eq(meetings.teamId, workspace.teamId), getPersonalReadableMeetingsCondition(workspace),
     eq(meetings.status, "ready"), meetingId ? eq(meetings.id, meetingId) : undefined,
   )).orderBy(desc(meetings.startedAt), desc(meetings.createdAt), asc(meetings.id)).limit(1001);
@@ -22,20 +23,29 @@ export async function loadIntelMeetings(workspace: WorkspaceContext, meetingId?:
   // Keep the existing chronological order: stored extraction hashes depend on it.
   const segments: { id: string; meetingId: string; speaker: string | null; text: string; startMs: number }[] = [];
   const pageSize = 10000;
-  let cursor: { id: string; startMs: number } | undefined;
-  while (true) {
-    const page = await db.select({ id: transcriptSegments.id, meetingId: transcriptSegments.meetingId,
-      speaker: transcriptSegments.speaker, text: transcriptSegments.text, startMs: transcriptSegments.startMs,
-    }).from(transcriptSegments).innerJoin(meetings, eq(meetings.id, transcriptSegments.meetingId))
-      .where(and(eq(meetings.teamId, workspace.teamId),
-        inArray(meetings.id, rows.map(m => m.id)), getPersonalReadableMeetingsCondition(workspace),
-        inArray(transcriptSegments.jobId, currentTranscriptJobIdsSubquery(meetings.id)),
-        cursor ? or(gt(transcriptSegments.startMs, cursor.startMs),
-          and(eq(transcriptSegments.startMs, cursor.startMs), gt(transcriptSegments.id, cursor.id))) : undefined))
-      .orderBy(asc(transcriptSegments.startMs), asc(transcriptSegments.id)).limit(pageSize);
-    segments.push(...page);
-    if (page.length < pageSize) break;
-    cursor = page[page.length - 1];
+  // Limit each scan to a small meeting group. Global pagination otherwise
+  // repeatedly scans and sorts the entire archive for every 10,000 rows.
+  async function loadGroup(group: typeof rows) {
+    let cursor: { id: string; startMs: number } | undefined;
+    while (true) {
+      const page = await db.select({ id: transcriptSegments.id, meetingId: transcriptSegments.meetingId,
+        speaker: transcriptSegments.speaker, text: transcriptSegments.text, startMs: transcriptSegments.startMs,
+      }).from(transcriptSegments).innerJoin(meetings, eq(meetings.id, transcriptSegments.meetingId))
+        .where(and(eq(meetings.teamId, workspace.teamId),
+          inArray(meetings.id, group.map(m => m.id)), getPersonalReadableMeetingsCondition(workspace),
+          inArray(transcriptSegments.jobId, currentTranscriptJobIdsSubquery(meetings.id)),
+          cursor ? or(gt(transcriptSegments.startMs, cursor.startMs),
+            and(eq(transcriptSegments.startMs, cursor.startMs), gt(transcriptSegments.id, cursor.id))) : undefined))
+        .orderBy(asc(transcriptSegments.startMs), asc(transcriptSegments.id)).limit(pageSize);
+      segments.push(...page);
+      if (page.length < pageSize) break;
+      cursor = page[page.length - 1];
+    }
+  }
+  // Bound database pressure while avoiding a waterfall across independent groups.
+  for (let offset = 0; offset < rows.length; offset += 75) {
+    await Promise.all([0, 25, 50].filter(start => offset + start < rows.length)
+      .map(start => loadGroup(rows.slice(offset + start, offset + start + 25))));
   }
   const byMeeting = new Map<string, typeof segments>();
   for (const segment of segments) {

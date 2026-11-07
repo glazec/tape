@@ -39,3 +39,44 @@ it("keeps evidence membership on the server while preserving browsing metadata",
   expect(browserCatalog(catalog).people[0]).not.toHaveProperty("segmentIds");
   expect(browserCatalog(catalog).people[0].sourceSegmentId).toBe("m-s");
 });
+it("focuses verification on candidates while retaining their reversals and source context", async () => {
+ const { buildVerificationContext } = await import("@/lib/intel/search-batches");
+ const a = meeting("a", "alex@example.test");
+ a.segments = [
+  { id: "question", speaker: "Other", text: "Are you buying GPUs?", startMs: 0 },
+  { id: "answer", speaker: "alex@example.test", text: "Yes, we need them.", startMs: 1 },
+  { id: "context", speaker: "Other", text: "For your inference team?", startMs: 2 },
+  { id: "noise", speaker: "Other", text: "Unrelated lunch plans", startMs: 3 },
+ ];
+ const later = meeting("later", "alex@example.test");
+ later.segments[0].text = "We no longer buy GPUs.";
+ const corpus = [a, later, meeting("unrelated")];const catalog = buildCatalog(corpus);
+ const batch = buildSearchBatches(corpus, catalog, input, source)[0];
+ const match = { id: catalog.people.find(p => p.name === "alex@example.test")!.id, type: "person" as const, segmentIds: ["answer"], counterEvidenceIds: [] };
+ const context = buildVerificationContext(batch, [match]);
+ const ids = context.meetings.flatMap(m => m.segments.map(s => s.id));
+ expect(ids).toEqual(["question", "answer", "context", "later-s"]);
+ expect(context.people.map(p => p.id)).toEqual([match.id]);
+ expect(context.source).toEqual(source);
+});
+it("retains the source intel speaker's history even when recommending another person", async () => {
+ const { buildVerificationContext } = await import("@/lib/intel/search-batches");
+ const { intelSourceHash } = await import("@/lib/intel/provenance");
+ const a = meeting("source", "Source"), b = meeting("recipient", "Recipient");
+ a.aiIntel = { sourceHash: intelSourceHash(a), result: { items: [{ kind: "plan", text: "Source seeks partners", importance: "normal", speakerSegmentId: "source-s", segmentIds: ["source-s"] }] } };
+ const catalog = buildCatalog([a, b]);
+ const batch = buildSearchBatches([a, b], catalog, { kind: "intel", id: catalog.intel[0].id }, source)[0];
+ const target = catalog.people.find(p => p.name === "Recipient")!;
+ const focused = buildVerificationContext(batch, [{ id: target.id, type: "person", segmentIds: ["recipient-s"], counterEvidenceIds: [] }]);
+ expect(focused.intel).toHaveLength(1);
+ expect(focused.meetings.map(m => m.id)).toEqual(["source", "recipient"]);
+ expect(focused.people.map(p => p.name)).toEqual(["Source", "Recipient"]);
+});
+it("keeps all speakers when verifying a mentioned contact", async () => {
+ const { buildVerificationContext } = await import("@/lib/intel/search-batches");
+ const corpus = [meeting("a"), meeting("b")];
+ const batch = buildSearchBatches(corpus, buildCatalog(corpus), input, source)[0];
+ batch.people.push({ id: "contact", name: "Mentioned", detail: "Contact", kind: "mentioned", meetingIds: ["a", "b"], segmentIds: ["a-s"], sourceDate: corpus[0].date, sourceMeetingId: "a", sourceSegmentId: "a-s" });
+ const focused = buildVerificationContext(batch, [{ id: "contact", type: "person", segmentIds: ["a-s"], counterEvidenceIds: [] }]);
+ expect(focused.meetings).toEqual(batch.meetings);
+});

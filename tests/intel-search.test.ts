@@ -1,12 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-const mocks = vi.hoisted(() => ({ emitTelemetryLog: vi.fn(), loadIntelMeetings: vi.fn(), createOpenRouterChatCompletion: vi.fn(), verifyIntelClaims: vi.fn(), assertWorkspaceHasProviderCredit: vi.fn(), resolveIntelContent: vi.fn() }));
+const mocks = vi.hoisted(() => ({ emitTelemetryLog: vi.fn(), loadIntelMeetings: vi.fn(), scoreIntelBatch: vi.fn(), verifyIntelClaims: vi.fn(), assertWorkspaceHasProviderCredit: vi.fn(), resolveIntelContent: vi.fn() }));
 vi.mock("@/lib/intel/store", async importOriginal => ({ ...await importOriginal<typeof import("@/lib/intel/store")>(), loadIntelMeetings: mocks.loadIntelMeetings }));
 vi.mock("@/lib/telemetry/server", () => mocks);
 vi.mock("@/db/client", () => ({ db: {} }));
 vi.mock("@/lib/meeting-composition", () => ({}));
 vi.mock("@/lib/intel/generation", () => ({ INTEL_MODEL: "typesafe/jev-router" }));
 vi.mock("@/lib/intel/verification", () => mocks);
-vi.mock("@/lib/vendors/openrouter", () => mocks);
+vi.mock("@/lib/intel/scoring", () => mocks);
 vi.mock("@/lib/provider-credit", () => mocks);
 vi.mock("@/lib/intel/content", () => ({ ...mocks, IntelInputError: class extends Error {} }));
 import { searchIntel } from "@/lib/intel/search";
@@ -14,29 +14,33 @@ import { buildCatalog, intelSourceHash } from "@/lib/intel/provenance";
 import type { IntelMeeting } from "@/lib/intel/types";
 const m: IntelMeeting = { id: "m1", title: "Meeting", date: new Date().toISOString(), startedAt: null, status: "ready", transcriptJobStatus: null, aiIntel: null, aiFollowup: null, segments: [{ id: "s1", speaker: "Alex", text: "We need inference partners", startMs: 0 }] };
 const workspace = { userId: "u", teamId: "t", domain: "example.com" };
-beforeEach(() => { vi.clearAllMocks(); mocks.loadIntelMeetings.mockResolvedValue([m]); mocks.createOpenRouterChatCompletion.mockResolvedValue('{"matches":[]}'); mocks.verifyIntelClaims.mockResolvedValue([]); mocks.resolveIntelContent.mockResolvedValue({ text: "Actual article content about inference", url: "https://example.com/article" }); });
+beforeEach(() => { vi.clearAllMocks(); mocks.loadIntelMeetings.mockResolvedValue([m]); mocks.scoreIntelBatch.mockImplementation(async call => {
+ const batch = call;
+ return ({ matches: batch.people.map((p: {id:string; sourceSegmentId:string}) => ({id:p.id,type:"person",score:25,relevance:"related_focus",reason:"Background relevance",caveat:"No direct request",segmentIds:[p.sourceSegmentId],counterEvidenceIds:[]})) });
+ }); mocks.verifyIntelClaims.mockResolvedValue([]); mocks.resolveIntelContent.mockResolvedValue({ text: "Actual article content about inference", url: "https://example.com/article" }); });
 describe("Intel matching boundaries", () => {
  it("identifies a matching timeout without sending search or provider text to telemetry", async () => {
-  mocks.createOpenRouterChatCompletion.mockRejectedValueOnce(new Error("timeout for confidential query"));
+  mocks.scoreIntelBatch.mockRejectedValueOnce(new Error("timeout for confidential query"));
   await expect(searchIntel(workspace, { kind: "content", text: "inference" }, [m])).rejects.toThrow("timeout");
   const [event] = mocks.emitTelemetryLog.mock.calls[0];
   expect(event.attributes["operation.name"]).toBe("matching");
   expect(event.error.message).toBe("Intel search matching: timeout");
  });
- it("gives the verifier resolved article content, not just the URL", async () => {
+ it("gives scoring resolved article content, not just the URL", async () => {
   await searchIntel(workspace, { kind: "content", text: "https://example.com/article" }, [m]);
-  expect(mocks.verifyIntelClaims.mock.calls[0][1].source.text).toBe("Actual article content about inference");
+  expect(mocks.scoreIntelBatch.mock.calls[0][0].source.text).toBe("Actual article content about inference");
  });
- it("includes the selected intel record in the independent verification context", async () => {
+ it("keeps a selected intel source available while scoring another participant", async () => {
   const indexed = { ...m, aiIntel: { sourceHash: intelSourceHash(m), result: { items: [{ kind: "plan", text: "Alex needs inference partners", importance: "high", speakerSegmentId: "s1", segmentIds: ["s1"] }] } } };
-  mocks.loadIntelMeetings.mockResolvedValue([indexed]);
+  const recipient = { ...m, id: "m2", segments: [{ ...m.segments[0], id:"s2", speaker:"Maya" }] };
+  mocks.loadIntelMeetings.mockResolvedValue([indexed, recipient]);
   const input = { kind: "intel" as const, id: buildCatalog([indexed]).intel[0].id };
-  await searchIntel(workspace, input, [indexed]);
-  expect(mocks.verifyIntelClaims.mock.calls[0][1].intel[0].text).toBe("Alex needs inference partners");
+  await searchIntel(workspace, input, [indexed, recipient]);
+  expect(mocks.scoreIntelBatch.mock.calls[0][0].intel[0].text).toBe("Alex needs inference partners");
  });
  it("rejects stale person selection before a provider call", async () => {
   await expect(searchIntel(workspace, { kind: "person", ids: ["revoked"] }, [m])).rejects.toThrow("no longer available");
-  expect(mocks.createOpenRouterChatCompletion).not.toHaveBeenCalled();
+  expect(mocks.scoreIntelBatch).not.toHaveBeenCalled();
  });
  it("rejects an appended reversal during the model call", async () => {
   mocks.loadIntelMeetings.mockResolvedValue([{ ...m, segments: [...m.segments, { id: "new", speaker: "Alex", text: "We no longer want inference partners.", startMs: 5000 }] }]);
@@ -52,39 +56,24 @@ it("searches all batches and rechecks the full archive after verification", asyn
  mocks.loadIntelMeetings.mockResolvedValue(corpus);
  const progress = vi.fn();
  const result = await searchIntel(workspace, { kind: "content", text: "Inference" }, corpus, progress);
- expect(progress.mock.calls).toEqual([[0,6], [1,6], [2,6], [3,6], [4,6], [5,6], [6,6]]);
- expect(mocks.createOpenRouterChatCompletion).toHaveBeenCalledTimes(3);
- expect(mocks.verifyIntelClaims).toHaveBeenCalledTimes(3);
+ expect(progress.mock.calls).toEqual([[0,3], [1,3], [2,3], [3,3]]);
+ expect(mocks.scoreIntelBatch).toHaveBeenCalledTimes(3);
+ expect(mocks.verifyIntelClaims).not.toHaveBeenCalled();
  expect(result.catalog.people).toHaveLength(3);
- const searched = mocks.createOpenRouterChatCompletion.mock.calls.flatMap(([call]) => JSON.parse(call.messages[1].content).meetings.map((meeting: { id: string }) => meeting.id));
+ const searched = mocks.scoreIntelBatch.mock.calls.flatMap(([call]) => call.meetings.map((meeting: { id: string }) => meeting.id));
  expect(searched).toEqual(["m0", "m1", "m2"]);
 });
-it("ranks verified candidates across batches without rewriting their claims", async () => {
- const corpus = Array.from({ length: 3 }, (_, i) => ({ ...m, id: `m${i}`, segments: Array.from({ length: 6 }, (_, j) => ({ id: `s${i}-${j}`, speaker: `Person ${i}-${j}`, text: "Inference evidence ".repeat(3300), startMs: j })) }));
- mocks.loadIntelMeetings.mockResolvedValue(corpus);
- mocks.verifyIntelClaims.mockImplementation(async claims => claims);
- mocks.createOpenRouterChatCompletion.mockImplementation(async call => {
-   const payload = JSON.parse(call.messages[1].content);
-   if (payload.candidates) return JSON.stringify({ indices: [17, 0] });
-   return JSON.stringify({ matches: payload.people.map((p: { id: string; sourceSegmentId: string }) => ({ id: p.id, type: "person", relevance: "related_focus", reason: "Supported interest", caveat: "", segmentIds: [p.sourceSegmentId], counterEvidenceIds: [] })) });
- });
- const result = await searchIntel(workspace, { kind: "content", text: "Inference" }, corpus);
- expect(result.matches.map(m => m.title)).toEqual(["Person 2-5", "Person 0-0"]);
- expect(result.matches.every(m => m.reason === "Supported interest")).toBe(true);
- expect(mocks.createOpenRouterChatCompletion).toHaveBeenCalledTimes(4);
-});
-it("drops unsupported attribution before independently verifying valid candidates", async () => {
+it("rejects unsupported attribution rather than publishing fabricated scores", async () => {
  const corpus = [m, { ...m, id: "m2", segments: [{ ...m.segments[0], id: "s2", speaker: "Maya" }] }];
  const people = buildCatalog(corpus).people;
  mocks.loadIntelMeetings.mockResolvedValue(corpus);
  mocks.verifyIntelClaims.mockImplementation(async claims => claims);
- mocks.createOpenRouterChatCompletion.mockResolvedValue(JSON.stringify({ matches: [
-   { id: people[0].id, type: "person", relevance: "related_focus", reason: "Wrong attribution", caveat: "", segmentIds: ["s2"], counterEvidenceIds: [] },
-   { id: people[1].id, type: "person", relevance: "related_focus", reason: "Supported interest", caveat: "", segmentIds: ["s2"], counterEvidenceIds: [] },
+ mocks.scoreIntelBatch.mockResolvedValue(({ matches: [
+   { id: people[0].id, type: "person", score: 40, relevance: "related_focus", reason: "Wrong attribution", caveat: "", segmentIds: ["s2"], counterEvidenceIds: [] },
+   { id: people[1].id, type: "person", score: 40, relevance: "related_focus", reason: "Supported interest", caveat: "", segmentIds: ["s2"], counterEvidenceIds: [] },
  ] }));
- const result = await searchIntel(workspace, { kind: "content", text: "Inference" }, corpus);
- expect(result.matches.map(m => m.title)).toEqual(["Maya"]);
- expect(mocks.verifyIntelClaims.mock.calls[0][0]).toHaveLength(1);
+ await expect(searchIntel(workspace, { kind: "content", text: "Inference" }, corpus)).rejects.toThrow("Evidence does not support this person");
+ expect(mocks.verifyIntelClaims).not.toHaveBeenCalled();
 });
 it("allows background indexing to add intel without invalidating unchanged source evidence", async () => {
  const indexed = { ...m, aiIntel: { sourceHash: intelSourceHash(m), result: { items: [{ kind: "plan", text: "Alex needs inference partners", importance: "high", speakerSegmentId: "s1", segmentIds: ["s1"] }] } } };
@@ -96,5 +85,6 @@ it("still rejects replacement of the selected intel record during matching", asy
  const item = { kind: "plan", text: "Alex needs inference partners", importance: "high", speakerSegmentId: "s1", segmentIds: ["s1"] };
  const indexed = { ...m, aiIntel: { sourceHash: intelSourceHash(m), result: { items: [item] } } };
  mocks.loadIntelMeetings.mockResolvedValue([{ ...indexed, aiIntel: { ...indexed.aiIntel, result: { items: [{ ...item, text: "A different extracted item" }] } } }]);
- await expect(searchIntel(workspace, { kind: "intel", id: buildCatalog([indexed]).intel[0].id }, [indexed])).rejects.toThrow("access or content changed");
+ const recipient = { ...m, id: "other", segments:[{...m.segments[0],id:"other-s",speaker:"Other"}] };
+ await expect(searchIntel(workspace, { kind: "intel", id: buildCatalog([indexed]).intel[0].id }, [indexed,recipient])).rejects.toThrow("access or content changed");
 });

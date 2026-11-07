@@ -1,3 +1,4 @@
+import { parseIntelJson } from "./json";
 import { and, eq, isNull } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db/client";
@@ -11,8 +12,8 @@ import { verifyIntelClaims } from "./verification";
 import { currentIntel, intelSourceHash, validateExtraction } from "./provenance";
 import { intelExtractionSchema } from "./types";
 
-// Jev routes each request to a serving model. Generation and ranking use the
-// router; verification uses the Jev decision model (see verification.ts).
+// Jev Router selects the extraction model. Search scoring and verification
+// call the Jev decision model directly.
 export const INTEL_MODEL = "typesafe/jev-router";
 // A transcript that fails extraction this many times is not retried until it changes.
 export const INTEL_MAX_FAILURES = 2;
@@ -85,7 +86,7 @@ async function extractVerifiedIntel(meeting: Awaited<ReturnType<typeof loadIntel
   });
   let result;
   try {
-    result = validateExtraction(JSON.parse(response), meeting);
+    result = validateExtraction(parseIntelJson(response), meeting);
   } catch (error) {
     throw new IntelExtractionOutputError(error);
   }

@@ -14,6 +14,7 @@ export type IntelMeeting = {
   id: string; title: string; date: string; startedAt: string | null;
   status: string; transcriptJobStatus: string | null;
   followupSource?: { title: string; startedAt: string | null; segments: Segment[] };
+  notes?: { content: string; blocks: unknown } | null;
   segments: Segment[]; aiIntel: unknown; aiFollowup: unknown;
 };
 export type Evidence = Segment & { meetingId: string; meetingTitle: string; date: string };
@@ -31,12 +32,16 @@ export type SearchInput = z.infer<typeof searchInputSchema>;
 export const rankingSchema = z.strictObject({
   matches: z.array(z.strictObject({
     id: z.string(), type: z.enum(["person", "intel"]),
+    score: z.number().min(0).max(100).optional(),
     relevance: z.enum(["expressed_interest", "related_focus", "possible_synergy"]),
     reason: z.string().min(1).max(600),
     caveat: z.string().max(500),
     segmentIds: z.array(z.string()).min(1).max(6),
     counterEvidenceIds: z.array(z.string()).max(4),
-  })).max(12),
+  })),
+});
+export const scoredRankingSchema = z.strictObject({
+  matches: z.array(rankingSchema.shape.matches.element.extend({ score: z.number().min(0).max(100) })).max(12),
 });
 export type Match = z.infer<typeof rankingSchema>["matches"][number] & {
   title: string; detail: string; evidence: Evidence[]; counterEvidence: Evidence[];

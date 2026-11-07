@@ -69,7 +69,7 @@ export function buildCatalog(meetings: IntelMeeting[], now = new Date()) {
   }
   return { intel: intel.sort((a,b) => b.date.localeCompare(a.date)), people: [...people.values()],
     pending: meetings.filter(m => new Date(m.date) >= since && !currentIntel(m)).length,
-    coverage: `${meetings.length} accessible meetings. Intel from the past six months; matching includes initial and latest available meetings. Names without a confirmed email stay separate by meeting.` };
+    coverage: `${meetings.length} accessible meetings. Intel from the past six months; searches rank participants from the past three months. Names without a confirmed email stay separate by meeting.` };
 }
 
 export function buildMatchingContext(meetings: IntelMeeting[], people: Person[], now = new Date()) {

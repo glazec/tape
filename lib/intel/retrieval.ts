@@ -12,6 +12,9 @@ function terms(text: string) {
 
 /** Scan all authorized transcripts, then retain complete identity history for verification. */
 export function retrieveSearchMeetings(corpus: IntelMeeting[], catalog: IntelCatalog, input: SearchInput, text: string, limit = 12) {
+  // In a small corpus, lexical filtering only hides synonyms and other languages.
+  // These are candidates for evidence verification, never automatic matches.
+  if (corpus.length <= limit) return corpus;
   const selectedPeople = input.kind === "person" ? catalog.people.filter(p => input.ids.includes(p.id)) : [];
   const selectedSegments = new Set(selectedPeople.flatMap(p => p.segmentIds));
   const query = input.kind === "person"

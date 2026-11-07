@@ -43,6 +43,7 @@ describe.skipIf(!enabled)("Intel with real PostgreSQL and caller RLS", () => {
     await client.query("INSERT INTO transcript_jobs(id,meeting_id,status,created_at) VALUES($1,$3,'completed',now()-interval '1 day'),($2,$3,'completed',now())", [oldJob,currentJob,m]);
     await client.query("INSERT INTO transcript_segments(meeting_id,job_id,speaker,start_ms,text) VALUES($1,$2,'Alex',0,'Obsolete content')", [m,oldJob]);
     await client.query("INSERT INTO transcript_segments(id,meeting_id,job_id,speaker,start_ms,text) VALUES($1,$2,$3,'Alex',1000,'We need inference partners')", [segment,m,currentJob]);
+    await client.query("INSERT INTO meeting_notes(meeting_id,user_id,content) VALUES($1,$2,'Caller full notes'),($1,$3,'Another user private notes')", [m,a,b]);
     await asUser(a);
   });
   afterAll(async () => { if (state.client) { await state.client.query("ROLLBACK"); await state.client.end(); } });
@@ -50,6 +51,8 @@ describe.skipIf(!enabled)("Intel with real PostgreSQL and caller RLS", () => {
     const corpus = await loadIntelMeetings(workspace);
     expect(corpus.map(m => m.id)).toEqual([m]);
     expect(corpus[0].segments.map(s => s.text)).toEqual(["We need inference partners"]);
+    expect(corpus[0].notes?.content).toBe("Caller full notes");
+    expect(JSON.stringify(corpus)).not.toContain("Another user private notes");
   });
   it("roundtrips generated intel through JSONB without changing its identity", async () => {
     const [meeting] = await loadIntelMeetings(workspace);
@@ -115,28 +118,19 @@ describe.skipIf(!enabled)("Intel with real PostgreSQL and caller RLS", () => {
     await state.client!.query("UPDATE meetings SET owner_user_id=$1 WHERE id=$2", [a,m]);
     await asUser(a);
   });
-  it("saves verified progress before completion and withholds a real match after access is revoked", async () => {
+  it("saves scored results without an acceptance step and withholds a real match after access is revoked", async () => {
     const router = await import("@/lib/vendors/openrouter");
     const verifier = await import("@/lib/intel/verification");
     const [meeting] = await loadIntelMeetings(workspace);
     const target = buildCatalog([meeting]).people[0];
-    const match = { id: target.id, type: "person", relevance: "expressed_interest", reason: "Alex needs inference partners.", caveat: "", segmentIds: [segment], counterEvidenceIds: [] };
+    const match = { id: target.id, type: "person", score: 35, relevance: "expressed_interest", reason: "Alex needs inference partners.", caveat: "", segmentIds: [segment], counterEvidenceIds: [] };
     const model = vi.spyOn(router, "createOpenRouterChatCompletion").mockResolvedValue(JSON.stringify({ matches: [match] }));
-    let release!: () => void;
-    const gate = new Promise<void>(resolve => { release = resolve; });
-    let entered!: () => void;
-    const checking = new Promise<void>(resolve => { entered = resolve; });
-    const verify = vi.spyOn(verifier, "verifyIntelClaims").mockImplementation(async matches => {
-      entered(); await gate; return matches;
-    });
+    const verify = vi.spyOn(verifier, "verifyIntelClaims");
     const { id } = await enqueueIntelSearch(workspace, { kind: "content", text: "Inference partners" });
-    const running = executeIntelSearch(workspace, id);
     try {
-      await Promise.race([checking, running.then(() => { throw new Error("Worker did not reach verification"); })]);
-      expect(await readIntelJob(workspace, id)).toMatchObject({ status: "running", completed: 1, total: 2 });
-      release();
-      await running;
-      expect(await readIntelJob(workspace, id)).toMatchObject({ status: "complete", completed: 2, result: { matches: [{ title: "Alex" }] } });
+      await executeIntelSearch(workspace, id);
+      expect(verify).not.toHaveBeenCalled();
+      expect(await readIntelJob(workspace, id)).toMatchObject({ status: "complete", completed: 1, total: 1, result: { matches: [{ title: "Alex", score: 35 }] } });
       await state.client!.query("SAVEPOINT revoke_intel_access");
       try {
         await state.client!.query("RESET ROLE");
@@ -146,7 +140,7 @@ describe.skipIf(!enabled)("Intel with real PostgreSQL and caller RLS", () => {
         expect(revoked?.status).toBe("failed");
         expect(revoked).not.toHaveProperty("result");
       } finally { await state.client!.query("ROLLBACK TO SAVEPOINT revoke_intel_access"); }
-    } finally { release(); await running; verify.mockRestore(); model.mockRestore(); }
+    } finally { verify.mockRestore(); model.mockRestore(); }
   });
   it("pages a large transcript through real SQL without dropping equal timestamps", async () => {
     const client = state.client!;

@@ -40,3 +40,12 @@ it("skips empty batches and propagates provider failures", async () => {
   fetchDecision.mockResolvedValue(new Response("private details", { status: 429 }));
   await expect(verifyIntelClaims(["test"], {}, "meeting")).rejects.toThrow("HTTP 429");
 });
+it("checks a recommendation as supported relevance, without requiring the recipient to repeat new intel", async () => {
+ respond({ claim_0: { type: "noul", noul: 0.91 } });
+ const claim = { reason: "Frank asked about the take rate.", relevance: "expressed_interest", segmentIds: ["s1"] };
+ expect(await verifyIntelClaims([claim], {}, "")).toEqual([claim]);
+ const body = JSON.parse(fetchDecision.mock.calls[0][1].body);
+ expect(body.questions.claim_0.instructions).toContain("as a recommendation");
+ expect(body.questions.claim_0.instructions).toContain("do not require the recipient to repeat");
+ expect(body.questions.claim_0.instructions).toContain("later contradictions");
+});

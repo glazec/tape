@@ -1,4 +1,5 @@
 import { IntelInputError } from "./content";
+import { getCurrentMeetingFollowup } from "@/lib/meeting-followup-source";
 import { buildMatchingContext } from "./provenance";
 import type { IntelCatalog, IntelMeeting, SearchInput } from "./types";
 
@@ -52,4 +53,71 @@ export function buildSearchBatches(corpus: IntelMeeting[], catalog: IntelCatalog
   }
   if (ids.size) result.push(batch(ids));
   return result;
+}
+
+// Verification needs the target's complete supplied history, not every other
+// participant's transcript. Keep neighboring turns so short answers retain context.
+export function buildVerificationContext(batch: ReturnType<typeof buildSearchBatches>[number],
+  matches: Pick<import("./types").Match, "id" | "type" | "segmentIds" | "counterEvidenceIds">[]) {
+  const peopleIds = new Set(matches.filter(m => m.type === "person").map(m => m.id));
+  if (batch.input.kind === "person") for (const id of batch.input.ids) peopleIds.add(id);
+  const intelIds = new Set(matches.filter(m => m.type === "intel").map(m => m.id));
+  if (batch.input.kind === "intel") intelIds.add(batch.input.id);
+  const intel = batch.intel.filter(i => intelIds.has(i.id));
+  const cited = new Set([...matches.flatMap(m => [...m.segmentIds, ...m.counterEvidenceIds]), ...intel.flatMap(i => i.segmentIds)]);
+  for (const item of intel) {
+    const meeting = batch.meetings.find(m => m.segments.some(s => s.id === item.speakerSegmentId));
+    const speaker = meeting?.segments.find(s => s.id === item.speakerSegmentId)?.speaker;
+    for (const p of batch.people) {
+      if (p.kind === "participant" && p.name === speaker && meeting && p.meetingIds.includes(meeting.id)) peopleIds.add(p.id);
+    }
+  }
+  const people = batch.people.filter(p => peopleIds.has(p.id));
+  const meetings = batch.meetings.flatMap(meeting => {
+    const linked = people.filter(p => p.meetingIds.includes(meeting.id));
+    // A mentioned contact's history can be described by any speaker.
+    if (linked.some(p => p.kind === "mentioned")) return [meeting];
+    const speakers = new Set(linked.map(p => p.name));
+    const keep = meeting.segments.map(s => cited.has(s.id) || (s.speaker !== null && speakers.has(s.speaker)));
+    const segments = meeting.segments.filter((_, index) => keep[index] || keep[index - 1] || keep[index + 1]);
+    return segments.length ? [{ ...meeting, segments }] : [];
+  });
+  return { ...batch, people, intel, meetings };
+}
+
+// Every recent participant is a candidate. Batch by person, not connected meetings:
+// a recurring host must not pull the entire archive into one oversized request.
+export function buildRecentPeopleBatches(corpus: IntelMeeting[], catalog: IntelCatalog, input: SearchInput,
+  source: { text: string; url?: string }, maxCharacters = 400_000) {
+  const selectedPeople = input.kind === "person" ? catalog.people.filter(p => input.ids.includes(p.id)) : [];
+  const selectedIntel = input.kind === "intel" ? catalog.intel.filter(i => i.id === input.id) : [];
+  const sourceSpeaker = selectedIntel[0]?.speaker;
+  const sourceMeeting = selectedIntel[0]?.evidence[0]?.meetingId;
+  const candidates = catalog.people.filter(p => p.kind === "participant" && !selectedPeople.some(s => s.id === p.id)
+    && !(p.name === sourceSpeaker && sourceMeeting && p.meetingIds.includes(sourceMeeting)));
+  const context = corpus.map(m => {
+    const followup = getCurrentMeetingFollowup(m);
+    const notes = m.notes ?? null;
+    // Notes may omit requests or later reversals. Preserve the transcript so
+    // every candidate can be evaluated against the actual conversation.
+    return { id: m.id, title: m.title, date: m.date, notes, followup, segments: m.segments };
+  });
+  function batch(people: typeof candidates) {
+    const ids = new Set([...people, ...selectedPeople].flatMap(p => p.meetingIds));
+    for (const item of selectedIntel) for (const e of item.evidence) ids.add(e.meetingId);
+    return { input, source, people: people.map(p => ({ ...p, segmentIds: [] })),
+      selectedPeople, intel: selectedIntel, meetings: context.filter(m => ids.has(m.id)) };
+  }
+  const batches: ReturnType<typeof batch>[] = [];
+  let people: typeof candidates = [];
+  for (const person of candidates) {
+    if (people.length && (people.length === 12 || JSON.stringify(batch([...people, person])).length > maxCharacters)) {
+      batches.push(batch(people)); people = [];
+    }
+    people.push(person);
+    if (JSON.stringify(batch(people)).length > maxCharacters)
+      throw new IntelInputError("This person's meeting history is too large for one search. Try another person or idea.");
+  }
+  if (people.length) batches.push(batch(people));
+  return batches;
 }

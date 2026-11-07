@@ -26,3 +26,7 @@ it("segments Chinese queries and avoids unrelated fallback results", () => {
  expect(retrieveSearchMeetings(corpus, buildCatalog(corpus), input, "推理基础设施", 1).map(m => m.id)).toEqual(["a"]);
  expect(retrieveSearchMeetings(corpus, buildCatalog(corpus), input, "Astronomy", 1)).toEqual([]);
 });
+it("lets the model check a small corpus even without exact shared words", () => {
+ const corpus = [meeting("a", "我们提供闲置显卡托管服务"), meeting("b", "Lunch plans")];
+ expect(retrieveSearchMeetings(corpus, buildCatalog(corpus), input, "GPU hosting").map(m => m.id)).toEqual(["a", "b"]);
+});

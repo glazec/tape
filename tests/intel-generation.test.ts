@@ -72,3 +72,7 @@ describe("background intel generation", () => {
   expect(mocks.set).toHaveBeenCalledTimes(1);
  });
 });
+it("accepts a complete JSON code fence without discarding a valid extraction", async () => {
+ mocks.createOpenRouterChatCompletion.mockResolvedValue('```json\n{"items":[]}\n```');
+ expect(await generateMeetingIntel("m1")).toEqual({ status: "saved" });
+});

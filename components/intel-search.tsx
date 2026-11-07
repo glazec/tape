@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { ArrowUpRight, Check, Clock3, Plus, Users, X, LoaderCircle, ChevronDown } from "lucide-react";
 import { connectionRelationshipLabels } from "@/lib/meeting-connections";
@@ -40,7 +40,7 @@ type Job = { estimate?: Estimate; id: string; status: string; input: SearchInput
   startedAt?: string; batchesDone?: number; stage?: string; partial?: Match[]; actualUsd?: number };
 function MatchCard({ match, onOpen, fresh }: { match: Match; onOpen: (match: Match) => void; fresh?: boolean }) {
   return <article className={cn("py-6 first:pt-0", fresh && "animate-in fade-in duration-150 motion-reduce:animate-none")}>
-    <div className="mb-2 flex items-center gap-2 text-xs text-muted-foreground"><span>{relevanceLabels[match.relevance]}</span><span aria-hidden="true">·</span><span>{dateLabel(match.evidence.reduce((date,e) => e.date > date ? e.date : date, match.evidence[0].date))}</span></div>
+    <div className="mb-2 flex items-center gap-2 text-xs text-muted-foreground"><span>{match.score === 0 ? "No clear connection" : match.score !== undefined && match.score < 25 ? "Limited relevance" : relevanceLabels[match.relevance]}</span>{match.score !== undefined && <span title="Relevance score, not a probability">Relevance {match.score}/100</span>}<span aria-hidden="true">·</span><span>{dateLabel(match.evidence.reduce((date,e) => e.date > date ? e.date : date, match.evidence[0].date))}</span></div>
     <h3 className="text-lg font-medium leading-7"><button type="button" className="text-left underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" onClick={() => onOpen(match)}>{match.title} <ArrowUpRight aria-hidden="true" className="inline size-4" /></button></h3><p className="mt-1 text-xs leading-5 text-muted-foreground">{match.detail}</p>
     <p className="mt-3 text-sm leading-6">{match.reason}</p>
     {match.caveat && <p className="mt-2 text-sm leading-6 text-muted-foreground">{match.caveat}</p>}
@@ -82,6 +82,7 @@ export function IntelSearch() {
   const [confirmStop, setConfirmStop] = useState(false);
   const [now, setNow] = useState(() => Date.now());
   const sequence = useRef(0);
+  const catalogRevision = useRef(0);
   const controller = useRef<AbortController | null>(null);
   const field = useRef<HTMLTextAreaElement>(null);
   const labelFor = (input: SearchInput, available = catalog) => input.kind === "content" ? input.text : input.kind === "intel"
@@ -89,13 +90,14 @@ export function IntelSearch() {
     : [...new Set(available.people.filter(p => input.ids.includes(p.id)).map(p => p.name))].join(", ");
   useEffect(() => {
     const abort = new AbortController();
+    const revision = catalogRevision.current;
     async function load() {
       try {
         const response = await fetch("/api/intel/catalog", { signal: abort.signal });
         const data = await response.json();
         if (!response.ok) throw new Error(data.error || "Could not load starting points.");
         if (abort.signal.aborted) return;
-        setCatalog(data.catalog);
+        if (revision === catalogRevision.current) setCatalog(data.catalog);
         setHistory(current => [...current, ...data.history.filter((h: HistoryEntry) => !current.some(c => c.id === h.id))].slice(0, 50));
         setCatalogState("ready");
       } catch (e) {
@@ -131,7 +133,7 @@ export function IntelSearch() {
         if (next.status === "failed") { setError(next.error ?? "Search failed."); setBusy(false); setWatch(null); setConfirmStop(false); return; }
         if (next.result) {
           setResult(next.result);
-          if (next.result.catalog) setCatalog(next.result.catalog);
+          if (next.result.catalog) { catalogRevision.current++; setCatalog(next.result.catalog); setCatalogState("ready"); }
           setBusy(false); setWatch(null); return;
         }
         setBusy(true);
@@ -153,7 +155,7 @@ export function IntelSearch() {
   // A backgrounded tab still signals progress and completion.
   useEffect(() => {
     const base = "Intel";
-    if (running && job) document.title = job.total ? `Matching ${job.batchesDone ?? 0} of ${job.total / 2} · ${base}` : `Searching · ${base}`;
+    if (running && job) document.title = job.total ? `Matching ${job.batchesDone ?? 0} of ${job.total} · ${base}` : `Searching · ${base}`;
     else if (result) document.title = `Results ready · ${base}`;
     else document.title = base;
   }, [running, job, result]);
@@ -211,8 +213,9 @@ export function IntelSearch() {
     else void run({ kind: "intel", id: match.id }, undefined, true);
   }
   function choosePerson(candidate: Person) { setPerson(candidate); setIdentityIds([candidate.id]); setIdentityQuery(""); }
-  const filteredPeople = catalog.people.filter(p => `${p.name} ${p.detail}`.toLowerCase().includes(text.toLowerCase()));
-  const filteredIntel = catalog.intel.filter(i => `${i.text} ${i.speaker}`.toLowerCase().includes(text.toLowerCase())).sort((a,b) => sort === "important" ? Number(b.importance === "high") - Number(a.importance === "high") || b.date.localeCompare(a.date) : b.date.localeCompare(a.date));
+  const filterText = useDeferredValue(text.toLowerCase());
+  const filteredPeople = useMemo(() => catalog.people.filter(p => `${p.name} ${p.detail}`.toLowerCase().includes(filterText)), [catalog.people, filterText]);
+  const filteredIntel = useMemo(() => catalog.intel.filter(i => `${i.text} ${i.speaker}`.toLowerCase().includes(filterText)).sort((a,b) => sort === "important" ? Number(b.importance === "high") - Number(a.importance === "high") || b.date.localeCompare(a.date) : b.date.localeCompare(a.date)), [catalog.intel, filterText, sort]);
   const sameName = person ? catalog.people.filter(p => p.kind === "participant" && (p.name.toLowerCase() === person.name.toLowerCase() || (identityQuery.trim() && `${p.name} ${p.detail}`.toLowerCase().includes(identityQuery.toLowerCase())))) : [];
   return <div className="flex min-h-[calc(100dvh-9rem)] flex-col md:flex-row md:gap-10 lg:gap-14">
     <aside aria-label="Search history" className="shrink-0 md:w-52 md:pr-6">
@@ -255,34 +258,35 @@ export function IntelSearch() {
             ? <>{estimateLabel(quote.estimate)}{quote.estimate.batches ? ` · ${quote.estimate.batches} ${quote.estimate.batches === 1 ? "group" : "groups"} of meetings` : ""}. This search is larger than usual.</>
             : busy && !job ? "Estimating…"
             : job?.estimate && running ? `${estimateLabel(job.estimate)} AI cost`
-            : selected?.kind === "person" ? "Find relevant intel and connections" : "Find people who may be interested"}</span>
+            : selected?.kind === "person" ? "Find people with relevant requests or offers" : "Find people who may be interested"}</span>
           {quote ? <span className="flex shrink-0 gap-1"><Button type="button" variant="ghost" className="min-h-11" onClick={() => setQuote(null)}>Cancel</Button><Button type="submit" className="min-h-11 rounded-xl">Run anyway</Button></span>
-            : <Button type="submit" disabled={busy || (!selected && text.trim().length < 3)} className="min-h-11 shrink-0 rounded-xl px-4">{selected?.kind === "person" ? "Find intel" : "Find people"}</Button>}
+            : <Button type="submit" disabled={busy || (!selected && text.trim().length < 3)} className="min-h-11 shrink-0 rounded-xl px-4">{busy ? <><LoaderCircle aria-hidden="true" className="size-4 animate-spin motion-reduce:animate-none" />{job ? "Searching…" : "Preparing…"}</> : "Find people"}</Button>}
         </div>
       </form>
       {quote?.input.kind === "content" && /^https:\/\//i.test(quote.input.text) && <p className="mt-2 text-xs text-muted-foreground">Estimate excludes reading the link.</p>}
       {error && <div role="alert" className="mt-5 rounded-lg border border-destructive/30 p-4 text-sm">{error}<button type="button" className="ml-2 underline" onClick={() => { if (selected) void run(selected, undefined, true); else if (text.trim()) void run({ kind: "content", text: text.trim() }, undefined, true); }}>{job?.partial?.length ? "Run again" : "Try again"}</button></div>}
+      {busy && !job && !watch && <p role="status" className="mt-5 flex items-center gap-2 text-sm text-muted-foreground"><LoaderCircle aria-hidden="true" className="size-4 animate-spin motion-reduce:animate-none" />Preparing your search and estimating cost…</p>}
       {(running || reconnecting || (busy && watch && !job)) && <div className="mt-8 max-w-xl">
         <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
           <h2 className="line-clamp-1 text-base font-medium">{selected || job ? labelFor(job?.input ?? selected!) : text}</h2>
-          {job?.startedAt && <span aria-live="off" className="text-xs tabular-nums text-muted-foreground">Started {clock(now - Date.parse(job.startedAt))} ago{job.estimate?.seconds ? ` · ${(() => { const left = job.estimate.seconds * 1000 - (now - Date.parse(job.startedAt)); return left > 60_000 ? `${minutesLabel(left / 1000)} left` : "almost done"; })()}` : ""}</span>}
+          {job?.startedAt && <span aria-live="off" className="text-xs tabular-nums text-muted-foreground">Started {clock(now - Date.parse(job.startedAt))} ago{job.estimate?.seconds ? ` · ${(() => { const left = job.estimate.seconds * 1000 - (now - Date.parse(job.startedAt)); return left > 60_000 ? `${minutesLabel(left / 1000)} left` : left > 0 ? "less than a minute estimated" : "taking longer than estimated"; })()}` : ""}</span>}
         </div>
         {(() => {
-          const groups = job?.total ? job.total / 2 : 0;
+          const groups = job?.total ? job.total : 0;
           const done = job?.batchesDone ?? 0;
-          const matched = Math.min(groups, Math.max(done, (job?.completed ?? 0) - done));
+          const matched = Math.min(groups, job?.completed ?? 0);
           const finalizing = job?.stage === "finalizing" || (groups > 0 && done === groups);
-          const status = reconnecting ? "Reconnecting to your search…" : !groups ? "Reading your meetings…" : finalizing ? "Final check on matches…" : `Matching ${groups} ${groups === 1 ? "group" : "groups"} of meetings · ${done} checked`;
+          const queued = job?.status === "queued";
+          const status = reconnecting ? "Reconnecting to your search…" : queued ? "Waiting for a search worker…" : !groups ? "Reading your meetings…" : finalizing ? "Final check on matches…" : `Matching ${groups} ${groups === 1 ? "group" : "groups"} of meetings · ${done} checked`;
           return <>
             <p role="status" className="sr-only">{status}</p>
             <ol className="mt-4 space-y-3">
-              <Stage state={groups ? "done" : "active"}>{groups ? `Read your meetings and grouped them into ${groups} ${groups === 1 ? "batch" : "batches"}` : "Reading your meetings"}</Stage>
-              <Stage state={!groups ? "waiting" : matched < groups ? "active" : "done"}>Matching people to this idea{groups ? ` · ${matched} of ${groups}` : ""}
+              <Stage state={groups ? "done" : "active"}>{groups ? `Read your meetings and grouped them into ${groups} ${groups === 1 ? "batch" : "batches"}` : queued ? "Waiting for a search worker" : "Reading your meetings"}</Stage>
+              <Stage state={!groups ? "waiting" : matched < groups ? "active" : "done"}>Scoring everyone from the past three months{groups ? ` · ${matched} of ${groups}` : ""}
                 {groups > 0 && matched === 0 && <span className="block text-xs text-muted-foreground">Each batch takes 1 to 4 minutes. {Math.min(3, groups)} run at once.</span>}</Stage>
-              <Stage state={!groups || (done === 0 && matched < groups) ? "waiting" : done < groups ? "active" : "done"}>Checking every claim against the transcript{groups ? ` · ${done} of ${groups}` : ""}</Stage>
-              <Stage state={finalizing ? "active" : "waiting"}>Final check and ranking</Stage>
+              <Stage state={finalizing ? "active" : "waiting"}>Ranking scores and checking access</Stage>
             </ol>
-            <progress aria-label="Search progress" aria-valuetext={groups ? `${done} of ${groups} batches checked` : "Starting"} className="mt-5 block h-1 w-full accent-primary" max={groups || 1} value={groups ? done : undefined} />
+            <progress aria-label="Search progress" aria-valuetext={groups ? `${matched} of ${groups} groups scored; final access check pending` : status} className="mt-5 block h-1 w-full accent-primary" max={groups ? groups + 1 : 1} value={groups ? Math.min(job?.completed ?? 0, groups) : undefined} />
           </>;
         })()}
         <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
@@ -293,19 +297,19 @@ export function IntelSearch() {
         </div>
       </div>}
       {!result && job && (running || job.partial?.length) ? <div className="mt-8 max-w-3xl">
-        <p className="mb-4 text-xs font-medium tracking-wide text-muted-foreground">{running ? `PRELIMINARY MATCHES · ${job.batchesDone ?? 0} OF ${(job.total || 0) / 2 || "?"} BATCHES CHECKED` : `MATCHES FOUND BEFORE THE SEARCH STOPPED`}</p>
+        <p className="mb-4 text-xs font-medium tracking-wide text-muted-foreground">{running ? `PRELIMINARY MATCHES · ${job.batchesDone ?? 0} OF ${(job.total || 0) || "?"} BATCHES SCORED` : `MATCHES FOUND BEFORE THE SEARCH STOPPED`}</p>
         <div className="space-y-2">
-          {[...new Map((job.partial ?? []).map(m => [m.id, m])).values()].map(match => <MatchCard key={match.id} match={match} fresh onOpen={openMatch} />)}
+          {[...new Map((job.partial ?? []).map(m => [m.id, m])).values()].sort((a, b) => (b.score ?? 0) - (a.score ?? 0)).map(match => <MatchCard key={match.id} match={match} fresh onOpen={openMatch} />)}
           {running && !job.partial?.length && <><SkeletonCard /><SkeletonCard /></>}
         </div>
-        {running && (job.batchesDone ?? 0) > 0 && !job.partial?.length && <p className="text-sm text-muted-foreground">No supported matches yet. Still checking the remaining batches.</p>}
+        {running && (job.batchesDone ?? 0) > 0 && !job.partial?.length && <p className="text-sm text-muted-foreground">No scores yet. Still processing the remaining batches.</p>}
       </div> : null}
       {result && <div className="mt-9">
-        <div className="mb-1 flex items-center justify-between gap-3"><h2 aria-live="polite" className="text-base font-semibold">{result.matches.length ? `${result.matches.length} possible ${result.matches.length === 1 ? "match" : "matches"}` : "No supported matches"}</h2><Button variant="ghost" className="min-h-11" onClick={reset}>New search</Button></div>
+        <div className="mb-1 flex items-center justify-between gap-3"><h2 aria-live="polite" className="text-base font-semibold">{result.matches.length ? `${result.matches.length} ${result.matches.length === 1 ? "person" : "people"} ranked` : "No people to rank"}</h2><Button variant="ghost" className="min-h-11" onClick={reset}>New search</Button></div>
         <p className="mb-6 text-xs leading-5 text-muted-foreground">{result.coverage}{result.actualUsd ? ` AI cost ${dollars(result.actualUsd)}.` : ""}</p>
         {result.historyWarning && <p role="status" className="mb-5 text-sm text-muted-foreground">{result.historyWarning}</p>}
         {result.source.url && <details className="mb-6 text-sm"><summary className="cursor-pointer text-muted-foreground">Content read from the link</summary><a href={result.source.url} target="_blank" rel="noreferrer" className="mt-2 block break-all underline">{result.source.url}</a><p className="mt-2 max-h-48 overflow-auto whitespace-pre-wrap leading-6">{result.source.text}</p></details>}
-        {!result.matches.length && <p className="text-sm leading-6 text-muted-foreground">No supported matches found. Try a more specific idea or another person.</p>}
+        {!result.matches.length && <p className="text-sm leading-6 text-muted-foreground">No eligible participants were found in accessible meetings from the past three months.</p>}
         <div className="space-y-2">{result.matches.map(match => <MatchCard key={match.id} match={match} onOpen={openMatch} />)}</div>
       </div>}
       {!result && !busy && catalogState !== "ready" && <div className="mt-9 text-sm text-muted-foreground" role="status">{catalogState === "loading" ? "Loading intel and people…" : <>{catalogState} <button className="underline" onClick={() => { setCatalogState("loading"); setCatalogAttempt(n => n + 1); }}>Reload</button></>}</div>}

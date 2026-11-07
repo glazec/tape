@@ -9,8 +9,8 @@ import { PgDialect } from "drizzle-orm/pg-core";
 const now = new Date();
 const workspace = { teamId: "team", userId: "user", domain: "example.com" };
 function query(rows: unknown[]) {
- const q = { from: vi.fn(), where: vi.fn(), innerJoin: vi.fn(), orderBy: vi.fn(), limit: vi.fn(), then: (resolve: (value: unknown[]) => unknown) => resolve(rows) };
- for (const name of ["from", "where", "innerJoin", "orderBy", "limit"] as const) q[name].mockReturnValue(q);
+ const q = { from: vi.fn(), where: vi.fn(), innerJoin: vi.fn(), leftJoin: vi.fn(), orderBy: vi.fn(), limit: vi.fn(), then: (resolve: (value: unknown[]) => unknown) => resolve(rows) };
+ for (const name of ["from", "where", "innerJoin", "leftJoin", "orderBy", "limit"] as const) q[name].mockReturnValue(q);
  return q;
 }
 function row(id: string, aiFollowup: unknown = null) { return { id, title: id, startedAt: null, createdAt: now, status: "ready", aiIntel: null, aiFollowup }; }
@@ -67,4 +67,41 @@ it("loads more than 100,000 segments without losing equal-timestamp page boundar
  expect(next.params).toContain(all[9999].id);
  expect(next.sql).toContain('"meetings"."team_id"');
  expect(next.sql).toContain("latest_replace");
+});
+it("bounds transcript scans to groups of 25 meetings without dropping the last group", async () => {
+ const rows = Array.from({ length: 26 }, (_, i) => row(`m${i}`));
+ const first = query([{ ...segments[0], meetingId: "m0" }]);
+ const last = query([{ ...segments[1], meetingId: "m25" }]);
+ mocks.select.mockReturnValueOnce(query(rows)).mockReturnValueOnce(first).mockReturnValueOnce(last).mockReturnValueOnce(query([]));
+ const corpus = await loadIntelMeetings(workspace);
+ expect(corpus.map(m => m.id)).toEqual(["m0", "m25"]);
+ const firstQuery = new PgDialect().sqlToQuery(first.where.mock.calls[0][0]);
+ expect(firstQuery.params).not.toContain("m25");
+ const lastQuery = new PgDialect().sqlToQuery(last.where.mock.calls[0][0]);
+ expect(lastQuery.params).toContain("m25");
+ expect(lastQuery.params).not.toContain("m0");
+});
+it("loads at most three independent meeting groups concurrently", async () => {
+ const rows = Array.from({ length: 76 }, (_, i) => row(`m${i}`));
+ let release!: () => void;
+ const gate = new Promise<void>(resolve => { release = resolve; });
+ const pending = query([]);
+ pending.then = async resolve => { await gate; return resolve([]); };
+ mocks.select.mockReturnValueOnce(query(rows)).mockReturnValue(pending);
+ const loading = loadIntelMeetings(workspace);
+ await new Promise(resolve => setTimeout(resolve, 0));
+ const inFlight = mocks.select.mock.calls.length - 1;
+ release(); await loading;
+ expect(inFlight).toBe(3);
+});
+
+it("loads only the current user's full private notes alongside authorized meetings", async () => {
+ const notes = { content: "Complete notes", blocks: [{ id: "b", text: "Complete notes" }] };
+ const q = query([{ ...row("m1"), notes }]);
+ mocks.select.mockReturnValueOnce(q).mockReturnValueOnce(query([segments[0]])).mockReturnValueOnce(query([]));
+ const corpus = await loadIntelMeetings(workspace);
+ expect(corpus[0].notes).toEqual(notes);
+ const join = new PgDialect().sqlToQuery(q.leftJoin.mock.calls[0][1]);
+ expect(join.sql).toContain('"meeting_notes"."user_id"');
+ expect(join.params).toContain(workspace.userId);
 });
