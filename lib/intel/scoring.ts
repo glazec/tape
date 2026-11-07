@@ -23,7 +23,7 @@ export async function scoreIntelBatch(batch: Batch, scope: { meetingId: string; 
   if (!key) throw new Error("OpenRouter API key is missing");
   function passages(people: Person[]) {
     return Object.fromEntries(batch.meetings.flatMap(m => m.segments.filter(s => people.some(p =>
-      p.meetingIds.includes(m.id) && (p.kind === "mentioned" ? p.segmentIds.includes(s.id) : p.name === s.speaker))).map(s =>
+      p.meetingIds.includes(m.id) && p.segmentIds.includes(s.id))).map(s =>
       [s.id, `Passage ${s.id} by ${s.speaker} in meeting ${m.id}, dated ${m.date}. Read its text in state.meetings.`])));
   }
   const sourcePassages = passages(batch.selectedPeople);

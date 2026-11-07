@@ -1459,7 +1459,7 @@ def _build_sql_tool_query(user_sql: str, access_sql: str, access_scope_sql: str)
             rm.started_at as meeting_started_at,
             rm.created_at as meeting_created_at,
             ts.id as segment_id,
-            ts.speaker,
+            coalesce(app_private.speaker_name(ts.meeting_speaker_id), ts.speaker) as speaker,
             ts.start_ms,
             ts.end_ms,
             ts.text,

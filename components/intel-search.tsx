@@ -1,6 +1,7 @@
 "use client";
 
 import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
+import { startSearchTiming } from "@/lib/sentry/search-timing";
 import type { ReactNode } from "react";
 import { ArrowUpRight, Check, Clock3, Plus, Users, X, LoaderCircle, ChevronDown } from "lucide-react";
 import { connectionRelationshipLabels } from "@/lib/meeting-connections";
@@ -83,6 +84,14 @@ export function IntelSearch() {
   const [now, setNow] = useState(() => Date.now());
   const sequence = useRef(0);
   const catalogRevision = useRef(0);
+  const finishSearch = useRef<ReturnType<typeof startSearchTiming> | null>(null);
+  useEffect(() => {
+    if (!busy && finishSearch.current) {
+      finishSearch.current(result ? "complete" : "failed");
+      finishSearch.current = null;
+    }
+  }, [busy, result]);
+  useEffect(() => () => { finishSearch.current?.("cancelled"); }, []);
   const controller = useRef<AbortController | null>(null);
   const field = useRef<HTMLTextAreaElement>(null);
   const labelFor = (input: SearchInput, available = catalog) => input.kind === "content" ? input.text : input.kind === "intel"
@@ -160,6 +169,7 @@ export function IntelSearch() {
     else document.title = base;
   }, [running, job, result]);
   function detach() {
+    finishSearch.current?.("cancelled"); finishSearch.current = null;
     setWatchVersion(n => n + 1); sequence.current++; controller.current?.abort(); setWatch(null); setJob(null); setQuote(null); setReconnecting(false); setBusy(false); setConfirmStop(false);
   }
   async function stop() {
@@ -197,6 +207,7 @@ export function IntelSearch() {
         if (expected(next.estimate) >= CONFIRM_ABOVE_USD) { setQuote(next); setBusy(false); return; }
         accepted = next;
       }
+      finishSearch.current = startSearchTiming("intel");
       const data = await post("/api/intel/search?quote=" + accepted.id);
       if (requestId !== sequence.current) return;
       setJob({ id: data.id, estimate: accepted.estimate, input, status: "queued", completed: 0, total: 0, createdAt: new Date().toISOString(), partial: [] });

@@ -26,7 +26,7 @@ async function main() {
       if (process.argv.includes("--live")) {
         const matches = (await Promise.all(batches.map(b => scoreIntelBatch(b, { meetingId: "" })))).flatMap(r => r.matches).sort((a,b) => b.score - a.score);
         // Anchor by the original speaker turn, never by potentially ambiguous names.
-        const personId = (anchor: string) => people.find(p => p.meetingIds.some(id => c.meetings.some(m => m.id === id && m.segments.some(s => s.id === anchor && s.speaker === p.name))))?.id;
+        const personId = (anchor: string) => people.find(p => p.segmentIds.includes(anchor))?.id;
         const match = (anchor: string) => matches.find(m => m.id === personId(anchor));
         checks.allCandidates = matches.length === people.length;
         for (const anchor of c.excluded ?? []) checks[`excluded:${anchor}`] = personId(anchor) === undefined;
@@ -36,7 +36,7 @@ async function main() {
         for (const [anchor, citation] of Object.entries(c.counters ?? {})) checks[`counter:${anchor}`] = match(anchor)?.counterEvidenceIds.includes(citation) ?? false;
         checks.attributedCitations = matches.every(m => {
           const person = people.find(p => p.id === m.id);
-          return [...m.segmentIds, ...m.counterEvidenceIds].every(id => c.meetings.some(meeting => person?.meetingIds.includes(meeting.id) && meeting.segments.some(s => s.id === id && s.speaker === person.name)));
+          return [...m.segmentIds, ...m.counterEvidenceIds].every(id => c.meetings.some(meeting => person?.meetingIds.includes(meeting.id) && meeting.segments.some(s => s.id === id && person.segmentIds.includes(id))));
         });
         ranking = matches.map(m => ({ ...m, name: people.find(p => p.id === m.id)!.name }));
       }

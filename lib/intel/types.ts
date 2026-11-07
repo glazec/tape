@@ -9,10 +9,10 @@ export const intelItemSchema = z.strictObject({
 });
 export const intelExtractionSchema = z.strictObject({ items: z.array(intelItemSchema).max(40) });
 export type IntelItem = z.infer<typeof intelItemSchema>;
-export type Segment = { id: string; speaker: string | null; text: string; startMs: number };
+export type Segment = { id: string; speaker: string | null; text: string; startMs: number; sourceSpeaker?: string | null; meetingSpeakerId?: string | null; personId?: string | null };
 export type IntelMeeting = {
   id: string; title: string; date: string; startedAt: string | null;
-  status: string; transcriptJobStatus: string | null;
+  status: string; transcriptJobStatus: string | null; attributionRevision?: number;
   followupSource?: { title: string; startedAt: string | null; segments: Segment[] };
   notes?: { content: string; blocks: unknown } | null;
   segments: Segment[]; aiIntel: unknown; aiFollowup: unknown;

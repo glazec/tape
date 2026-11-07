@@ -17,13 +17,31 @@ export function getFollowupSource(meeting: FollowupMeeting): FollowupSource {
   return {
     title: source.title,
     startedAt: source.startedAt,
-    segments: source.segments.map(({ id, speaker, startMs, text }) => ({
-      id,
-      speaker,
-      startMs,
-      text,
+    ...attributionBinding(source),
+    segments: source.segments.map(({ id, speaker, startMs, text, sourceSpeaker, meetingSpeakerId, personId, speakerRevision }) => ({
+      id, speaker, startMs, text,
+      ...(sourceSpeaker !== undefined ? { sourceSpeaker } : {}),
+      ...(meetingSpeakerId ? { meetingSpeakerId } : {}),
+      ...(personId ? { personId } : {}),
+      ...(speakerRevision !== undefined ? { speakerRevision } : {}),
     })),
   };
+}
+
+// Omit the binding entirely at zero to preserve deployed hashes byte for byte.
+export function attributionBinding(source: FollowupSource) {
+  if (source.attributionRevisions?.some(item => item.revision > 0)) {
+    return { attributionRevisions: [...source.attributionRevisions].sort((a, b) => a.meetingId.localeCompare(b.meetingId)) };
+  }
+  return source.attributionRevision ? { attributionRevision: source.attributionRevision } : {};
+}
+
+function canonicalSource(meeting: FollowupMeeting) {
+  const source = getFollowupSource(meeting);
+  return { title: source.title, startedAt: source.startedAt,
+    segments: source.segments.map(({ id, speaker, sourceSpeaker, startMs, text }) => ({
+      id, speaker: sourceSpeaker !== undefined ? sourceSpeaker : speaker, startMs, text,
+    })), ...attributionBinding(source) };
 }
 
 // Renaming a meeting must not discard its followup, so hashes bind the
@@ -35,16 +53,17 @@ export function getFollowupSourceHash(meeting: FollowupMeeting) {
 }
 
 function hashSource(meeting: FollowupMeeting, version: number) {
-  const { startedAt, segments } = getFollowupSource(meeting);
+  const canonical = canonicalSource(meeting);
+  const source = { startedAt: canonical.startedAt, segments: canonical.segments, ...attributionBinding(canonical) };
   return createHash("sha256")
-    .update(JSON.stringify(["untitled", version, { startedAt, segments }]))
+    .update(JSON.stringify(["untitled", version, source]))
     .digest("hex");
 }
 
 function hashTitledSource(meeting: FollowupMeeting, version: number) {
   return createHash("sha256")
     .update(
-      JSON.stringify([version, getFollowupSource(meeting)]),
+      JSON.stringify([version, canonicalSource(meeting)]),
     )
     .digest("hex");
 }
@@ -65,6 +84,7 @@ function getMatchingFollowupVersion(
 
 export const storedFollowupSchema = z.strictObject({
   sourceHash: z.string(),
+  speakerNames: z.record(z.string(), z.string().nullable()).optional(),
   translations: z.object({ en: meetingFollowupSchema.optional(), "zh-CN": meetingFollowupSchema.optional() }).optional(),
   connectionsSourceHash: z.string().optional(),
   connectionEdits: connectionEditsSchema.optional(),
@@ -83,15 +103,45 @@ export function getCurrentMeetingFollowup(
   if (!saved.success) return null;
   if (!getMatchingFollowupVersion(meeting, saved.data)) return null;
   try {
+    const source = getFollowupSource(meeting);
+    const validationSource = { ...source, segments: source.segments.map(segment => ({ ...segment,
+      speaker: saved.data.speakerNames && segment.id in saved.data.speakerNames
+        ? saved.data.speakerNames[segment.id]
+        : segment.sourceSpeaker !== undefined ? segment.sourceSpeaker : segment.speaker,
+    })) };
     const result = parseMeetingFollowup(
       JSON.stringify({ research: [], ...saved.data.result }),
-      getFollowupSource(meeting),
+      validationSource,
     );
+    resolveFollowupDisplayNames(result, source, validationSource);
     if (result.connections) result.connections = getCurrentMeetingConnections(meeting);
     return result;
   } catch {
     return null;
   }
+}
+
+// Only update the subject when cited segments bind the saved name to one identity.
+// Ambiguous historical labels remain as saved rather than inventing an assignment.
+export function resolveFollowupDisplayNames(
+  result: z.infer<typeof meetingFollowupSchema>, source: FollowupSource, validationSource: FollowupSource,
+) {
+  const current = new Map(source.segments.map(segment => [segment.id, segment]));
+  const previous = new Map(validationSource.segments.map(segment => [segment.id, segment]));
+  for (const item of [...result.todos, ...result.dynamics]) {
+    const candidates = item.evidence.flatMap(({ segmentId }) => {
+      const segment = current.get(segmentId);
+      return segment && (previous.get(segmentId)?.speaker || "Unknown speaker") === item.person ? [segment] : [];
+    });
+    const identities = new Set(candidates.map(segment => segment.personId ?? segment.meetingSpeakerId ?? segment.id));
+    const names = new Set(candidates.map(segment => segment.speaker || "Unknown speaker"));
+    if (identities.size !== 1 || names.size !== 1) continue;
+    const name = [...names][0];
+    if (name === item.person) continue;
+    item.text = name + item.text.slice(item.person.length);
+    item.person = name;
+  }
+  return result;
 }
 
 // Connections store their speaker's segment ID, so labels can change without
@@ -102,11 +152,12 @@ export function getConnectionsSourceHash(meeting: FollowupMeeting) {
   return createHash("sha256").update(JSON.stringify([2, {
     startedAt,
     segments: segments.map(({ id, startMs, text }) => ({ id, startMs, text })),
+    ...attributionBinding(getFollowupSource(meeting)),
   }])).digest("hex");
 }
 
 function getTitledConnectionsSourceHash(meeting: FollowupMeeting) {
-  const source = getFollowupSource(meeting);
+  const source = canonicalSource(meeting);
   return createHash("sha256").update(JSON.stringify([1, {
     ...source,
     segments: source.segments.map(({ id, startMs, text }) => ({ id, startMs, text })),
@@ -188,4 +239,19 @@ export function getConnectionsRevision(meeting: FollowupMeeting & { aiFollowup?:
 export function getCurrentMeetingConnectionIds(meeting: Parameters<typeof getCurrentMeetingFollowup>[0]) {
   return getCurrentMeetingConnectionEntries(meeting).map(({ original }) =>
     createHash("sha256").update(JSON.stringify(original)).digest("hex"));
+}
+
+// Translations retain item order and exact evidence from the shared result.
+// Match evidence rather than names, which can collide or change between copies.
+export function resolveTranslatedFollowupSubjects(copy: z.infer<typeof meetingFollowupSchema>, current: z.infer<typeof meetingFollowupSchema>) {
+  const result = structuredClone(copy);
+  for (const key of ["todos", "dynamics"] as const) {
+    for (const item of result[key]) {
+      const matches = current[key].filter(candidate => JSON.stringify(candidate.evidence) === JSON.stringify(item.evidence));
+      if (matches.length !== 1 || !item.text.startsWith(item.person)) continue;
+      item.text = matches[0].person + item.text.slice(item.person.length);
+      item.person = matches[0].person;
+    }
+  }
+  return result;
 }

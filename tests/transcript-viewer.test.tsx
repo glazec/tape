@@ -105,7 +105,7 @@ describe("TranscriptViewer", () => {
     );
 
     expect(html.match(/Hello team/g)).toHaveLength(1);
-    expect(html).not.toContain("Different source line");
+    expect(html).toContain("Different source line");
     expect(html).toContain("大家");
     expect(html).toContain("好");
   });
@@ -213,7 +213,7 @@ describe("TranscriptViewer", () => {
     expect(new Set(labelColors)).toHaveLength(2);
   });
 
-  it("merges obvious speaker aliases in the speaker list and transcript rows", () => {
+  it("keeps similar speaker labels separate without confirmed identity", () => {
     const html = renderToStaticMarkup(
       <TranscriptViewer
         audioUrl="/audio.mp3"
@@ -252,12 +252,12 @@ describe("TranscriptViewer", () => {
     );
 
     expect(html).toContain("Test User");
-    expect(html).not.toContain("TeSt User");
+    expect(html).toContain("TeSt User");
     expect(html).toContain("Siddharth Singh");
-    expect(html).not.toContain("Siddharth77work");
+    expect(html).toContain("Siddharth77work");
   });
 
-  it("merges email shaped speaker labels with their local name", () => {
+  it("keeps email shaped labels separate from local names", () => {
     const html = renderToStaticMarkup(
       <TranscriptViewer
         audioUrl="/audio.mp3"
@@ -282,10 +282,10 @@ describe("TranscriptViewer", () => {
     );
 
     expect(html).toContain("Member");
-    expect(html).not.toContain("Member@IOSGVC");
+    expect(html).toContain("Member@IOSGVC");
   });
 
-  it("merges a unique first name speaker alias into the full name", () => {
+  it("keeps first names separate from full names", () => {
     const html = renderToStaticMarkup(
       <TranscriptViewer
         audioUrl="/audio.mp3"
@@ -310,10 +310,10 @@ describe("TranscriptViewer", () => {
     );
 
     expect(html).toContain("Guest User");
-    expect(html).not.toContain(">Guest<");
+    expect(html).toContain(">Guest<");
   });
 
-  it("merges saved team speaker aliases into their canonical speaker", () => {
+  it("does not treat saved team aliases as identity proof", () => {
     const html = renderToStaticMarkup(
       <TranscriptViewer
         audioUrl="/audio.mp3"
@@ -349,9 +349,9 @@ describe("TranscriptViewer", () => {
     );
 
     expect(html).toContain("Test User");
-    expect(html).toContain("Ethan Chen");
-    expect(html).not.toContain("Saved Alias");
-    expect(html).not.toContain("Ether C");
+    expect(html).not.toContain("Ethan Chen");
+    expect(html).toContain("Saved Alias");
+    expect(html).toContain("Ether C");
   });
 
   it("does not merge a first name when multiple full names share it", () => {
@@ -494,7 +494,7 @@ describe("TranscriptViewer", () => {
     });
   });
 
-  it("merges speaker aliases when applying to the same speaker", () => {
+  it("does not expand speaker edits through aliases or destination names", () => {
     const editingSpeaker: EditingSpeaker = {
       allowSegmentScope: false,
       currentSpeaker: "Speaker 2",
@@ -517,7 +517,7 @@ describe("TranscriptViewer", () => {
       ).map((segment) => [segment.id, segment.speaker]),
     ).toEqual([
       ["segment_alias", "Test User"],
-      ["segment_case", "Test User"],
+      ["segment_case", "TeSt User"],
       ["segment_existing", "Test User"],
       ["segment_other", "Siddharth Singh"],
     ]);

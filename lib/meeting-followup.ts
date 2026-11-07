@@ -34,8 +34,14 @@ export type MeetingFollowup = z.infer<typeof meetingFollowupSchema>;
 export type FollowupSource = {
   title: string;
   startedAt: string | null;
+  attributionRevision?: number;
+  attributionRevisions?: Array<{ meetingId: string; revision: number }>;
   segments: Array<{
     id: string;
+    sourceSpeaker?: string | null;
+    meetingSpeakerId?: string | null;
+    personId?: string | null;
+    speakerRevision?: number;
     speaker: string | null;
     startMs: number;
     text: string;

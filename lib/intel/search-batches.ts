@@ -34,9 +34,8 @@ export function buildSearchBatches(corpus: IntelMeeting[], catalog: IntelCatalog
   const required = new Set([...selected].flatMap(id => [...(groups.get(id) ?? [])]));
   function batch(ids: Set<string>) {
     return { input, source,
-      // Participant segment IDs are redundant with speaker + meeting identity.
-      people: catalog.people.filter(p => p.meetingIds.some(id => ids.has(id))).map(p =>
-        p.kind === "participant" ? { ...p, segmentIds: [] } : p),
+      // Membership distinguishes people who share a display name.
+      people: catalog.people.filter(p => p.meetingIds.some(id => ids.has(id))),
       intel: catalog.intel.filter(i => i.evidence.every(e => ids.has(e.meetingId))),
       meetings: context.filter(m => ids.has(m.id)),
     };
@@ -91,10 +90,9 @@ export function buildRecentPeopleBatches(corpus: IntelMeeting[], catalog: IntelC
   source: { text: string; url?: string }, maxCharacters = 400_000) {
   const selectedPeople = input.kind === "person" ? catalog.people.filter(p => input.ids.includes(p.id)) : [];
   const selectedIntel = input.kind === "intel" ? catalog.intel.filter(i => i.id === input.id) : [];
-  const sourceSpeaker = selectedIntel[0]?.speaker;
-  const sourceMeeting = selectedIntel[0]?.evidence[0]?.meetingId;
+  const sourceAnchor = selectedIntel[0]?.speakerSegmentId;
   const candidates = catalog.people.filter(p => p.kind === "participant" && !selectedPeople.some(s => s.id === p.id)
-    && !(p.name === sourceSpeaker && sourceMeeting && p.meetingIds.includes(sourceMeeting)));
+    && !(sourceAnchor && p.segmentIds.includes(sourceAnchor)));
   const context = corpus.map(m => {
     const followup = getCurrentMeetingFollowup(m);
     const notes = m.notes ?? null;
@@ -105,7 +103,7 @@ export function buildRecentPeopleBatches(corpus: IntelMeeting[], catalog: IntelC
   function batch(people: typeof candidates) {
     const ids = new Set([...people, ...selectedPeople].flatMap(p => p.meetingIds));
     for (const item of selectedIntel) for (const e of item.evidence) ids.add(e.meetingId);
-    return { input, source, people: people.map(p => ({ ...p, segmentIds: [] })),
+    return { input, source, people,
       selectedPeople, intel: selectedIntel, meetings: context.filter(m => ids.has(m.id)) };
   }
   const batches: ReturnType<typeof batch>[] = [];

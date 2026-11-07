@@ -38,3 +38,20 @@ it("chooses each reader's saved transcript copy without altering the original se
   expect(chinese.segments[0].translatedText).toBe("校对后的原文");
   expect(chinese.segments[0].text).toBe(english.segments[0].text);
 });
+
+
+it("resolves cached translation subjects after a preferred name edit using the same evidence", async () => {
+  const { getComposedMeetingForFollowup } = await import("@/lib/meeting-composition");
+  const { getFollowupSourceHash } = await import("@/lib/meeting-followup-source");
+  const { getOrTranslateFollowupCopy } = await import("@/lib/meeting-followup-translation");
+  const transcript = { title: "Call", startedAt: null, segments: [{ id: "segment", speaker: "Alex", sourceSpeaker: "Jane", personId: "p1", meetingSpeakerId: "g1", startMs: 0, text: "I can introduce you." }] };
+  const result = { ...source, connections: [] };
+  const translated = { ...result, dynamics: [{ ...result.dynamics[0], text: "Jane 提出可以引荐。" }] };
+  const sourceHash = getFollowupSourceHash(transcript);
+  vi.mocked(getComposedMeetingForFollowup).mockResolvedValue({ ...transcript, status: "ready", transcriptJobStatus: "completed",
+    aiFollowup: { sourceHash, speakerNames: { segment: "Jane" }, result, translations: { "zh-CN": translated } },
+  } as unknown as NonNullable<Awaited<ReturnType<typeof getComposedMeetingForFollowup>>>);
+  const copy = await getOrTranslateFollowupCopy({ teamId: "team", userId: "user", domain: "test" }, "meeting", "zh-CN", sourceHash);
+  expect(copy && copy !== "in_progress" && copy.dynamics[0]).toMatchObject({ person: "Alex", text: "Alex 提出可以引荐。" });
+  expect(translated.dynamics[0].person).toBe("Jane");
+});

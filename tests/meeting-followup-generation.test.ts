@@ -32,11 +32,12 @@ vi.mock("@/lib/meeting-composition", () => ({
 vi.mock("@/lib/meeting-followup-source", async importOriginal => ({
   ...await importOriginal<typeof import("@/lib/meeting-followup-source")>(),
   getCurrentMeetingFollowup: mocks.current,
-  getFollowupSource: (meeting: { title: string; segments: unknown[] }) => ({
+  getFollowupSource: (meeting: { title: string; segments: unknown[]; attributionRevision?: number }) => ({
+    attributionRevision: meeting.attributionRevision,
     title: meeting.title,
     segments: meeting.segments,
   }),
-  getFollowupSourceHash: () => "a".repeat(64),
+  getFollowupSourceHash: (source: { attributionRevision?: number }) => source.attributionRevision ? "b".repeat(64) : "a".repeat(64),
   getConnectionsSourceHash: () => "c".repeat(64),
   isFollowupReady: mocks.ready,
 }));
@@ -119,4 +120,12 @@ it("does not start a second provider call while another process owns the meeting
   vi.mocked(acquireFollowupLease).mockResolvedValueOnce(null);
   expect(await autoGenerateMeetingFollowup(meetingId)).toEqual({ status: "in_progress" });
   expect(mocks.generate).not.toHaveBeenCalled();
+});
+
+
+it("does not persist a generation after speaker attribution changes", async () => {
+  mocks.composed.mockResolvedValueOnce(meeting).mockResolvedValueOnce(meeting)
+    .mockResolvedValueOnce({ ...meeting, attributionRevision: 1 });
+  expect(await autoGenerateMeetingFollowup(meetingId)).toEqual({ status: "transcript_changed" });
+  expect(mocks.returning).not.toHaveBeenCalled();
 });

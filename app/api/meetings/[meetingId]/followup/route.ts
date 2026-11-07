@@ -3,7 +3,7 @@ import { getOrTranslateFollowupCopy } from "@/lib/meeting-followup-translation";
 import { inngest } from "@/inngest/client";
 import { getUserLanguage } from "@/lib/user-language";
 import { getTeamConfiguration } from "@/lib/team-configuration";
-import { getCurrentMeetingFollowup, getConnectionsRevision, getCurrentMeetingConnectionIds, getFollowupSourceHash, storedFollowupSchema } from "@/lib/meeting-followup-source";
+import { getCurrentMeetingFollowup, getConnectionsRevision, getCurrentMeetingConnectionIds, getFollowupSourceHash, storedFollowupSchema, resolveTranslatedFollowupSubjects } from "@/lib/meeting-followup-source";
 
 import { getCurrentUser } from "@/lib/auth";
 import { getComposedMeetingForFollowup } from "@/lib/meeting-composition";
@@ -58,7 +58,7 @@ export async function POST(
           if (parsed.data.sourceHash !== getFollowupSourceHash(meeting)) return Response.json({ error: "The meeting changed." }, { status: 409 });
           const saved = storedFollowupSchema.safeParse(meeting.aiFollowup);
           const copy = saved.success && saved.data.translations?.[language];
-          if (copy) return Response.json({ ...outcome, result: copy, language }, { headers: { "Cache-Control": "private, no-store" } });
+          if (copy) return Response.json({ ...outcome, result: resolveTranslatedFollowupSubjects(copy, outcome.result), language }, { headers: { "Cache-Control": "private, no-store" } });
           await assertWorkspaceHasProviderCredit(workspace);
           await inngest.send({
             id: `followup-copy:${meetingId}:${outcome.connectionsRevision}:${language}:${Math.floor(Date.now() / 60_000)}`,

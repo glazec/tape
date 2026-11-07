@@ -401,11 +401,12 @@ describe("database migrations", () => {
 
     for (const table of tenantTables) {
       const policySql =
-        table === "intel_searches" ? readFileSync("db/migrations/0066_intel_search.sql", "utf8") : table === "meeting_parts" ? readFileSync("db/migrations/0060_meeting_continuity.sql", "utf8") : table === "meeting_notes"
+        ["workspace_people", "person_emails", "meeting_speakers", "meeting_speaker_changes"].includes(table) ? readFileSync("db/migrations/0070_speaker_person_identity.sql", "utf8") : ["person_names", "person_profiles", "person_merges", "followup_todo_states"].includes(table) ? readFileSync("db/migrations/0071_person_pages.sql", "utf8") : table === "intel_searches" ? readFileSync("db/migrations/0066_intel_search.sql", "utf8") : table === "meeting_parts" ? readFileSync("db/migrations/0060_meeting_continuity.sql", "utf8") : table === "meeting_notes"
           ? readFileSync("db/migrations/0051_meeting_notes.sql", "utf8")
           : sql;
       expect(
         policySql.includes(`public.${table}`) ||
+          policySql.includes(`ON ${table} FOR SELECT`) ||
           policySql.includes(`'${table}'`) ||
           policySql.includes(`CREATE POLICY personal_notes ON "${table}"`),
         `${table} must have an RLS policy`,

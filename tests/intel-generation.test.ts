@@ -35,7 +35,7 @@ describe("background intel generation", () => {
   expect(mocks.verifyIntelClaims).toHaveBeenCalled(); expect(mocks.set.mock.calls[1][0].aiIntel.result).toEqual({ items: [] });
  });
  it("records truncated output as a terminal failure without throwing for retries", async () => {
-  mocks.createOpenRouterChatCompletion.mockRejectedValue(new Error("OpenRouter model typesafe/jev-router failed after 1 attempts: OpenRouter completion stopped at the token limit"));
+  mocks.createOpenRouterChatCompletion.mockRejectedValue(new Error("OpenRouter model openai/gpt-6-luna failed after 1 attempts: OpenRouter completion stopped at the token limit"));
   expect(await generateMeetingIntel("m1")).toEqual({ status: "failed" });
   const failure = mocks.set.mock.calls[1][0].aiIntel;
   expect(failure).toMatchObject({ failedSourceHash: intelSourceHash(m), failures: 1 }); expect(failure.failedAt).toBeTruthy();
@@ -60,10 +60,10 @@ describe("background intel generation", () => {
   expect(await generateMeetingIntel("m1")).toEqual({ status: "saved" });
   expect(mocks.createOpenRouterChatCompletion).toHaveBeenCalledTimes(1);
  });
- it("uses one Jev router attempt with strict structured output", async () => {
+ it("uses one Luna medium reasoning attempt with strict structured output", async () => {
   await generateMeetingIntel("m1");
   const call = mocks.createOpenRouterChatCompletion.mock.calls[0][0];
-  expect(call).toMatchObject({ model: "typesafe/jev-router", attempts: 1, provider: { require_parameters: true } });
+  expect(call).toMatchObject({ model: "openai/gpt-6-luna", reasoningEffort: "medium", attempts: 1, provider: { require_parameters: true } });
   expect(call.responseFormat).toMatchObject({ type: "json_schema", json_schema: { name: "intel_extraction", strict: true } });
  });
  it("rethrows verifier failures so Inngest retries them", async () => {

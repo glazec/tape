@@ -5,7 +5,7 @@ vi.mock("@/lib/provider-usage", () => ({ recordOpenRouterCompletionUsage: usage 
 const fetchDecision = vi.fn();
 const batch = {
  input: {kind:"content" as const,text:"GPU capacity"}, source:{text:"GPU capacity"}, intel:[], selectedPeople:[],
- people:[{id:"alex",name:"Alex",kind:"participant" as const,detail:"Meeting",meetingIds:["m"],segmentIds:[],sourceDate:"2026-11-06",sourceMeetingId:"m",sourceSegmentId:"s"}],
+ people:[{id:"alex",name:"Alex",kind:"participant" as const,detail:"Meeting",meetingIds:["m"],segmentIds:["s"],sourceDate:"2026-11-06",sourceMeetingId:"m",sourceSegmentId:"s"}],
  meetings:[{id:"m",title:"Meeting",date:"2026-11-06",notes:null,followup:null,segments:[{id:"s",speaker:"Alex",text:"I need GPUs",startMs:0},{id:"other",speaker:"Bob",text:"I sell GPUs",startMs:1}]}],
 };
 function response(score = 3.2) {
@@ -36,7 +36,7 @@ it("rejects invalid scores, missing answers and evidence outside the target iden
  }
 });
 it("selects evidence for the source person and retains dated counter evidence",async()=>{
- const selected={...batch.people[0],id:"bob",name:"Bob",sourceSegmentId:"other"};
+ const selected={...batch.people[0],id:"bob",name:"Bob",segmentIds:["other"],sourceSegmentId:"other"};
  const value={...response(),answers:{...response().answers,p0_source:{type:"choice",choice:"other"},p0_counter:{type:"choice",choice:"s"}}};
  fetchDecision.mockResolvedValue(Response.json(value));
  const result=await scoreIntelBatch({...batch,input:{kind:"person",ids:["bob"]},selectedPeople:[selected]},{meetingId:"m"});
@@ -59,4 +59,11 @@ it("shows the selected original passage and dated contradiction without another 
  expect(result.matches[0].reason).toContain('“I need GPUs” (2026-11-06)');
  expect(result.matches[0].caveat).toContain('“I need GPUs” (2026-11-06)');
  expect(fetchDecision).toHaveBeenCalledTimes(1);
+});
+it("limits evidence choices to identity membership when display names match",async()=>{
+ const sameName={...batch,meetings:[{...batch.meetings[0],segments:batch.meetings[0].segments.map(s=>({...s,speaker:"Alex"}))}]};
+ await scoreIntelBatch(sameName,{meetingId:"m"});
+ const body=JSON.parse(fetchDecision.mock.calls[0][1].body);
+ expect(Object.keys(body.questions.p0_evidence.criteria)).toEqual(["s"]);
+ expect(Object.keys(body.questions.p0_counter.criteria)).toEqual(["none","s"]);
 });

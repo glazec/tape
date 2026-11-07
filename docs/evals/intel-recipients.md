@@ -48,3 +48,9 @@ The baseline prompt asked how relevant the person was and used levels from no su
 The broader Intel suite passed 116 tests; nine opt in database integration tests were skipped. TypeScript and focused lint passed. No deployment was performed.
 
 This suite does not prove real archive relevance, production latency, end to end search success, or broad model accuracy. The long fixture contains repeated synthetic background, not a realistic confidential transcript. Future evaluation should add user judged examples with ambiguous interests and multi step synergies before making production quality claims. The source excerpts are grounded mechanically; their explanatory usefulness remains a human judgment.
+
+## Main branch integration
+
+Before release, newer main changes added stable workspace person identities and Luna extraction routing. The merge retains those changes. Scoring and source exclusion now use the candidate's exact segment membership instead of display names, including identical names within one meeting. Two focused regressions cover this boundary. The evaluation harness also resolves identities by exact segment membership.
+
+The [merged live run](intel-recipient-merged.jsonl) passed 13/13 at $0.004763346. The full merged suite passed 2,454 tests with 106 opt in tests skipped; lint, TypeScript, migration consistency and the production build passed. This integration run supersedes the earlier cost for the final payload shape; earlier records remain comparisons from before integration.

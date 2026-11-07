@@ -1,3 +1,4 @@
+vi.mock("@/lib/people", () => ({ findPeopleByEmail: vi.fn(), isMeetingWorkspaceMember: vi.fn() }));
 vi.mock("@/lib/user-language", () => ({ getUserLanguage: vi.fn() }));
 vi.mock("@/lib/meeting-composition", () => ({ getMeetingCompositionForWorkspace: vi.fn(), composeMeetingForFollowup: vi.fn() }));
 vi.mock("@/lib/share-recipient-suggestions", () => ({ listShareRecipientSuggestions: vi.fn() }));
