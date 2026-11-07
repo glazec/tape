@@ -11,7 +11,7 @@ describe("OpenRouter translation", () => {
     vi.resetModules();
   });
 
-  it("translates transcript segments through GLM independently of the assistant model", async () => {
+  it("translates transcript segments through Luna independently of the assistant model", async () => {
     vi.stubEnv("OPENROUTER_API_KEY", "openrouter-key");
     vi.stubEnv("OPENROUTER_MODEL", "anthropic/claude-sonnet-4.5");
     const fetchMock = vi.fn().mockResolvedValue(
@@ -48,7 +48,7 @@ describe("OpenRouter translation", () => {
       "https://openrouter.ai/api/v1/chat/completions",
     );
     expect(JSON.parse(String(fetchMock.mock.calls[0][1]?.body))).toMatchObject({
-      model: "z-ai/glm-5.3-flash",
+      model: "openai/gpt-6-luna",
       reasoning: { effort: "low" },
       provider: { require_parameters: true },
       plugins: [{ id: "response-healing" }],
