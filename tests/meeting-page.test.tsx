@@ -20,6 +20,10 @@ vi.mock("next/navigation", () => ({
   notFound: mocks.notFound,
   useRouter: () => ({ refresh: vi.fn() }),
 }));
+vi.mock("@/lib/people", () => ({
+  findPeopleByEmail: vi.fn().mockResolvedValue(new Map()),
+  isMeetingWorkspaceMember: vi.fn().mockResolvedValue(false),
+}));
 vi.mock("@/lib/auth-guards", () => ({ requireCurrentUser: mocks.requireUser }));
 vi.mock("@/lib/workspace", () => ({
   getOrCreateWorkspaceForSessionUser: mocks.getWorkspace,

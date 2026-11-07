@@ -65,7 +65,8 @@ jobs:
         env:
           INTEL_TEST_DATABASE_URL: postgresql://ci:ci@127.0.0.1:5432/meeting_note
           SPEAKER_TEST_DATABASE_URL: postgresql://ci:ci@127.0.0.1:5432/meeting_note
-        run: npx vitest run tests/intel-database.integration.test.ts tests/local-recorder-upload-scope.integration.test.ts tests/speaker-identity-database.integration.test.ts
+          PERSON_TEST_DATABASE_URL: postgresql://ci:ci@127.0.0.1:5432/meeting_note
+        run: npx vitest run tests/intel-database.integration.test.ts tests/local-recorder-upload-scope.integration.test.ts tests/speaker-identity-database.integration.test.ts tests/person-pages-database.integration.test.ts
       - name: Check meeting creation and access isolation
         run: psql "$DATABASE_URL" --set ON_ERROR_STOP=1 --file tests/meeting-insert-rls.sql
       - name: Check email sharing and organization suggestions

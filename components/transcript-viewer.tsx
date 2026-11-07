@@ -31,6 +31,8 @@ import {
   X,
 } from "lucide-react";
 
+import { PersonLink } from "@/components/person-link";
+import { personNameKey } from "@/lib/person-names";
 import { Button } from "@/components/ui/button";
 import { SPEAKER_LABELS_CHANGED } from "@/lib/meeting-connections";
 import { normalizeAudioPeaks, resampleAudioPeaks } from "@/lib/audio-waveform";
@@ -160,6 +162,8 @@ type TranscriptViewerProps = {
   meetingId?: string | null;
   navigationMeetingId?: string;
   mobileAfterSpeakers?: ReactNode;
+  /** Workspace members can open a speaker's person page. */
+  canOpenPeople?: boolean;
   /** Shown under Speakers at every width, e.g. what the meeting mentioned. */
   afterSpeakers?: ReactNode;
   /** Keep the Transcript heading for screen readers only, when a tab already names the view. */
@@ -194,6 +198,8 @@ type WpmSample = {
 type SpeakerStat = {
   aliases: string[];
   lineCount: number;
+  meetingSpeakerId: string | null;
+  personId: string | null;
   percent: number;
   previewStartMs: number;
   speaker: string | null;
@@ -204,6 +210,8 @@ type SpeakerStat = {
 type SpeakerStatDraft = {
   aliases: Map<string, { index: number; lineCount: number; totalMs: number }>;
   lineCount: number;
+  meetingSpeakerId: string | null;
+  personId: string | null;
   previewStartMs: number;
   speaker: string | null;
   speakerKey: string;
@@ -390,6 +398,7 @@ export function TranscriptViewer({
   meetingId,
   navigationMeetingId,
   mobileAfterSpeakers,
+  canOpenPeople = false,
   afterSpeakers,
   hideHeading = false,
   preferredTranslationLanguage,
@@ -1453,7 +1462,6 @@ export function TranscriptViewer({
                     <div
                       className="group/speaker flex min-w-0 items-center gap-1"
                       key={speakerKey}
-                      title={`Rename ${speakerLabel} everywhere`}
                     >
                       <div className="flex min-w-0 items-center gap-2">
                         <span
@@ -1470,7 +1478,16 @@ export function TranscriptViewer({
                           className="min-w-0 truncate text-sm"
                           title={`${speaker.percent > 0 ? `${speaker.percent}%` : "<1%"} of the conversation`}
                         >
-                          {speakerLabel}{" "}
+                          {canOpenPeople ? (
+                            <PersonLink
+                              meetingId={meetingId ?? undefined}
+                              open={canEditSpeakers && speaker.meetingSpeakerId && (personNameKey(speaker.speaker) || getFullParticipantEmail(speaker.speaker)) ? { meetingSpeakerId: speaker.meetingSpeakerId } : null}
+                              personId={speaker.personId}
+                              title={`Open ${speakerLabel}`}
+                            >
+                              {speakerLabel}
+                            </PersonLink>
+                          ) : speakerLabel}{" "}
                           <span className="text-muted-foreground tabular-nums">
                             {speaker.percent > 0 ? `${speaker.percent}%` : "<1%"}
                           </span>
@@ -3588,6 +3605,8 @@ function buildSpeakerStats(segments: TranscriptSegment[]): SpeakerStat[] {
       drafts.push(draft);
     }
 
+    draft.meetingSpeakerId ??= segment.meetingSpeakerId ?? null;
+    draft.personId ??= segment.personId ?? null;
     draft.totalMs += durationMs;
     draft.lineCount += 1;
     draft.previewStartMs = Math.min(draft.previewStartMs, segment.startMs);
@@ -3615,6 +3634,8 @@ function buildSpeakerStats(segments: TranscriptSegment[]): SpeakerStat[] {
         (alias) => alias !== draft.speaker,
       ),
       lineCount: draft.lineCount,
+      meetingSpeakerId: draft.meetingSpeakerId,
+      personId: draft.personId,
       percent: allSpeakerMs
         ? Math.round((draft.totalMs / allSpeakerMs) * 100)
         : 0,
@@ -3644,6 +3665,8 @@ function createSpeakerStatDraft(
   return {
     aliases,
     lineCount: 0,
+    meetingSpeakerId: null,
+    personId: null,
     previewStartMs,
     speaker: trimmedSpeaker,
     speakerKey: getSpeakerKey(trimmedSpeaker),

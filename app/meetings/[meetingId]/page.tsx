@@ -1,4 +1,6 @@
 import Link from "next/link";
+import { PersonLink } from "@/components/person-link";
+import { findPeopleByEmail, isMeetingWorkspaceMember } from "@/lib/people";
 import { MeetingComposedTranscripts } from "@/components/meeting-composed-transcripts";
 import { getMeetingCompositionForWorkspace, composeMeetingForFollowup } from "@/lib/meeting-composition";
 import { listShareRecipientSuggestions } from "@/lib/share-recipient-suggestions";
@@ -89,7 +91,13 @@ export default async function MeetingPage({
   const recordingEndedAt = Date.parse(latestPart?.lastRecordingEndedAt ?? meeting.endedAt ?? "");
   const followupJobMayBeRunning = Number.isFinite(recordingEndedAt) && recordingEndedAt > new Date().getTime() - 20 * 60_000;
   const canShare = parts.some(part => part.segments.length > 0);
-  const { domains: organizationDomains } = await getOrganizationBotSettings(workspace.teamId);
+  const [{ domains: organizationDomains }, canOpenPeople] = await Promise.all([
+    getOrganizationBotSettings(workspace.teamId),
+    isMeetingWorkspaceMember(meetingId),
+  ]);
+  const participantPeople = canOpenPeople
+    ? await findPeopleByEmail(workspace.teamId, participants.map(person => person.email))
+    : new Map<string, string>();
   const [shareRecipients, activeShares, teamConfiguration] = canShare
     ? await Promise.all([
         listShareRecipientSuggestions(workspace),
@@ -239,6 +247,7 @@ export default async function MeetingPage({
           translationStatus: meeting.translationSummary.status,
         })}
         meetingId={canManage ? meetingId : null}
+        canOpenPeople={canOpenPeople}
         navigationMeetingId={meetingId}
         hideHeading
         afterSpeakers={
@@ -335,7 +344,11 @@ export default async function MeetingPage({
           {participants.length > 0 || relatedMeetings.length > 0 ? (
             <div className="order-3 mt-1 flex basis-full flex-wrap items-baseline gap-x-3 gap-y-1">
               {participants.length > 0 ? (
-                <ParticipantList participants={participants} />
+                <ParticipantList
+                  canOpenPeople={canOpenPeople}
+                  meetingId={canManage ? meetingId : undefined}
+                  participants={participants.map(participant => ({ ...participant, personId: participantPeople.get(participant.email.trim().toLowerCase()) ?? null }))}
+                />
               ) : null}
               {participants.length > 0 && relatedMeetings.length > 0 ? (
                 <span aria-hidden="true" className="text-muted-foreground/50">
@@ -464,14 +477,29 @@ const VISIBLE_PARTICIPANT_COUNT = 6;
  * push the transcript down the page.
  */
 function ParticipantList({
+  canOpenPeople,
+  meetingId,
   participants,
 }: {
-  participants: Array<{ email: string; name: string | null }>;
+  canOpenPeople: boolean;
+  meetingId?: string;
+  participants: Array<{ email: string; name: string | null; personId: string | null }>;
 }) {
   const visible = participants.slice(0, VISIBLE_PARTICIPANT_COUNT);
   const hidden = participants.slice(VISIBLE_PARTICIPANT_COUNT);
-  const label = (participant: { email: string; name: string | null }) =>
-    participant.name || participant.email;
+  const label = (participant: { email: string; name: string | null; personId: string | null }) => {
+    const text = participant.name || participant.email;
+    return canOpenPeople ? (
+      <PersonLink
+        meetingId={meetingId}
+        open={{ email: participant.email, name: participant.name }}
+        personId={participant.personId}
+        title={participant.email}
+      >
+        {text}
+      </PersonLink>
+    ) : text;
+  };
 
   return (
     <div className="text-sm text-muted-foreground">
@@ -505,3 +533,4 @@ function ParticipantList({
     </div>
   );
 }
+

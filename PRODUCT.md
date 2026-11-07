@@ -129,3 +129,15 @@ Extraction distinguishes reported facts, anecdotes, plans, opinions, AI insights
 Matching uses personally accessible meetings in the active workspace, current transcript generations, initial and latest available meetings, and the past six months of transcripts, valid Dynamics and Connections. Confirmed workspace person IDs unify speaker histories; migrated unlinked groups remain separate even when they share a name or email label. Mentioned contacts do not merge automatically. A user can explicitly combine meeting identities when selecting a person. Mentioned contacts retain their attributed relationship and source. Saved queries rerun authorization rather than replaying stored results.
 
 Native fallback capture requires a selected meeting window and retains sampled screenshots of meaningful content changes. Audio is recorded as mono AAC with microphone voice processing. Saved audio and screenshots resume interrupted uploads from completed parts. The current implementation and release verification boundary are documented in [recorder upload recovery](docs/recorder-upload-recovery.md).
+
+## People
+
+Every named speaker and participant opens a person page at `/people/:personId` for workspace colleagues (not external guests). Opening an unlinked speaker or participant creates and links the workspace person on first open, for people who can edit that meeting's speakers; it reuses a person with the same confirmed email or exact full name.
+
+A person page is shared team knowledge. It draws on every workspace meeting with the person, including meetings the viewer cannot open; those appear with a lock and no link, and their transcripts stay closed. It shows how often the team meets the person (meetings, cadence, time together, their share of the talking, last and next meeting), time together per month for the past year, which colleagues meet them (meetings, time, last met), their to-dos, offers and needs, connections they mentioned, and every team meeting with them, grouped by day with an All meetings or With me filter.
+
+To-dos are shared: one click marks a to-do In progress, the next marks it Done (struck through), a third reopens it. Each change shows who made it and when.
+
+An AI profile (background, current role, technical, operational, business and people expertise, achievements, recent focus) is written the first time anyone opens the page, from the team's first meeting with the person and every team meeting in the last three months, and again only when someone presses Refresh. Each line cites its transcript moment; uncited claims are dropped. The profile is shared by the team. Colleagues of the workspace get no AI profile.
+
+Merge duplicate records folds other records into the current person: meetings, emails and names move, old pages redirect, and Undo restores the latest merge. Merging needs a workspace admin or edit rights in every affected meeting. After a merge, new transcripts attribute speakers whose label is one of the person's full names or confirmed emails; lone first names and names remembered for two people never attribute automatically. Existing unlinked speakers are not relinked.
