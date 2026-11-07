@@ -55,6 +55,8 @@ describe("followup provider", () => {
     const request = JSON.parse(fetch.mock.calls[0][1].body);
     expect(request.model).toBe("google/gemini-3.8-flash");
     expect(request.reasoning).toEqual({ effort: "low" });
+    expect(request.messages[0].content).toContain("Example 1: Do not infer a relationship from reported speech.");
+    expect(request.messages[0].content).toContain("For each research item, choose evidence FIRST.");
     expect(request.response_format.json_schema.strict).toBe(true);
     expect(request.response_format.json_schema.schema.required).toContain("research");
     expect(request.response_format.json_schema.schema.required).toContain("connections");
