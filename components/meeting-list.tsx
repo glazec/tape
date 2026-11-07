@@ -375,7 +375,7 @@ function FailedMeetingAction({ meeting }: { meeting: MeetingListBaseItem }) {
       <Button
         aria-haspopup="dialog"
         aria-label={`Rejoin ${meeting.title}`}
-        className="meeting-join-action col-start-1 row-start-1 h-5 w-[5.625rem] bg-background px-2 py-0.5 text-xs shadow-none [@media(hover:none)]:h-11 [@media(hover:none)]:text-sm"
+        className="meeting-join-action col-start-1 row-start-1 h-5 w-[5.625rem] bg-background px-2 py-0.5 text-xs shadow-none relative [@media(hover:none)]:h-7 after:absolute after:inset-x-0 after:-inset-y-2"
         data-state="idle"
         onClick={() => setOpen(true)}
         ref={triggerRef}
@@ -467,7 +467,7 @@ function ScheduledMeetingAction({ meeting }: { meeting: MeetingListBaseItem }) {
         aria-busy={state === "joining"}
         aria-label={`Join ${meeting.title} now`}
         className={cn(
-          "meeting-join-action col-start-1 row-start-1 h-5 w-[5.625rem] bg-background px-2 py-0.5 text-xs shadow-none [@media(hover:none)]:h-11 [@media(hover:none)]:text-sm",
+          "meeting-join-action col-start-1 row-start-1 h-5 w-[5.625rem] bg-background px-2 py-0.5 text-xs shadow-none relative [@media(hover:none)]:h-7 after:absolute after:inset-x-0 after:-inset-y-2",
           state === "error" &&
             "border-destructive/50 text-destructive hover:bg-destructive/10 hover:text-destructive",
         )}

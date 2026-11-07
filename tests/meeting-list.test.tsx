@@ -373,7 +373,7 @@ describe("MeetingList", () => {
     expect(html).toContain("meeting-join-badge");
     expect(html).toContain("meeting-join-action");
     expect(html).toContain("h-5 w-[5.625rem]");
-    expect(html).toContain("[@media(hover:none)]:h-11");
+    expect(html).toContain("[@media(hover:none)]:h-7");
   });
 
   it("renders sortable headers for meeting name and time", () => {

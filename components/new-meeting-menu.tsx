@@ -34,7 +34,7 @@ export function NewMeetingMenu({ active = false }: { active?: boolean }) {
         data-telemetry-action="nav_meetings_new"
         className={cn(
           buttonVariants({ variant: "brand", size: "sm" }),
-          "min-h-11 rounded-r-none pl-3.5 pr-3 shadow-none sm:min-h-8 sm:pl-3 sm:pr-2.5",
+          "relative min-h-8 rounded-r-none pl-2.5 pr-2 shadow-none after:absolute after:inset-x-0 after:-inset-y-1.5 sm:pl-3 sm:pr-2.5 sm:after:hidden",
         )}
       >
         {/* Phones keep the whole header on one line with an icon. */}
@@ -46,7 +46,7 @@ export function NewMeetingMenu({ active = false }: { active?: boolean }) {
           render={
             <Button
               aria-label="Choose how to add a meeting"
-              className="min-h-11 rounded-l-none border-l border-l-primary-foreground/25 pl-1.5 pr-2 shadow-none sm:min-h-8"
+              className="relative min-h-8 rounded-l-none border-l border-l-primary-foreground/25 pl-1.5 pr-2 shadow-none after:absolute after:inset-x-0 after:-inset-y-1.5 sm:after:hidden"
               size="sm"
               variant="brand"
               type="button"
