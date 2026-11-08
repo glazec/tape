@@ -16,13 +16,17 @@ const catalog: IntelCatalog = { people, pending: 0, coverage: "Fictional fixture
  { id: "i2", kind: "anecdote", importance: "high", text: "Two enterprise pilots stalled during security approval, despite strong usage.", speaker: "Maya Patel", date: "2026-10-30T12:00:00Z", evidence: [{ ...evidence, speaker: "Maya Patel", text: "Two of our pilots stalled in security review." }], speakerSegmentId: "s1", segmentIds: ["s1"] },
  { id: "i3", kind: "opinion", importance: "normal", text: "Distribution is becoming a more durable advantage than model performance.", speaker: "Alex Chen", date: "2026-10-28T12:00:00Z", evidence: [evidence], speakerSegmentId: "s1", segmentIds: ["s1"] },
 ] };
-const history: HistoryEntry[] = [{ id: "h0", label: "Enterprise inference", input: { kind: "content", text: "Enterprise inference" }, createdAt: evidence.date }, { id: "h2", label: "Who is building in Japan?", input: { kind: "content", text: "Who is building in Japan?" }, createdAt: evidence.date }];
+// Repeated searches for one input appear once in the sidebar.
+const history: HistoryEntry[] = [
+ ...Array.from({ length: 8 }, (_, i) => ({ id: `repeat-${i}`, savedJob: true, label: "AI infrastructure", input: { kind: "content" as const, text: "AI infrastructure" }, createdAt: `2026-11-07T0${i}:00:00Z` })),
+ { id: "h0", label: "Enterprise inference", input: { kind: "content", text: "Enterprise inference" }, createdAt: evidence.date }, { id: "h2", label: "Who is building in Japan?", input: { kind: "content", text: "Who is building in Japan?" }, createdAt: evidence.date }];
 let currentCatalog = catalog;
 const newPerson: Person = { ...people[2], id: "new-person", name: "Jordan Lee", detail: "Newly indexed meeting" };
 const newIntel = { ...catalog.intel[0], id: "new-intel", text: "A newly indexed opportunity for enterprise inference." };
 const realFetch = window.fetch.bind(window);
 window.fetch = async (url, init) => {
  if (url === "/api/intel/catalog") return Response.json({ catalog, history });
+ if (url === "/api/intel/history" && init?.method !== "DELETE") return Response.json({ history: history.filter(h => h.input.kind === "content") });
  if (init?.method !== "POST" && init?.method !== "DELETE") return realFetch(url, init);
  if (init?.method === "DELETE") return Response.json({ cleared: true });
  const input = JSON.parse(String(init?.body));
@@ -34,4 +38,4 @@ window.fetch = async (url, init) => {
  const result = { source: { text: input.text ?? "Selected intel" }, coverage: catalog.coverage, catalog: currentCatalog, matches: [{ id: input.kind === "person" ? targetIntel.id : targetPerson.id, type: input.kind === "person" ? "intel" : "person", title: input.kind === "person" ? targetIntel.text : targetPerson.name, detail: "Infrastructure roundtable", relevance: "possible_synergy", reason: "Maya described security reviews as a barrier to enterprise adoption. Alex’s search for enterprise inference partners could be relevant to that problem.", caveat: "This is a suggested connection. Willingness to collaborate is unknown.", segmentIds: ["s1"], counterEvidenceIds: [], evidence: [mayaEvidence, evidence], counterEvidence: [] }] };
  return realFetch(url, { ...init, body: JSON.stringify({ input, result }) });
 };
-createRoot(document.getElementById("root")!).render(<AppShell activeHref="/intel" wide><IntelSearch /><p className="fixed bottom-2 right-3 rounded bg-background px-2 py-1 text-[10px] text-muted-foreground">Fictional review data</p></AppShell>);
+createRoot(document.getElementById("root")!).render(<AppShell activeHref="/intel" wide><IntelSearch historyCacheKey="tape.intel.history:fixture" /><p className="fixed bottom-2 right-3 rounded bg-background px-2 py-1 text-[10px] text-muted-foreground">Fictional review data</p></AppShell>);

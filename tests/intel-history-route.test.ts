@@ -1,10 +1,11 @@
 import { beforeEach, expect, it, vi } from "vitest";
 import { PgDialect } from "drizzle-orm/pg-core";
-const mocks = vi.hoisted(() => ({ user: vi.fn(), workspace: vi.fn(), remove: vi.fn(), where: vi.fn() }));
+const mocks = vi.hoisted(() => ({ user: vi.fn(), workspace: vi.fn(), remove: vi.fn(), where: vi.fn(), typed: vi.fn(), loadIntelMeetings: vi.fn() }));
 vi.mock("@/lib/auth", () => ({ getCurrentUser: mocks.user }));
 vi.mock("@/lib/workspace", () => ({ getOrCreateWorkspaceForSessionUser: mocks.workspace }));
 vi.mock("@/db/client", () => ({ db: { delete: mocks.remove } }));
-import { DELETE } from "@/app/api/intel/history/route";
+vi.mock("@/lib/intel/store", () => ({ loadTypedIntelHistory: mocks.typed, loadIntelMeetings: mocks.loadIntelMeetings }));
+import { DELETE, GET } from "@/app/api/intel/history/route";
 const request = (origin?: string) => new Request("https://tape.example/api/intel/history", {
   method: "DELETE", headers: origin ? { origin } : {},
 });
@@ -32,4 +33,19 @@ it("deletes only the current user's history in the active workspace", async () =
   expect(query.sql).toContain('"intel_searches"."team_id" = $1');
   expect(query.sql).toContain('"intel_searches"."user_id" = $2');
   expect(query.params).toEqual(["team", "owner"]);
+});
+
+it("returns typed search history without loading any transcripts", async () => {
+  const history = [{ id: "h", input: { kind: "content", text: "AI infrastructure" }, label: "AI infrastructure", savedJob: true, createdAt: "2026-11-08T00:00:00.000Z" }];
+  mocks.typed.mockResolvedValue(history);
+  const response = await GET();
+  expect(response.headers.get("cache-control")).toBe("private, no-store");
+  expect(await response.json()).toEqual({ history });
+  expect(mocks.typed).toHaveBeenCalledWith({ userId: "owner", teamId: "team" });
+  expect(mocks.loadIntelMeetings).not.toHaveBeenCalled();
+});
+it("requires authentication before reading history", async () => {
+  mocks.user.mockResolvedValue(null);
+  expect((await GET()).status).toBe(401);
+  expect(mocks.typed).not.toHaveBeenCalled();
 });

@@ -82,9 +82,24 @@ export function resolveInputLabel(input: SearchInput, corpus: IntelMeeting[], ca
   const people = input.ids.map(id => catalog.people.find(p => p.id === id));
   return people.every(Boolean) ? [...new Set(people.map(p => p!.name))].join(", ") : null;
 }
-export async function loadIntelHistory(workspace: WorkspaceContext, corpus: IntelMeeting[], catalog = buildCatalog(corpus)): Promise<HistoryEntry[]> {
-  const rows = await db.select({ id: intelSearches.id, input: intelSearches.input, status: intelSearches.status, createdAt: intelSearches.createdAt }).from(intelSearches).where(and(eq(intelSearches.teamId, workspace.teamId), eq(intelSearches.userId, workspace.userId), or(isNull(intelSearches.status), ne(intelSearches.status, "preview"))))
+function loadHistoryRows(workspace: WorkspaceContext) {
+  return db.select({ id: intelSearches.id, input: intelSearches.input, status: intelSearches.status, createdAt: intelSearches.createdAt }).from(intelSearches).where(and(eq(intelSearches.teamId, workspace.teamId), eq(intelSearches.userId, workspace.userId), or(isNull(intelSearches.status), ne(intelSearches.status, "preview"))))
     .orderBy(desc(intelSearches.createdAt)).limit(50);
+}
+
+// Typed searches label themselves, so their history needs no transcripts and
+// returns in one query. Selections of people or intel are labelled from current
+// authorized sources by the full catalog load.
+export async function loadTypedIntelHistory(workspace: WorkspaceContext): Promise<HistoryEntry[]> {
+  return (await loadHistoryRows(workspace)).flatMap(row => {
+    const input = searchInputSchema.safeParse(row.input);
+    if (!input.success || input.data.kind !== "content") return [];
+    return [{ id: row.id, input: input.data, label: input.data.text.slice(0, 100), ...(row.status ? { savedJob: true } : {}), createdAt: row.createdAt.toISOString() }];
+  });
+}
+
+export async function loadIntelHistory(workspace: WorkspaceContext, corpus: IntelMeeting[], catalog = buildCatalog(corpus)): Promise<HistoryEntry[]> {
+  const rows = await loadHistoryRows(workspace);
   return rows.flatMap(row => {
     const input = searchInputSchema.safeParse(row.input);
     if (!input.success) return [];

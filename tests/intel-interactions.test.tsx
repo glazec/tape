@@ -45,3 +45,44 @@ it("shows zero relevance without presenting it as an interest probability", asyn
  expect(await screen.findByText("Relevance 0/100")).toBeTruthy();
  expect(screen.getByText("1 person ranked")).toBeTruthy();
 });
+
+function memoryStorage() {
+  const values = new Map<string, string>();
+  const storage = { getItem: (k: string) => values.get(k) ?? null, setItem: (k: string, v: string) => { values.set(k, String(v)); }, removeItem: (k: string) => { values.delete(k); }, clear: () => values.clear() };
+  vi.stubGlobal("localStorage", storage);
+  return storage;
+}
+it("shows cached search history at once, once per input, and clears the cache with it", async () => {
+  const localStorage = memoryStorage();
+  const key = "tape.intel.history:team:user";
+  const entry = (id: string, text: string, createdAt: string) => ({ id, savedJob: true, input: { kind: "content", text }, label: text, createdAt });
+  localStorage.setItem(key, JSON.stringify([entry("b", "AI infrastructure", "2026-11-08T02:00:00Z"), entry("a", "AI infrastructure", "2026-11-08T01:00:00Z"), entry("c", "Robotics", "2026-11-07T00:00:00Z")]));
+  vi.stubGlobal("fetch", vi.fn(async (url: string, init?: RequestInit) => {
+    if (url.includes("catalog") || url === "/api/intel/history" && !init?.method) return new Promise<Response>(() => {});
+    if (init?.method === "DELETE") return Response.json({ cleared: true });
+    return Response.json({ job: null });
+  }));
+  render(<IntelSearch historyCacheKey={key} />);
+  const history = screen.getByRole("complementary", { name: "Search history" });
+  await waitFor(() => expect(history.textContent).toContain("Robotics"));
+  expect(history.textContent?.match(/AI infrastructure/g)).toHaveLength(1);
+  expect(screen.getByRole("button", { name: "Toggle search history" }).textContent).toContain("· 2");
+  fireEvent.click(screen.getByRole("button", { name: "Clear history" }));
+  await waitFor(() => expect(localStorage.getItem(key)).toBe("[]"));
+  expect(history.textContent).not.toContain("Robotics");
+});
+it("replaces cached history with the server's typed history without waiting for transcripts", async () => {
+  const localStorage = memoryStorage();
+  const key = "tape.intel.history:team:fresh";
+  localStorage.setItem(key, JSON.stringify([{ id: "old", savedJob: true, input: { kind: "content", text: "Deleted elsewhere" }, label: "Deleted elsewhere", createdAt: "2026-11-01T00:00:00Z" }]));
+  vi.stubGlobal("fetch", vi.fn(async (url: string) => {
+    if (url.includes("catalog")) return new Promise<Response>(() => {});
+    if (url === "/api/intel/history") return Response.json({ history: [{ id: "new", savedJob: true, input: { kind: "content", text: "GPU capacity" }, label: "GPU capacity", createdAt: "2026-11-08T00:00:00Z" }] });
+    return Response.json({ job: null });
+  }));
+  render(<IntelSearch historyCacheKey={key} />);
+  const history = screen.getByRole("complementary", { name: "Search history" });
+  await waitFor(() => expect(history.textContent).toContain("GPU capacity"));
+  expect(history.textContent).not.toContain("Deleted elsewhere");
+  expect(JSON.parse(localStorage.getItem(key)!)[0].id).toBe("new");
+});

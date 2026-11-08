@@ -23,7 +23,7 @@ await build({
       name: "next-fixture",
       setup(build) {
         build.onResolve({ filter: /^@sentry\/nextjs$/ }, () => ({ path: "sentry", namespace: "stub" }));
-        build.onLoad({ filter: /.*/, namespace: "stub" }, () => ({ contents: "export const captureException=()=>{}; export const captureMessage=()=>{}; export const withScope=(fn)=>fn({setTag(){},setContext(){},setLevel(){}});", loader: "js" }));
+        build.onLoad({ filter: /.*/, namespace: "stub" }, () => ({ contents: "export const captureException=()=>{}; export const captureMessage=()=>{}; export const withScope=(fn)=>fn({setTag(){},setContext(){},setLevel(){}}); export const startInactiveSpan=()=>({end(){},setAttribute(){},setAttributes(){},setStatus(){}});", loader: "js" }));
         build.onResolve({ filter: /^next\/(navigation|link|image)$/ }, (args) => ({
           path: args.path,
           namespace: "fixture",
