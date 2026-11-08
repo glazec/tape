@@ -140,12 +140,28 @@ export function buildRecentPeopleBatches(corpus: IntelMeeting[], catalog: IntelC
     }
     const build = (kept: Set<string>) => assemble([person],
       context.flatMap(m => required.has(m.id) ? [m] : kept.has(m.id) ? [focused.get(m.id)!] : []));
+    const newestFirst = [...focused.values()].sort((a, b) => Date.parse(b.date) - Date.parse(a.date));
     const kept = new Set<string>();
-    for (const m of [...focused.values()].sort((a, b) => Date.parse(b.date) - Date.parse(a.date))) {
+    for (const m of newestFirst) {
       kept.add(m.id);
       if (size(build(kept)) > maxTokens) { kept.delete(m.id); break; }
     }
-    return kept.size || person.meetingIds.some(id => required.has(id)) ? build(kept) : null;
+    if (kept.size || person.meetingIds.some(id => required.has(id))) return build(kept);
+    // Even their newest meeting is too long on its own: keep that meeting's latest
+    // passages, which carry any recent request or reversal, without its summary
+    // and notes if they do not fit either.
+    const newest = newestFirst[0];
+    if (!newest) return null;
+    for (const shell of [newest, { ...newest, notes: null, followup: null }]) {
+      const latest = (count: number) => ({ ...shell, segments: shell.segments.slice(-count) });
+      const fits = (count: number) => size(assemble([person], [...context.filter(m => required.has(m.id)), latest(count)])) <= maxTokens;
+      if (!fits(1)) continue;
+      let low = 1, high = shell.segments.length;
+      while (low < high) { const mid = Math.ceil((low + high) / 2); if (fits(mid)) low = mid; else high = mid - 1; }
+      const tail = latest(low);
+      if (tail.segments.some(segment => own.has(segment.id))) return assemble([person], [...context.filter(m => required.has(m.id)), tail]);
+    }
+    return null;
   }
   const batches: ReturnType<typeof batch>[] = [];
   let people: typeof candidates = [];

@@ -160,3 +160,19 @@ it("sizes batches by tokens so Chinese transcripts stay inside Jev's limit", asy
   expect(batches.length).toBeGreaterThan(1);
   expect(JSON.stringify(batches[0]).length).toBeLessThan(9000 * 1.2);
 });
+
+it("keeps the latest passages of one meeting too long to send whole", async () => {
+  const build = await recentPeople();
+  const long: IntelMeeting = { ...meeting("long", "host@example.test"), segments: [
+    ...Array.from({ length: 200 }, (_, i) => ({ id: `long-${i}`, startMs: i, speaker: "host@example.test", text: `We need GPU capacity, update ${i}. `.repeat(4) })),
+    { id: "long-last", startMs: 999, speaker: "host@example.test", text: "Update: we no longer need GPU capacity." },
+  ] };
+  const report = { trimmed: [] as string[], skipped: [] as string[] };
+  const batches = build([long, meeting("maya")], buildCatalog([long, meeting("maya")]), input, source, 3000, report);
+  const host = batches.find(b => b.people.some(p => p.name === "host@example.test"))!;
+  expect(report.skipped).toHaveLength(0);
+  expect(estimateTokens(JSON.stringify(host))).toBeLessThanOrEqual(3000);
+  const ids = host.meetings[0].segments.map(s => s.id);
+  expect(ids.at(-1)).toBe("long-last");
+  expect(ids).not.toContain("long-0");
+});
