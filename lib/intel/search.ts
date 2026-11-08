@@ -7,6 +7,7 @@ import { assertWorkspaceHasProviderCredit } from "@/lib/provider-credit";
 import { scoreIntelBatch } from "./scoring";
 import { JevRequestTooLargeError } from "./tokens";
 import { buildCatalog, buildMatchingContext, segmentPersonId, validateMatches } from "./provenance";
+import { isRecordingBot, isSubstantive } from "./evidence";
 import { loadIntelMeetings, resolveInputLabel } from "./store";
 import { IntelInputError, resolveIntelContent } from "./content";
 import { type IntelMeeting, type Match, type SearchInput } from "./types";
@@ -27,17 +28,23 @@ async function searchStage<T>(stage: string, perform: () => Promise<T>) {
 }
 
 // The person searching is never a useful recipient of their own idea. Identify
-// them by a speaker linked to their email, or an unlinked speaker with exactly
-// their full name; other same-name identities stay separate as before.
+// them by a speaker linked to their email, an unlinked speaker with exactly their
+// full name, or an unlinked speaker with exactly their given name when that name
+// is also their email's local part (yiping@ for "Yiping"). Other same-name
+// identities stay separate as before.
 export type IntelViewer = { email?: string | null; name?: string | null };
 function viewerIdentities(corpus: IntelMeeting[], viewer?: IntelViewer | null) {
   const ids = new Set<string>();
   const email = viewer?.email?.trim().toLowerCase();
   const name = viewer?.name?.trim().replace(/\s+/g, " ").toLowerCase();
+  const letters = (value: string) => value.replace(/[^\p{L}]/gu, "");
+  const given = name?.split(" ")[0];
+  const handle = given && email && letters(email.split("@")[0]) === letters(given) ? given : null;
   if (email) ids.add(`email:${email}`);
   for (const meeting of corpus) for (const segment of meeting.segments) {
+    const label = segment.speaker?.trim().replace(/\s+/g, " ").toLowerCase();
     const linked = email && segment.participantEmail?.trim().toLowerCase() === email;
-    const named = name && name.includes(" ") && !segment.personId && segment.speaker?.trim().replace(/\s+/g, " ").toLowerCase() === name;
+    const named = !segment.personId && label && ((name && name.includes(" ") && label === name) || (handle && label === handle));
     if (linked || named) ids.add(segmentPersonId(meeting.id, segment));
   }
   return ids;
@@ -61,8 +68,19 @@ export async function prepareIntelSearch(input: SearchInput, corpus: IntelMeetin
   const context = corpus.filter(m => recent.includes(m) || required.includes(m.id));
   const selected = new Set(input.kind === "person" ? input.ids : []);
   const self = viewerIdentities(corpus, viewer);
+  // Only people who said something substantive can show interest; recording bots
+  // are not people. Neither is offered to the model.
+  const substantive = new Set(recent.flatMap(m => m.segments.filter(s => isSubstantive(s.text)).map(s => s.id)));
+  let bots = 0, brief = 0;
+  const eligible = (p: (typeof recentCatalog.people)[number]) => {
+    if (selected.has(p.id)) return true;
+    if (self.has(p.id)) return false;
+    if (isRecordingBot(p.name)) { bots++; return false; }
+    if (p.kind === "participant" && !p.segmentIds.some(id => substantive.has(id))) { brief++; return false; }
+    return true;
+  };
   const candidateCatalog = { ...recentCatalog, intel: catalog.intel,
-    people: [...recentCatalog.people.filter(p => selected.has(p.id) || !self.has(p.id)),
+    people: [...recentCatalog.people.filter(eligible),
       ...catalog.people.filter(p => selected.has(p.id) && !recentCatalog.people.some(r => r.id === p.id))] };
   const report = { trimmed: [] as string[], skipped: [] as string[] };
   const batches = buildRecentPeopleBatches(context, candidateCatalog, input, source, undefined, report);
@@ -71,6 +89,8 @@ export async function prepareIntelSearch(input: SearchInput, corpus: IntelMeetin
   const limits = [
     report.trimmed.length ? `For ${people(report.trimmed.length)} with very long histories, only their own statements from their most recent meetings were read.` : "",
     report.skipped.length ? `${people(report.skipped.length)} could not be ranked because a single recent meeting was too long.` : "",
+    brief ? `${people(brief)} with only brief replies such as "OK" were not ranked.` : "",
+    bots ? `${bots} recording ${bots === 1 ? "bot was" : "bots were"} excluded.` : "",
   ].filter(Boolean).join(" ");
   const coverage = `Ranked ${count} participant identities from ${recent.length} accessible meetings in the past three months. Full meeting notes and transcript background; no keyword filtering or acceptance cutoff. Unconfirmed same-name identities remain separate.${limits ? ` ${limits}` : ""}`;
   return { catalog, coverage, batches, source };

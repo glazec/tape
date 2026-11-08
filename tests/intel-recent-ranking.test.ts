@@ -135,6 +135,20 @@ it("never ranks the person searching as a recipient of their own idea", async ()
  const linked = { ...meeting("linked", "2026-10-20T12:00:00Z", "YiPing Lu"), segments: [{ id: "linked-s", speaker: "YiPing Lu", text: "完全不同的背景与需求", startMs: 0, personId: "p-self", participantEmail: "yiping@example.test" }] };
  const unlinked = meeting("unlinked", "2026-10-21T12:00:00Z", "Yiping Lu");
  const namesake = meeting("namesake", "2026-10-22T12:00:00Z", "Yiping");
- const plan = await prepareIntelSearch({kind:"content",text:"GPU infrastructure"}, [linked, unlinked, namesake, meeting("maya")], undefined, { email: "Yiping@example.test", name: "Yiping  Lu" });
- expect(plan.batches.flatMap(b => b.people.map(p => p.name)).sort()).toEqual(["Yiping", "maya"]);
+ const corpus = [linked, unlinked, namesake, meeting("maya")];
+ // The given name matches the email handle, so a bare "Yiping" speaker is the searcher.
+ const own = await prepareIntelSearch({kind:"content",text:"GPU infrastructure"}, corpus, undefined, { email: "Yiping@example.test", name: "Yiping  Lu" });
+ expect(own.batches.flatMap(b => b.people.map(p => p.name)).sort()).toEqual(["maya"]);
+ // Without those ties (a different email), only the exact full-name speaker is
+ // the searcher; the first-name namesake and a person linked to another email stay.
+ const other = await prepareIntelSearch({kind:"content",text:"GPU infrastructure"}, corpus, undefined, { email: "yp@example.test", name: "Yiping Lu" });
+ expect(other.batches.flatMap(b => b.people.map(p => p.name)).sort()).toEqual(["YiPing Lu", "Yiping", "maya"]);
+});
+it("ranks only people with something substantive to say and never recording bots", async () => {
+ const bot = meeting("bot", "2026-10-20T12:00:00Z", "YiPing's Notetaker");
+ const brief = { ...meeting("brief", "2026-10-21T12:00:00Z", "Quiet"), segments: [{ id: "brief-s", speaker: "Quiet", text: "对。", startMs: 0 }, { id: "brief-t", speaker: "Quiet", text: "Sounds good.", startMs: 1 }] };
+ const plan = await prepareIntelSearch({kind:"content",text:"GPU infrastructure"}, [bot, brief, meeting("maya")]);
+ expect(plan.batches.flatMap(b => b.people.map(p => p.name))).toEqual(["maya"]);
+ expect(plan.coverage).toContain("1 person with only brief replies");
+ expect(plan.coverage).toContain("1 recording bot was excluded");
 });
