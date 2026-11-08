@@ -33,9 +33,12 @@ export async function scoreIntelBatch(batch: Batch, scope: { meetingId: string; 
     const own = batch.meetings.flatMap(m => m.segments.filter(s => people.some(p =>
       p.meetingIds.includes(m.id) && p.segmentIds.includes(s.id))).map(s => ({ s, m })))
       .sort((a, b) => Date.parse(b.m.date) - Date.parse(a.m.date) || b.s.startMs - a.s.startMs);
-    const substantive = (text: string) => text.replace(/\s+/g, "").length >= 12;
-    const chosen = [...own.filter(x => substantive(x.s.text)), ...own.filter(x => !substantive(x.s.text))]
-      .slice(0, Math.min(MAX_EVIDENCE_OPTIONS, JEV_MAX_CHOICE_OPTIONS - 1));
+    // Filler such as "好。" or "Sounds good." is offered only when a person said
+    // nothing more substantive, so it cannot be cited as evidence of interest.
+    const substantive = (text: string) => (text.match(/[\u3400-\u9fff]/g)?.length ?? 0) >= 8
+      || (text.match(/[A-Za-z0-9][A-Za-z0-9'’-]*/g)?.length ?? 0) >= 3;
+    const meaningful = own.filter(x => substantive(x.s.text));
+    const chosen = (meaningful.length ? meaningful : own).slice(0, Math.min(MAX_EVIDENCE_OPTIONS, JEV_MAX_CHOICE_OPTIONS - 1));
     return Object.fromEntries(chosen.map(({ s, m }) => [s.id, `${s.speaker ?? "Unknown speaker"}, ${m.date.slice(0, 10)}`]));
   }
   const sourcePassages = passages(batch.selectedPeople);

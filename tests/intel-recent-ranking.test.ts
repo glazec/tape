@@ -131,3 +131,10 @@ it("skips one person who cannot fit any request instead of failing the search", 
  const result = await searchIntel({teamId:"t",userId:"u",domain:"example.test"},{kind:"content",text:"GPU infrastructure"},corpus);
  expect(result.matches.map(m => m.title)).toEqual(["maya"]);
 });
+it("never ranks the person searching as a recipient of their own idea", async () => {
+ const linked = { ...meeting("linked", "2026-10-20T12:00:00Z", "YiPing Lu"), segments: [{ id: "linked-s", speaker: "YiPing Lu", text: "完全不同的背景与需求", startMs: 0, personId: "p-self", participantEmail: "yiping@example.test" }] };
+ const unlinked = meeting("unlinked", "2026-10-21T12:00:00Z", "Yiping Lu");
+ const namesake = meeting("namesake", "2026-10-22T12:00:00Z", "Yiping");
+ const plan = await prepareIntelSearch({kind:"content",text:"GPU infrastructure"}, [linked, unlinked, namesake, meeting("maya")], undefined, { email: "Yiping@example.test", name: "Yiping  Lu" });
+ expect(plan.batches.flatMap(b => b.people.map(p => p.name)).sort()).toEqual(["Yiping", "maya"]);
+});

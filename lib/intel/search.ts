@@ -6,7 +6,7 @@ import type { WorkspaceContext } from "@/lib/workspace";
 import { assertWorkspaceHasProviderCredit } from "@/lib/provider-credit";
 import { scoreIntelBatch } from "./scoring";
 import { JevRequestTooLargeError } from "./tokens";
-import { buildCatalog, buildMatchingContext, validateMatches } from "./provenance";
+import { buildCatalog, buildMatchingContext, segmentPersonId, validateMatches } from "./provenance";
 import { loadIntelMeetings, resolveInputLabel } from "./store";
 import { IntelInputError, resolveIntelContent } from "./content";
 import { type IntelMeeting, type Match, type SearchInput } from "./types";
@@ -26,7 +26,24 @@ async function searchStage<T>(stage: string, perform: () => Promise<T>) {
   }
 }
 
-export async function prepareIntelSearch(input: SearchInput, corpus: IntelMeeting[], linkSource?: { text: string; url: string }) {
+// The person searching is never a useful recipient of their own idea. Identify
+// them by a speaker linked to their email, or an unlinked speaker with exactly
+// their full name; other same-name identities stay separate as before.
+export type IntelViewer = { email?: string | null; name?: string | null };
+function viewerIdentities(corpus: IntelMeeting[], viewer?: IntelViewer | null) {
+  const ids = new Set<string>();
+  const email = viewer?.email?.trim().toLowerCase();
+  const name = viewer?.name?.trim().replace(/\s+/g, " ").toLowerCase();
+  if (email) ids.add(`email:${email}`);
+  for (const meeting of corpus) for (const segment of meeting.segments) {
+    const linked = email && segment.participantEmail?.trim().toLowerCase() === email;
+    const named = name && name.includes(" ") && !segment.personId && segment.speaker?.trim().replace(/\s+/g, " ").toLowerCase() === name;
+    if (linked || named) ids.add(segmentPersonId(meeting.id, segment));
+  }
+  return ids;
+}
+
+export async function prepareIntelSearch(input: SearchInput, corpus: IntelMeeting[], linkSource?: { text: string; url: string }, viewer?: IntelViewer | null) {
   const catalog = buildCatalog(corpus);
   const label = resolveInputLabel(input, corpus, catalog);
   if (!label) throw new IntelInputError("This selection is no longer available. Choose it again.");
@@ -42,8 +59,11 @@ export async function prepareIntelSearch(input: SearchInput, corpus: IntelMeetin
   const required = input.kind === "person" ? catalog.people.filter(p => input.ids.includes(p.id)).flatMap(p => p.meetingIds)
     : input.kind === "intel" ? catalog.intel.find(i => i.id === input.id)?.evidence.map(e => e.meetingId) ?? [] : [];
   const context = corpus.filter(m => recent.includes(m) || required.includes(m.id));
+  const selected = new Set(input.kind === "person" ? input.ids : []);
+  const self = viewerIdentities(corpus, viewer);
   const candidateCatalog = { ...recentCatalog, intel: catalog.intel,
-    people: [...recentCatalog.people, ...catalog.people.filter(p => input.kind === "person" && input.ids.includes(p.id) && !recentCatalog.people.some(r => r.id === p.id))] };
+    people: [...recentCatalog.people.filter(p => selected.has(p.id) || !self.has(p.id)),
+      ...catalog.people.filter(p => selected.has(p.id) && !recentCatalog.people.some(r => r.id === p.id))] };
   const report = { trimmed: [] as string[], skipped: [] as string[] };
   const batches = buildRecentPeopleBatches(context, candidateCatalog, input, source, undefined, report);
   const count = batches.reduce((n, b) => n + b.people.length, 0);
