@@ -42,9 +42,15 @@ export async function prepareIntelSearch(input: SearchInput, corpus: IntelMeetin
   const context = corpus.filter(m => recent.includes(m) || required.includes(m.id));
   const candidateCatalog = { ...recentCatalog, intel: catalog.intel,
     people: [...recentCatalog.people, ...catalog.people.filter(p => input.kind === "person" && input.ids.includes(p.id) && !recentCatalog.people.some(r => r.id === p.id))] };
-  const batches = buildRecentPeopleBatches(context, candidateCatalog, input, source);
+  const report = { trimmed: [] as string[], skipped: [] as string[] };
+  const batches = buildRecentPeopleBatches(context, candidateCatalog, input, source, undefined, report);
   const count = batches.reduce((n, b) => n + b.people.length, 0);
-  const coverage = `Ranked ${count} participant identities from ${recent.length} accessible meetings in the past three months. Full meeting notes and transcript background; no keyword filtering or acceptance cutoff. Unconfirmed same-name identities remain separate.`;
+  const people = (n: number) => `${n} ${n === 1 ? "person" : "people"}`;
+  const limits = [
+    report.trimmed.length ? `For ${people(report.trimmed.length)} with very long histories, only their own statements from their most recent meetings were read.` : "",
+    report.skipped.length ? `${people(report.skipped.length)} could not be ranked because a single recent meeting was too long.` : "",
+  ].filter(Boolean).join(" ");
+  const coverage = `Ranked ${count} participant identities from ${recent.length} accessible meetings in the past three months. Full meeting notes and transcript background; no keyword filtering or acceptance cutoff. Unconfirmed same-name identities remain separate.${limits ? ` ${limits}` : ""}`;
   return { catalog, coverage, batches, source };
 }
 

@@ -86,3 +86,11 @@ it("retries only omitted candidates once and preserves scores already returned",
  expect(mocks.scoreIntelBatch).toHaveBeenCalledTimes(2);
  expect(mocks.scoreIntelBatch.mock.calls[1][0].people.map((p:{name:string})=>p.name)).toEqual(["maya"]);
 });
+it("discloses focused histories in the coverage note instead of failing the search", async () => {
+ const long = (id: string) => ({ ...meeting(id, "2026-10-20T12:00:00Z", "host@example.test"),
+  segments: [{ id: `${id}-s`, speaker: "host@example.test", text: "Recurring host update ".repeat(12000), startMs: 0 }] });
+ const corpus = [long("a"), long("b"), meeting("maya")];
+ const plan = await prepareIntelSearch({kind:"content",text:"GPU infrastructure"}, corpus);
+ expect(plan.batches.flatMap(b => b.people.map(p => p.name))).toEqual(expect.arrayContaining(["host@example.test", "maya"]));
+ expect(plan.coverage).toContain("For 1 person with very long histories");
+});
