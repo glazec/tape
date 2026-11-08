@@ -81,8 +81,8 @@ it("bounds transcript scans to groups of 25 meetings without dropping the last g
  expect(lastQuery.params).toContain("m25");
  expect(lastQuery.params).not.toContain("m0");
 });
-it("loads at most three independent meeting groups concurrently", async () => {
- const rows = Array.from({ length: 76 }, (_, i) => row(`m${i}`));
+it("loads at most six independent meeting groups concurrently", async () => {
+ const rows = Array.from({ length: 200 }, (_, i) => row(`m${i}`));
  let release!: () => void;
  const gate = new Promise<void>(resolve => { release = resolve; });
  const pending = query([]);
@@ -92,7 +92,7 @@ it("loads at most three independent meeting groups concurrently", async () => {
  await new Promise(resolve => setTimeout(resolve, 0));
  const inFlight = mocks.select.mock.calls.length - 1;
  release(); await loading;
- expect(inFlight).toBe(3);
+ expect(inFlight).toBe(6);
 });
 
 it("loads only the current user's full private notes alongside authorized meetings", async () => {
