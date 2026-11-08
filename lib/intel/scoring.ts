@@ -1,8 +1,14 @@
 import { z } from "zod";
 import type { buildRecentPeopleBatches } from "./search-batches";
 import { scoredRankingSchema, type Person } from "./types";
+import { JEV_MAX_CHOICE_OPTIONS, JevRequestTooLargeError } from "./tokens";
 
 export const INTEL_SCORING_MODEL = "typesafe/jev-1.14";
+// Evidence choices per person. Far below Jev's 255 option limit so twelve people's
+// option lists stay within the request token budget; every passage remains
+// readable in state.meetings.
+export const MAX_EVIDENCE_OPTIONS = 60;
+
 type Batch = ReturnType<typeof buildRecentPeopleBatches>[number];
 const scale = ["Do not share: no useful connection, explicit disinterest, fulfilled need, or incompatible constraints", "Low sharing value: only broad topical overlap", "Potential sharing value: relevant current work but no specific need", "Useful to share: clear current relevant request or complementary offer", "Strong reason to share now: direct specific fit to a current unfulfilled need"];
 const categories = {
@@ -21,10 +27,16 @@ export async function scoreIntelBatch(batch: Batch, scope: { meetingId: string; 
   if (!batch.people.length) return { matches: [] };
   const key = process.env.OPENROUTER_API_KEY;
   if (!key) throw new Error("OpenRouter API key is missing");
+  // Newest substantive statements first: later statements override earlier ones,
+  // and one-word replies are rarely useful evidence.
   function passages(people: Person[]) {
-    return Object.fromEntries(batch.meetings.flatMap(m => m.segments.filter(s => people.some(p =>
-      p.meetingIds.includes(m.id) && p.segmentIds.includes(s.id))).map(s =>
-      [s.id, `Passage ${s.id} by ${s.speaker} in meeting ${m.id}, dated ${m.date}. Read its text in state.meetings.`])));
+    const own = batch.meetings.flatMap(m => m.segments.filter(s => people.some(p =>
+      p.meetingIds.includes(m.id) && p.segmentIds.includes(s.id))).map(s => ({ s, m })))
+      .sort((a, b) => Date.parse(b.m.date) - Date.parse(a.m.date) || b.s.startMs - a.s.startMs);
+    const substantive = (text: string) => text.replace(/\s+/g, "").length >= 12;
+    const chosen = [...own.filter(x => substantive(x.s.text)), ...own.filter(x => !substantive(x.s.text))]
+      .slice(0, Math.min(MAX_EVIDENCE_OPTIONS, JEV_MAX_CHOICE_OPTIONS - 1));
+    return Object.fromEntries(chosen.map(({ s, m }) => [s.id, `${s.speaker ?? "Unknown speaker"}, ${m.date.slice(0, 10)}`]));
   }
   const sourcePassages = passages(batch.selectedPeople);
   const options = batch.people.map(p => passages([p]));
@@ -32,7 +44,7 @@ export async function scoreIntelBatch(batch: Batch, scope: { meetingId: string; 
   batch.people.forEach((p, i) => {
     if (!Object.keys(options[i]).length || (batch.input.kind === "person" && !Object.keys(sourcePassages).length))
       throw new Error("Missing attributed scoring evidence");
-    const target = `${instructions} Evaluate only state.people[${i}], identity ${p.id}.`;
+    const target = `${instructions} Evaluate only state.people[${i}], identity ${p.id}. Passage options are keyed by transcript segment id; read the text of each passage in state.meetings.`;
     questions[`p${i}_score`] = { type: "score", instructions: `${target} How useful would it be to share this input with this person now? Score current sharing value, not topic similarity or past interest. Explicit refusal or a fulfilled need belongs at level 0. Use the same ordered scale for every candidate. This is relevance, not probability of interest.`, criteria: scale };
     questions[`p${i}_relevance`] = { type: "choice", instructions: `${target} Which relationship best describes the evidence? Use related_focus for weak or absent connections; never invent expressed interest.`, criteria: categories };
     questions[`p${i}_evidence`] = { type: "choice", instructions: `${target} Select the most relevant passage spoken by this target. If there is no supported connection, select background evidence without implying interest.`, criteria: options[i] };
@@ -44,7 +56,12 @@ export async function scoreIntelBatch(batch: Batch, scope: { meetingId: string; 
     signal: AbortSignal.timeout(180000),
     body: JSON.stringify({ model: INTEL_SCORING_MODEL, state: batch, questions }),
   });
-  if (!response.ok) throw new Error(`Jev scoring failed (HTTP ${response.status})`);
+  if (!response.ok) {
+    // Inspect only the error type; the body can echo private transcript text.
+    const detail = response.status === 400 || response.status === 422 ? await response.text().catch(() => "") : "";
+    if (/max_tokens_exceeded|too_long/.test(detail)) throw new JevRequestTooLargeError(`Jev scoring request too large (HTTP ${response.status})`);
+    throw new Error(`Jev scoring failed (HTTP ${response.status})`);
+  }
   const { id, model, usage, answers } = receipt.parse(await response.json());
   try {
     if (scope.meetingId) {
