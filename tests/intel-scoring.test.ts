@@ -90,3 +90,16 @@ it("types Jev size refusals so the caller can split the batch", async () => {
  fetchDecision.mockResolvedValue(new Response("private provider detail", { status: 400 }));
  await expect(scoreIntelBatch(batch, { meetingId: "m" })).rejects.toThrow("Jev scoring failed (HTTP 400)");
 });
+it("offers filler only when a person said nothing more substantive", async () => {
+ const segments = [{ id: "f1", speaker: "Alex", text: "好。", startMs: 0 }, { id: "f2", speaker: "Alex", text: "啊，那我去找找。", startMs: 1 }, { id: "real", speaker: "Alex", text: "我们下个月需要两百张卡做推理", startMs: 2 }, { id: "en", speaker: "Alex", text: "We need GPUs.", startMs: 3 }, { id: "ok", speaker: "Alex", text: "Sounds good.", startMs: 4 }];
+ const withReal = { ...batch, people: [{ ...batch.people[0], segmentIds: segments.map(s => s.id) }], meetings: [{ ...batch.meetings[0], segments }] };
+ const value = response(); value.answers.p0_evidence.choice = "real";
+ fetchDecision.mockResolvedValue(Response.json(value));
+ await scoreIntelBatch(withReal, { meetingId: "m" });
+ expect(Object.keys(JSON.parse(fetchDecision.mock.calls[0][1].body).questions.p0_evidence.criteria).sort()).toEqual(["en", "real"]);
+ const filler = { ...batch, people: [{ ...batch.people[0], segmentIds: ["f1", "f2"] }], meetings: [{ ...batch.meetings[0], segments: segments.slice(0, 2) }] };
+ const value2 = response(); value2.answers.p0_evidence.choice = "f2";
+ fetchDecision.mockResolvedValue(Response.json(value2));
+ await scoreIntelBatch(filler, { meetingId: "m" });
+ expect(Object.keys(JSON.parse(fetchDecision.mock.calls[1][1].body).questions.p0_evidence.criteria).sort()).toEqual(["f1", "f2"]);
+});

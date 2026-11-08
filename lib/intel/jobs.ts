@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { and, desc, eq, gt, isNotNull, sql } from "drizzle-orm";
 import { db } from "@/db/client";
-import { intelSearches as jobs, providerUsageEvents } from "@/db/schema";
+import { intelSearches as jobs, providerUsageEvents, users } from "@/db/schema";
 import { inngest } from "@/inngest/client";
 import { ProviderCreditExhaustedError } from "@/lib/provider-credit";
 import type { WorkspaceContext } from "@/lib/workspace";
@@ -64,11 +64,16 @@ function takePlan(w: WorkspaceContext, id: string) {
   return planned;
 }
 
+async function intelViewer(w: WorkspaceContext) {
+  const [row] = await db.select({ email: users.email, name: users.name }).from(users).where(eq(users.id, w.userId)).limit(1);
+  return row ?? null;
+}
+
 export async function previewIntelSearch(w: WorkspaceContext, input: SearchInput) {
   const began = Date.now();
   const corpus = await loadIntelMeetings(w);
   const loadMs = Date.now() - began;
-  const prepared = await prepareIntelSearch(input, corpus);
+  const prepared = await prepareIntelSearch(input, corpus, undefined, await intelViewer(w));
   const { source, batches } = prepared;
   console.info("intel.preview.timing", JSON.stringify({ meetings: corpus.length, batches: batches.length, loadMs, planMs: Date.now() - began - loadMs }));
   const estimate = estimateSearchCost(batches, await intelPricing(w));
@@ -215,7 +220,7 @@ export async function runIntelJob(w: WorkspaceContext, id: string, options: { ta
     timing.reusedPlan = planned ? 1 : 0;
     const corpus = planned?.corpus ?? await loadIntelMeetings(w);
     at = mark("loadMs", at);
-    const plan = planned?.plan ?? await prepareIntelSearch(input, corpus, preview?.linkSource);
+    const plan = planned?.plan ?? await prepareIntelSearch(input, corpus, preview?.linkSource, await intelViewer(w));
     at = mark("planMs", at);
     const estimate = preview?.estimate ?? estimateSearchCost(plan.batches, await intelPricing(w));
     const linkSource = preview?.linkSource ?? ("url" in plan.source && typeof plan.source.url === "string" ? { text: plan.source.text, url: plan.source.url } : undefined);
