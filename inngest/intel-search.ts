@@ -2,15 +2,16 @@ import { NonRetriableError } from "inngest";
 import { z } from "zod";
 import { initializeDatabaseClaimsContext, setDatabaseWorkspace } from "@/db/rls-context";
 import { failIntelJob, finalizeIntelJob, IntelStepStopped, markIntelJobInterrupted, matchIntelBatch, planIntelJob } from "@/lib/intel/jobs";
+import { INTEL_SEARCH_PARALLEL_BATCHES, INTEL_SEARCH_TOTAL_PARALLEL_BATCHES } from "@/lib/intel/limits";
 import { inngest } from "./client";
 
 const jobSchema = z.object({ id: z.uuid(), userId: z.uuid(), teamId: z.uuid() });
 
 // Each step is its own HTTP request, so a long search never runs into the
 // proxy's request limit, and a retry repeats only the batch that failed.
-// The per-search limit keeps three matching calls in flight, as before.
+// Batches of one search are scored in parallel up to the per-search limit.
 export const runIntelSearch = inngest.createFunction({
-  id: "run-intel-search", retries: 2, concurrency: [{ limit: 12 }, { limit: 3, key: "event.data.id" }],
+  id: "run-intel-search", retries: 2, concurrency: [{ limit: INTEL_SEARCH_TOTAL_PARALLEL_BATCHES }, { limit: INTEL_SEARCH_PARALLEL_BATCHES, key: "event.data.id" }],
   cancelOn: [{ event: "intel/search.cancelled", match: "data.id" }],
   onFailure: async ({ event }) => {
     const job = jobSchema.parse(event.data.event.data);

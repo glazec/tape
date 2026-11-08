@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { z } from "zod";
 import { buildRecentPeopleBatches } from "./search-batches";
+import { INTEL_SEARCH_PARALLEL_BATCHES } from "./limits";
 import type { WorkspaceContext } from "@/lib/workspace";
 import { assertWorkspaceHasProviderCredit } from "@/lib/provider-credit";
 import { scoreIntelBatch } from "./scoring";
@@ -119,7 +120,7 @@ export async function searchIntel(workspace: WorkspaceContext, input: SearchInpu
       candidates[index] = validated;
     }
   }
-  await Promise.all(Array.from({ length: Math.min(3, batches.length) }, () => worker().catch(error => { failed = true; throw error; })));
+  await Promise.all(Array.from({ length: Math.min(INTEL_SEARCH_PARALLEL_BATCHES, batches.length) }, () => worker().catch(error => { failed = true; throw error; })));
   const { matches, catalog: freshCatalog } = await finalizeIntelSearch(workspace, input, source, candidates, snapshot);
   return { matches, source, coverage, catalog: freshCatalog };
 }

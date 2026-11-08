@@ -8,6 +8,7 @@ import { connectionRelationshipLabels } from "@/lib/meeting-connections";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogTitle, DialogClose } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
+import { INTEL_SEARCH_PARALLEL_BATCHES } from "@/lib/intel/limits";
 import { kindLabels, relevanceLabels, type Evidence, type HistoryEntry, type IntelBrowserCatalog as IntelCatalog, type IntelBrowserPerson as Person, type Match, type SearchInput, type SearchResult } from "@/lib/intel/types";
 
 function dateLabel(date: string) { return new Date(date).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" }); }
@@ -294,7 +295,7 @@ export function IntelSearch() {
             <ol className="mt-4 space-y-3">
               <Stage state={groups ? "done" : "active"}>{groups ? `Read your meetings and grouped them into ${groups} ${groups === 1 ? "batch" : "batches"}` : queued ? "Waiting for a search worker" : "Reading your meetings"}</Stage>
               <Stage state={!groups ? "waiting" : matched < groups ? "active" : "done"}>Scoring everyone from the past three months{groups ? ` · ${matched} of ${groups}` : ""}
-                {groups > 0 && matched === 0 && <span className="block text-xs text-muted-foreground">Each batch takes 1 to 4 minutes. {Math.min(3, groups)} run at once.</span>}</Stage>
+                {groups > 0 && matched === 0 && <span className="block text-xs text-muted-foreground">Each batch takes 1 to 4 minutes. {Math.min(INTEL_SEARCH_PARALLEL_BATCHES, groups)} run at once.</span>}</Stage>
               <Stage state={finalizing ? "active" : "waiting"}>Ranking scores and checking access</Stage>
             </ol>
             <progress aria-label="Search progress" aria-valuetext={groups ? `${matched} of ${groups} groups scored; final access check pending` : status} className="mt-5 block h-1 w-full accent-primary" max={groups ? groups + 1 : 1} value={groups ? Math.min(job?.completed ?? 0, groups) : undefined} />
