@@ -1,17 +1,17 @@
 import { NonRetriableError } from "inngest";
 import { z } from "zod";
 import { initializeDatabaseClaimsContext, setDatabaseWorkspace } from "@/db/rls-context";
-import { failIntelJob, finalizeIntelJob, IntelStepStopped, markIntelJobInterrupted, matchIntelBatch, planIntelJob } from "@/lib/intel/jobs";
-import { INTEL_SEARCH_PARALLEL_BATCHES, INTEL_SEARCH_TOTAL_PARALLEL_BATCHES } from "@/lib/intel/limits";
+import { failIntelJob, IntelStepStopped, markIntelJobInterrupted, runIntelJob } from "@/lib/intel/jobs";
+import { INTEL_SEARCH_CONCURRENT_SEARCHES } from "@/lib/intel/limits";
 import { inngest } from "./client";
 
 const jobSchema = z.object({ id: z.uuid(), userId: z.uuid(), teamId: z.uuid() });
 
-// Each step is its own HTTP request, so a long search never runs into the
-// proxy's request limit, and a retry repeats only the batch that failed.
-// Batches of one search are scored in parallel up to the per-search limit.
+// One step runs the whole search: Jev scoring takes seconds, so loading the
+// archive once and scoring batches in parallel finishes in about a minute.
+// One run per search id; a bounded number of searches run at once.
 export const runIntelSearch = inngest.createFunction({
-  id: "run-intel-search", retries: 2, concurrency: [{ limit: INTEL_SEARCH_TOTAL_PARALLEL_BATCHES }, { limit: INTEL_SEARCH_PARALLEL_BATCHES, key: "event.data.id" }],
+  id: "run-intel-search", retries: 2, concurrency: [{ limit: INTEL_SEARCH_CONCURRENT_SEARCHES }, { limit: 1, key: "event.data.id" }],
   cancelOn: [{ event: "intel/search.cancelled", match: "data.id" }],
   onFailure: async ({ event }) => {
     const job = jobSchema.parse(event.data.event.data);
@@ -33,9 +33,5 @@ export const runIntelSearch = inngest.createFunction({
       throw error;
     }
   }
-  const plan = await step.run("plan", () => guarded(() => planIntelJob(workspace, job.id)));
-  if (!plan) return;
-  const candidates = await Promise.all(plan.batches.map((ids, index) =>
-    step.run(`match-${index}`, () => guarded(() => matchIntelBatch(workspace, job.id, index, ids, plan.meetingId)))));
-  await step.run("finalize", () => guarded(() => finalizeIntelJob(workspace, job.id, candidates, plan.snapshot)));
+  await step.run("search", () => guarded(() => runIntelJob(workspace, job.id)));
 });

@@ -9,9 +9,10 @@ const BYTES_PER_TOKEN = 3;
 // Jev output tokens are free; the range allows for input token estimation error.
 const PROMPT_OVERHEAD_TOKENS = 9000;
 export const PARALLEL_BATCHES = INTEL_SEARCH_PARALLEL_BATCHES;
-// Conservative estimate based on previous router waves; scoring timings may vary.
-const SECONDS_PER_WAVE = 150;
-const FIXED_SECONDS = 20;
+// One wave of parallel Jev calls plus publishing progress; the fixed part covers
+// loading and planning the archive and the final freshness check.
+const SECONDS_PER_WAVE = 4;
+const FIXED_SECONDS = 30;
 
 export type SearchEstimate = { lowUsd: number; highUsd: number; expectedUsd: number; seconds: number; batches: number };
 
