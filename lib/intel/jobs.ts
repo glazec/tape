@@ -44,8 +44,11 @@ async function actualCost(w: WorkspaceContext, id: string) {
 }
 
 export async function previewIntelSearch(w: WorkspaceContext, input: SearchInput) {
+  const began = Date.now();
   const corpus = await loadIntelMeetings(w);
+  const loadMs = Date.now() - began;
   const { source, batches } = await prepareIntelSearch(input, corpus);
+  console.info("intel.preview.timing", JSON.stringify({ meetings: corpus.length, batches: batches.length, loadMs, planMs: Date.now() - began - loadMs }));
   const estimate = estimateSearchCost(batches, await intelPricing(w));
   const preview: Preview = { estimate };
   if ("url" in source && typeof source.url === "string") preview.linkSource = { text: source.text, url: source.url };
@@ -132,10 +135,6 @@ export async function markIntelJobInterrupted(w: WorkspaceContext, id: string, e
 function userMessage(error: unknown) {
   return error instanceof IntelInputError || error instanceof ProviderCreditExhaustedError ? error.message : null;
 }
-async function loadPlan(w: WorkspaceContext, input: SearchInput, preview: Preview | null) {
-  const corpus = await loadIntelMeetings(w);
-  return { corpus, plan: await prepareIntelSearch(input, corpus, preview?.linkSource) };
-}
 export class IntelStepStopped extends Error {}
 export async function failIntelJob(w: WorkspaceContext, id: string, error: unknown) {
   const message = userMessage(error);
@@ -178,13 +177,21 @@ export async function intelJobState(w: WorkspaceContext, id: string) {
 // started is never shown. Scoring calls take seconds, so loading the archive is the
 // dominant cost and happens once.
 export async function runIntelJob(w: WorkspaceContext, id: string, options: { takeover?: boolean } = {}) {
+  const began = Date.now();
   const claimed = await claimIntelJob(w, id, options.takeover ?? false);
   if (!claimed) return false;
   const scope = and(owner(w), eq(jobs.id, id));
+  // Phase durations only; no search text or meeting content.
+  const timing: Record<string, number> = { claimMs: Date.now() - began };
+  const mark = (name: string, since: number) => { timing[name] = Date.now() - since; return Date.now(); };
   try {
     const input = searchInputSchema.parse(claimed.input);
     const preview = claimed.result as Preview | null;
-    const { corpus, plan } = await loadPlan(w, input, preview);
+    let at = Date.now();
+    const corpus = await loadIntelMeetings(w);
+    at = mark("loadMs", at);
+    const plan = await prepareIntelSearch(input, corpus, preview?.linkSource);
+    at = mark("planMs", at);
     const estimate = preview?.estimate ?? estimateSearchCost(plan.batches, await intelPricing(w));
     const linkSource = preview?.linkSource ?? ("url" in plan.source && typeof plan.source.url === "string" ? { text: plan.source.text, url: plan.source.url } : undefined);
     const started: Preview = { estimate, linkSource, startedAt: new Date().toISOString(), partial: [], batchesDone: 0 };
@@ -192,6 +199,7 @@ export async function runIntelJob(w: WorkspaceContext, id: string, options: { ta
       .where(and(scope, eq(jobs.status, "running"))).returning({ id: jobs.id });
     if (!still) throw new IntelStepStopped();
     if (plan.batches.length) await assertWorkspaceHasProviderCredit(w);
+    at = mark("startMs", at);
     const scoreScope = { meetingId: corpus[0]?.id ?? "", searchId: id };
     const candidates: Match[][] = new Array(plan.batches.length);
     let nextBatch = 0;
@@ -213,7 +221,10 @@ export async function runIntelJob(w: WorkspaceContext, id: string, options: { ta
     await Promise.all(Array.from({ length: Math.min(INTEL_SEARCH_PARALLEL_BATCHES, plan.batches.length) },
       () => worker().catch(error => { stopped = true; throw error; })));
     if (stopped) throw new IntelStepStopped();
+    at = mark("scoreMs", at);
     await finalizeIntelJob(w, id, input, candidates, corpus, { source: plan.source, coverage: plan.coverage, preview: started });
+    mark("finalizeMs", at);
+    console.info("intel.search.timing", JSON.stringify({ searchId: id, meetings: corpus.length, batches: plan.batches.length, totalMs: Date.now() - began, ...timing }));
     return true;
   } catch (error) {
     if (!(error instanceof IntelStepStopped) && !userMessage(error)) await releaseIntelJob(w, id).catch(() => undefined);
