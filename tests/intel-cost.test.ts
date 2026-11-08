@@ -34,3 +34,6 @@ it("learns per-token prices from tagged usage once enough calls exist", () => {
   expect(pricing.highUsdPerMTok).toBeGreaterThanOrEqual(pricing.typicalUsdPerMTok * 2);
   expect(pricing.samples).toBe(8);
 });
+it("estimates time from the parallel batch limit", () => {
+  expect(estimateSearchCost(Array.from({ length: 81 }, () => ({}))).seconds).toBe(20 + Math.ceil(81 / 8) * 150);
+});

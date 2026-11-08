@@ -1,3 +1,5 @@
+import { INTEL_SEARCH_PARALLEL_BATCHES } from "./limits";
+
 // Cost estimates use direct Jev decision pricing. Searches score candidates once;
 // sorting and source access checks do not make additional model calls.
 export type IntelPricing = { lowUsdPerMTok: number; typicalUsdPerMTok: number; highUsdPerMTok: number; samples: number };
@@ -6,7 +8,7 @@ const BYTES_PER_TOKEN = 3;
 // Includes typed questions and evidence option identifiers for up to 12 people.
 // Jev output tokens are free; the range allows for input token estimation error.
 const PROMPT_OVERHEAD_TOKENS = 9000;
-export const PARALLEL_BATCHES = 3;
+export const PARALLEL_BATCHES = INTEL_SEARCH_PARALLEL_BATCHES;
 // Conservative estimate based on previous router waves; scoring timings may vary.
 const SECONDS_PER_WAVE = 150;
 const FIXED_SECONDS = 20;

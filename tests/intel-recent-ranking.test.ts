@@ -94,3 +94,17 @@ it("discloses focused histories in the coverage note instead of failing the sear
  expect(plan.batches.flatMap(b => b.people.map(p => p.name))).toEqual(expect.arrayContaining(["host@example.test", "maya"]));
  expect(plan.coverage).toContain("For 1 person with very long histories");
 });
+it("scores batches in parallel up to the per search limit", async () => {
+ const corpus = Array.from({length: 12 * 20}, (_, i) => meeting(`p${i}`));
+ mocks.loadIntelMeetings.mockResolvedValue(corpus);
+ let inFlight = 0, peak = 0;
+ mocks.scoreIntelBatch.mockImplementation(async call => {
+  inFlight++; peak = Math.max(peak, inFlight);
+  await new Promise(r => setTimeout(r, 5));
+  inFlight--;
+  return { matches: call.people.map((p: {id:string;sourceSegmentId:string}) => ({id:p.id,type:"person",score:0,relevance:"related_focus",reason:"No clear connection",caveat:"",segmentIds:[p.sourceSegmentId],counterEvidenceIds:[]})) };
+ });
+ await searchIntel({teamId:"t",userId:"u",domain:"example.test"},{kind:"content",text:"GPU infrastructure"},corpus);
+ expect(mocks.scoreIntelBatch).toHaveBeenCalledTimes(20);
+ expect(peak).toBe(8);
+});
