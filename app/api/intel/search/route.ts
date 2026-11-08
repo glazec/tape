@@ -1,11 +1,13 @@
 import { z } from "zod";
-import { enqueueIntelSearch, markIntelJobInterrupted, previewIntelSearch, readIntelJob } from "@/lib/intel/jobs";
+import { after } from "next/server";
+import { enqueueIntelSearch, markIntelJobInterrupted, previewIntelSearch, readIntelJob, runIntelJobNow } from "@/lib/intel/jobs";
 import { inngest } from "@/inngest/client";
 import { getCurrentUser } from "@/lib/auth";
 import { getOrCreateWorkspaceForSessionUser } from "@/lib/workspace";
 import { assertRequestRateLimit, RequestRateLimitError } from "@/lib/request-rate-limit";
 import { IntelInputError } from "@/lib/intel/content";
 import { searchInputSchema } from "@/lib/intel/types";
+import { initializeDatabaseClaimsContext, setDatabaseWorkspace } from "@/db/rls-context";
 export const runtime = "nodejs";
 export const maxDuration = 600;
 export async function POST(request: Request) {
@@ -27,7 +29,14 @@ export async function POST(request: Request) {
     if (quoteId !== null && !z.uuid().safeParse(quoteId).success) return Response.json({ error: "Invalid estimate" }, { status: 400 });
     await assertRequestRateLimit({ limit: 10, scope: preview ? "intel_estimate" : "intel_search", subject: `${workspace.teamId}:${workspace.userId}`, windowMs: 60000 });
     if (preview) return Response.json(await previewIntelSearch(workspace, parsed.data), { headers: { "Cache-Control": "private, no-store" } });
-    return Response.json(await enqueueIntelSearch(workspace, parsed.data, quoteId ?? undefined), { status: 202, headers: { "Cache-Control": "private, no-store" } });
+    const queued = await enqueueIntelSearch(workspace, parsed.data, quoteId ?? undefined);
+    // Start now in this process; the queued background run takes over if this one stops.
+    after(async () => {
+      initializeDatabaseClaimsContext();
+      setDatabaseWorkspace(workspace);
+      await runIntelJobNow(workspace, queued.id);
+    });
+    return Response.json(queued, { status: 202, headers: { "Cache-Control": "private, no-store" } });
   } catch (error) {
     if (error instanceof IntelInputError) return Response.json({ error: error.message }, { status: 422 });
     if (error instanceof RequestRateLimitError) return Response.json({ error: error.message }, { status: 429, headers: { "Retry-After": String(error.retryAfterSeconds) } });

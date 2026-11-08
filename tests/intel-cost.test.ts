@@ -34,6 +34,13 @@ it("learns per-token prices from tagged usage once enough calls exist", () => {
   expect(pricing.highUsdPerMTok).toBeGreaterThanOrEqual(pricing.typicalUsdPerMTok * 2);
   expect(pricing.samples).toBe(8);
 });
+it("counts each person's evidence questions, matching a live 87 batch search", () => {
+  const batch = { people: Array.from({ length: 12 }, (_, i) => ({ id: `p${i}` })), meetings: [{ text: "我们需要更多的算力".repeat(14_000) }] };
+  const estimate = estimateSearchCost(Array.from({ length: 87 }, () => batch));
+  // The live search billed $0.727 for 87 batches near the 128k token state budget.
+  expect(estimate.expectedUsd).toBeGreaterThan(0.6);
+  expect(estimate.expectedUsd).toBeLessThan(0.85);
+});
 it("estimates time from the parallel batch limit", () => {
-  expect(estimateSearchCost(Array.from({ length: 81 }, () => ({}))).seconds).toBe(30 + Math.ceil(81 / 16) * 4);
+  expect(estimateSearchCost(Array.from({ length: 81 }, () => ({}))).seconds).toBe(20 + Math.ceil(81 / 16) * 4);
 });
