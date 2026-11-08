@@ -44,9 +44,12 @@ export async function loadIntelMeetings(workspace: WorkspaceContext, meetingId?:
     }
   }
   // Bound database pressure while avoiding a waterfall across independent groups.
-  for (let offset = 0; offset < rows.length; offset += 75) {
-    await Promise.all([0, 25, 50].filter(start => offset + start < rows.length)
-      .map(start => loadGroup(rows.slice(offset + start, offset + start + 25))));
+  // Each group is a network round trip per page; six at a time loads a 325
+  // meeting archive in three waves instead of five.
+  const GROUP_SIZE = 25, PARALLEL_GROUPS = 6;
+  for (let offset = 0; offset < rows.length; offset += GROUP_SIZE * PARALLEL_GROUPS) {
+    await Promise.all(Array.from({ length: PARALLEL_GROUPS }, (_, i) => offset + i * GROUP_SIZE).filter(start => start < rows.length)
+      .map(start => loadGroup(rows.slice(start, start + GROUP_SIZE))));
   }
   const byMeeting = new Map<string, typeof segments>();
   for (const segment of segments) {

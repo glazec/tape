@@ -43,17 +43,40 @@ async function actualCost(w: WorkspaceContext, id: string) {
   return Number(row?.micros ?? 0) / 1_000_000;
 }
 
+// The estimate request loads and plans the exact search that usually starts a few
+// seconds later in this process under the same id. Reuse that work instead of
+// loading the archive again. The saved result is still fingerprinted with this
+// archive and compared with a fresh load before it is shown, so anything changed
+// since the estimate is never displayed.
+type PlannedSearch = { at: number; teamId: string; userId: string; corpus: IntelMeeting[]; plan: Awaited<ReturnType<typeof prepareIntelSearch>> };
+const PLAN_REUSE_MS = 120_000;
+const plannedSearches = new Map<string, PlannedSearch>();
+function rememberPlan(id: string, planned: PlannedSearch) {
+  for (const [key, value] of plannedSearches) if (Date.now() - value.at > PLAN_REUSE_MS) plannedSearches.delete(key);
+  // Each entry holds an archive in memory; keep only the newest few.
+  while (plannedSearches.size >= 4) plannedSearches.delete(plannedSearches.keys().next().value!);
+  plannedSearches.set(id, planned);
+}
+function takePlan(w: WorkspaceContext, id: string) {
+  const planned = plannedSearches.get(id);
+  plannedSearches.delete(id);
+  if (!planned || Date.now() - planned.at > PLAN_REUSE_MS || planned.teamId !== w.teamId || planned.userId !== w.userId) return null;
+  return planned;
+}
+
 export async function previewIntelSearch(w: WorkspaceContext, input: SearchInput) {
   const began = Date.now();
   const corpus = await loadIntelMeetings(w);
   const loadMs = Date.now() - began;
-  const { source, batches } = await prepareIntelSearch(input, corpus);
+  const prepared = await prepareIntelSearch(input, corpus);
+  const { source, batches } = prepared;
   console.info("intel.preview.timing", JSON.stringify({ meetings: corpus.length, batches: batches.length, loadMs, planMs: Date.now() - began - loadMs }));
   const estimate = estimateSearchCost(batches, await intelPricing(w));
   const preview: Preview = { estimate };
   if ("url" in source && typeof source.url === "string") preview.linkSource = { text: source.text, url: source.url };
   await db.delete(jobs).where(and(owner(w), eq(jobs.status, "preview"), sql`${jobs.createdAt} < now() - interval '1 hour'`));
   const [row] = await db.insert(jobs).values({ teamId: w.teamId, userId: w.userId, input, status: "preview", result: preview }).returning({ id: jobs.id });
+  rememberPlan(row.id, { at: Date.now(), teamId: w.teamId, userId: w.userId, corpus, plan: prepared });
   return { id: row.id, estimate };
 }
 
@@ -188,9 +211,11 @@ export async function runIntelJob(w: WorkspaceContext, id: string, options: { ta
     const input = searchInputSchema.parse(claimed.input);
     const preview = claimed.result as Preview | null;
     let at = Date.now();
-    const corpus = await loadIntelMeetings(w);
+    const planned = takePlan(w, id);
+    timing.reusedPlan = planned ? 1 : 0;
+    const corpus = planned?.corpus ?? await loadIntelMeetings(w);
     at = mark("loadMs", at);
-    const plan = await prepareIntelSearch(input, corpus, preview?.linkSource);
+    const plan = planned?.plan ?? await prepareIntelSearch(input, corpus, preview?.linkSource);
     at = mark("planMs", at);
     const estimate = preview?.estimate ?? estimateSearchCost(plan.batches, await intelPricing(w));
     const linkSource = preview?.linkSource ?? ("url" in plan.source && typeof plan.source.url === "string" ? { text: plan.source.text, url: plan.source.url } : undefined);

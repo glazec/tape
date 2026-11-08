@@ -130,6 +130,22 @@ describe.skipIf(!enabled)("Intel with real PostgreSQL and caller RLS", () => {
       expect(await readIntelJob(workspace, id)).toMatchObject({ status: "complete", completed: 1, total: 1, result: { matches: [{ title: "Alex", score: 40 }] } });
     } finally { model.mockRestore(); }
   });
+  it("starts a previewed search from the estimate's plan without reloading the archive", async () => {
+    const scorer = await import("@/lib/intel/scoring");
+    const store = await import("@/lib/intel/store");
+    const input = { kind: "content" as const, text: "Inference partners" };
+    const { id } = await previewIntelSearch(workspace, input);
+    await enqueueIntelSearch(workspace, input, id);
+    const load = vi.spyOn(store, "loadIntelMeetings");
+    const model = vi.spyOn(scorer, "scoreIntelBatch").mockImplementation(async (batch) => ({ matches: batch.people.map(p => ({ id: p.id, type: "person" as const, score: 30, relevance: "expressed_interest" as const, reason: "Needs partners", caveat: "", segmentIds: [p.sourceSegmentId], counterEvidenceIds: [] })) }));
+    try {
+      expect(await runIntelJob(workspace, id)).toBe(true);
+      expect(load).not.toHaveBeenCalled();
+      // Reading the result still compares it with a fresh load.
+      expect(await readIntelJob(workspace, id)).toMatchObject({ status: "complete", result: { matches: [{ title: "Alex", score: 30 }] } });
+      expect(load).toHaveBeenCalledTimes(1);
+    } finally { model.mockRestore(); load.mockRestore(); }
+  });
   it("lets exactly one runner claim a search and hands a stalled or failed run to the backup", async () => {
     const scorer = await import("@/lib/intel/scoring");
     const { id } = await enqueueIntelSearch(workspace, { kind: "content", text: "Inference partners" });
