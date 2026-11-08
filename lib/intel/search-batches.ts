@@ -87,7 +87,8 @@ export function buildVerificationContext(batch: ReturnType<typeof buildSearchBat
 // Every recent participant is a candidate. Batch by person, not connected meetings:
 // a recurring host must not pull the entire archive into one oversized request.
 export function buildRecentPeopleBatches(corpus: IntelMeeting[], catalog: IntelCatalog, input: SearchInput,
-  source: { text: string; url?: string }, maxCharacters = 400_000) {
+  source: { text: string; url?: string }, maxCharacters = 400_000,
+  report?: { trimmed: string[]; skipped: string[] }) {
   const selectedPeople = input.kind === "person" ? catalog.people.filter(p => input.ids.includes(p.id)) : [];
   const selectedIntel = input.kind === "intel" ? catalog.intel.filter(i => i.id === input.id) : [];
   const sourceAnchor = selectedIntel[0]?.speakerSegmentId;
@@ -100,21 +101,55 @@ export function buildRecentPeopleBatches(corpus: IntelMeeting[], catalog: IntelC
     // every candidate can be evaluated against the actual conversation.
     return { id: m.id, title: m.title, date: m.date, notes, followup, segments: m.segments };
   });
+  type Context = (typeof context)[number];
+  // The selected input travels in full with every batch.
+  const required = new Set(selectedPeople.flatMap(p => p.meetingIds));
+  for (const item of selectedIntel) for (const e of item.evidence) required.add(e.meetingId);
+  const size = (value: unknown) => JSON.stringify(value).length;
+  function assemble(people: typeof candidates, meetings: Context[]) {
+    return { input, source, people, selectedPeople, intel: selectedIntel, meetings };
+  }
   function batch(people: typeof candidates) {
-    const ids = new Set([...people, ...selectedPeople].flatMap(p => p.meetingIds));
-    for (const item of selectedIntel) for (const e of item.evidence) ids.add(e.meetingId);
-    return { input, source, people,
-      selectedPeople, intel: selectedIntel, meetings: context.filter(m => ids.has(m.id)) };
+    const ids = new Set([...people.flatMap(p => p.meetingIds), ...required]);
+    return assemble(people, context.filter(m => ids.has(m.id)));
+  }
+  if (size(batch([])) > maxCharacters)
+    throw new IntelInputError("This person's meeting history is too large for one search. Try another person or idea.");
+  // A participant in many long meetings, such as a recurring host, cannot fit with
+  // full transcripts. Keep their own turns with one neighbouring turn on each side,
+  // adding meetings newest first and stopping at the first that does not fit, so a
+  // recent reversal is never dropped while an older request survives.
+  function focusedBatch(person: (typeof candidates)[number]) {
+    const own = new Set(person.segmentIds);
+    const focused = new Map<string, Context>();
+    for (const m of context) {
+      if (!person.meetingIds.includes(m.id) || required.has(m.id)) continue;
+      const keep = m.segments.map(s => own.has(s.id));
+      const segments = m.segments.filter((_, i) => keep[i] || keep[i - 1] || keep[i + 1]);
+      if (segments.length) focused.set(m.id, { ...m, segments });
+    }
+    const build = (kept: Set<string>) => assemble([person],
+      context.flatMap(m => required.has(m.id) ? [m] : kept.has(m.id) ? [focused.get(m.id)!] : []));
+    const kept = new Set<string>();
+    for (const m of [...focused.values()].sort((a, b) => Date.parse(b.date) - Date.parse(a.date))) {
+      kept.add(m.id);
+      if (size(build(kept)) > maxCharacters) { kept.delete(m.id); break; }
+    }
+    return kept.size || person.meetingIds.some(id => required.has(id)) ? build(kept) : null;
   }
   const batches: ReturnType<typeof batch>[] = [];
   let people: typeof candidates = [];
   for (const person of candidates) {
-    if (people.length && (people.length === 12 || JSON.stringify(batch([...people, person])).length > maxCharacters)) {
+    if (size(batch([person])) > maxCharacters) {
+      const focused = focusedBatch(person);
+      if (focused) { batches.push(focused); report?.trimmed.push(person.id); }
+      else report?.skipped.push(person.id);
+      continue;
+    }
+    if (people.length && (people.length === 12 || size(batch([...people, person])) > maxCharacters)) {
       batches.push(batch(people)); people = [];
     }
     people.push(person);
-    if (JSON.stringify(batch(people)).length > maxCharacters)
-      throw new IntelInputError("This person's meeting history is too large for one search. Try another person or idea.");
   }
   if (people.length) batches.push(batch(people));
   return batches;

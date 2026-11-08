@@ -80,3 +80,72 @@ it("keeps all speakers when verifying a mentioned contact", async () => {
  const focused = buildVerificationContext(batch, [{ id: "contact", type: "person", segmentIds: ["a-s"], counterEvidenceIds: [] }]);
  expect(focused.meetings).toEqual(batch.meetings);
 });
+
+function longMeeting(id: string, date: string, speaker: string, own: string, filler = 40): IntelMeeting {
+  return { id, title: id, date, startedAt: date, status: "ready", transcriptJobStatus: null, aiIntel: null, aiFollowup: null,
+    segments: [
+      ...Array.from({ length: filler }, (_, i) => ({ id: `${id}-other-${i}`, startMs: i, speaker: "Other", text: "Unrelated discussion ".repeat(20) })),
+      { id: `${id}-before`, startMs: filler, speaker: "Other", text: "Do you still need capacity?" },
+      { id: `${id}-own`, startMs: filler + 1, speaker, text: own },
+      { id: `${id}-after`, startMs: filler + 2, speaker: "Other", text: "Understood." },
+    ] };
+}
+const recentPeople = async () => (await import("@/lib/intel/search-batches")).buildRecentPeopleBatches;
+
+it("focuses one oversized candidate on their own statements instead of failing the search", async () => {
+  const build = await recentPeople();
+  const busy = ["2026-09-01", "2026-10-01", "2026-11-01"].map((d, i) => longMeeting(`busy${i}`, `${d}T12:00:00Z`, "host@example.test", i === 2 ? "We no longer need GPUs." : "We need GPUs."));
+  const corpus = [...busy, meeting("maya"), meeting("ben")];
+  const report = { trimmed: [] as string[], skipped: [] as string[] };
+  const batches = build(corpus, buildCatalog(corpus), input, source, 6000, report);
+  expect(batches.every(b => JSON.stringify(b).length <= 6000)).toBe(true);
+  const names = batches.flatMap(b => b.people.map(p => p.name));
+  expect(names).toEqual(expect.arrayContaining(["ben", "host@example.test", "maya"]));
+  const host = batches.find(b => b.people.some(p => p.name === "host@example.test"))!;
+  expect(host.people).toHaveLength(1);
+  const ids = host.meetings.flatMap(m => m.segments.map(s => s.id));
+  expect(ids).toContain("busy2-own");
+  expect(ids).toContain("busy2-before");
+  expect(ids).toContain("busy2-after");
+  expect(ids).not.toContain("busy2-other-0");
+  const hostId = host.people[0].id;
+  expect(report.trimmed).toContain(hostId);
+  expect(report.skipped).not.toContain(hostId);
+});
+
+it("keeps the most recent meetings when a focused history is still too large", async () => {
+  const build = await recentPeople();
+  const busy = Array.from({ length: 6 }, (_, i) => longMeeting(`m${i}`, `2026-10-0${i + 1}T12:00:00Z`, "host@example.test", `Statement ${i} `.repeat(60), 2));
+  const report = { trimmed: [] as string[], skipped: [] as string[] };
+  const batches = build(busy, buildCatalog(busy), input, source, 4500, report);
+  expect(batches.every(b => JSON.stringify(b).length <= 4500)).toBe(true);
+  const host = batches.find(b => b.people.some(p => p.name === "host@example.test"))!;
+  expect(host.people).toHaveLength(1);
+  expect(report.trimmed).toContain(host.people[0].id);
+  const kept = host.meetings.map(m => m.id);
+  expect(kept.length).toBeLessThan(6);
+  expect(kept).toContain("m5");
+  expect(kept).not.toContain("m0");
+  expect(kept).toEqual([...kept].sort());
+});
+
+it("skips a candidate whose single newest statement cannot fit and still searches everyone else", async () => {
+  const build = await recentPeople();
+  const huge = longMeeting("huge", "2026-10-01T12:00:00Z", "host@example.test", "Long statement ".repeat(800), 1);
+  const corpus = [huge, meeting("maya")];
+  const report = { trimmed: [] as string[], skipped: [] as string[] };
+  const batches = build(corpus, buildCatalog(corpus), input, source, 4000, report);
+  const catalog = buildCatalog(corpus);
+  expect(batches.flatMap(b => b.people.map(p => p.name))).toContain("maya");
+  expect(batches.flatMap(b => b.people.map(p => p.name))).not.toContain("host@example.test");
+  expect(report.skipped).toContain(catalog.people.find(p => p.name === "host@example.test")!.id);
+});
+
+it("still refuses when the selected input person alone is too large", async () => {
+  const build = await recentPeople();
+  const huge = longMeeting("huge", "2026-10-01T12:00:00Z", "host@example.test", "Long statement ".repeat(800), 1);
+  const corpus = [huge, meeting("maya")];
+  const catalog = buildCatalog(corpus);
+  const host = catalog.people.find(p => p.name === "host@example.test")!;
+  expect(() => build(corpus, catalog, { kind: "person", ids: [host.id] }, source, 4000)).toThrow("history is too large");
+});
