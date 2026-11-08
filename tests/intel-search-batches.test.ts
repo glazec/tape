@@ -2,6 +2,7 @@ import { expect, it } from "vitest";
 import { buildSearchBatches } from "@/lib/intel/search-batches";
 import { buildCatalog, browserCatalog } from "@/lib/intel/provenance";
 import type { IntelMeeting } from "@/lib/intel/types";
+import { estimateTokens } from "@/lib/intel/tokens";
 function meeting(id: string, speaker = id): IntelMeeting {
   return { id, title: id, date: new Date().toISOString(), startedAt: null, status: "ready", transcriptJobStatus: null,
     aiIntel: null, aiFollowup: null, segments: [{ id: `${id}-s`, startMs: 0, speaker, text: "Evidence ".repeat(50) }] };
@@ -98,7 +99,7 @@ it("focuses one oversized candidate on their own statements instead of failing t
   const corpus = [...busy, meeting("maya"), meeting("ben")];
   const report = { trimmed: [] as string[], skipped: [] as string[] };
   const batches = build(corpus, buildCatalog(corpus), input, source, 6000, report);
-  expect(batches.every(b => JSON.stringify(b).length <= 6000)).toBe(true);
+  expect(batches.every(b => estimateTokens(JSON.stringify(b)) <= 6000)).toBe(true);
   const names = batches.flatMap(b => b.people.map(p => p.name));
   expect(names).toEqual(expect.arrayContaining(["ben", "host@example.test", "maya"]));
   const host = batches.find(b => b.people.some(p => p.name === "host@example.test"))!;
@@ -117,8 +118,8 @@ it("keeps the most recent meetings when a focused history is still too large", a
   const build = await recentPeople();
   const busy = Array.from({ length: 6 }, (_, i) => longMeeting(`m${i}`, `2026-10-0${i + 1}T12:00:00Z`, "host@example.test", `Statement ${i} `.repeat(60), 2));
   const report = { trimmed: [] as string[], skipped: [] as string[] };
-  const batches = build(busy, buildCatalog(busy), input, source, 4500, report);
-  expect(batches.every(b => JSON.stringify(b).length <= 4500)).toBe(true);
+  const batches = build(busy, buildCatalog(busy), input, source, 1500, report);
+  expect(batches.every(b => estimateTokens(JSON.stringify(b)) <= 1500)).toBe(true);
   const host = batches.find(b => b.people.some(p => p.name === "host@example.test"))!;
   expect(host.people).toHaveLength(1);
   expect(report.trimmed).toContain(host.people[0].id);
@@ -148,4 +149,14 @@ it("still refuses when the selected input person alone is too large", async () =
   const catalog = buildCatalog(corpus);
   const host = catalog.people.find(p => p.name === "host@example.test")!;
   expect(() => build(corpus, catalog, { kind: "person", ids: [host.id] }, source, 4000)).toThrow("history is too large");
+});
+
+it("sizes batches by tokens so Chinese transcripts stay inside Jev's limit", async () => {
+  const build = await recentPeople();
+  const zh = (id: string, speaker: string) => ({ ...meeting(id, speaker), segments: [{ id: `${id}-s`, startMs: 0, speaker, text: "我们需要更多的算力和数据中心".repeat(300) }] });
+  const corpus = [zh("a", "alex"), zh("b", "maya"), zh("c", "ben")];
+  const batches = build(corpus, buildCatalog(corpus), input, source, 9000);
+  expect(batches.every(b => estimateTokens(JSON.stringify(b)) <= 9000)).toBe(true);
+  expect(batches.length).toBeGreaterThan(1);
+  expect(JSON.stringify(batches[0]).length).toBeLessThan(9000 * 1.2);
 });

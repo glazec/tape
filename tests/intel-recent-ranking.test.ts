@@ -108,3 +108,26 @@ it("scores batches in parallel up to the per search limit", async () => {
  expect(mocks.scoreIntelBatch).toHaveBeenCalledTimes(20);
  expect(peak).toBe(8);
 });
+it("splits a batch Jev refuses for size and still ranks everyone", async () => {
+ const { JevRequestTooLargeError } = await import("@/lib/intel/tokens");
+ const corpus = Array.from({length: 8}, (_, i) => meeting(`p${i}`));
+ mocks.loadIntelMeetings.mockResolvedValue(corpus);
+ mocks.scoreIntelBatch.mockImplementation(async call => {
+  if (call.people.length > 2) throw new JevRequestTooLargeError("too large");
+  expect(call.meetings.length).toBe(call.people.length);
+  return { matches: call.people.map((p: {id:string;sourceSegmentId:string}) => ({id:p.id,type:"person",score:0,relevance:"related_focus",reason:"No clear connection",caveat:"",segmentIds:[p.sourceSegmentId],counterEvidenceIds:[]})) };
+ });
+ const result = await searchIntel({teamId:"t",userId:"u",domain:"example.test"},{kind:"content",text:"GPU infrastructure"},corpus);
+ expect(result.matches).toHaveLength(8);
+});
+it("skips one person who cannot fit any request instead of failing the search", async () => {
+ const { JevRequestTooLargeError } = await import("@/lib/intel/tokens");
+ const corpus = [meeting("huge"), meeting("maya")];
+ mocks.loadIntelMeetings.mockResolvedValue(corpus);
+ mocks.scoreIntelBatch.mockImplementation(async call => {
+  if (call.people.some((p: {name:string}) => p.name === "huge")) throw new JevRequestTooLargeError("too large");
+  return { matches: call.people.map((p: {id:string;sourceSegmentId:string}) => ({id:p.id,type:"person",score:0,relevance:"related_focus",reason:"No clear connection",caveat:"",segmentIds:[p.sourceSegmentId],counterEvidenceIds:[]})) };
+ });
+ const result = await searchIntel({teamId:"t",userId:"u",domain:"example.test"},{kind:"content",text:"GPU infrastructure"},corpus);
+ expect(result.matches.map(m => m.title)).toEqual(["maya"]);
+});

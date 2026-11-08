@@ -5,6 +5,7 @@ import { INTEL_SEARCH_PARALLEL_BATCHES } from "./limits";
 import type { WorkspaceContext } from "@/lib/workspace";
 import { assertWorkspaceHasProviderCredit } from "@/lib/provider-credit";
 import { scoreIntelBatch } from "./scoring";
+import { JevRequestTooLargeError } from "./tokens";
 import { buildCatalog, buildMatchingContext, validateMatches } from "./provenance";
 import { loadIntelMeetings, resolveInputLabel } from "./store";
 import { IntelInputError, resolveIntelContent } from "./content";
@@ -65,6 +66,40 @@ export function corpusSnapshot(corpus: IntelMeeting[]) {
   return createHash("sha256").update(JSON.stringify([catalog.people, buildMatchingContext(corpus, catalog.people), corpus.map(m => [m.id, m.notes ?? null, m.aiFollowup])])).digest("hex");
 }
 
+// Keep only the meetings these people, and the selected input, need.
+function narrowBatch(batch: Batch, people: Batch["people"]): Batch {
+  const ids = new Set([...people, ...batch.selectedPeople].flatMap(p => p.meetingIds));
+  for (const item of batch.intel) for (const e of item.evidence) ids.add(e.meetingId);
+  return { ...batch, people, meetings: batch.meetings.filter(m => ids.has(m.id)) };
+}
+
+// Batches are sized from an estimate. If Jev still refuses one for its size,
+// score halves; a single person keeps their newest meetings. A person who cannot
+// fit even then is skipped and reported, so one oversized request never fails
+// the whole search.
+async function scoreWithinLimits(batch: Batch, scope: UsageScope): Promise<{ matches: Awaited<ReturnType<typeof scoreIntelBatch>>["matches"]; skipped: string[] }> {
+  try { return { ...(await scoreIntelBatch(batch, scope)), skipped: [] }; }
+  catch (error) {
+    if (!(error instanceof JevRequestTooLargeError)) throw error;
+    if (batch.people.length > 1) {
+      const half = Math.ceil(batch.people.length / 2);
+      const parts = await Promise.all([batch.people.slice(0, half), batch.people.slice(half)]
+        .map(people => scoreWithinLimits(narrowBatch(batch, people), scope)));
+      return { matches: parts.flatMap(p => p.matches), skipped: parts.flatMap(p => p.skipped) };
+    }
+    const required = new Set(narrowBatch(batch, []).meetings.map(m => m.id));
+    const own = batch.meetings.filter(m => !required.has(m.id)).sort((a, b) => Date.parse(b.date) - Date.parse(a.date));
+    if (own.length > 1) {
+      const keep = new Set(own.slice(0, Math.ceil(own.length / 2)).map(m => m.id));
+      return scoreWithinLimits({ ...batch, meetings: batch.meetings.filter(m => required.has(m.id) || keep.has(m.id)) }, scope);
+    }
+    const { emitTelemetryLog } = await import("@/lib/telemetry/server");
+    emitTelemetryLog({ eventName: "intel.search.candidate_skipped", severity: "WARN",
+      error: new Error("Intel candidate exceeds the Jev request limit"), attributes: { "operation.name": "matching" } });
+    return { matches: [], skipped: batch.people.map(p => p.id) };
+  }
+}
+
 export async function matchBatch(input: SearchInput, batch: Batch, corpus: IntelMeeting[], scope: UsageScope): Promise<Match[]> {
   const matches: Match[] = [];
   let remaining = batch.people;
@@ -72,13 +107,13 @@ export async function matchBatch(input: SearchInput, batch: Batch, corpus: Intel
   const batchCorpus = corpus.filter(m => batchMeetings.has(m.id));
   for (let attempt = 0; attempt < 2 && remaining.length; attempt++) {
     const expected = new Set(remaining.map(p => p.id));
-    const parsed = await searchStage("matching", () => scoreIntelBatch({ ...batch, people: remaining }, scope));
+    const parsed = await searchStage("matching", () => scoreWithinLimits({ ...batch, people: remaining }, scope));
     if (new Set(parsed.matches.map(m => m.id)).size !== parsed.matches.length
       || parsed.matches.some(m => m.type !== "person" || !expected.has(m.id)))
       throw new Error("Invalid candidate scores. Please retry the search.");
-    matches.push(...validateMatches(parsed, input, batchCorpus));
+    matches.push(...validateMatches({ matches: parsed.matches }, input, batchCorpus));
     const scored = new Set(matches.map(m => m.id));
-    remaining = remaining.filter(p => !scored.has(p.id));
+    remaining = remaining.filter(p => !scored.has(p.id) && !parsed.skipped.includes(p.id));
   }
   if (remaining.length) throw new Error("Incomplete candidate scores. Please retry the search.");
   return matches;

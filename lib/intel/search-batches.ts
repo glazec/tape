@@ -2,6 +2,7 @@ import { IntelInputError } from "./content";
 import { getCurrentMeetingFollowup } from "@/lib/meeting-followup-source";
 import { buildMatchingContext } from "./provenance";
 import type { IntelCatalog, IntelMeeting, SearchInput } from "./types";
+import { estimateTokens, JEV_STATE_TOKENS } from "./tokens";
 
 // Keep every meeting for an identity together so a later reversal is available
 // both to matching and to the independent verifier.
@@ -86,8 +87,10 @@ export function buildVerificationContext(batch: ReturnType<typeof buildSearchBat
 
 // Every recent participant is a candidate. Batch by person, not connected meetings:
 // a recurring host must not pull the entire archive into one oversized request.
+// Batches are sized in estimated Jev tokens, not characters: Chinese transcripts
+// cost about one token per character.
 export function buildRecentPeopleBatches(corpus: IntelMeeting[], catalog: IntelCatalog, input: SearchInput,
-  source: { text: string; url?: string }, maxCharacters = 400_000,
+  source: { text: string; url?: string }, maxTokens = JEV_STATE_TOKENS,
   report?: { trimmed: string[]; skipped: string[] }) {
   const selectedPeople = input.kind === "person" ? catalog.people.filter(p => input.ids.includes(p.id)) : [];
   const selectedIntel = input.kind === "intel" ? catalog.intel.filter(i => i.id === input.id) : [];
@@ -105,7 +108,14 @@ export function buildRecentPeopleBatches(corpus: IntelMeeting[], catalog: IntelC
   // The selected input travels in full with every batch.
   const required = new Set(selectedPeople.flatMap(p => p.meetingIds));
   for (const item of selectedIntel) for (const e of item.evidence) required.add(e.meetingId);
-  const size = (value: unknown) => JSON.stringify(value).length;
+  const meetingTokens = new WeakMap<Context, number>();
+  const tokensOf = (m: Context) => {
+    let n = meetingTokens.get(m);
+    if (n === undefined) { n = estimateTokens(JSON.stringify(m)); meetingTokens.set(m, n); }
+    return n;
+  };
+  const size = (value: ReturnType<typeof assemble>) =>
+    estimateTokens(JSON.stringify({ ...value, meetings: [] })) + value.meetings.reduce((n, m) => n + tokensOf(m), 0);
   function assemble(people: typeof candidates, meetings: Context[]) {
     return { input, source, people, selectedPeople, intel: selectedIntel, meetings };
   }
@@ -113,7 +123,7 @@ export function buildRecentPeopleBatches(corpus: IntelMeeting[], catalog: IntelC
     const ids = new Set([...people.flatMap(p => p.meetingIds), ...required]);
     return assemble(people, context.filter(m => ids.has(m.id)));
   }
-  if (size(batch([])) > maxCharacters)
+  if (size(batch([])) > maxTokens)
     throw new IntelInputError("This person's meeting history is too large for one search. Try another person or idea.");
   // A participant in many long meetings, such as a recurring host, cannot fit with
   // full transcripts. Keep their own turns with one neighbouring turn on each side,
@@ -133,20 +143,20 @@ export function buildRecentPeopleBatches(corpus: IntelMeeting[], catalog: IntelC
     const kept = new Set<string>();
     for (const m of [...focused.values()].sort((a, b) => Date.parse(b.date) - Date.parse(a.date))) {
       kept.add(m.id);
-      if (size(build(kept)) > maxCharacters) { kept.delete(m.id); break; }
+      if (size(build(kept)) > maxTokens) { kept.delete(m.id); break; }
     }
     return kept.size || person.meetingIds.some(id => required.has(id)) ? build(kept) : null;
   }
   const batches: ReturnType<typeof batch>[] = [];
   let people: typeof candidates = [];
   for (const person of candidates) {
-    if (size(batch([person])) > maxCharacters) {
+    if (size(batch([person])) > maxTokens) {
       const focused = focusedBatch(person);
       if (focused) { batches.push(focused); report?.trimmed.push(person.id); }
       else report?.skipped.push(person.id);
       continue;
     }
-    if (people.length && (people.length === 12 || size(batch([...people, person])) > maxCharacters)) {
+    if (people.length && (people.length === 12 || size(batch([...people, person])) > maxTokens)) {
       batches.push(batch(people)); people = [];
     }
     people.push(person);

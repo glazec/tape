@@ -67,3 +67,26 @@ it("limits evidence choices to identity membership when display names match",asy
  expect(Object.keys(body.questions.p0_evidence.criteria)).toEqual(["s"]);
  expect(Object.keys(body.questions.p0_counter.criteria)).toEqual(["none","s"]);
 });
+it("offers at most sixty newest substantive passages so Jev's option and token limits hold", async () => {
+ const segments = Array.from({ length: 300 }, (_, i) => ({ id: `s${i}`, speaker: "Alex", text: i % 2 ? "Yes." : `We need more GPU capacity, update ${i}`, startMs: i }));
+ const big = { ...batch, people: [{ ...batch.people[0], segmentIds: segments.map(s => s.id) }], meetings: [{ ...batch.meetings[0], segments }] };
+ const value = response(); value.answers.p0_evidence.choice = "s298";
+ fetchDecision.mockResolvedValue(Response.json(value));
+ await scoreIntelBatch(big, { meetingId: "m" });
+ const body = JSON.parse(fetchDecision.mock.calls[0][1].body);
+ const keys = Object.keys(body.questions.p0_evidence.criteria);
+ expect(keys).toHaveLength(60);
+ expect(keys[0]).toBe("s298");
+ expect(keys.every(k => Number(k.slice(1)) % 2 === 0)).toBe(true);
+ expect(Object.keys(body.questions.p0_counter.criteria)).toHaveLength(61);
+ expect(body.questions.p0_evidence.criteria.s298).toBe("Alex, 2026-11-06");
+});
+it("types Jev size refusals so the caller can split the batch", async () => {
+ const { JevRequestTooLargeError } = await import("@/lib/intel/tokens");
+ fetchDecision.mockResolvedValue(new Response(JSON.stringify({ detail: { error_type: "max_tokens_exceeded" } }), { status: 400 }));
+ await expect(scoreIntelBatch(batch, { meetingId: "m" })).rejects.toBeInstanceOf(JevRequestTooLargeError);
+ fetchDecision.mockResolvedValue(new Response(JSON.stringify({ detail: [{ type: "too_long" }] }), { status: 422 }));
+ await expect(scoreIntelBatch(batch, { meetingId: "m" })).rejects.toBeInstanceOf(JevRequestTooLargeError);
+ fetchDecision.mockResolvedValue(new Response("private provider detail", { status: 400 }));
+ await expect(scoreIntelBatch(batch, { meetingId: "m" })).rejects.toThrow("Jev scoring failed (HTTP 400)");
+});
