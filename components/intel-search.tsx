@@ -58,7 +58,23 @@ function Stage({ state, children }: { state: "done" | "active" | "waiting"; chil
     <span className="min-w-0">{children}</span>
   </li>;
 }
-export function IntelSearch() {
+// History merge rules. A fresh list replaces cached rows; rows created in this
+// session survive until the server returns them. The fast typed-only list keeps
+// cached selections of people or intel until the full catalog labels them again.
+function mergeHistory(current: HistoryEntry[], incoming: HistoryEntry[], session: Set<string>, typedOnly: boolean) {
+  const keep = current.filter(h => !incoming.some(i => i.id === h.id) && (session.has(h.id) || (typedOnly && h.input.kind !== "content")));
+  return [...incoming, ...keep].sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 50);
+}
+function readHistoryCache(key?: string): HistoryEntry[] {
+  if (!key) return [];
+  try { const value = JSON.parse(localStorage.getItem(key) ?? "[]"); return Array.isArray(value) ? value : []; } catch { return []; }
+}
+function writeHistoryCache(key: string | undefined, history: HistoryEntry[] | null) {
+  if (!key) return;
+  try { if (history) localStorage.setItem(key, JSON.stringify(history.slice(0, 50))); else localStorage.removeItem(key); } catch { /* storage unavailable */ }
+}
+
+export function IntelSearch({ historyCacheKey }: { historyCacheKey?: string } = {}) {
   const [catalog, setCatalog] = useState(emptyCatalog);
   const [catalogState, setCatalogState] = useState("loading");
   const [catalogAttempt, setCatalogAttempt] = useState(0);
@@ -81,6 +97,25 @@ export function IntelSearch() {
   const [identityIds, setIdentityIds] = useState<string[]>([]);
   const [identityQuery, setIdentityQuery] = useState("");
   const [historyOpen, setHistoryOpen] = useState(false);
+  const sessionHistory = useRef(new Set<string>());
+  const historyCacheReady = useRef(false);
+  // Show the cached list at once, then refresh typed searches without loading transcripts.
+  useEffect(() => {
+    const cached = readHistoryCache(historyCacheKey);
+    // Browser storage is read after mount so server and client render the same markup.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (cached.length) setHistory(current => current.length ? current : cached);
+    historyCacheReady.current = true;
+    const abort = new AbortController();
+    fetch("/api/intel/history", { signal: abort.signal, cache: "no-store" })
+      .then(response => response.ok ? response.json() : null)
+      .then(data => { if (data?.history && !abort.signal.aborted) setHistory(current => mergeHistory(current, data.history, sessionHistory.current, true)); })
+      .catch(() => undefined);
+    return () => abort.abort();
+  }, [historyCacheKey]);
+  useEffect(() => { if (historyCacheReady.current) writeHistoryCache(historyCacheKey, history); }, [history, historyCacheKey]);
+  // Repeated searches for the same input show once, newest first.
+  const visibleHistory = useMemo(() => history.filter((h, i, all) => all.findIndex(x => JSON.stringify(x.input) === JSON.stringify(h.input)) === i), [history]);
   const [confirmStop, setConfirmStop] = useState(false);
   const [now, setNow] = useState(() => Date.now());
   const sequence = useRef(0);
@@ -108,7 +143,7 @@ export function IntelSearch() {
         if (!response.ok) throw new Error(data.error || "Could not load starting points.");
         if (abort.signal.aborted) return;
         if (revision === catalogRevision.current) setCatalog(data.catalog);
-        setHistory(current => [...current, ...data.history.filter((h: HistoryEntry) => !current.some(c => c.id === h.id))].slice(0, 50));
+        setHistory(current => mergeHistory(current, data.history ?? [], sessionHistory.current, false));
         setCatalogState("ready");
       } catch (e) {
         if (!abort.signal.aborted) setCatalogState(e instanceof Error ? e.message : "Could not load starting points.");
@@ -213,6 +248,7 @@ export function IntelSearch() {
       if (requestId !== sequence.current) return;
       setJob({ id: data.id, estimate: accepted.estimate, input, status: "queued", completed: 0, total: 0, createdAt: new Date().toISOString(), partial: [] });
       setWatch(data.id); setActiveHistory(data.id);
+      sessionHistory.current.add(data.id);
       setHistory(current => [{ id: data.id, savedJob: true, input, label: labelFor(input), createdAt: new Date().toISOString() }, ...current.filter(h => h.id !== data.id)].slice(0,50));
     } catch (caught) {
       if (requestId === sequence.current && !abort.signal.aborted) {
@@ -230,20 +266,24 @@ export function IntelSearch() {
   const filteredIntel = useMemo(() => catalog.intel.filter(i => `${i.text} ${i.speaker}`.toLowerCase().includes(filterText)).sort((a,b) => sort === "important" ? Number(b.importance === "high") - Number(a.importance === "high") || b.date.localeCompare(a.date) : b.date.localeCompare(a.date)), [catalog.intel, filterText, sort]);
   const sameName = person ? catalog.people.filter(p => p.kind === "participant" && (p.name.toLowerCase() === person.name.toLowerCase() || (identityQuery.trim() && `${p.name} ${p.detail}`.toLowerCase().includes(identityQuery.toLowerCase())))) : [];
   return <div className="flex min-h-[calc(100dvh-9rem)] flex-col md:flex-row md:gap-10 lg:gap-14">
-    <aside aria-label="Search history" className="shrink-0 md:w-52 md:pr-6">
-      <div className="mb-5 flex items-center justify-between">
-        <span className="text-xs font-medium tracking-wide text-muted-foreground">SEARCH HISTORY</span>
+    <aside aria-label="Search history" className="shrink-0 border-b border-border pb-2 md:w-52 md:border-0 md:pb-0 md:pr-6">
+      <div className="flex items-center gap-1 md:mb-5">
+        <span className="hidden flex-1 text-xs font-medium tracking-wide text-muted-foreground md:block">SEARCH HISTORY</span>
+        <button type="button" onClick={() => setHistoryOpen(!historyOpen)} aria-label="Toggle search history" aria-expanded={historyOpen}
+          className="flex min-h-11 flex-1 items-center gap-2 rounded-lg text-left text-xs font-medium tracking-wide text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring md:hidden">
+          <span>SEARCH HISTORY{visibleHistory.length ? ` · ${visibleHistory.length}` : ""}</span>
+          <ChevronDown aria-hidden="true" className={cn("size-4 transition-transform motion-reduce:transition-none", historyOpen && "rotate-180")} />
+        </button>
         <Button variant="ghost" size="icon" onClick={reset} aria-label="New search" className="size-11"><Plus className="size-4" /></Button>
-        <Button variant="ghost" size="icon" onClick={() => setHistoryOpen(!historyOpen)} aria-label="Toggle search history" aria-expanded={historyOpen} className="size-11 md:hidden"><ChevronDown className={cn("size-4 transition-transform motion-reduce:transition-none", historyOpen && "rotate-180")} /></Button>
       </div>
-      <div className={cn("space-y-1 md:block", !historyOpen && "hidden")}>
-        {history.length ? history.map(entry => <button type="button" key={entry.id} onClick={() => void run(entry.input, entry.id)} aria-current={activeHistory === entry.id ? "true" : undefined}
+      <div className={cn("max-h-[45dvh] space-y-1 overflow-y-auto overscroll-contain pb-2 md:block md:max-h-none md:overflow-visible md:pb-0", !historyOpen && "hidden")}>
+        {visibleHistory.length ? visibleHistory.map(entry => <button type="button" key={entry.id} onClick={() => void run(entry.input, entry.id)} aria-current={activeHistory === entry.id ? "true" : undefined}
           className={cn("flex w-full items-start gap-2 rounded-lg px-2 py-3 text-left text-sm leading-5 transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring", activeHistory === entry.id && "bg-muted")}>
           <Clock3 aria-hidden="true" className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" /><span className="line-clamp-2 break-words">{entry.label}</span>
         </button>) : <p className="px-2 text-sm leading-6 text-muted-foreground">Your searches will appear here.</p>}
-        {history.length > 0 && <button type="button" className="mt-5 px-2 py-2 text-xs text-muted-foreground underline underline-offset-4" onClick={async () => {
+        {visibleHistory.length > 0 && <button type="button" className="mt-3 min-h-11 px-2 text-xs text-muted-foreground underline underline-offset-4 md:mt-5" onClick={async () => {
           setHistoryError("");
-          try { const r = await fetch("/api/intel/history", { method: "DELETE" }); if (!r.ok) throw new Error(); setHistory([]); reset(); }
+          try { const r = await fetch("/api/intel/history", { method: "DELETE" }); if (!r.ok) throw new Error(); setHistory([]); writeHistoryCache(historyCacheKey, null); reset(); }
           catch { setHistoryError("Could not clear history. Try clearing it again."); }
         }}>Clear history</button>}
         {historyError && <p role="alert" className="px-2 text-xs leading-5 text-muted-foreground">{historyError}</p>}
