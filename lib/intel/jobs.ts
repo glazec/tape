@@ -10,6 +10,7 @@ import { browserCatalog, buildCatalog, buildMatchingContext } from "./provenance
 import { estimateSearchCost, pricingFromUsage, type SearchEstimate } from "./cost";
 import { assertWorkspaceHasProviderCredit } from "@/lib/provider-credit";
 import { corpusSnapshot, finalizeIntelSearch, matchBatch, prepareIntelSearch, searchIntel } from "./search";
+import { INTEL_SEARCH_PARALLEL_BATCHES } from "./limits";
 import { loadIntelMeetings } from "./store";
 import { searchInputSchema, type IntelMeeting, type Match, type SearchInput, type SearchResult } from "./types";
 
@@ -149,52 +150,59 @@ export async function failIntelJob(w: WorkspaceContext, id: string, error: unkno
   return !!message;
 }
 
-export async function planIntelJob(w: WorkspaceContext, id: string) {
+// The whole search in one pass: load and plan the archive once, score batches in
+// parallel while publishing each batch's candidates, then recheck access against
+// one fresh load. Scoring calls take seconds, so per-batch durable steps that each
+// reloaded the archive cost far more than the scoring itself.
+export async function runIntelJob(w: WorkspaceContext, id: string) {
   const { scope, row, active } = await stepScope(w, id);
-  if (!active) return null;
+  if (!active) return;
   const input = searchInputSchema.parse(row!.input);
   const preview = row!.result as Preview | null;
   const { corpus, plan } = await loadPlan(w, input, preview);
   const estimate = preview?.estimate ?? estimateSearchCost(plan.batches, await intelPricing(w));
   const linkSource = preview?.linkSource ?? ("url" in plan.source && typeof plan.source.url === "string" ? { text: plan.source.text, url: plan.source.url } : undefined);
-  const next: Preview = { estimate, linkSource, startedAt: new Date().toISOString(), partial: [], batchesDone: 0 };
-  await db.update(jobs).set({ status: "running", completed: 0, total: plan.batches.length, result: next }).where(scope);
+  const started: Preview = { estimate, linkSource, startedAt: new Date().toISOString(), partial: [], batchesDone: 0 };
+  await db.update(jobs).set({ status: "running", completed: 0, total: plan.batches.length, result: started }).where(scope);
   if (plan.batches.length) await assertWorkspaceHasProviderCredit(w);
-  return { batches: plan.batches.map(b => b.meetings.map(m => m.id)), snapshot: corpusSnapshot(corpus), meetingId: corpus[0]?.id ?? "" };
+  const snapshot = corpusSnapshot(corpus);
+  const scoreScope = { meetingId: corpus[0]?.id ?? "", searchId: id };
+  const candidates: Match[][] = new Array(plan.batches.length);
+  let nextBatch = 0;
+  let stopped = false;
+  async function worker() {
+    while (!stopped && nextBatch < plan.batches.length) {
+      const index = nextBatch++;
+      const matched = await matchBatch(input, plan.batches[index], corpus, scoreScope);
+      candidates[index] = matched;
+      // Publish scored candidates as each batch finishes. No acceptance threshold.
+      const [still] = await db.update(jobs).set({
+        completed: sql`least(${jobs.completed} + 1, ${jobs.total})`,
+        result: sql`jsonb_set(jsonb_set(coalesce(${jobs.result}, '{}'::jsonb), '{partial}', coalesce(${jobs.result}->'partial', '[]'::jsonb) || ${JSON.stringify(matched)}::jsonb), '{batchesDone}', to_jsonb(coalesce((${jobs.result}->>'batchesDone')::int, 0) + 1))`,
+      }).where(and(scope, eq(jobs.status, "running"))).returning({ id: jobs.id });
+      // Stopped or failed elsewhere: make no further provider calls.
+      if (!still) stopped = true;
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(INTEL_SEARCH_PARALLEL_BATCHES, plan.batches.length) },
+    () => worker().catch(error => { stopped = true; throw error; })));
+  if (stopped) throw new IntelStepStopped();
+  await finalizeIntelJob(w, id, candidates, snapshot, { source: plan.source, coverage: plan.coverage, preview: started });
 }
 
-async function batchFor(w: WorkspaceContext, id: string, index: number, meetingIds: string[]) {
-  const { scope, row, active } = await stepScope(w, id);
-  if (!active) throw new IntelStepStopped();
-  const input = searchInputSchema.parse(row!.input);
-  const { corpus, plan } = await loadPlan(w, input, row!.result as Preview | null);
-  const batch = plan.batches[index];
-  if (!batch || batch.meetings.map(m => m.id).join() !== meetingIds.join())
-    throw new IntelInputError("Meeting access or content changed during this search. Please try again.");
-  return { scope, input, corpus, batch };
-}
-
-export async function matchIntelBatch(w: WorkspaceContext, id: string, index: number, meetingIds: string[], meetingId: string) {
-  const { scope, input, corpus, batch } = await batchFor(w, id, index, meetingIds);
-  const matched = await matchBatch(input, batch, corpus, { meetingId, searchId: id });
-  // Publish scored candidates as each batch finishes. No acceptance threshold.
-  await db.update(jobs).set({
-    completed: sql`least(${jobs.completed} + 1, ${jobs.total})`,
-    result: sql`jsonb_set(jsonb_set(coalesce(${jobs.result}, '{}'::jsonb), '{partial}', coalesce(${jobs.result}->'partial', '[]'::jsonb) || ${JSON.stringify(matched)}::jsonb), '{batchesDone}', to_jsonb(coalesce((${jobs.result}->>'batchesDone')::int, 0) + 1))`,
-  }).where(and(scope, eq(jobs.status, "running")));
-  return matched;
-}
-
-export async function finalizeIntelJob(w: WorkspaceContext, id: string, candidates: Match[][], snapshot: string) {
+export async function finalizeIntelJob(w: WorkspaceContext, id: string, candidates: Match[][], snapshot: string,
+  known?: { source: SearchResult["source"]; coverage: string; preview: Preview }) {
   const { scope, row, active } = await stepScope(w, id);
   if (!active) return;
   const input = searchInputSchema.parse(row!.input);
-  const preview = row!.result as Preview | null;
+  const preview = known?.preview ?? row!.result as Preview | null;
   await db.update(jobs).set({ result: sql`jsonb_set(coalesce(${jobs.result}, '{}'::jsonb), '{stage}', '"finalizing"'::jsonb)` }).where(scope);
-  const { corpus, plan } = await loadPlan(w, input, preview);
+  // One fresh load serves the access recheck and the saved fingerprint.
+  const corpus = await loadIntelMeetings(w);
+  const plan = known ?? await prepareIntelSearch(input, corpus, preview?.linkSource);
   const { matches, catalog } = candidates.length
-    ? await finalizeIntelSearch(w, input, plan.source, candidates, snapshot)
-    : { matches: [], catalog: plan.catalog };
+    ? await finalizeIntelSearch(w, input, plan.source, candidates, snapshot, corpus)
+    : { matches: [], catalog: buildCatalog(corpus) };
   const result: SearchResult = { matches, source: plan.source, coverage: plan.coverage };
   await db.update(jobs).set({ status: "complete", completed: sql`${jobs.total}`, result: {
     ...result, estimate: preview?.estimate, startedAt: preview?.startedAt, actualUsd: await actualCost(w, id), fingerprint: fingerprint(corpus, catalog, input, result),

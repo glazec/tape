@@ -14,7 +14,7 @@ vi.mock("@/db/client", async () => {
 });
 import { loadIntelMeetings, loadIntelHistory } from "@/lib/intel/store";
 vi.mock("@/inngest/client", () => ({ inngest: { send: vi.fn() } }));
-import { enqueueIntelSearch, executeIntelSearch, previewIntelSearch, readIntelJob } from "@/lib/intel/jobs";
+import { enqueueIntelSearch, executeIntelSearch, IntelStepStopped, previewIntelSearch, readIntelJob, runIntelJob } from "@/lib/intel/jobs";
 import { searchIntel } from "@/lib/intel/search";
 import { buildCatalog, intelSourceHash, currentIntel } from "@/lib/intel/provenance";
 const team = "11111111-1111-4111-8111-111111111111";
@@ -117,6 +117,30 @@ describe.skipIf(!enabled)("Intel with real PostgreSQL and caller RLS", () => {
     await state.client!.query("RESET ROLE");
     await state.client!.query("UPDATE meetings SET owner_user_id=$1 WHERE id=$2", [a,m]);
     await asUser(a);
+  });
+  it("runs the whole durable search in one pass and publishes progress", async () => {
+    const scorer = await import("@/lib/intel/scoring");
+    const [meeting] = await loadIntelMeetings(workspace);
+    const target = buildCatalog([meeting]).people[0];
+    const model = vi.spyOn(scorer, "scoreIntelBatch").mockResolvedValue({ matches: [{ id: target.id, type: "person", score: 40, relevance: "expressed_interest", reason: "Alex needs inference partners.", caveat: "", segmentIds: [segment], counterEvidenceIds: [] }] });
+    const { id } = await enqueueIntelSearch(workspace, { kind: "content", text: "Inference partners" });
+    try {
+      await runIntelJob(workspace, id);
+      expect(model).toHaveBeenCalledTimes(1);
+      expect(await readIntelJob(workspace, id)).toMatchObject({ status: "complete", completed: 1, total: 1, result: { matches: [{ title: "Alex", score: 40 }] } });
+    } finally { model.mockRestore(); }
+  });
+  it("stops a one pass search that was cancelled while scoring", async () => {
+    const scorer = await import("@/lib/intel/scoring");
+    const { id } = await enqueueIntelSearch(workspace, { kind: "content", text: "Inference partners" });
+    const model = vi.spyOn(scorer, "scoreIntelBatch").mockImplementation(async (batch) => {
+      await state.client!.query("UPDATE intel_searches SET status='failed', error='Stopped' WHERE id=$1", [id]);
+      return { matches: batch.people.map(p => ({ id: p.id, type: "person" as const, score: 0, relevance: "related_focus" as const, reason: "No clear connection", caveat: "", segmentIds: [p.sourceSegmentId], counterEvidenceIds: [] })) };
+    });
+    try {
+      await expect(runIntelJob(workspace, id)).rejects.toBeInstanceOf(IntelStepStopped);
+      expect(await readIntelJob(workspace, id)).toMatchObject({ status: "failed", error: "Stopped" });
+    } finally { model.mockRestore(); }
   });
   it("saves scored results without an acceptance step and withholds a real match after access is revoked", async () => {
     const scorer = await import("@/lib/intel/scoring");

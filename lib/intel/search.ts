@@ -119,13 +119,13 @@ export async function matchBatch(input: SearchInput, batch: Batch, corpus: Intel
   return matches;
 }
 
-export async function finalizeIntelSearch(workspace: WorkspaceContext, input: SearchInput, source: { text: string; url?: string }, candidates: Match[][], snapshot: string) {
+export async function finalizeIntelSearch(workspace: WorkspaceContext, input: SearchInput, source: { text: string; url?: string }, candidates: Match[][], snapshot: string, freshCorpus?: IntelMeeting[]) {
   const ranked = [...new Map(candidates.flat().map(m => [m.id, m])).values()]
     .sort((a, b) => (b.score ?? 0) - (a.score ?? 0) || a.id.localeCompare(b.id));
   const parsed = { matches: ranked.map(({ id, type, score, relevance, reason, caveat, segmentIds, counterEvidenceIds }) =>
     ({ id, type, score, relevance, reason, caveat, segmentIds, counterEvidenceIds })) };
   // Recheck access, replacement transcripts and identities after the provider calls.
-  const fresh = await loadIntelMeetings(workspace);
+  const fresh = freshCorpus ?? await loadIntelMeetings(workspace);
   const freshCatalog = buildCatalog(fresh);
   const referenced = ranked.filter(match => match.type === "intel").map(match => match.id);
   if (corpusSnapshot(fresh) !== snapshot || (input.kind === "intel" && !freshCatalog.intel.some(i => i.id === input.id))

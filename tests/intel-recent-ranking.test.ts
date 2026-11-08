@@ -106,7 +106,7 @@ it("scores batches in parallel up to the per search limit", async () => {
  });
  await searchIntel({teamId:"t",userId:"u",domain:"example.test"},{kind:"content",text:"GPU infrastructure"},corpus);
  expect(mocks.scoreIntelBatch).toHaveBeenCalledTimes(20);
- expect(peak).toBe(8);
+ expect(peak).toBe(16);
 });
 it("splits a batch Jev refuses for size and still ranks everyone", async () => {
  const { JevRequestTooLargeError } = await import("@/lib/intel/tokens");
