@@ -129,15 +129,8 @@ export async function markIntelJobInterrupted(w: WorkspaceContext, id: string, e
   return !!row;
 }
 
-// Step functions for the durable Inngest run. Each one finishes well inside
-// the platform's HTTP request limit, and completed steps are not repeated on retry.
 function userMessage(error: unknown) {
   return error instanceof IntelInputError || error instanceof ProviderCreditExhaustedError ? error.message : null;
-}
-async function stepScope(w: WorkspaceContext, id: string) {
-  const scope = and(owner(w), eq(jobs.id, id));
-  const [row] = await db.select({ input: jobs.input, status: jobs.status, result: jobs.result }).from(jobs).where(scope);
-  return { scope, row, active: !!row && ["queued", "running"].includes(row.status ?? "") };
 }
 async function loadPlan(w: WorkspaceContext, input: SearchInput, preview: Preview | null) {
   const corpus = await loadIntelMeetings(w);
@@ -150,62 +143,105 @@ export async function failIntelJob(w: WorkspaceContext, id: string, error: unkno
   return !!message;
 }
 
-// The whole search in one pass: load and plan the archive once, score batches in
-// parallel while publishing each batch's candidates, then recheck access against
-// one fresh load. Scoring calls take seconds, so per-batch durable steps that each
-// reloaded the archive cost far more than the scoring itself.
-export async function runIntelJob(w: WorkspaceContext, id: string) {
-  const { scope, row, active } = await stepScope(w, id);
-  if (!active) return;
-  const input = searchInputSchema.parse(row!.input);
-  const preview = row!.result as Preview | null;
-  const { corpus, plan } = await loadPlan(w, input, preview);
-  const estimate = preview?.estimate ?? estimateSearchCost(plan.batches, await intelPricing(w));
-  const linkSource = preview?.linkSource ?? ("url" in plan.source && typeof plan.source.url === "string" ? { text: plan.source.text, url: plan.source.url } : undefined);
-  const started: Preview = { estimate, linkSource, startedAt: new Date().toISOString(), partial: [], batchesDone: 0 };
-  await db.update(jobs).set({ status: "running", completed: 0, total: plan.batches.length, result: started }).where(scope);
-  if (plan.batches.length) await assertWorkspaceHasProviderCredit(w);
-  const snapshot = corpusSnapshot(corpus);
-  const scoreScope = { meetingId: corpus[0]?.id ?? "", searchId: id };
-  const candidates: Match[][] = new Array(plan.batches.length);
-  let nextBatch = 0;
-  let stopped = false;
-  async function worker() {
-    while (!stopped && nextBatch < plan.batches.length) {
-      const index = nextBatch++;
-      const matched = await matchBatch(input, plan.batches[index], corpus, scoreScope);
-      candidates[index] = matched;
-      // Publish scored candidates as each batch finishes. No acceptance threshold.
-      const [still] = await db.update(jobs).set({
-        completed: sql`least(${jobs.completed} + 1, ${jobs.total})`,
-        result: sql`jsonb_set(jsonb_set(coalesce(${jobs.result}, '{}'::jsonb), '{partial}', coalesce(${jobs.result}->'partial', '[]'::jsonb) || ${JSON.stringify(matched)}::jsonb), '{batchesDone}', to_jsonb(coalesce((${jobs.result}->>'batchesDone')::int, 0) + 1))`,
-      }).where(and(scope, eq(jobs.status, "running"))).returning({ id: jobs.id });
-      // Stopped or failed elsewhere: make no further provider calls.
-      if (!still) stopped = true;
-    }
-  }
-  await Promise.all(Array.from({ length: Math.min(INTEL_SEARCH_PARALLEL_BATCHES, plan.batches.length) },
-    () => worker().catch(error => { stopped = true; throw error; })));
-  if (stopped) throw new IntelStepStopped();
-  await finalizeIntelJob(w, id, candidates, snapshot, { source: plan.source, coverage: plan.coverage, preview: started });
+// A running job belongs to the runner that claimed it. Another runner may take it
+// over only after this long without progress: longer than any single Jev call
+// (180 seconds), so a live run is never duplicated.
+const STALE_RUN_SECONDS = 200;
+const heartbeat = sql`jsonb_set(coalesce(${jobs.result}, '{}'::jsonb), '{heartbeatAt}', to_jsonb(now()))`;
+
+async function claimIntelJob(w: WorkspaceContext, id: string, takeover: boolean) {
+  const stale = sql`(${jobs.status} = 'running' and coalesce((${jobs.result}->>'heartbeatAt')::timestamptz, ${jobs.createdAt}) < now() - make_interval(secs => ${STALE_RUN_SECONDS}))`;
+  const [row] = await db.update(jobs).set({ status: "running", result: heartbeat })
+    .where(and(owner(w), eq(jobs.id, id), takeover ? sql`(${jobs.status} = 'queued' or ${stale})` : eq(jobs.status, "queued")))
+    .returning({ input: jobs.input, result: jobs.result });
+  return row ?? null;
+}
+// Let another runner take over at once after an unexpected failure.
+async function releaseIntelJob(w: WorkspaceContext, id: string) {
+  await db.update(jobs).set({ result: sql`jsonb_set(coalesce(${jobs.result}, '{}'::jsonb), '{heartbeatAt}', to_jsonb('1970-01-01T00:00:00Z'::timestamptz))` })
+    .where(and(owner(w), eq(jobs.id, id), eq(jobs.status, "running")));
 }
 
-export async function finalizeIntelJob(w: WorkspaceContext, id: string, candidates: Match[][], snapshot: string,
-  known?: { source: SearchResult["source"]; coverage: string; preview: Preview }) {
-  const { scope, row, active } = await stepScope(w, id);
-  if (!active) return;
-  const input = searchInputSchema.parse(row!.input);
-  const preview = known?.preview ?? row!.result as Preview | null;
-  await db.update(jobs).set({ result: sql`jsonb_set(coalesce(${jobs.result}, '{}'::jsonb), '{stage}', '"finalizing"'::jsonb)` }).where(scope);
-  // One fresh load serves the access recheck and the saved fingerprint.
-  const corpus = await loadIntelMeetings(w);
-  const plan = known ?? await prepareIntelSearch(input, corpus, preview?.linkSource);
+// What a backup runner should do: nothing ("done"), keep waiting ("running"),
+// or run the search ("claimable": never started, or its runner stopped responding).
+export async function intelJobState(w: WorkspaceContext, id: string) {
+  const [row] = await db.select({ status: jobs.status, claimable: sql<boolean>`(${jobs.status} = 'queued' or coalesce((${jobs.result}->>'heartbeatAt')::timestamptz, ${jobs.createdAt}) < now() - make_interval(secs => ${STALE_RUN_SECONDS}))` })
+    .from(jobs).where(and(owner(w), eq(jobs.id, id)));
+  if (!row || !["queued", "running"].includes(row.status ?? "")) return "done" as const;
+  return row.claimable ? "claimable" as const : "running" as const;
+}
+
+// The whole search in one pass: load and plan the archive once, score batches in
+// parallel while publishing each batch's candidates, then save the result with a
+// fingerprint of the archive it read. Reading the result rechecks that fingerprint
+// against a fresh load, so access or content changed at any point since the search
+// started is never shown. Scoring calls take seconds, so loading the archive is the
+// dominant cost and happens once.
+export async function runIntelJob(w: WorkspaceContext, id: string, options: { takeover?: boolean } = {}) {
+  const claimed = await claimIntelJob(w, id, options.takeover ?? false);
+  if (!claimed) return false;
+  const scope = and(owner(w), eq(jobs.id, id));
+  try {
+    const input = searchInputSchema.parse(claimed.input);
+    const preview = claimed.result as Preview | null;
+    const { corpus, plan } = await loadPlan(w, input, preview);
+    const estimate = preview?.estimate ?? estimateSearchCost(plan.batches, await intelPricing(w));
+    const linkSource = preview?.linkSource ?? ("url" in plan.source && typeof plan.source.url === "string" ? { text: plan.source.text, url: plan.source.url } : undefined);
+    const started: Preview = { estimate, linkSource, startedAt: new Date().toISOString(), partial: [], batchesDone: 0 };
+    const [still] = await db.update(jobs).set({ completed: 0, total: plan.batches.length, result: sql`jsonb_set(${JSON.stringify(started)}::jsonb, '{heartbeatAt}', to_jsonb(now()))` })
+      .where(and(scope, eq(jobs.status, "running"))).returning({ id: jobs.id });
+    if (!still) throw new IntelStepStopped();
+    if (plan.batches.length) await assertWorkspaceHasProviderCredit(w);
+    const scoreScope = { meetingId: corpus[0]?.id ?? "", searchId: id };
+    const candidates: Match[][] = new Array(plan.batches.length);
+    let nextBatch = 0;
+    let stopped = false;
+    async function worker() {
+      while (!stopped && nextBatch < plan.batches.length) {
+        const index = nextBatch++;
+        const matched = await matchBatch(input, plan.batches[index], corpus, scoreScope);
+        candidates[index] = matched;
+        // Publish scored candidates as each batch finishes. No acceptance threshold.
+        const [running] = await db.update(jobs).set({
+          completed: sql`least(${jobs.completed} + 1, ${jobs.total})`,
+          result: sql`jsonb_set(jsonb_set(jsonb_set(coalesce(${jobs.result}, '{}'::jsonb), '{partial}', coalesce(${jobs.result}->'partial', '[]'::jsonb) || ${JSON.stringify(matched)}::jsonb), '{batchesDone}', to_jsonb(coalesce((${jobs.result}->>'batchesDone')::int, 0) + 1)), '{heartbeatAt}', to_jsonb(now()))`,
+        }).where(and(scope, eq(jobs.status, "running"))).returning({ id: jobs.id });
+        // Stopped or failed elsewhere: make no further provider calls.
+        if (!running) stopped = true;
+      }
+    }
+    await Promise.all(Array.from({ length: Math.min(INTEL_SEARCH_PARALLEL_BATCHES, plan.batches.length) },
+      () => worker().catch(error => { stopped = true; throw error; })));
+    if (stopped) throw new IntelStepStopped();
+    await finalizeIntelJob(w, id, input, candidates, corpus, { source: plan.source, coverage: plan.coverage, preview: started });
+    return true;
+  } catch (error) {
+    if (!(error instanceof IntelStepStopped) && !userMessage(error)) await releaseIntelJob(w, id).catch(() => undefined);
+    throw error;
+  }
+}
+
+// Runs a search in this server process right after it is queued, avoiding the
+// background queue's pickup delay. The durable Inngest run is the backup: it
+// takes over a job this process never claimed or stopped advancing.
+export async function runIntelJobNow(w: WorkspaceContext, id: string) {
+  try { await runIntelJob(w, id); }
+  catch (error) {
+    if (error instanceof IntelStepStopped) return;
+    if (await failIntelJob(w, id, error).catch(() => false)) return;
+    console.error("Intel search will continue in the background worker", { searchId: id });
+  }
+}
+
+async function finalizeIntelJob(w: WorkspaceContext, id: string, input: SearchInput, candidates: Match[][], corpus: IntelMeeting[],
+  plan: { source: SearchResult["source"]; coverage: string; preview: Preview }) {
+  const scope = and(owner(w), eq(jobs.id, id));
   const { matches, catalog } = candidates.length
-    ? await finalizeIntelSearch(w, input, plan.source, candidates, snapshot, corpus)
+    ? await finalizeIntelSearch(w, input, plan.source, candidates, corpusSnapshot(corpus), corpus)
     : { matches: [], catalog: buildCatalog(corpus) };
   const result: SearchResult = { matches, source: plan.source, coverage: plan.coverage };
   await db.update(jobs).set({ status: "complete", completed: sql`${jobs.total}`, result: {
-    ...result, estimate: preview?.estimate, startedAt: preview?.startedAt, actualUsd: await actualCost(w, id), fingerprint: fingerprint(corpus, catalog, input, result),
+    ...result, estimate: plan.preview.estimate, startedAt: plan.preview.startedAt, actualUsd: await actualCost(w, id), fingerprint: fingerprint(corpus, catalog, input, result),
   } }).where(and(scope, eq(jobs.status, "running")));
   await db.delete(jobs).where(and(owner(w), sql`${jobs.id} in (select id from intel_searches where team_id = ${w.teamId} and user_id = ${w.userId} and (status is null or status in ('complete','failed')) order by created_at desc offset 50)`));
 }

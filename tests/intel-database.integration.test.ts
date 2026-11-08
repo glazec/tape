@@ -14,7 +14,7 @@ vi.mock("@/db/client", async () => {
 });
 import { loadIntelMeetings, loadIntelHistory } from "@/lib/intel/store";
 vi.mock("@/inngest/client", () => ({ inngest: { send: vi.fn() } }));
-import { enqueueIntelSearch, executeIntelSearch, IntelStepStopped, previewIntelSearch, readIntelJob, runIntelJob } from "@/lib/intel/jobs";
+import { enqueueIntelSearch, executeIntelSearch, intelJobState, IntelStepStopped, previewIntelSearch, readIntelJob, runIntelJob } from "@/lib/intel/jobs";
 import { searchIntel } from "@/lib/intel/search";
 import { buildCatalog, intelSourceHash, currentIntel } from "@/lib/intel/provenance";
 const team = "11111111-1111-4111-8111-111111111111";
@@ -129,6 +129,28 @@ describe.skipIf(!enabled)("Intel with real PostgreSQL and caller RLS", () => {
       expect(model).toHaveBeenCalledTimes(1);
       expect(await readIntelJob(workspace, id)).toMatchObject({ status: "complete", completed: 1, total: 1, result: { matches: [{ title: "Alex", score: 40 }] } });
     } finally { model.mockRestore(); }
+  });
+  it("lets exactly one runner claim a search and hands a stalled or failed run to the backup", async () => {
+    const scorer = await import("@/lib/intel/scoring");
+    const { id } = await enqueueIntelSearch(workspace, { kind: "content", text: "Inference partners" });
+    expect(await intelJobState(workspace, id)).toBe("claimable");
+    const model = vi.spyOn(scorer, "scoreIntelBatch").mockRejectedValueOnce(new Error("provider outage"));
+    try {
+      await expect(runIntelJob(workspace, id)).rejects.toThrow("provider outage");
+      // An unexpected failure releases the claim so the backup can retry at once.
+      expect(await intelJobState(workspace, id)).toBe("claimable");
+      expect(await runIntelJob(workspace, id)).toBe(false);
+      model.mockImplementation(async (batch) => ({ matches: batch.people.map(p => ({ id: p.id, type: "person" as const, score: 10, relevance: "related_focus" as const, reason: "Background", caveat: "", segmentIds: [p.sourceSegmentId], counterEvidenceIds: [] })) }));
+      expect(await runIntelJob(workspace, id, { takeover: true })).toBe(true);
+      expect(await intelJobState(workspace, id)).toBe("done");
+      expect((await readIntelJob(workspace, id))?.status).toBe("complete");
+    } finally { model.mockRestore(); }
+    const { id: live } = await enqueueIntelSearch(workspace, { kind: "content", text: "Inference partners" });
+    await state.client!.query("UPDATE intel_searches SET status='running', result=jsonb_build_object('heartbeatAt', now()) WHERE id=$1", [live]);
+    expect(await intelJobState(workspace, live)).toBe("running");
+    expect(await runIntelJob(workspace, live, { takeover: true })).toBe(false);
+    await state.client!.query("UPDATE intel_searches SET result=jsonb_build_object('heartbeatAt', now() - interval '10 minutes') WHERE id=$1", [live]);
+    expect(await intelJobState(workspace, live)).toBe("claimable");
   });
   it("stops a one pass search that was cancelled while scoring", async () => {
     const scorer = await import("@/lib/intel/scoring");

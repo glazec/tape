@@ -1,11 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-const mocks = vi.hoisted(() => ({ getCurrentUser: vi.fn(), getOrCreateWorkspaceForSessionUser: vi.fn(), assertRequestRateLimit: vi.fn(), loadIntelMeetings: vi.fn(), enqueueIntelSearch: vi.fn(), readIntelJob: vi.fn(), previewIntelSearch: vi.fn(), searchIntel: vi.fn() }));
+const mocks = vi.hoisted(() => ({ getCurrentUser: vi.fn(), getOrCreateWorkspaceForSessionUser: vi.fn(), assertRequestRateLimit: vi.fn(), loadIntelMeetings: vi.fn(), enqueueIntelSearch: vi.fn(), readIntelJob: vi.fn(), previewIntelSearch: vi.fn(), searchIntel: vi.fn(), runIntelJobNow: vi.fn(), after: vi.fn() }));
 vi.mock("@/lib/auth", () => mocks);
 vi.mock("@/lib/workspace", () => mocks);
 vi.mock("@/lib/intel/store", () => mocks);
 vi.mock("@/lib/intel/jobs", () => mocks);
 vi.mock("@/lib/request-rate-limit", () => ({ ...mocks, RequestRateLimitError: class extends Error {} }));
 vi.mock("@/lib/provider-credit", () => ({ providerCreditErrorResponse: () => null }));
+vi.mock("next/server", () => ({ after: mocks.after }));
 import { POST, GET } from "@/app/api/intel/search/route";
 const request = (body: unknown) => new Request("https://tape.example/api/intel/search", { method: "POST", body: JSON.stringify(body) });
 beforeEach(() => { vi.clearAllMocks(); mocks.getCurrentUser.mockResolvedValue({ id: "user" }); mocks.getOrCreateWorkspaceForSessionUser.mockResolvedValue({ userId: "user", teamId: "team" }); mocks.loadIntelMeetings.mockResolvedValue([]); });
@@ -26,6 +27,11 @@ describe("Intel search route", () => {
     expect(response.headers.get("cache-control")).toBe("private, no-store");
     expect(await response.json()).toEqual({ id: "job" });
     expect(mocks.loadIntelMeetings).not.toHaveBeenCalled();
+    // The search starts in this process after the response, not inside the request.
+    expect(mocks.runIntelJobNow).not.toHaveBeenCalled();
+    expect(mocks.after).toHaveBeenCalledTimes(1);
+    await mocks.after.mock.calls[0][0]();
+    expect(mocks.runIntelJobNow).toHaveBeenCalledWith({ userId: "user", teamId: "team" }, "job");
   });
   it("previews the model cost without dispatching a search", async () => {
     const input = { kind: "content", text: "inference" };
