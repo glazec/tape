@@ -2,6 +2,7 @@ import { z } from "zod";
 import type { buildRecentPeopleBatches } from "./search-batches";
 import { scoredRankingSchema, type Person } from "./types";
 import { JEV_MAX_CHOICE_OPTIONS, JevRequestTooLargeError } from "./tokens";
+import { isSubstantive } from "./evidence";
 
 export const INTEL_SCORING_MODEL = "typesafe/jev-1.14";
 // Evidence choices per person. Far below Jev's 255 option limit so twelve people's
@@ -35,9 +36,7 @@ export async function scoreIntelBatch(batch: Batch, scope: { meetingId: string; 
       .sort((a, b) => Date.parse(b.m.date) - Date.parse(a.m.date) || b.s.startMs - a.s.startMs);
     // Filler such as "好。" or "Sounds good." is offered only when a person said
     // nothing more substantive, so it cannot be cited as evidence of interest.
-    const substantive = (text: string) => (text.match(/[\u3400-\u9fff]/g)?.length ?? 0) >= 8
-      || (text.match(/[A-Za-z0-9][A-Za-z0-9'’-]*/g)?.length ?? 0) >= 3;
-    const meaningful = own.filter(x => substantive(x.s.text));
+    const meaningful = own.filter(x => isSubstantive(x.s.text));
     const chosen = (meaningful.length ? meaningful : own).slice(0, Math.min(MAX_EVIDENCE_OPTIONS, JEV_MAX_CHOICE_OPTIONS - 1));
     return Object.fromEntries(chosen.map(({ s, m }) => [s.id, `${s.speaker ?? "Unknown speaker"}, ${m.date.slice(0, 10)}`]));
   }
