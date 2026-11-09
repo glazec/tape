@@ -36,7 +36,9 @@ jobs:
         with:
           node-version: 24
           cache: npm
-      - run: npm ci
+      - run: bash scripts/ci-install-node.sh
+        env:
+          GH_TOKEN: ${{ github.token }}
       - name: Check migration lineage and schema drift
         run: npm run test:migrations
       - name: Check persistent Web sessions against PostgreSQL
@@ -140,7 +142,9 @@ jobs:
         with:
           python-version: "3.14"
           enable-cache: true
-      - run: npm ci
+      - run: bash scripts/ci-install-node.sh
+        env:
+          GH_TOKEN: ${{ github.token }}
       - name: Install media test binaries
         run: |
           npm install --prefix "$RUNNER_TEMP/tape-media-tools" --no-save --package-lock=false @ffprobe-installer/ffprobe@2.1.2
