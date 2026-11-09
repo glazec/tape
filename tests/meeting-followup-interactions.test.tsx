@@ -430,3 +430,20 @@ describe("meeting followup interaction", () => {
     expect(screen.getByText("No explicit offers or needs.")).toBeTruthy();
   });
 });
+
+it("localizes followup controls and relationship labels for Chinese readers", async () => {
+  const connection: MeetingConnection = {
+    kind: "person", name: "林舟", company: null, title: null, mutual: true,
+    relationship: "offered_introduction", context: "愿意介绍负责基础设施的同事。",
+    speakerSegmentId: "one", evidence: [{ segmentId: "one" }],
+  };
+  render(<MeetingFollowup {...props} preferredLanguage="zh-CN" initialResult={{ ...result, research: [research], connections: [connection] }} />);
+  for (const name of ["会后跟进", "待办事项", "双方需求与资源", "待研究问题", "潜在人脉"]) {
+    expect(screen.getByRole("heading", { name })).toBeTruthy();
+  }
+  expect(screen.getByText("愿意引荐")).toBeTruthy();
+  expect(screen.getByText("共同人脉")).toBeTruthy();
+  fireEvent.click(screen.getAllByRole("button", { name: "查看 2:00 的原文" })[0]);
+  expect(await screen.findByRole("link", { name: "查看逐字稿" })).toBeTruthy();
+  expect(screen.queryByRole("heading", { name: "From the transcript" })).toBeNull();
+});

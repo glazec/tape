@@ -575,9 +575,9 @@ describe("meeting page", () => {
     mocks.getMeeting.mockResolvedValue(current);
     const before = await MeetingPage({ params: Promise.resolve({ meetingId: "meeting_1" }) });
     const beforeHtml = renderToStaticMarkup(before);
-    // The summary layer leads; the raw transcript follows it.
-    expect(beforeHtml.indexOf("From the transcript")).toBeGreaterThan(-1);
-    expect(beforeHtml.indexOf("From the transcript")).toBeLessThan(beforeHtml.indexOf("transcript lines"));
+    // The summary layer leads; the raw transcript follows it. The workspace language is zh-CN.
+    expect(beforeHtml.indexOf("会后跟进")).toBeGreaterThan(-1);
+    expect(beforeHtml.indexOf("会后跟进")).toBeLessThan(beforeHtml.indexOf("transcript lines"));
     const result = { todos: [{ person: "Alice", text: "Alice will send the deck.", timing: null, evidence: [{ segmentId: "seg", quote: "I will send the deck." }] }], dynamics: [], research: [] };
     mocks.getMeeting.mockResolvedValue({ ...current, aiFollowup: { sourceHash: getFollowupSourceHash(source), result } });
     const after = await MeetingPage({ params: Promise.resolve({ meetingId: "meeting_1" }) });
