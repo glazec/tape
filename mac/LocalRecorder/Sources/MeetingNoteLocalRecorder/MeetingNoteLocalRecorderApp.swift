@@ -539,7 +539,7 @@ final class RecorderAppModel: NSObject, ObservableObject, UNUserNotificationCent
             } else {
                 // The server already rejected this one and its files left the queue.
                 uploadReceipts[index].canRetry = false
-                if !uploadReceipts[index].message.contains("Show file") {
+                if uploadReceipts[index].hasSavedFile, !uploadReceipts[index].message.contains("Show file") {
                     uploadReceipts[index].message += " Tape can’t resend this recording. Use Show file to keep it."
                 }
             }
@@ -1120,8 +1120,17 @@ final class RecorderAppModel: NSObject, ObservableObject, UNUserNotificationCent
     ) async throws {
         let upload = try await client.createRecallSDKUpload(fallbackIntentId: fallbackIntentId, clientRecordingId: clientRecordingId)
         if let target = activeTarget {
-            recoveryState.sdkDrains.append(.init(recordingID: clientRecordingId, target: target))
+            recoveryState.sdkDrains.append(.init(recordingID: clientRecordingId, target: target, captureStarted: false))
             try persistCaptureRecovery()
+        }
+        // Persist capture evidence however start ends, so a later process can tell a
+        // drain that will upload from one that never captured anything.
+        defer {
+            if recallSDKController.didCaptureStart(clientRecordingId),
+               let index = recoveryState.sdkDrains.firstIndex(where: { $0.recordingID == clientRecordingId }) {
+                recoveryState.sdkDrains[index].captureStarted = true
+                try? persistCaptureRecovery()
+            }
         }
         try await recallSDKController.start(upload: upload, clientRecordingId: clientRecordingId, expectedMeetingURL: activeTarget?.meetingUrl)
     }
@@ -1422,7 +1431,9 @@ final class RecorderAppModel: NSObject, ObservableObject, UNUserNotificationCent
     }
 
     func restartApp() {
-        guard !isRestarting, canCloseApp() else {
+        // Pending uploads are persisted and resume after relaunch, so Restart may
+        // proceed like Quit. Otherwise a stuck upload blocks installing a fixed update.
+        guard !isRestarting, canCloseApp(allowPendingUploads: true) else {
             return
         }
         isRestarting = true

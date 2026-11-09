@@ -186,6 +186,10 @@ jobs:
             exit 1
           fi
 
+          # A valid signature does not prove the Recall SDK helper can load its
+          # libraries. 0.3.8 passed every check above and aborted at launch.
+          "$APP_PATH/Contents/Resources/node/bin/node" script/verify_sdk_runtime.mjs "$APP_PATH"
+
       - name: Build Sparkle feed and release assets
         id: release_assets
         working-directory: mac/LocalRecorder

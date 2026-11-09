@@ -39,6 +39,8 @@ struct RecorderCaptureRecovery: Codable {
         var recordingID: String
         var target: RecordingTarget
         var needsFailure: Bool?
+        /// `false` until the sidecar confirms capture; `nil` for drains saved before this existed.
+        var captureStarted: Bool?
     }
 }
 
@@ -117,6 +119,15 @@ extension RecorderAppModel {
                 UNNotificationAction(identifier: RecorderNotificationAction.keep, title: "Keep recording", options: [])
             ], intentIdentifiers: [], options: [.customDismissAction])
         ])
+        // No sidecar from a prior process is ours to ask; trust only what it persisted.
+        for index in recoveryState.sdkDrains.indices
+        where RecorderRecoveryPolicy.recoveredSDKDrainNeedsFailure(
+            captureStarted: recoveryState.sdkDrains[index].captureStarted,
+            needsFailure: recoveryState.sdkDrains[index].needsFailure
+        ) {
+            recoveryState.sdkDrains[index].needsFailure = true
+        }
+        try? persistCaptureRecovery()
         if let client = makeClient() {
             for drain in recoveryState.sdkDrains {
                 startSDKDrain(client: client, target: drain.target, recordingID: drain.recordingID)
@@ -438,6 +449,7 @@ extension RecorderAppModel {
                         status = try await currentClient.recordingTargetStatus(fallbackIntentId: target.fallbackIntentId)
                     }
                     if status.isTerminal {
+                        let neverCaptured = recoveryState.sdkDrains.first(where: { $0.recordingID == recordingID })?.needsFailure == true
                         try await recallSDKController.shutdown(clientRecordingId: recordingID)
                         recoveryState.sdkDrains.removeAll { $0.recordingID == recordingID }
                         try persistCaptureRecovery()
@@ -445,6 +457,11 @@ extension RecorderAppModel {
                         refreshPendingUploadCount()
                         uploadStatusText = status.state == "completed" ? "Recording received. Transcript processing continues." : "Recording upload failed. Keep your saved recording files."
                         updateUploadReceipt(intentID: target.fallbackIntentId, message: status.state == "completed" ? "Uploaded. Open meeting for transcript." : "Upload failed. Recording has not been confirmed.", terminal: true, failed: status.state == "failed", client: currentClient)
+                        if neverCaptured, status.state != "completed",
+                           let index = uploadReceipts.firstIndex(where: { $0.id == target.fallbackIntentId }) {
+                            uploadReceipts[index].markNothingRecorded()
+                            uploadStatusText = nil
+                        }
                         return
                     }
                     uploadStatusText = "Uploading recording. Keep Tape open."
