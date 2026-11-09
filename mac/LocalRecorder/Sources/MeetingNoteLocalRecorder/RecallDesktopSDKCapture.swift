@@ -134,6 +134,7 @@ final class RecallDesktopSDKRecordingController {
                     try await Task.sleep(for: .milliseconds(50))
                 }
             }
+            await endUnstartedSession(session)
             guard session.stopped || !process.isRunning else {
                 // Keep ownership and the stdout reader. Never overlap a native
                 // fallback with an SDK start whose cancellation is unconfirmed.
@@ -161,6 +162,7 @@ final class RecallDesktopSDKRecordingController {
         while !session.stopped && session.process.isRunning && Date() < deadline {
             try await Task.sleep(for: .milliseconds(50))
         }
+        await endUnstartedSession(session)
         guard session.stopped || !session.process.isRunning else {
             throw RecallDesktopSDKRecordingError.startFailed(stopWriteError?.localizedDescription ?? session.error ?? "Capture has not confirmed it stopped. Try Stop again.")
         }
@@ -189,6 +191,19 @@ final class RecallDesktopSDKRecordingController {
         try? session.input.fileHandleForWriting.close()
         sessions.removeValue(forKey: clientRecordingId)
         try? FileManager.default.removeItem(at: controlURL)
+    }
+
+    /// A sidecar that never confirmed capture holds nothing to upload. If it also
+    /// cannot confirm stop (its SDK helper died or hung), end it so Stop cannot
+    /// strand the recorder in a recording that never existed.
+    private func endUnstartedSession(_ session: RecallDesktopSDKRecordingSession) async {
+        guard !session.started, !session.stopped, session.process.isRunning else { return }
+        // The sidecar answers SIGTERM by waiting on the same stuck stop; only SIGKILL ends it.
+        kill(session.process.processIdentifier, SIGKILL)
+        let deadline = Date().addingTimeInterval(2)
+        while session.process.isRunning && Date() < deadline {
+            try? await Task.sleep(for: .milliseconds(50))
+        }
     }
 
     private static func controlURL(_ id: String) -> URL {

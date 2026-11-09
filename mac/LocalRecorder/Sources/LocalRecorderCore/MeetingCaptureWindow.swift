@@ -15,4 +15,11 @@ public struct MeetingCaptureWindow: Equatable, Sendable {
         self.title = title
         self.activeTabURL = activeTabURL
     }
+
+    /// The identity screenshots may follow, or nil when they must stay off. A browser
+    /// window whose tab cannot be identified could show any tab, so it is never
+    /// screenshotted; its audio still records.
+    public var screenshotIdentity: MeetingCaptureWindow? {
+        Self.browserBundleIDs.contains(bundleID) && activeTabURL == nil ? nil : self
+    }
 }

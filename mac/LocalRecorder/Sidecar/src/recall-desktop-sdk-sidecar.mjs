@@ -12,6 +12,7 @@ import { createRecordingLifecycle } from "./recording-lifecycle.mjs";
 import { startParentProcessMonitor } from "./parent-monitor.mjs";
 import { startConfirmedRecording } from "./confirmed-recording.mjs";
 import { configureMeetingAutomation } from "./meeting-automation.mjs";
+import { abandonStartup } from "./abandon-startup.mjs";
 
 const RecallAiSdk = RecallAiSdkImport.default ?? RecallAiSdkImport;
 
@@ -185,16 +186,12 @@ async function main() {
     await requestPermission("microphone");
     await requestPermission("screen-capture");
     if (!await startup.run()) {
-      await RecallAiSdk.shutdown();
-      send({ type: "cancelled" });
-      process.exit(0);
+      await abandonStartup({ sdk: RecallAiSdk, send, exit: code => process.exit(code), code: 0 });
     }
   } catch (error) {
     sendError(error);
     if (!lifecycle) {
-      await RecallAiSdk.shutdown();
-      send({ type: "cancelled" });
-      process.exit(1);
+      await abandonStartup({ sdk: RecallAiSdk, send, exit: code => process.exit(code), code: 1 });
     }
     // A started/uncertain capture keeps its upload alive until terminal status.
   }

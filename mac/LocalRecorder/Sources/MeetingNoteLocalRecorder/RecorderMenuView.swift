@@ -350,7 +350,7 @@ struct RecorderMenuView: View {
                             phase: receipt.needsAttention ? .failed : (receipt.isTerminal ? .done : .working),
                             meetingURL: receipt.meetingURL,
                             retry: receipt.canRetry ? { model.retryUploadsNow() } : nil,
-                            showFile: { model.showSavedRecordings() }
+                            showFile: receipt.hasSavedFile ? { model.showSavedRecordings() } : nil
                         )
                     }
                 }
@@ -1251,7 +1251,8 @@ struct RecordingReceiptCard: View {
     var meetingURL: URL?
     /// Offered only when the upload failed and resending can still succeed.
     var retry: (() -> Void)?
-    var showFile: () -> Void
+    /// Nil when nothing was captured, so there is no file on this Mac to show.
+    var showFile: (() -> Void)?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -1281,13 +1282,15 @@ struct RecordingReceiptCard: View {
                     .foregroundStyle(phase == .failed ? TapePalette.coralInk : TapePalette.muted)
                     .fixedSize(horizontal: false, vertical: true)
             }
-            if phase == .failed {
+            if phase == .failed, retry != nil || showFile != nil {
                 HStack(spacing: 8) {
                     if let retry {
                         Button("Retry upload", action: retry)
                             .help("Tape also retries on its own")
                     }
-                    Button("Show file", action: showFile)
+                    if let showFile {
+                        Button("Show file", action: showFile)
+                    }
                 }
                 .buttonStyle(RecorderActionButtonStyle(kind: .quiet, height: 26))
                 .padding(.top, 4)

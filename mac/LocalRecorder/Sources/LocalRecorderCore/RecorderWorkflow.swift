@@ -129,8 +129,19 @@ public struct RecordingUploadReceipt: Identifiable {
     public var needsAttention = false
     /// False once the server has rejected this recording for good; resending would fail the same way.
     public var canRetry = true
+    /// False when capture never started, so there is no recording on this Mac to show.
+    public var hasSavedFile = true
 
     public init(id: String, message: String) { self.id = id; self.message = message }
+
+    /// Capture never started: say so plainly instead of offering a file or a resend.
+    public mutating func markNothingRecorded() {
+        message = "Nothing was recorded. The recorder couldn’t start capture for this meeting."
+        isTerminal = true
+        needsAttention = true
+        canRetry = false
+        hasSavedFile = false
+    }
 
     public mutating func update(target: RecordingTarget?, message: String, serverURL: URL?, terminal: Bool, failed: Bool = false, retryable: Bool = true) {
         // A late destination confirmation must not turn an uploaded receipt back
@@ -300,5 +311,13 @@ public struct RecorderSDKLifecycle: Sendable {
 public enum RecorderRecoveryPolicy {
     public static func shouldRecover(intentID: String, activeTargetID: String?, isStarting: Bool, isRecording: Bool) -> Bool {
         !(intentID == activeTargetID && (isStarting || isRecording))
+    }
+
+    /// An SDK drain restored from a prior process has no live sidecar to ask. If that
+    /// process recorded that capture never started, no upload webhook will ever arrive,
+    /// so the drain must fail its intent instead of showing "Uploading" forever.
+    /// Drains saved before this evidence existed (`nil`) keep waiting.
+    public static func recoveredSDKDrainNeedsFailure(captureStarted: Bool?, needsFailure: Bool?) -> Bool {
+        needsFailure == true || captureStarted == false
     }
 }

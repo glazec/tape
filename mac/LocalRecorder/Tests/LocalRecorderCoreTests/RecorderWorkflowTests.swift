@@ -214,6 +214,30 @@ import Testing
     #expect(RecorderRecoveryPolicy.shouldRecover(intentID: "prior", activeTargetID: nil, isStarting: false, isRecording: false))
 }
 
+@Test func receiptForACaptureThatNeverStartedOffersNoFileOrRetry() {
+    var receipt = RecordingUploadReceipt(id: "intent", message: "Uploading")
+    receipt.markNothingRecorded()
+    #expect(receipt.isTerminal)
+    #expect(receipt.needsAttention)
+    #expect(!receipt.canRetry)
+    #expect(!receipt.hasSavedFile)
+    #expect(receipt.message.hasPrefix("Nothing was recorded"))
+    // A late status poll cannot turn it back into an upload in progress.
+    receipt.update(target: nil, message: "Uploading. Keep Tape open.", serverURL: nil, terminal: false)
+    #expect(receipt.message.hasPrefix("Nothing was recorded"))
+}
+
+@Test func recoveredSDKDrainThatNeverCapturedIsFailedInsteadOfPolledForever() {
+    // A prior process recorded that capture never started: nothing will ever upload.
+    #expect(RecorderRecoveryPolicy.recoveredSDKDrainNeedsFailure(captureStarted: false, needsFailure: nil))
+    // Confirmed capture keeps waiting for its upload webhook.
+    #expect(!RecorderRecoveryPolicy.recoveredSDKDrainNeedsFailure(captureStarted: true, needsFailure: nil))
+    // Drains saved before this evidence existed cannot be judged; keep waiting.
+    #expect(!RecorderRecoveryPolicy.recoveredSDKDrainNeedsFailure(captureStarted: nil, needsFailure: nil))
+    // An explicit failure request always stands.
+    #expect(RecorderRecoveryPolicy.recoveredSDKDrainNeedsFailure(captureStarted: nil, needsFailure: true))
+}
+
 @Test func failedAndCompletedAttemptsAreReleasableWithoutSealing() throws {
     for state in ["failed", "completed"] {
         let response = try JSONDecoder().decode(RecordingTargetStatus.self, from: Data("{\"state\":\"\(state)\"}".utf8))
