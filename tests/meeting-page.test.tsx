@@ -476,6 +476,15 @@ describe("meeting page", () => {
     expect(html).toContain("meeting actions:content:delete:true");
   });
 
+  it("keeps captured images accessible without a transcript", async () => {
+    mocks.getMeeting.mockResolvedValue(meeting({ segments: [], audioUrl: null, recordingParts: [] }));
+    const html = renderToStaticMarkup(await MeetingPage({
+      params: Promise.resolve({ meetingId: "images_without_transcript" }),
+    }));
+    expect(html).toContain("transcript:images_without_transcript");
+    expect(html).toContain("recovery panel");
+  });
+
   it("keeps an existing transcript visible during failed recovery", async () => {
     const html = renderToStaticMarkup(
       await MeetingPage({

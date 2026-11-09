@@ -162,7 +162,7 @@ export default async function MeetingPage({
   const shouldCenterMeetingSource =
     !isComposed && canManage &&
     (canAddMeetingSource || shouldOfferBotRecovery) &&
-    meeting.segments.length === 0;
+    meeting.segments.length === 0 && meeting.visualAssets.length === 0;
   const renderShareButton = (instanceId: string) =>
     canShare ? (
       <MeetingShareButton
