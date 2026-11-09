@@ -140,7 +140,7 @@ ${repairPermissionEnum}
   var screenRequests = 0
   var notificationRequests = 0
   var notificationSettingsOpened = false
-  func canCloseApp() -> Bool { !CommandLine.arguments.contains("recording") }
+  func canCloseApp(allowPendingUploads: Bool = false) -> Bool { !CommandLine.arguments.contains("recording") }
   func stopLevelTest() {}
   func refreshPermissions() async { try? await Task.sleep(for: .milliseconds(20)) }
   func openAccessibilitySettings() {}
