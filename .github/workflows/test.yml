@@ -176,6 +176,7 @@ jobs:
         with:
           node-version: 24
       - run: npm run test:sidecar
+      - run: bash mac/LocalRecorder/script/resolve_swift_dependencies.sh
       - run: npm run test:swift
 
   mcp:
