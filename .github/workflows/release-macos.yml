@@ -130,6 +130,7 @@ jobs:
         shell: bash
         env:
           BUILD_CONFIGURATION: release
+          GH_TOKEN: ${{ github.token }}
           SENTRY_DSN: ${{ vars.SENTRY_DSN }}
           SENTRY_ENVIRONMENT: production
         run: |
