@@ -2,15 +2,59 @@
   <img src="public/brand/tape-lockup.svg" alt="Tape logo" width="270">
 </p>
 
+<p align="center"><b>Meeting memory you host yourself.</b></p>
+
+<p align="center">
+A bot joins Zoom and Meet when it is welcome. A Mac app records the room when it is not.<br>
+Any language in, follow-ups out, and your whole meeting archive readable by Claude, Cursor, or any MCP client.
+</p>
+
+<p align="center">
+  <a href="https://tape.inevitable.tech">Website</a> ·
+  <a href="docs/setup.md">Self-host guide</a> ·
+  <a href="https://github.com/glazec/tape/releases/latest/download/Tape-Desktop.zip">Mac app</a> ·
+  <a href="docs/meeting-note-mcp-api.md">MCP API</a>
+</p>
+
+<p align="center">
+  <a href="https://tape.inevitable.tech"><img src="public/media/tape-launch-v6-poster.jpg" alt="Watch the 30 second Tape film" width="900"></a>
+</p>
+
 # Tape
 
-Tape captures team conversations from Google Meet, Zoom, Microsoft Teams through local recording, uploaded media, phone recording, or the macOS recorder and turns them into searchable, shareable meeting records.
+- **Three ways in, one archive.** A calendar bot for Zoom and Google Meet, a bot-free macOS recorder for calls and in-person rooms, and uploads from any voice recorder.
+- **Language is detected, not picked.** A sentence that starts in English and ends in Mandarin comes back as one clean line, with the translation beside it.
+- **Follow-ups with receipts.** To-dos with a name on each, who offered or needs what, who knows whom, and open research questions, each linked to the second it was said.
+- **Your AI reads all of it.** The MCP server ships in this repo. Assistants run read-only SQL across meetings, speakers, and transcripts, scoped by PostgreSQL row-level security rather than by the prompt.
+- **Make it yours.** The prompts behind every follow-up live in `lib/`, summaries run through OpenRouter so the model is one setting, and recordings land in your own database and bucket.
+- **Pay for compute, not seats.** No licence fee. A team of 10 runs at about $3.63 per person per month in provider costs ([estimate](https://tape.inevitable.tech)).
 
-Tape is fair source: use it, change it, and host it for your own team, including at work. See [License](#license) for the one thing you cannot do.
+Tape is fair source: use it, change it, and host it for your own team, including at work. Every release becomes Apache 2.0 two years after it ships. See [License](#license) for the one thing you cannot do.
 
-Personal notes support `@now` followed by Space, an Add timestamp action, and explicit times such as `[12:34]`. Moments retain private capture anchors and link to the matching transcript when recording timing is available. Single recording imports offer local playback, a timestamp jump, editable date and timezone clues, and an explicit choice of an empty calendar meeting or a new meeting. Successful imports open the destination meeting.
+## How it compares
 
-Completed meetings support Replace audio in the meeting actions menu. Uploading the corrected recording keeps the same meeting and queues a replacement transcript.
+|                                      | Tape                        | Otter Pro | Granola Business | Fireflies Pro |
+| ------------------------------------ | --------------------------- | --------- | ---------------- | ------------- |
+| Meeting bot                          | Optional                    | Yes       | No               | Yes           |
+| Bot-free recording                   | Yes, macOS app              |           | Yes              |               |
+| Self-host on your own infrastructure | Yes                         | No        | No               | No            |
+| Source code you can fork             | Yes                         | No        | No               | No            |
+| Licence per seat per month           | None, pay providers at cost | $8.33     | $14.00           | $10.00        |
+
+Seat prices are annual-billing list rates as of July 2026. Blank cells mean we have not verified that feature. Open an issue if something here is out of date.
+
+## Quickstart
+
+```bash
+gh repo fork glazec/tape --clone && cd tape
+npm install
+cp .env.example .env.local   # add Postgres, Recall.ai, ElevenLabs, and OpenRouter keys
+npm run dev                  # http://localhost:3000
+```
+
+The [setup guide](docs/setup.md) covers providers, database migrations, callbacks, and production deployment. Prefer not to host it yet? Try the hosted version at [tape.inevitable.tech](https://tape.inevitable.tech).
+
+If Tape is useful to your team, a star helps other teams find it.
 
 ## Product Tour
 
@@ -67,6 +111,10 @@ When a linked meeting starts without its bot recording, an actionable notificati
 </p>
 
 ## Core Workflows
+
+Personal notes support `@now` followed by Space, an Add timestamp action, and explicit times such as `[12:34]`. Moments retain private capture anchors and link to the matching transcript when recording timing is available. Single recording imports offer local playback, a timestamp jump, editable date and timezone clues, and an explicit choice of an empty calendar meeting or a new meeting. Successful imports open the destination meeting.
+
+Completed meetings support Replace audio in the meeting actions menu. Uploading the corrected recording keeps the same meeting and queues a replacement transcript.
 
 ### Add a meeting
 
