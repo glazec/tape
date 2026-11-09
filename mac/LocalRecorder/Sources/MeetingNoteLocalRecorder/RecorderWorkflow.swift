@@ -437,9 +437,14 @@ extension RecorderAppModel {
         guard sdkDrainTasks[recordingID] == nil else { return }
         sdkDrainTasks[recordingID] = Task {
             while !Task.isCancelled {
+                // An attempt that never captured has nothing to upload. It must not show
+                // "Uploading" or a failed-upload card; a card already shown says so plainly.
+                let drain = recoveryState.sdkDrains.first(where: { $0.recordingID == recordingID })
+                let neverCaptured = drain?.needsFailure == true || drain?.captureStarted == false
+                let hasReceipt = uploadReceipts.contains(where: { $0.id == target.fallbackIntentId })
                 do {
                     let currentClient = makeClient() ?? client
-                    if uploadReceipts.first(where: { $0.id == target.fallbackIntentId })?.target == nil,
+                    if !neverCaptured, uploadReceipts.first(where: { $0.id == target.fallbackIntentId })?.target == nil,
                        let confirmed = try? await currentClient.finishRecordingTarget(fallbackIntentId: target.fallbackIntentId) {
                         updateUploadReceipt(intentID: target.fallbackIntentId, target: confirmed, message: "Uploading. Keep Tape open.", serverURL: currentClient.serverURL, client: currentClient)
                     }
@@ -449,26 +454,30 @@ extension RecorderAppModel {
                         status = try await currentClient.recordingTargetStatus(fallbackIntentId: target.fallbackIntentId)
                     }
                     if status.isTerminal {
-                        let neverCaptured = recoveryState.sdkDrains.first(where: { $0.recordingID == recordingID })?.needsFailure == true
                         try await recallSDKController.shutdown(clientRecordingId: recordingID)
                         recoveryState.sdkDrains.removeAll { $0.recordingID == recordingID }
                         try persistCaptureRecovery()
                         sdkDrainTasks.removeValue(forKey: recordingID)
                         refreshPendingUploadCount()
+                        if neverCaptured, status.state != "completed" {
+                            if let index = uploadReceipts.firstIndex(where: { $0.id == target.fallbackIntentId }) {
+                                uploadReceipts[index].markNothingRecorded()
+                            }
+                            return
+                        }
                         uploadStatusText = status.state == "completed" ? "Recording received. Transcript processing continues." : "Recording upload failed. Keep your saved recording files."
                         updateUploadReceipt(intentID: target.fallbackIntentId, message: status.state == "completed" ? "Uploaded. Open meeting for transcript." : "Upload failed. Recording has not been confirmed.", terminal: true, failed: status.state == "failed", client: currentClient)
-                        if neverCaptured, status.state != "completed",
-                           let index = uploadReceipts.firstIndex(where: { $0.id == target.fallbackIntentId }) {
-                            uploadReceipts[index].markNothingRecorded()
-                            uploadStatusText = nil
-                        }
                         return
                     }
-                    uploadStatusText = "Uploading recording. Keep Tape open."
-                    updateUploadReceipt(intentID: target.fallbackIntentId, message: "Uploading. Keep Tape open.")
+                    if !neverCaptured {
+                        uploadStatusText = "Uploading recording. Keep Tape open."
+                        updateUploadReceipt(intentID: target.fallbackIntentId, message: "Uploading. Keep Tape open.")
+                    }
                 } catch {
-                    uploadStatusText = "Waiting for upload confirmation. Keep Tape open and reconnect."
-                    updateUploadReceipt(intentID: target.fallbackIntentId, message: "Waiting for upload confirmation. Keep Tape open.")
+                    if !neverCaptured || hasReceipt {
+                        uploadStatusText = "Waiting for upload confirmation. Keep Tape open and reconnect."
+                        updateUploadReceipt(intentID: target.fallbackIntentId, message: "Waiting for upload confirmation. Keep Tape open.")
+                    }
                 }
                 try? await Task.sleep(for: .seconds(5))
             }

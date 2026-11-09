@@ -38,11 +38,9 @@ final class MeetingWindowPicker: NSObject, SCContentSharingPickerObserver {
                 self.resolve(.success(SelectedMeetingWindow(filter: filter, selectedWindowIdentity: nil)))
                 return
             }
-            let identity = filter.includedWindows.first?.captureIdentity
-            if let identity, MeetingCaptureWindow.browserBundleIDs.contains(identity.bundleID), identity.activeTabURL == nil {
-                self.resolve(.failure(LocalRecordingCaptureError.writerFailed("Could not identify this browser tab. Choose a dedicated presentation window instead.")))
-                return
-            }
+            // An unidentified browser tab (Chrome often hides it from accessibility)
+            // records audio without screenshots instead of refusing the window.
+            let identity = filter.includedWindows.first?.captureIdentity?.screenshotIdentity
             self.resolve(.success(SelectedMeetingWindow(filter: filter, selectedWindowIdentity: identity)))
         }
     }
@@ -80,8 +78,13 @@ final class MeetingWindowScreenshots {
             onStatus("Screenshots are unavailable for this window. Audio recording continues.")
             return
         }
-        // Fail startup visibly if the selected window cannot be captured.
-        try await capture()
+        // Screenshots are secondary: a first capture that fails pauses them with a
+        // visible status instead of stopping the audio recording from starting.
+        do {
+            try await capture()
+        } catch {
+            onStatus("Screenshots paused. Keep the selected meeting window open and its meeting tab visible.")
+        }
         task = Task { [weak self] in
             while !Task.isCancelled {
                 do { try await Task.sleep(for: .seconds(5)) } catch { return }
