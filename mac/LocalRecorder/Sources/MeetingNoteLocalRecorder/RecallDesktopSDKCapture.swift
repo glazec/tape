@@ -45,9 +45,37 @@ final class RecallDesktopSDKRecordingController {
     var onCaptureFailure: ((String) -> Void)?
     func didCaptureStart(_ id: String) -> Bool { sessions[id]?.started ?? false }
     var activeCaptureEnded: Bool { activeID.flatMap { sessions[$0]?.stopped } ?? false }
+    var activeRawMedia: Bool { activeID.flatMap { sessions[$0]?.rawMedia } ?? false }
     var onLifecycleEvent: ((String, RecorderSDKEvent) -> Void)?
 
-    func start(upload: RecallSDKUploadResponse, clientRecordingId: String) async throws {
+    func configureMeetingAutomation(permission: String) async throws -> String {
+        guard activeID == nil else { throw RecallDesktopSDKRecordingError.alreadyRecording }
+        let invocation = nodeInvocation(scriptURL: try sidecarScriptURL())
+        let process = Process()
+        let output = Pipe()
+        process.executableURL = invocation.executableURL
+        process.arguments = invocation.arguments + ["--setup-meeting", permission]
+        process.standardOutput = output
+        process.standardError = FileHandle.nullDevice
+        try process.run()
+        let timeout = Task {
+            try await Task.sleep(for: .seconds(150))
+            if process.isRunning { process.terminate() }
+        }
+        defer {
+            timeout.cancel()
+            if process.isRunning { process.terminate() }
+        }
+        for try await line in output.fileHandleForReading.bytes.lines {
+            guard let data = line.data(using: .utf8),
+                  let message = try? JSONDecoder().decode(RecallDesktopSDKSidecarMessage.self, from: data) else { continue }
+            if message.type == "setup_result", let status = message.status { return status }
+            if message.type == "error" { throw RecallDesktopSDKRecordingError.startFailed(message.message ?? "Meeting setup failed") }
+        }
+        throw RecallDesktopSDKRecordingError.startFailed("Meeting setup did not finish. Try again before joining a call.")
+    }
+
+    func start(upload: RecallSDKUploadResponse, clientRecordingId: String, expectedMeetingURL: String? = nil) async throws {
         guard activeID == nil else { throw RecallDesktopSDKRecordingError.alreadyRecording }
         guard URL(string: upload.recallApiUrl) != nil else { throw RecallDesktopSDKRecordingError.invalidAPIURL }
         let scriptURL = try sidecarScriptURL()
@@ -62,6 +90,9 @@ final class RecallDesktopSDKRecordingController {
         _ = fcntl(input.fileHandleForWriting.fileDescriptor, F_SETNOSIGPIPE, 1)
         process.executableURL = invocation.executableURL
         process.arguments = invocation.arguments + ["--api-url", upload.recallApiUrl, "--upload-token", upload.uploadToken, "--parent-pid", String(ProcessInfo.processInfo.processIdentifier), "--control-file", controlURL.path]
+        if let expectedMeetingURL {
+            process.arguments?.append(contentsOf: ["--meeting-url", expectedMeetingURL])
+        }
         process.standardInput = input
         process.standardOutput = output
         // The structured error stream is stdout; never leave an unread stderr pipe.
@@ -173,6 +204,7 @@ final class RecallDesktopSDKRecordingController {
         switch message.type {
         case "started":
             session.started = true
+            session.rawMedia = message.rawMedia == true
             session.windowID = message.windowId
             if let windowID = message.windowId, session.lifecycle == nil {
                 session.lifecycle = RecorderSDKLifecycle(windowID: windowID)
@@ -301,6 +333,7 @@ private final class RecallDesktopSDKRecordingSession {
     var lifecycle: RecorderSDKLifecycle?
     var stopped = false
     var started = false
+    var rawMedia = false
     var stopRequested = false
     var error: String?
     var reader: Task<Void, Never>?
@@ -316,6 +349,8 @@ private struct RecallDesktopSDKNodeInvocation {
 
 private struct RecallDesktopSDKSidecarMessage: Decodable {
     var type: String
+    var rawMedia: Bool?
+    var status: String?
     var windowId: String?
     var message: String?
     var event: String?

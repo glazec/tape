@@ -45,7 +45,7 @@ public func localRecorderTargetWasRejected(_ error: Error) -> Bool {
 }
 
 public enum RecorderStartFailure: Equatable, Sendable {
-    case serviceUnavailable, meetingUnavailable, signInRequired, accessDenied, retrySameMeeting
+    case serviceUnavailable, meetingUnavailable, signInRequired, accessDenied, retrySameMeeting, chooseWindow
 
     public init(error: Error) {
         if let apiError = error as? LocalRecorderAPIError, apiError == .recordingWorkflowUnavailable {
@@ -66,6 +66,7 @@ public enum RecorderStartFailure: Equatable, Sendable {
         case .signInRequired: "Sign in again to start recording."
         case .accessDenied: "Couldn't start recording. Check your workspace access and credit."
         case .retrySameMeeting: "Couldn't start recording. Try again to keep the same meeting."
+        case .chooseWindow: "Automatic meeting capture couldn't start. Choose a window showing the shared content and keep that content visible."
         }
     }
 
@@ -73,6 +74,7 @@ public enum RecorderStartFailure: Equatable, Sendable {
         switch self {
         case .meetingUnavailable: "Record a separate meeting"
         case .signInRequired: "Sign in again"
+        case .chooseWindow: "Choose a window"
         default: "Try again"
         }
     }
@@ -100,12 +102,14 @@ public struct RecordingTarget: Codable, Equatable, Sendable {
     public var fallbackIntentId: String
     public var meetingId: String
     public var meetingTitle: String
+    public var meetingUrl: String?
     public var startsAt: Date?
     public var endsAt: Date?
-    public init(fallbackIntentId: String, meetingId: String, meetingTitle: String, startsAt: Date? = nil, endsAt: Date? = nil) {
+    public init(fallbackIntentId: String, meetingId: String, meetingTitle: String, meetingUrl: String? = nil, startsAt: Date? = nil, endsAt: Date? = nil) {
         self.fallbackIntentId = fallbackIntentId
         self.meetingId = meetingId
         self.meetingTitle = meetingTitle
+        self.meetingUrl = meetingUrl
         self.startsAt = startsAt
         self.endsAt = endsAt
     }

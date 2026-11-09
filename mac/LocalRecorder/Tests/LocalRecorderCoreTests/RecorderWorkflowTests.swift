@@ -2,6 +2,13 @@ import Foundation
 import Testing
 @testable import LocalRecorderCore
 
+@Test func recordingTargetRetainsScheduledURLAndAcceptsOlderPayloads() throws {
+    let scheduled = Data(#"{"fallbackIntentId":"intent","meetingId":"meeting","meetingTitle":"Review","meetingUrl":"https://meet.google.com/abc-defg-hij"}"#.utf8)
+    let old = Data(#"{"fallbackIntentId":"intent","meetingId":"meeting","meetingTitle":"Review"}"#.utf8)
+    #expect(try JSONDecoder().decode(RecordingTarget.self, from: scheduled).meetingUrl == "https://meet.google.com/abc-defg-hij")
+    #expect(try JSONDecoder().decode(RecordingTarget.self, from: old).meetingUrl == nil)
+}
+
 @Test func meetingPickerDistinguishesUndatedRecordAndUnavailableCapture() throws {
     let json = """
     {"meetingId":"manual","title":"Manual recording","status":"processing","createdAt":"2026-10-29T14:30:00Z","unavailableReason":"Meeting bot is recording"}

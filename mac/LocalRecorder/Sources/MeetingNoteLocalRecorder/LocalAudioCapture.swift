@@ -174,12 +174,13 @@ final class LocalRecordingCaptureController {
             throw LocalRecordingCaptureError.alreadyRecording
         }
 
-        let filter = try await MeetingWindowPicker().select().filter
+        let selectedWindow = try await MeetingWindowPicker().select()
         let session = try LocalRecordingCaptureSession(
             fallbackIntentId: fallbackIntentId,
             appVersion: appVersion,
             microphoneDeviceUID: microphoneDeviceUID,
-            windowFilter: filter,
+            windowFilter: selectedWindow.filter,
+            selectedWindowIdentity: selectedWindow.selectedWindowIdentity,
             onScreenshotStatus: onScreenshotStatus,
             onAudioLevel: onAudioLevel
         )
@@ -218,6 +219,7 @@ final class LocalRecordingCaptureSession {
         appVersion: String,
         microphoneDeviceUID: String?,
         windowFilter: SCContentFilter,
+        selectedWindowIdentity: MeetingCaptureWindow?,
         onScreenshotStatus: @escaping @Sendable (String?) -> Void,
         onAudioLevel: @escaping @Sendable (LocalRecorderAudioSource, Float) -> Void
     ) throws {
@@ -238,7 +240,7 @@ final class LocalRecordingCaptureSession {
         let activitySampler = LocalRecorderActivitySampler(startedAt: startedAt)
         self.activitySampler = activitySampler
         self.startedAt = startedAt
-        self.screenshots = MeetingWindowScreenshots(filter: windowFilter, directory: directoryURL, startedAt: startedAt, onStatus: onScreenshotStatus)
+        self.screenshots = MeetingWindowScreenshots(filter: windowFilter, selectedWindowIdentity: selectedWindowIdentity, directory: directoryURL, startedAt: startedAt, onStatus: onScreenshotStatus)
         self.synthesizedAudioURL = directoryURL.appending(path: "synthesized.m4a")
         self.microphoneRecorder = try MicrophoneTrackRecorder(
             outputURL: microphoneAudioURL,

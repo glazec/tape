@@ -10,6 +10,8 @@ import { createRecordingWindowSelector } from "./recording-window.mjs";
 import { createRecordingStartup } from "./recording-startup.mjs";
 import { createRecordingLifecycle } from "./recording-lifecycle.mjs";
 import { startParentProcessMonitor } from "./parent-monitor.mjs";
+import { startConfirmedRecording } from "./confirmed-recording.mjs";
+import { configureMeetingAutomation } from "./meeting-automation.mjs";
 
 const RecallAiSdk = RecallAiSdkImport.default ?? RecallAiSdkImport;
 
@@ -104,6 +106,12 @@ async function main() {
     return;
   }
 
+  if (args.has("setup-meeting")) {
+    const status = await configureMeetingAutomation(RecallAiSdk, args.get("setup-meeting"));
+    send({ type: "setup_result", status });
+    return;
+  }
+
   const apiUrl = args.get("api-url");
   const uploadToken = args.get("upload-token");
   const controlFile = args.get("control-file");
@@ -153,7 +161,8 @@ async function main() {
   });
   const startup = createRecordingStartup({
     sdk: RecallAiSdk,
-    select: () => recordingWindowSelector.select(),
+    startRecording: config => startConfirmedRecording(RecallAiSdk, config),
+    select: () => recordingWindowSelector.select({ expectedMeetingUrl: args.get("meeting-url") }),
     uploadToken,
     makeLifecycle: (id) => {
       windowId = id;
