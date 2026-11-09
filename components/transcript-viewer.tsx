@@ -1357,9 +1357,15 @@ export function TranscriptViewer({
         </header>
 
         {displaySegments.length === 0 ? (
-          <p className="py-8 text-sm text-muted-foreground">
-            No transcript text yet.
-          </p>
+          <>
+            <MeetingVisualTimeline
+              onOpenGallery={() => setIsGalleryOverviewOpen(true)}
+              visualAssets={visualAssets}
+            />
+            <p className="py-8 text-sm text-muted-foreground">
+              No transcript text yet.
+            </p>
+          </>
         ) : (
           <>
             {displayTranslationSummary &&

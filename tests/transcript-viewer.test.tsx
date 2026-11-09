@@ -759,6 +759,17 @@ describe("TranscriptViewer", () => {
     expect(html).not.toContain("High pressure words or fast pace");
   });
 
+  it("shows captured images when no transcript is available", () => {
+    const html = renderToStaticMarkup(
+      <TranscriptViewer
+        segments={[]}
+        visualAssets={[{ id: "silent-slide", capturedAt: null, timestampMs: 28000, url: "/silent-slide.jpg" }]}
+      />,
+    );
+    expect(html).toContain('aria-label="Browse all captured images"');
+    expect(html).toContain("No transcript text yet.");
+  });
+
   it("shows captured meeting images inline at their transcript position", () => {
     const html = renderToStaticMarkup(
       <TranscriptViewer
