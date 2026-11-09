@@ -1063,6 +1063,7 @@ struct RecorderSettingsView: View {
     var isSignedIn: Bool
     @State private var showsAudioCheck = false
     @State private var showsPermissions = false
+    @State private var showsMeetingCapture = false
 #if DEBUG
     @State private var showsDevelopmentServer = false
 #endif
@@ -1091,6 +1092,20 @@ struct RecorderSettingsView: View {
                 DisclosureGroup("Audio check", isExpanded: $showsAudioCheck) {
                     audioCheck.padding(.top, 8)
                 }
+            }
+
+            DisclosureGroup("Background meeting capture", isExpanded: $showsMeetingCapture) {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Set up before joining a call. macOS may ask for app control, and your browser or Zoom may restart once. Browser tabs are restored. Your workspace must also support background capture.")
+                        .fixedSize(horizontal: false, vertical: true)
+                    Button("Enable Google Meet recording") { model.configureMeetingCapture(forZoom: false) }
+                    Button("Enable Zoom recording") { model.configureMeetingCapture(forZoom: true) }
+                    if let status = model.meetingCaptureSetupStatus {
+                        Text(status).fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                .disabled(model.isRecording || model.isStartingRecording || model.isFinishingRecording || model.isConfiguringMeetingCapture)
+                .padding(.top, 8)
             }
 
             if isSignedIn, let account = model.account {

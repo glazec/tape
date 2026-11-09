@@ -15,12 +15,16 @@ before(() => {
   const lifecycle = core.slice(core.indexOf("public enum RecorderSDKEvent"), core.indexOf("public enum RecorderRecoveryPolicy"));
   writeFileSync(join(directory, "sidecar.mjs"), `
 import readline from "node:readline";
-import { closeSync } from "node:fs";
-if (process.env.TAPE_TEST_SDK_EXIT_MODE === "pipe-race") closeSync(0);
+import { closeSync, readFileSync } from "node:fs";
+const controlFile = process.argv[process.argv.indexOf("--control-file") + 1];
+const mode = controlFile.endsWith("/second.control") ? "during-stop" : process.env.TAPE_TEST_SDK_EXIT_MODE;
+if (mode === "pipe-race") closeSync(0);
 process.stdout.write(JSON.stringify({ type: "started", windowId: "window" }) + "\\n");
 if (process.env.TAPE_TEST_SDK_EXIT_MODE === "startup-exit") process.exit(9);
-if (["before-stop", "pipe-race"].includes(process.env.TAPE_TEST_SDK_EXIT_MODE)) setTimeout(() => process.exit(9), 120);
-if (process.env.TAPE_TEST_SDK_EXIT_MODE !== "pipe-race") readline.createInterface({input: process.stdin}).on("line", line => {
+if (["before-stop", "pipe-race"].includes(mode)) setInterval(() => {
+  if (readFileSync(controlFile, "utf8") === "exit") process.exit(9);
+}, 10);
+if (mode !== "pipe-race") readline.createInterface({input: process.stdin}).on("line", line => {
   const command = JSON.parse(line);
   if (command.type === "stop") process.exit(8); // Deliberately no stopped ack.
   if (command.type === "shutdown") process.exit(0);
@@ -52,9 +56,20 @@ enum LocalRecorderFileLocations {
       print("upload evidence retained until cleanup")
       return
     }
-    if ProcessInfo.processInfo.environment["TAPE_TEST_SDK_EXIT_MODE"] == "before-stop" {
-      try await Task.sleep(for: .milliseconds(250))
+    let controlFile = LocalRecorderFileLocations.uploadQueueDirectoryURL()
+      .deletingLastPathComponent().appendingPathComponent("sdk-controls/first.control")
+    if mode == "before-stop" {
+      try Data("exit".utf8).write(to: controlFile, options: .atomic)
+      let deadline = Date().addingTimeInterval(5)
+      while unexpected == 0 && Date() < deadline {
+        try await Task.sleep(for: .milliseconds(20))
+      }
       precondition(unexpected == 1)
+    } else if mode == "pipe-race" {
+      Task {
+        try await Task.sleep(for: .milliseconds(50))
+        try Data("exit".utf8).write(to: controlFile, options: .atomic)
+      }
     }
     let result = try await controller.stop()
     precondition(result.didCaptureStart, "Process exit must retain capture evidence")

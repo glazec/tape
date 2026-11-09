@@ -6,6 +6,7 @@ import LocalRecorderCore
 // The selected filter is immutable after selection and only used for capture.
 struct SelectedMeetingWindow: @unchecked Sendable {
     let filter: SCContentFilter
+    let selectedWindowIdentity: MeetingCaptureWindow?
 }
 
 @MainActor
@@ -32,7 +33,18 @@ final class MeetingWindowPicker: NSObject, SCContentSharingPickerObserver {
         Task { @MainActor in self.resolve(.failure(CancellationError())) }
     }
     nonisolated func contentSharingPicker(_ picker: SCContentSharingPicker, didUpdateWith filter: SCContentFilter, for stream: SCStream?) {
-        Task { @MainActor in self.resolve(.success(SelectedMeetingWindow(filter: filter))) }
+        Task { @MainActor in
+            guard #available(macOS 15.2, *) else {
+                self.resolve(.success(SelectedMeetingWindow(filter: filter, selectedWindowIdentity: nil)))
+                return
+            }
+            let identity = filter.includedWindows.first?.captureIdentity
+            if let identity, MeetingCaptureWindow.browserBundleIDs.contains(identity.bundleID), identity.activeTabURL == nil {
+                self.resolve(.failure(LocalRecordingCaptureError.writerFailed("Could not identify this browser tab. Choose a dedicated presentation window instead.")))
+                return
+            }
+            self.resolve(.success(SelectedMeetingWindow(filter: filter, selectedWindowIdentity: identity)))
+        }
     }
     nonisolated func contentSharingPickerStartDidFailWithError(_ error: Error) {
         Task { @MainActor in self.resolve(.failure(error)) }
@@ -47,6 +59,7 @@ final class MeetingWindowPicker: NSObject, SCContentSharingPickerObserver {
 @MainActor
 final class MeetingWindowScreenshots {
     private let filter: SCContentFilter
+    private let selectedWindowIdentity: MeetingCaptureWindow?
     private let directory: URL
     private let startedAt: Date
     private let onStatus: @Sendable (String?) -> Void
@@ -54,14 +67,19 @@ final class MeetingWindowScreenshots {
     private var fingerprint: [UInt8]?
     private var screenshots: [LocalRecordingScreenshot] = []
 
-    init(filter: SCContentFilter, directory: URL, startedAt: Date, onStatus: @escaping @Sendable (String?) -> Void) {
+    init(filter: SCContentFilter, selectedWindowIdentity: MeetingCaptureWindow? = nil, directory: URL, startedAt: Date, onStatus: @escaping @Sendable (String?) -> Void) {
         self.filter = filter
+        self.selectedWindowIdentity = selectedWindowIdentity
         self.directory = directory
         self.startedAt = startedAt
         self.onStatus = onStatus
     }
 
     func start() async throws {
+        guard selectedWindowIdentity != nil else {
+            onStatus("Screenshots are unavailable for this window. Audio recording continues.")
+            return
+        }
         // Fail startup visibly if the selected window cannot be captured.
         try await capture()
         task = Task { [weak self] in
@@ -86,7 +104,17 @@ final class MeetingWindowScreenshots {
         return screenshots
     }
 
+    private func validateSelectedWindow() async throws {
+        if let selectedWindowIdentity {
+            let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
+            guard content.windows.contains(where: { $0.captureIdentity == selectedWindowIdentity }) else {
+                throw LocalRecordingCaptureError.writerFailed("The detected meeting is no longer visible in its window")
+            }
+        }
+    }
+
     private func capture() async throws {
+        try await validateSelectedWindow()
         let capturedAt = Date()
         let configuration = SCStreamConfiguration()
         let rect = filter.contentRect
@@ -97,6 +125,7 @@ final class MeetingWindowScreenshots {
         configuration.ignoreShadowsSingleWindow = true
         let image = try await SCScreenshotManager.captureImage(contentFilter: filter, configuration: configuration)
         guard !Task.isCancelled else { return }
+        try await validateSelectedWindow()
         let current = try Self.fingerprint(image)
         guard ScreenshotChangeDetector.shouldSave(previous: fingerprint, current: current) else { return }
         let bitmap = NSBitmapImageRep(cgImage: image)
@@ -119,5 +148,15 @@ final class MeetingWindowScreenshots {
             context.draw(image, in: CGRect(x: 0, y: 0, width: 64, height: 36))
         }
         return pixels
+    }
+}
+
+private extension SCWindow {
+    var captureIdentity: MeetingCaptureWindow? {
+        guard let application = owningApplication, let title else { return nil }
+        return MeetingCaptureWindow(id: windowID, processID: application.processID,
+                                    bundleID: application.bundleIdentifier, title: title,
+                                    activeTabURL: MeetingCaptureWindow.browserBundleIDs.contains(application.bundleIdentifier)
+                                        ? BrowserMeetingTab.activeURL(processID: application.processID, frame: frame) : nil)
     }
 }

@@ -130,12 +130,14 @@ jobs:
         shell: bash
         env:
           BUILD_CONFIGURATION: release
+          GH_TOKEN: ${{ github.token }}
           SENTRY_DSN: ${{ vars.SENTRY_DSN }}
           SENTRY_ENVIRONMENT: production
         run: |
           set -euo pipefail
           npm ci --prefix Sidecar
           npm test --prefix Sidecar
+          bash script/resolve_swift_dependencies.sh
           swift test
           node --test script/test_permissions.mjs script/test_sdk_capture.mjs script/test_compressed_audio.mjs
           script/build_and_run.sh --package

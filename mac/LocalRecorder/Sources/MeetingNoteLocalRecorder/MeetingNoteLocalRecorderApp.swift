@@ -291,13 +291,39 @@ final class RecorderAppModel: NSObject, ObservableObject, UNUserNotificationCent
     private var fallbackNotificationNextDatesByIntentId: [String: Date] = [:]
     var endPromptPolicy = RecorderEndPromptPolicy(scheduledEnd: nil)
     @Published var isStartingRecording = false
+    @Published var isConfiguringMeetingCapture = false
+    @Published var meetingCaptureSetupStatus: String?
+
+    func configureMeetingCapture(forZoom: Bool) {
+        guard !isRecording, !isStartingRecording, !isFinishingRecording, !isConfiguringMeetingCapture else { return }
+        isConfiguringMeetingCapture = true
+        meetingCaptureSetupStatus = "Complete the macOS prompt to prepare meeting capture."
+        Task {
+            defer { isConfiguringMeetingCapture = false }
+            do {
+                let status = try await recallSDKController.configureMeetingAutomation(permission: forZoom ? "zoom-raw-media" : "browser-automation")
+                switch status {
+                case "granted": meetingCaptureSetupStatus = "App access is ready. Background capture also requires your workspace to support it."
+                case "denied": meetingCaptureSetupStatus = "Allow this app in System Settings → Privacy & Security → Automation, then try again."
+                case "not_installed": meetingCaptureSetupStatus = forZoom ? "Install Zoom before setting up meeting capture." : "Set a supported browser such as Chrome as your default browser, then try again."
+                default: meetingCaptureSetupStatus = "Setup did not finish. Leave any active call, then try again."
+                }
+            } catch { meetingCaptureSetupStatus = error.localizedDescription }
+        }
+    }
     @Published var startingRecordingTitle = "New meeting"
     @Published var isSwitchingMeeting = false
     @Published var destinationUnconfirmed = false
     @Published var isMeetingPickerPresented = false
     /// A destination chosen before Record is pressed; nil follows `recordingDestination`'s default.
     @Published var pendingDestination: RecordingDestination? {
-        didSet { pendingDestinationChosenAt = pendingDestination == nil ? nil : Date() }
+        didSet {
+            pendingDestinationChosenAt = pendingDestination == nil ? nil : Date()
+            if recordingStartFailure == .chooseWindow {
+                recordingStartFailure = nil
+                fallbackMeetingID = nil
+            }
+        }
     }
     var pendingDestinationChosenAt: Date?
     /// Meetings the server refused for this recording; shown as unavailable in the picker.
@@ -311,6 +337,7 @@ final class RecorderAppModel: NSObject, ObservableObject, UNUserNotificationCent
     @Published var meetingPickerError: String?
     @Published var meetingPickerLoadFailed = false
     @Published var recordingStartFailure: RecorderStartFailure?
+    var fallbackMeetingID: String?
     var startTargetRejected: Bool { recordingStartFailure == .meetingUnavailable }
     @Published var endPrompt: RecorderEndPrompt?
     @Published var pendingUploadCount = 0
@@ -703,6 +730,10 @@ final class RecorderAppModel: NSObject, ObservableObject, UNUserNotificationCent
     }
 
     func startRecording() {
+        if recordingStartFailure == .chooseWindow, let meetingId = fallbackMeetingID {
+            beginRecording(meetingId: meetingId, nativeOnly: true)
+            return
+        }
         switch recordingDestination {
         case .meeting(let id, _):
             beginRecording(meetingId: id)
@@ -949,8 +980,8 @@ final class RecorderAppModel: NSObject, ObservableObject, UNUserNotificationCent
     ) async {
         stopLevelTest()
         isAdvancedExpanded = false
-        var intentID = fallbackIntentId
-        var confirmedTitle = title
+        let intentID = fallbackIntentId
+        let confirmedTitle = title
         let clientRecordingId = captureSessionID ?? UUID().uuidString
         var startedWithRecallSDK = false
         var captureStateUnknown = false
@@ -965,13 +996,13 @@ final class RecorderAppModel: NSObject, ObservableObject, UNUserNotificationCent
                 LocalRecorderTelemetry.capture(error, operation: .sdkStart)
                 guard let target = activeTarget else { return }
                 do {
-                    let replacement = try await replaceSDKAttemptForNative(client: client, target: target, recordingID: clientRecordingId)
-                    intentID = replacement.fallbackIntentId
-                    confirmedTitle = replacement.meetingTitle
+                    try await finishFailedSDKAttempt(client: client, target: target, recordingID: clientRecordingId)
+                    offerWindowFallback(for: target)
                 } catch {
                     statusText = "Could not prepare local recording. Retry to recover this meeting."
                     return
                 }
+                return
             }
         }
         if startedWithRecallSDK {
@@ -997,6 +1028,9 @@ final class RecorderAppModel: NSObject, ObservableObject, UNUserNotificationCent
         persistPendingMeetings()
         isRecording = true
         statusText = captureStateUnknown ? "Capture state is unconfirmed. Use Stop before recording again." : "Recording \(confirmedTitle)"
+        if startedWithRecallSDK && !captureStateUnknown && !recallSDKController.activeRawMedia {
+            statusText = "Recording with local capture. Background shared content capture is unavailable for this call."
+        }
         if activeRecordingBackend == .recallDesktopSDK && !captureStateUnknown {
             if recallSDKController.activeCaptureEnded {
                 captureNaturallyEnded = true
@@ -1089,7 +1123,7 @@ final class RecorderAppModel: NSObject, ObservableObject, UNUserNotificationCent
             recoveryState.sdkDrains.append(.init(recordingID: clientRecordingId, target: target))
             try persistCaptureRecovery()
         }
-        try await recallSDKController.start(upload: upload, clientRecordingId: clientRecordingId)
+        try await recallSDKController.start(upload: upload, clientRecordingId: clientRecordingId, expectedMeetingURL: activeTarget?.meetingUrl)
     }
 
     func startLocalCapture(fallbackIntentId: String) async throws {
@@ -1098,7 +1132,7 @@ final class RecorderAppModel: NSObject, ObservableObject, UNUserNotificationCent
         recordingAudioGeneration += 1
         let audioGeneration = recordingAudioGeneration
         let captureID = captureSessionID
-        statusText = "Choose the meeting window. Keep the meeting tab visible for screenshots."
+        statusText = "Choose a window showing the shared content. Keep that content visible for screenshots."
         try await captureController.start(
             fallbackIntentId: fallbackIntentId,
             appVersion: appVersion,
@@ -1141,7 +1175,14 @@ final class RecorderAppModel: NSObject, ObservableObject, UNUserNotificationCent
         endPrompt = nil
         resetAudioLevels()
         isFinishingRecording = false
-        beginRecording(meetingId: target.meetingId, nativeOnly: true)
+        offerWindowFallback(for: target)
+    }
+
+    private func offerWindowFallback(for target: RecordingTarget) {
+        pendingDestination = .meeting(id: target.meetingId, title: target.meetingTitle)
+        fallbackMeetingID = target.meetingId
+        recordingStartFailure = .chooseWindow
+        statusText = RecorderStartFailure.chooseWindow.message
     }
 
     private func observeAudioLevel(source: LocalRecorderAudioSource, level: Float, at observedAt: Date = Date()) {

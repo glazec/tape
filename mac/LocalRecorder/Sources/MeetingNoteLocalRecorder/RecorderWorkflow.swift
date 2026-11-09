@@ -144,7 +144,7 @@ extension RecorderAppModel {
     }
 
     func beginRecording(meetingId: String? = nil, title: String? = nil, legacyIntent: String? = nil, nativeOnly: Bool = false) {
-        guard !isStartingRecording, !isRecording, !isFinishingRecording else { return }
+        guard !isStartingRecording, !isRecording, !isFinishingRecording, !isConfiguringMeetingCapture else { return }
         guard canMonitor, let client = makeClient() else { statusText = "Login and permissions are needed first"; return }
         startingRecordingTitle = meetingId.flatMap { id in
             id == nextScheduleMeeting?.meetingId ? nextScheduleMeeting?.title : meetingChoices.first(where: { $0.meetingId == id })?.title
@@ -226,7 +226,7 @@ extension RecorderAppModel {
         }
     }
 
-    func replaceSDKAttemptForNative(client: LocalRecorderAPIClient, target: RecordingTarget, recordingID: String) async throws -> RecordingTarget {
+    func finishFailedSDKAttempt(client: LocalRecorderAPIClient, target: RecordingTarget, recordingID: String) async throws {
         // SDK startup has either stopped or exited before this function runs.
         // If there was capture, preserve its webhook; never suppress that segment.
         if !recallSDKController.didCaptureStart(recordingID) {
@@ -240,16 +240,6 @@ extension RecorderAppModel {
         }
         activeTarget = nil
         try await sealRecoveredCaptures(client: client)
-        let request = RecordingTargetRequest(clientRequestId: UUID().uuidString, meetingId: target.meetingId)
-        recoveryState.pendingStart = request
-        try persistCaptureRecovery()
-        let replacement = try await client.setRecordingTarget(request)
-        recoveryState.targets.append(replacement)
-        recoveryState.pendingStart = nil
-        try persistCaptureRecovery()
-        activeTarget = replacement
-        captureSessionID = UUID().uuidString
-        return replacement
     }
 
     func loadMeetingChoices(reset: Bool = true) {

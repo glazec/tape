@@ -142,6 +142,8 @@ cat >"$INFO_PLIST" <<PLIST
   <string>NSApplication</string>
   <key>NSMicrophoneUsageDescription</key>
   <string>$APP_DISPLAY_NAME records your microphone for local meeting recordings.</string>
+  <key>NSAppleEventsUsageDescription</key>
+  <string>$APP_DISPLAY_NAME prepares your browser or Zoom for background meeting capture when you enable it.</string>
   <key>NSScreenCaptureUsageDescription</key>
   <string>$APP_DISPLAY_NAME records meeting audio so local recordings include other speakers.</string>
   <key>NSAudioCaptureUsageDescription</key>
@@ -178,6 +180,10 @@ while IFS= read -r -d '' target; do
   if /usr/bin/file "$target" | /usr/bin/grep -q "Mach-O"; then
     if [[ "$target" == "$APP_RESOURCES/node/bin/node" ]]; then
       sign_code "$target" --entitlements "$NODE_ENTITLEMENTS"
+    elif [[ "$(basename "$target")" == "desktop_sdk_macos_exe" ]]; then
+      # Locally signed helpers have no Apple Team ID. Like the app, the SDK
+      # executable must be allowed to load its bundled, locally signed dylibs.
+      sign_code "$target" --entitlements "$ADHOC_APP_ENTITLEMENTS"
     else
       sign_code "$target"
     fi
