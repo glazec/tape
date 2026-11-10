@@ -41,3 +41,16 @@ test("shutdown can retry after a transient SDK failure", async () => {
   assert.equal(attempts, 2);
   assert.equal(exits, 1);
 });
+
+test("a crashed SDK helper still lets stop and shutdown finish", async () => {
+  const calls = [];
+  const dead = async () => { throw new Error("The Desktop SDK is not started or is no longer accepting commands"); };
+  const lifecycle = createRecordingLifecycle({
+    sdk: { stopRecording: dead, shutdown: dead },
+    send: (message) => calls.push(message.type), windowId: "window", exit: (code) => calls.push(`exit:${code}`),
+  });
+  lifecycle.helperExited();
+  await lifecycle.stop();
+  await lifecycle.shutdown();
+  assert.deepEqual(calls, ["stopped", "shutdown", "exit:0"]);
+});

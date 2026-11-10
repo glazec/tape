@@ -41,6 +41,52 @@ enum LocalRecorderSnapshot {
         for (name, image) in pickers {
             write(image, to: directory.appendingPathComponent("\(name).png"))
         }
+
+        for (name, model) in windowChooserStates() {
+            write(capture(model: model, appearance: appearance), to: directory.appendingPathComponent("\(name).png"))
+        }
+
+        // The menu bar panel draws its toolbar over the summary instead of a titlebar row,
+        // so check that the destination card clears it in the ready and recording states.
+        let byName = Dictionary(uniqueKeysWithValues: states())
+        for name in ["starting-soon", "recording"] {
+            guard let model = byName[name] else { continue }
+            let image = capture(RecorderMenuView(model: model, showsWindowChrome: false), appearance: appearance, chrome: false)
+            write(image, to: directory.appendingPathComponent("menubar-\(name).png"))
+        }
+    }
+
+    /// Plain rows stand in for real windows, so these render without Screen Recording access.
+    private static func windowChooserStates() -> [(String, RecorderAppModel)] {
+        let granted = PermissionChecklist(
+            microphone: .granted, screenCapture: .granted, accessibility: .granted,
+            notifications: .granted, startAtLogin: .granted
+        )
+        func starting() -> RecorderAppModel {
+            let model = RecorderAppModel(snapshotBearerToken: "token")
+            model.permissionChecklist = granted
+            model.isStartingRecording = true
+            model.startingRecordingTitle = "Design sync with Northwind"
+            return model
+        }
+        let chooser = starting()
+        chooser.isChoosingWindow = true
+        chooser.statusText = "Choose a window to record"
+        chooser.windowChoices = [
+            CaptureWindowChoice(id: 1, bundleID: "com.google.Chrome", appName: "Google Chrome", title: "Meet – Design sync with Northwind", width: 1440, height: 900),
+            CaptureWindowChoice(id: 2, bundleID: "com.google.Chrome", appName: "Google Chrome", title: "Northwind roadmap – Google Docs", width: 1200, height: 800),
+            CaptureWindowChoice(id: 3, bundleID: "us.zoom.xos", appName: "zoom.us", title: "Zoom Meeting", width: 1280, height: 720),
+            CaptureWindowChoice(id: 4, bundleID: "com.tinyspeck.slackmacgap", appName: "Slack", title: "design-sync (Channel) - Northwind - Slack", width: 1100, height: 760),
+        ]
+
+        let empty = starting()
+        empty.isChoosingWindow = true
+        empty.statusText = "Choose a window to record"
+
+        let afterChoice = starting()
+        afterChoice.statusText = "Starting audio capture"
+
+        return [("window-chooser", chooser), ("window-chooser-empty", empty), ("starting-capture", afterChoice)]
     }
 
     private static func pickerStates() -> [(String, RecorderAppModel)] {
@@ -65,6 +111,11 @@ enum LocalRecorderSnapshot {
         let idle = RecorderAppModel(snapshotBearerToken: "token")
         idle.meetingChoices = meetings.filter { $0.meetingId != "current" }
 
+        // A named new meeting keeps its checkmark and shows the name.
+        let named = RecorderAppModel(snapshotBearerToken: "token")
+        named.meetingChoices = idle.meetingChoices
+        named.pendingDestination = .newMeeting(title: "Interview with Priya")
+
         let loading = RecorderAppModel(snapshotBearerToken: "token")
         loading.isRecording = true
         loading.isLoadingMeetingChoices = true
@@ -86,7 +137,7 @@ enum LocalRecorderSnapshot {
         rejected.rejectedMeetingIDs = ["tomorrow"]
         rejected.lastRejectedMeetingID = "tomorrow"
 
-        for model in [recording, idle, loading, failed, empty, rejected] {
+        for model in [recording, idle, named, loading, failed, empty, rejected] {
             model.permissionChecklist = PermissionChecklist(
                 microphone: .granted, screenCapture: .granted, accessibility: .granted,
                 notifications: .granted, startAtLogin: .granted
@@ -94,7 +145,8 @@ enum LocalRecorderSnapshot {
             model.isMeetingPickerPresented = true
         }
         return [
-            ("picker-recording", recording), ("picker-before-recording", idle), ("picker-loading", loading),
+            ("picker-recording", recording), ("picker-before-recording", idle), ("picker-named-new-meeting", named),
+            ("picker-loading", loading),
             ("picker-error", failed), ("picker-empty", empty), ("picker-rejected", rejected),
         ]
     }
@@ -177,6 +229,32 @@ enum LocalRecorderSnapshot {
         chosen.nextScheduleMeeting = upcoming.nextScheduleMeeting
         chosen.pendingDestination = .newMeeting(title: "Interview with Priya")
 
+        // An earlier meeting picked by hand: the card names it and the calendar stays a quiet line.
+        let existing = RecorderAppModel(snapshotBearerToken: "token")
+        existing.permissionChecklist = granted
+        existing.statusText = "Watching your calendar"
+        existing.nextScheduleMeeting = upcoming.nextScheduleMeeting
+        existing.pendingDestination = .meeting(id: "previous", title: "Monthly catch up")
+
+        // Inside the 30-minute window the calendar event becomes the default destination.
+        let startingSoon = RecorderAppModel(snapshotBearerToken: "token")
+        startingSoon.permissionChecklist = granted
+        startingSoon.statusText = "Watching your calendar"
+        startingSoon.nextScheduleMeeting = upcoming.nextScheduleMeeting
+        startingSoon.nextScheduleMeeting?.startsAt = Date().addingTimeInterval(600)
+        startingSoon.nextScheduleMeeting?.endsAt = Date().addingTimeInterval(600 + 45 * 60)
+
+        // The event is running but the person chose a new meeting instead.
+        let override = RecorderAppModel(snapshotBearerToken: "token")
+        override.permissionChecklist = granted
+        override.statusText = "Watching your calendar"
+        override.nextScheduleMeeting = happeningNow.nextScheduleMeeting
+        override.pendingDestination = .newMeeting(title: nil)
+
+        let noEvents = RecorderAppModel(snapshotBearerToken: "token")
+        noEvents.permissionChecklist = granted
+        noEvents.statusText = "Watching your calendar"
+
         let prompt = RecorderAppModel(snapshotBearerToken: "token")
         prompt.permissionChecklist = granted
         prompt.isRecording = true
@@ -212,6 +290,12 @@ enum LocalRecorderSnapshot {
         // A successful background refresh must not hide the failed Record action.
         serverUnavailable.statusText = "Watching your calendar"
 
+        let signInRequired = RecorderAppModel(snapshotBearerToken: "token")
+        signInRequired.permissionChecklist = granted
+        signInRequired.nextScheduleMeeting = upcoming.nextScheduleMeeting
+        signInRequired.recordingStartFailure = .signInRequired
+        signInRequired.statusText = RecorderStartFailure.signInRequired.message
+
         let settings = RecorderAppModel(snapshotBearerToken: "token")
         settings.permissionChecklist = granted
         settings.statusText = "Watching your calendar"
@@ -229,6 +313,8 @@ enum LocalRecorderSnapshot {
             ("upload-receipt", receipt), ("recording-conflict", conflict),
             ("recording-unavailable", serverUnavailable),
             ("recording-unconfirmed", unconfirmed), ("happening-now", happeningNow), ("destination-chosen", chosen),
+            ("destination-existing", existing), ("starting-soon", startingSoon),
+            ("override-during-event", override), ("no-events", noEvents), ("sign-in-required", signInRequired),
         ]
     }
 

@@ -9,48 +9,54 @@ struct SelectedMeetingWindow: @unchecked Sendable {
     let selectedWindowIdentity: MeetingCaptureWindow?
 }
 
+/// Lists windows for Tape's own chooser. The system content-sharing picker is not used:
+/// once the Recall helper has run in this process and exited, replayd forgets which
+/// client owns Tape's bundle ID and silently drops the picker's result, leaving the
+/// start waiting forever. Shareable-content queries route by connection and keep working.
 @MainActor
-final class MeetingWindowPicker: NSObject, SCContentSharingPickerObserver {
-    private var continuation: CheckedContinuation<SelectedMeetingWindow, Error>?
-
-    func select() async throws -> SelectedMeetingWindow {
-        let picker = SCContentSharingPicker.shared
-        var configuration = SCContentSharingPickerConfiguration()
-        configuration.allowedPickerModes = [.singleWindow]
-        configuration.allowsChangingSelectedContent = false
-        configuration.excludedBundleIDs = [Bundle.main.bundleIdentifier].compactMap { $0 }
-        picker.defaultConfiguration = configuration
-        picker.add(self)
-        picker.isActive = true
-        defer { picker.remove(self) }
-        return try await withCheckedThrowingContinuation { continuation in
-            self.continuation = continuation
-            picker.present(using: .window)
-        }
+enum MeetingWindowCatalog {
+    struct Listing {
+        var choices: [CaptureWindowChoice]
+        var windows: [UInt32: SCWindow]
     }
 
-    nonisolated func contentSharingPicker(_ picker: SCContentSharingPicker, didCancelFor stream: SCStream?) {
-        Task { @MainActor in self.resolve(.failure(CancellationError())) }
-    }
-    nonisolated func contentSharingPicker(_ picker: SCContentSharingPicker, didUpdateWith filter: SCContentFilter, for stream: SCStream?) {
-        Task { @MainActor in
-            guard #available(macOS 15.2, *) else {
-                self.resolve(.success(SelectedMeetingWindow(filter: filter, selectedWindowIdentity: nil)))
-                return
-            }
-            // An unidentified browser tab (Chrome often hides it from accessibility)
-            // records audio without screenshots instead of refusing the window.
-            let identity = filter.includedWindows.first?.captureIdentity?.screenshotIdentity
-            self.resolve(.success(SelectedMeetingWindow(filter: filter, selectedWindowIdentity: identity)))
+    static func load() async throws -> Listing {
+        let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
+        let stackOrder = frontToBackOrder()
+        var windows: [UInt32: SCWindow] = [:]
+        let candidates = content.windows.compactMap { window -> CaptureWindowChoice? in
+            guard let application = window.owningApplication else { return nil }
+            windows[window.windowID] = window
+            return CaptureWindowChoice(
+                id: window.windowID, bundleID: application.bundleIdentifier, appName: application.applicationName,
+                title: window.title ?? "", width: window.frame.width, height: window.frame.height,
+                layer: window.windowLayer, isOnScreen: window.isOnScreen, stackOrder: stackOrder[window.windowID]
+            )
         }
+        let choices = CaptureWindowChoices.choices(from: candidates, excludingBundleID: Bundle.main.bundleIdentifier)
+        return Listing(choices: choices, windows: windows.filter { id, _ in choices.contains { $0.id == id } })
     }
-    nonisolated func contentSharingPickerStartDidFailWithError(_ error: Error) {
-        Task { @MainActor in self.resolve(.failure(error)) }
+
+    static func selection(for window: SCWindow) -> SelectedMeetingWindow {
+        // An unidentified browser tab (Chrome often hides it from accessibility)
+        // records audio without screenshots instead of refusing the window.
+        SelectedMeetingWindow(
+            filter: SCContentFilter(desktopIndependentWindow: window),
+            selectedWindowIdentity: window.captureIdentity?.screenshotIdentity
+        )
     }
-    private func resolve(_ result: Result<SelectedMeetingWindow, Error>) {
-        if case .failure = result { SCContentSharingPicker.shared.isActive = false }
-        continuation?.resume(with: result)
-        continuation = nil
+
+    /// The window list is ordered front to back; only the numbers are read, which needs
+    /// no Screen Recording access.
+    private static func frontToBackOrder() -> [UInt32: Int] {
+        guard let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] else {
+            return [:]
+        }
+        var order: [UInt32: Int] = [:]
+        for (index, info) in list.enumerated() {
+            if let number = (info[kCGWindowNumber as String] as? NSNumber)?.uint32Value, order[number] == nil { order[number] = index }
+        }
+        return order
     }
 }
 
@@ -103,7 +109,6 @@ final class MeetingWindowScreenshots {
         task?.cancel()
         await task?.value
         task = nil
-        SCContentSharingPicker.shared.isActive = false
         return screenshots
     }
 

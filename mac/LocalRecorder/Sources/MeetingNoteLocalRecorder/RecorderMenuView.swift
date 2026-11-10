@@ -139,13 +139,19 @@ struct RecorderMenuView: View {
             if showsWindowChrome {
                 HStack(spacing: 2) {
                     Spacer()
-                    toolbarControls
+                    // The chooser has its own refresh, and settings cannot open over it.
+                    if !model.isChoosingWindow { toolbarControls }
                 }
                 .padding(.trailing, 6)
                 .frame(height: 28)
             }
 
-            if showsMeetingPicker {
+            if model.isChoosingWindow {
+                // A start waiting on a window owns the panel until it is chosen or cancelled.
+                RecorderWindowChooser(model: model)
+                    .padding(.top, showsWindowChrome ? 0 : 8)
+                    .transition(Self.pageTransition)
+            } else if showsMeetingPicker {
                 // A page inside the panel, not a popover: clicking into a popover
                 // makes the menu bar panel resign key and close both.
                 RecorderMeetingPicker(model: model)
@@ -159,7 +165,7 @@ struct RecorderMenuView: View {
                     .transition(Self.pageTransition)
             }
 
-            if model.isAdvancedExpanded && !showsMeetingPicker {
+            if model.isAdvancedExpanded && !showsMeetingPicker && !model.isChoosingWindow {
                 RecorderSettingsView(model: model, isSignedIn: isSignedIn)
                     .transition(.opacity)
             }
@@ -168,6 +174,7 @@ struct RecorderMenuView: View {
         // so the content and the window move together instead of the content snapping
         // and the edge catching up. Every path that opens or closes them is covered.
         .animation(PanelWindowFitter.animation, value: showsMeetingPicker)
+        .animation(PanelWindowFitter.animation, value: model.isChoosingWindow)
         .animation(PanelWindowFitter.animation, value: model.isAdvancedExpanded)
         .frame(width: 340)
         .fixedSize(horizontal: false, vertical: true)
@@ -210,10 +217,10 @@ struct RecorderMenuView: View {
             .frame(height: 14)
 
             if model.isRecording {
+                // Full width like the ready card: the toolbar overlay ends above the card's top edge.
                 RecordingDestinationCard(model: model, togglePicker: toggleMeetingPicker)
                     .focused($isTitleFocused)
                     .padding(.top, 10)
-                    .padding(.trailing, showsWindowChrome ? 0 : 24)
 
                 if model.isFinishingRecording {
                     SavingProgressView(
@@ -228,6 +235,50 @@ struct RecorderMenuView: View {
                     )
                     .padding(.top, 14)
                 }
+            } else if showsDestinationChip {
+                // Ready to record: the destination is the headline, so the title above
+                // Record is always the meeting it saves to. A calendar event that is not
+                // the destination stays a quiet line, never a competing title.
+                DestinationCard(
+                    caption: "Saves to",
+                    title: destinationTitle,
+                    meta: destinationMeta,
+                    isPickerOpen: model.isMeetingPickerPresented,
+                    help: "Choose which meeting this recording is saved to",
+                    action: toggleMeetingPicker
+                )
+                .padding(.top, 10)
+
+                if showsConflictNote, let meeting = model.nextScheduleMeeting {
+                    Text("Tape's bot is already recording \u{201C}\(meeting.title)\u{201D}. A recording from this Mac saves as a separate new meeting.")
+                        .font(TapeType.sans(11.5))
+                        .foregroundStyle(TapePalette.muted)
+                        .lineLimit(3)
+                        .truncationMode(.tail)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(.top, 8)
+                } else if let next = calendarContextMeeting {
+                    calendarContextLine(next)
+                        .padding(.top, 8)
+                }
+
+                // Record sits right under the destination, so receipts and notices below
+                // it can never be read as the meeting it saves to.
+                primaryButton
+                    .padding(.top, 14)
+            } else if model.isStartingRecording && !model.isChoosingWindow {
+                // The same card as before and during recording, so the destination does not
+                // jump between a card and a bare title while capture starts.
+                DestinationCard(
+                    caption: "Saving to",
+                    title: model.startingRecordingTitle,
+                    meta: state.detail,
+                    isPickerOpen: false,
+                    isInteractive: false,
+                    help: "Recording is starting",
+                    action: {}
+                )
+                .padding(.top, 10)
             } else {
                 Text(state.title)
                     .lineLimit(2)
@@ -262,17 +313,6 @@ struct RecorderMenuView: View {
                     .disabled(model.isRequestingPermissions || model.isRestarting)
                 }
 
-                if showsDestinationChip {
-                    RecordingDestinationChip(model: model, togglePicker: toggleMeetingPicker)
-                        .padding(.top, 12)
-                    if showsConflictNote {
-                        Text("Saved as a new meeting so the bot's recording stays intact.")
-                            .font(TapeType.sans(11))
-                            .foregroundStyle(TapePalette.muted)
-                            .fixedSize(horizontal: false, vertical: true)
-                            .padding(.top, 6)
-                    }
-                }
             }
 
             if let prompt = model.endPrompt {
@@ -290,14 +330,9 @@ struct RecorderMenuView: View {
                 .padding(.top, 8)
             }
 
-            if model.endPrompt == nil {
-            Button(action: performPrimaryAction) {
-                Text(state.actionTitle)
-            }
-            .buttonStyle(RecorderActionButtonStyle(kind: state.actionKind))
-            .disabled(state.isActionDisabled)
-            .fixedSize()
-            .padding(.top, showsDestinationChip ? 12 : 16)
+            if model.endPrompt == nil && !showsDestinationChip {
+                primaryButton
+                    .padding(.top, 16)
             }
         }
         // Short titles must not shrink the column: it would center in the panel
@@ -312,6 +347,47 @@ struct RecorderMenuView: View {
                     .offset(x: 6, y: -4)
             }
         }
+    }
+
+    private var primaryButton: some View {
+        Button(action: performPrimaryAction) {
+            Text(state.actionTitle)
+        }
+        .buttonStyle(RecorderActionButtonStyle(kind: state.actionKind))
+        .disabled(state.isActionDisabled)
+        .fixedSize()
+    }
+
+    /// The next calendar event when Record does not save to it. Clicking it opens the
+    /// picker, which is how a later event becomes the destination before its 30 minutes.
+    private func calendarContextLine(_ next: LocalRecorderMonitoringMeeting) -> some View {
+        let isOngoing = next.isOngoing(at: Date())
+        let when = isOngoing
+            ? next.endsAt.map { "until " + timeText($0) } ?? "since " + timeText(next.startsAt)
+            : "\(dayText(next.startsAt)) \(timeText(next.startsAt))"
+        // The 30-minute rule only explains an event that is simply not due yet; a running
+        // event the person moved away from, or one the bot records, is not waiting on it.
+        let explainsTiming = !isOngoing && next.botStatus != "recording"
+            && next.startsAt.timeIntervalSinceNow > 30 * 60
+        return Button(action: toggleMeetingPicker) {
+            HStack(spacing: 4) {
+                Text(isOngoing ? "Now:" : "Up next:")
+                    .foregroundStyle(TapePalette.ash)
+                Text(next.title)
+                    .foregroundStyle(TapePalette.muted)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                Text("\u{00B7} \(when)")
+                    .foregroundStyle(TapePalette.ash)
+                    .fixedSize()
+                    .monospacedDigit()
+            }
+            .font(TapeType.sans(11.5))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help(explainsTiming ? "Calendar meetings become the destination 30 minutes before they start. Click to record into it now." : "")
+        .accessibilityHint("Opens the meeting picker to choose where this recording saves")
     }
 
     private var toolbarControls: some View {
@@ -385,8 +461,56 @@ struct RecorderMenuView: View {
 
     private var showsConflictNote: Bool {
         guard model.nextScheduleMeeting?.botStatus == "recording" else { return false }
+        return isNewDestination
+    }
+
+    private var isNewDestination: Bool {
         if case .newMeeting = model.recordingDestination { return true }
         return false
+    }
+
+    /// The calendar event Record saves to, when the destination is that event.
+    private var destinationEvent: LocalRecorderMonitoringMeeting? {
+        guard case .meeting(let id, _) = model.recordingDestination,
+              let meeting = model.suggestedMeeting, meeting.meetingId == id else { return nil }
+        return meeting
+    }
+
+    private var destinationTitle: String {
+        switch model.recordingDestination {
+        case .meeting(_, let title): title
+        case .newMeeting(let title): title ?? "New meeting"
+        }
+    }
+
+    /// One line on what pressing Record will do with this destination.
+    private var destinationMeta: String {
+        if let event = destinationEvent {
+            return eventMeta(event)
+        }
+        switch model.recordingDestination {
+        case .meeting(let id, _):
+            // A calendar event picked before its 30 minutes still reads as that event.
+            if let next = model.nextScheduleMeeting, next.meetingId == id { return eventMeta(next) }
+            return "Adds to this meeting · Earlier recordings stay"
+        case .newMeeting(let title):
+            return title == nil ? "Created when recording starts" : "New meeting · Created when recording starts"
+        }
+    }
+
+    private func eventMeta(_ event: LocalRecorderMonitoringMeeting) -> String {
+        if event.isOngoing(at: Date()) {
+            let timing = event.endsAt.map { "Until " + timeText($0) } ?? "Started at " + timeText(event.startsAt)
+            return "\(timing) · \(notetakerText(event))"
+        }
+        return "\(dayText(event.startsAt)) \(rangeText(event)) · \(notetakerText(event))"
+    }
+
+    /// The next calendar event, shown as context only when Record does not save to it.
+    private var calendarContextMeeting: LocalRecorderMonitoringMeeting? {
+        guard let next = model.nextScheduleMeeting, destinationEvent?.meetingId != next.meetingId else { return nil }
+        if case .meeting(let id, _) = model.recordingDestination, id == next.meetingId { return nil }
+        return next
     }
 
     /// A failed upload gets a card with recovery actions instead of a status line.
@@ -411,7 +535,10 @@ struct RecorderMenuView: View {
             "No upcoming meetings", "Monitoring", "Recording \(model.activeRecordingTitle ?? "")",
             "Signed out", "Testing audio levels", "Recording", "Capture stopped", "Starting recording",
         ]
-        guard !routine.contains(text), !model.isFinishingRecording, !model.isRequestingPermissions else {
+        // While starting, the summary's detail line already shows the status; a signed-out
+        // start has its own summary.
+        guard !routine.contains(text), !model.isFinishingRecording, !model.isStartingRecording, !model.isRequestingPermissions,
+              model.recordingStartFailure != .signInRequired else {
             return nil
         }
         if model.nextPermissionStep != nil, text.hasPrefix("Enable") {
@@ -474,7 +601,14 @@ struct RecorderMenuView: View {
             )
         }
         if model.isStartingRecording {
-            return RecorderSummaryState(eyebrow: "Starting", tone: TapePalette.amber, title: model.startingRecordingTitle, detail: "Preparing audio capture", actionTitle: "Starting", actionKind: .quiet, isActionDisabled: true)
+            // The model's status names the step that is actually running, such as
+            // waiting for a window, instead of a fixed line that hides a stalled start.
+            let detail = model.statusText == "Starting recording" ? "Preparing audio capture" : model.statusText
+            return RecorderSummaryState(
+                eyebrow: "Starting", tone: TapePalette.amber, title: model.startingRecordingTitle, detail: detail,
+                actionTitle: model.isChoosingWindow ? "Cancel" : "Starting", actionKind: .quiet,
+                isActionDisabled: !model.isChoosingWindow
+            )
         }
         if model.isFinishingRecording {
             let isUploading = model.statusText.localizedCaseInsensitiveContains("upload")
@@ -522,27 +656,48 @@ struct RecorderMenuView: View {
                 isActionDisabled: false
             )
         }
-        if let meeting = model.nextScheduleMeeting {
-            let isOngoing = meeting.isOngoing(at: Date())
+        if model.recordingStartFailure == .signInRequired {
+            // The destination card is hidden here: nothing can record until sign-in.
             return RecorderSummaryState(
-                eyebrow: isOngoing ? "Happening now" : "Coming up · \(dayText(meeting.startsAt))",
-                tone: isOngoing ? TapePalette.green : nil,
-                title: meeting.title,
-                detail: isOngoing
-                    ? "\(meeting.endsAt.map { "Until " + timeText($0) } ?? "Started at " + timeText(meeting.startsAt)) · \(notetakerText(meeting))"
-                    : "\(rangeText(meeting)) · \(notetakerText(meeting))",
-                detailHelp: meeting.botStatusDetail,
-                actionTitle: model.recordingStartFailure?.actionTitle ?? (meeting.botStatus == "recording" ? "Record on this Mac" : "Record now"),
+                eyebrow: "Signed out",
+                tone: TapePalette.amber,
+                title: "Sign in to record",
+                detail: "Your Tape session ended, so nothing was recorded.",
+                actionTitle: RecorderStartFailure.signInRequired.actionTitle,
                 actionKind: .primary,
                 isActionDisabled: false
             )
         }
+        // Ready: the eyebrow and the button follow the destination card, not the calendar,
+        // so nothing above Record names a meeting it will not save to.
+        let destinationAction: String
+        if destinationEvent != nil {
+            destinationAction = "Record this meeting"
+        } else if isNewDestination {
+            destinationAction = "Record new meeting"
+        } else {
+            destinationAction = "Record into this meeting"
+        }
+        let eyebrow: String
+        let tone: Color?
+        if model.recordingStartFailure != nil {
+            // A failed start must not keep announcing the meeting as ready.
+            (eyebrow, tone) = ("Couldn't start", TapePalette.amber)
+        } else if showsConflictNote {
+            (eyebrow, tone) = ("Bot is recording", TapePalette.green)
+        } else if let event = destinationEvent {
+            let isOngoing = event.isOngoing(at: Date())
+            (eyebrow, tone) = (isOngoing ? "Happening now" : "Starting soon", isOngoing ? TapePalette.green : nil)
+        } else {
+            (eyebrow, tone) = ("Ready to record", nil)
+        }
         return RecorderSummaryState(
-            eyebrow: "Watching your calendar",
-            tone: nil,
-            title: "Nothing scheduled",
-            detail: "Your next calendar meeting appears here.",
-            actionTitle: model.recordingStartFailure?.actionTitle ?? "Record now",
+            eyebrow: eyebrow,
+            tone: tone,
+            title: destinationTitle,
+            detail: destinationMeta,
+            detailHelp: destinationEvent?.botStatusDetail,
+            actionTitle: model.recordingStartFailure?.actionTitle ?? destinationAction,
             actionKind: .primary,
             isActionDisabled: false
         )
@@ -550,6 +705,7 @@ struct RecorderMenuView: View {
 
     private func performPrimaryAction() {
         if model.isFinishingRecording || model.isStartingRecording {
+            if model.isChoosingWindow { model.cancelWindowChoice() }
             return
         } else if model.isRecording {
             model.stopRecording()
@@ -558,7 +714,7 @@ struct RecorderMenuView: View {
         } else if model.nextPermissionStep != nil {
             model.requestNextPermission()
         } else {
-            // The destination chip already excludes rejected or bot-recorded meetings.
+            // The destination card already excludes rejected or bot-recorded meetings.
             model.startRecording()
         }
     }
@@ -573,6 +729,11 @@ struct RecorderMenuView: View {
         guard let endsAt = meeting.endsAt else {
             return timeText(meeting.startsAt)
         }
+        // The interval style adds both full dates when a meeting crosses midnight; the day
+        // is already in front of the range, so keep it to two times.
+        if !Calendar.current.isDate(meeting.startsAt, inSameDayAs: endsAt) {
+            return "\(timeText(meeting.startsAt)) \u{2013} \(timeText(endsAt))"
+        }
         return (meeting.startsAt..<max(endsAt, meeting.startsAt)).formatted(TapeFormat.timeRange)
     }
 
@@ -584,7 +745,7 @@ struct RecorderMenuView: View {
         if calendar.isDateInTomorrow(date) {
             return "Tomorrow"
         }
-        return date.formatted(.dateTime.weekday(.wide).locale(TapeFormat.locale))
+        return date.formatted(.dateTime.weekday(.abbreviated).locale(TapeFormat.locale))
     }
 
     private func notetakerText(_ meeting: LocalRecorderMonitoringMeeting) -> String {
@@ -791,17 +952,26 @@ struct LiveLevelMeter: View {
     }
 }
 
-/// Where the current recording is saved. The whole card opens the meeting picker.
-struct RecordingDestinationCard: View {
-    @ObservedObject var model: RecorderAppModel
-    var togglePicker: () -> Void
+/// Where a recording saves: the meeting title as the card's headline, a caption that
+/// says whether it is about to save or already saving, and one line on what that means.
+/// The whole card opens the meeting picker. Used before and during recording so the
+/// destination reads the same way at both moments.
+struct DestinationCard: View {
+    var caption: String
+    var title: String
+    var meta: String?
+    var metaIsProblem = false
+    var isPickerOpen: Bool
+    /// False while a start is in flight: the destination is settled, so no picker and no chevron.
+    var isInteractive = true
+    var help: String
+    var action: () -> Void
     @State private var isHovering = false
 
     var body: some View {
-        let title = model.activeRecordingTitle ?? "Untitled recording"
-        Button(action: togglePicker) {
+        Button(action: action) {
             VStack(alignment: .leading, spacing: 4) {
-                Text("Saving to")
+                Text(caption)
                     .font(TapeType.sans(11, .medium))
                     .foregroundStyle(TapePalette.muted)
 
@@ -813,39 +983,62 @@ struct RecordingDestinationCard: View {
                         .fixedSize(horizontal: false, vertical: true)
                         .contentTransition(.opacity)
                     Spacer(minLength: 0)
-                    Image(systemName: "chevron.up.chevron.down")
-                        .font(TapeType.sans(11, .medium))
-                        .foregroundStyle(TapePalette.ash)
+                    if isInteractive {
+                        Image(systemName: "chevron.up.chevron.down")
+                            .font(TapeType.sans(11, .medium))
+                            .foregroundStyle(TapePalette.ash)
+                    }
                 }
                 .foregroundStyle(TapePalette.ink)
 
-                if model.destinationUnconfirmed {
+                if let meta {
                     HStack(spacing: 5) {
-                        Circle().fill(TapePalette.amber).frame(width: 5, height: 5)
-                        Text("Couldn't move this recording · Choose again")
-                            .foregroundStyle(TapePalette.coralInk)
+                        if metaIsProblem {
+                            Circle().fill(TapePalette.amber).frame(width: 5, height: 5)
+                        }
+                        Text(meta)
+                            .foregroundStyle(metaIsProblem ? TapePalette.coralInk : TapePalette.muted)
+                            .lineLimit(2)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
-                    .font(TapeType.sans(11.5, .medium))
-                } else if let meta = meta {
-                    Text(meta)
-                        .font(TapeType.sans(11.5))
-                        .foregroundStyle(TapePalette.muted)
-                        .monospacedDigit()
+                    .font(TapeType.sans(11.5, metaIsProblem ? .medium : .regular))
+                    .monospacedDigit()
                 }
             }
             .padding(12)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(isHovering || model.isMeetingPickerPresented ? TapePalette.mist : TapePalette.surface, in: RoundedRectangle(cornerRadius: 8))
+            .background(isInteractive && (isHovering || isPickerOpen) ? TapePalette.mist : TapePalette.surface, in: RoundedRectangle(cornerRadius: 8))
             .overlay(RoundedRectangle(cornerRadius: 8).stroke(TapePalette.border, lineWidth: 1))
             .contentShape(RoundedRectangle(cornerRadius: 8))
         }
         .buttonStyle(.plain)
+        // Disabled, but drawn at full strength: the card is information, not a dimmed control.
+        .allowsHitTesting(isInteractive)
+        .accessibilityRemoveTraits(isInteractive ? [] : .isButton)
         .onHover { isHovering = $0 }
         .animation(.easeOut(duration: 0.15), value: title)
-        .help("Change which meeting this recording is saved to")
-        .accessibilityLabel("Saving to \(title)")
-        .accessibilityHint("Change which meeting this recording is saved to")
-        .accessibilityValue(model.destinationUnconfirmed ? "Couldn't move this recording" : "")
+        .help(help)
+        .accessibilityLabel("\(caption) \(title)")
+        .accessibilityHint(isInteractive ? help : "")
+        .accessibilityValue(meta ?? "")
+    }
+}
+
+/// Where the current recording is saved.
+struct RecordingDestinationCard: View {
+    @ObservedObject var model: RecorderAppModel
+    var togglePicker: () -> Void
+
+    var body: some View {
+        DestinationCard(
+            caption: "Saving to",
+            title: model.activeRecordingTitle ?? "Untitled recording",
+            meta: model.destinationUnconfirmed ? "Couldn't move this recording · Choose again" : meta,
+            metaIsProblem: model.destinationUnconfirmed,
+            isPickerOpen: model.isMeetingPickerPresented,
+            help: "Change which meeting this recording is saved to",
+            action: togglePicker
+        )
     }
 
     private var meta: String? {
@@ -858,59 +1051,6 @@ struct RecordingDestinationCard: View {
             return "\(day) · \(start.formatted(TapeFormat.time))"
         }
         return "\(day) · \((start..<end).formatted(TapeFormat.timeRange))"
-    }
-}
-
-/// Before recording: states where Record will save, and opens the picker to change it.
-struct RecordingDestinationChip: View {
-    @ObservedObject var model: RecorderAppModel
-    var togglePicker: () -> Void
-    @State private var isHovering = false
-
-    var body: some View {
-        Button(action: togglePicker) {
-            HStack(spacing: 6) {
-                Image(systemName: isNewMeeting ? "plus.circle" : "doc.text")
-                    .font(TapeType.sans(11))
-                    .foregroundStyle(TapePalette.ash)
-                Text("Saves to")
-                    .foregroundStyle(TapePalette.muted)
-                Text(label)
-                    .foregroundStyle(TapePalette.ink)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-                    .layoutPriority(1)
-                Image(systemName: "chevron.up.chevron.down")
-                    .font(TapeType.sans(11, .medium))
-                    .foregroundStyle(TapePalette.ash)
-            }
-            .font(TapeType.sans(12, .medium))
-            .padding(.horizontal, 10)
-            .frame(height: 28)
-            .background(Capsule().fill(isHovering || model.isMeetingPickerPresented ? TapePalette.mist : TapePalette.surface))
-            .overlay(Capsule().inset(by: 0.5).stroke(TapePalette.border, lineWidth: 1))
-            .contentShape(Capsule())
-        }
-        .buttonStyle(.plain)
-        .onHover { isHovering = $0 }
-        .help("Choose which meeting this recording is saved to")
-        .accessibilityLabel("Saves to \(label)")
-        .accessibilityHint("Choose which meeting this recording is saved to")
-    }
-
-    private var label: String {
-        switch model.recordingDestination {
-        case .meeting(let id, let title):
-            // The suggested meeting is the one titled right above the chip.
-            return id == model.suggestedMeeting?.meetingId ? "This meeting" : title
-        case .newMeeting(let title):
-            return title ?? "New meeting"
-        }
-    }
-
-    private var isNewMeeting: Bool {
-        if case .newMeeting = model.recordingDestination { return true }
-        return false
     }
 }
 

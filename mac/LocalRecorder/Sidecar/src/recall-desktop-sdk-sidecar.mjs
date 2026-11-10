@@ -155,6 +155,14 @@ async function main() {
   });
 
   const recordingWindowSelector = createRecordingWindowSelector(RecallAiSdk);
+  // The SDK emits "shutdown" when its native helper closes, before the "error"
+  // that triggers stop(). Marking the lifecycle first lets that stop answer
+  // instead of waiting on a helper that can no longer reply.
+  let helperExited = false;
+  RecallAiSdk.addEventListener("shutdown", () => {
+    helperExited = true;
+    lifecycle?.helperExited();
+  });
   addSdkEventListeners(() => {
     void stop();
   }, (event) => {
@@ -168,6 +176,7 @@ async function main() {
     makeLifecycle: (id) => {
       windowId = id;
       lifecycle = createRecordingLifecycle({ sdk: RecallAiSdk, send, windowId, exit: (code) => process.exit(code) });
+      if (helperExited) lifecycle.helperExited();
       if (controlFile) {
         setInterval(async () => {
           try {

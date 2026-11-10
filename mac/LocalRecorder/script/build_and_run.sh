@@ -45,6 +45,7 @@ INFO_PLIST="$APP_CONTENTS/Info.plist"
 APP_ICON_SOURCE="$ROOT_DIR/Resources/AppIcon.icns"
 NODE_ENTITLEMENTS="$ROOT_DIR/Resources/Node.entitlements"
 ADHOC_APP_ENTITLEMENTS="$ROOT_DIR/Resources/AdHocApp.entitlements"
+RECALL_HELPER_ENTITLEMENTS="$ROOT_DIR/Resources/RecallHelper.entitlements"
 SIDECAR_SOURCE="$ROOT_DIR/Sidecar"
 SIDECAR_DEST="$APP_RESOURCES/RecallDesktopSDKSidecar"
 
@@ -181,9 +182,11 @@ while IFS= read -r -d '' target; do
     if [[ "$target" == "$APP_RESOURCES/node/bin/node" ]]; then
       sign_code "$target" --entitlements "$NODE_ENTITLEMENTS"
     elif [[ "$(basename "$target")" == "desktop_sdk_macos_exe" ]]; then
-      # Locally signed helpers have no Apple Team ID. Like the app, the SDK
-      # executable must be allowed to load its bundled, locally signed dylibs.
-      sign_code "$target" --entitlements "$ADHOC_APP_ENTITLEMENTS"
+      # Locally signed helpers have no Apple Team ID, so the SDK executable must be
+      # allowed to load its bundled, locally signed dylibs. Its GStreamer audio
+      # mixer JIT compiles through ORC, which aborts under the hardened runtime
+      # without allow-jit (0.3.10 crashed seconds into every recording).
+      sign_code "$target" --entitlements "$RECALL_HELPER_ENTITLEMENTS"
     else
       sign_code "$target"
     fi

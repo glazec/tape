@@ -69,7 +69,15 @@ private final class LocalRecorderAppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
-        recorderAppModel.canCloseApp(allowPendingUploads: true) ? .terminateNow : .terminateCancel
+        guard recorderAppModel.canCloseApp(allowPendingUploads: true) else { return .terminateCancel }
+        guard recorderAppModel.isStartingRecording else { return .terminateNow }
+        // Only a start cancelled at the window chooser gets here. Give it a moment to
+        // fail its intent, so the server is not left waiting for a recording.
+        Task { @MainActor in
+            await recorderAppModel.waitForCancelledStart(timeout: .seconds(5))
+            NSApp.reply(toApplicationShouldTerminate: true)
+        }
+        return .terminateLater
     }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
@@ -291,6 +299,17 @@ final class RecorderAppModel: NSObject, ObservableObject, UNUserNotificationCent
     private var fallbackNotificationNextDatesByIntentId: [String: Date] = [:]
     var endPromptPolicy = RecorderEndPromptPolicy(scheduledEnd: nil)
     @Published var isStartingRecording = false
+    /// A local start is waiting for the person to pick a window in the panel.
+    @Published var isChoosingWindow = false
+    @Published var windowChoices: [CaptureWindowChoice] = []
+    @Published var isLoadingWindowChoices = false
+    @Published var windowChooserError: String?
+    /// The windows behind `windowChoices`, kept apart so the page renders plain values.
+    var shareableWindows: [UInt32: SCWindow] = [:]
+    var windowChoiceContinuation: CheckedContinuation<UInt32, Error>?
+    var windowChoiceGeneration = 0
+    /// The current start was cancelled at the window chooser and is only cleaning up.
+    var isCancellingStart = false
     @Published var isConfiguringMeetingCapture = false
     @Published var meetingCaptureSetupStatus: String?
 
@@ -735,10 +754,10 @@ final class RecorderAppModel: NSObject, ObservableObject, UNUserNotificationCent
             return
         }
         switch recordingDestination {
-        case .meeting(let id, _):
-            beginRecording(meetingId: id)
+        case .meeting(let id, let title):
+            beginRecording(meetingId: id, displayTitle: title)
         case .newMeeting(let title):
-            beginRecording(title: title)
+            beginRecording(title: title, displayTitle: title)
         }
     }
 
@@ -1011,6 +1030,12 @@ final class RecorderAppModel: NSObject, ObservableObject, UNUserNotificationCent
             do {
                 try await startLocalCapture(fallbackIntentId: intentID)
                 activeRecordingBackend = .localUpload
+            } catch is CancellationError {
+                // The person backed out of the window chooser: release the intent like
+                // any failed start, but it is a choice, not an error to report or show.
+                try? await client.failIntent(fallbackIntentId: intentID, errorMessage: "Window choice was cancelled")
+                statusText = "Recording cancelled"
+                return
             } catch {
                 LocalRecorderTelemetry.capture(error, operation: .recordingStart)
                 try? await client.failIntent(fallbackIntentId: intentID, errorMessage: error.localizedDescription)
@@ -1141,11 +1166,11 @@ final class RecorderAppModel: NSObject, ObservableObject, UNUserNotificationCent
         recordingAudioGeneration += 1
         let audioGeneration = recordingAudioGeneration
         let captureID = captureSessionID
-        statusText = "Choose a window showing the shared content. Keep that content visible for screenshots."
         try await captureController.start(
             fallbackIntentId: fallbackIntentId,
             appVersion: appVersion,
             microphoneDeviceUID: selectedMicrophoneUID,
+            chooseWindow: { try await self.chooseMeetingWindow() },
             onScreenshotStatus: { [weak self] warning in
                 Task { @MainActor in
                     guard self?.captureSessionID == captureID else { return }
@@ -1537,8 +1562,14 @@ final class RecorderAppModel: NSObject, ObservableObject, UNUserNotificationCent
     }
 
     func canCloseApp(allowPendingUploads: Bool = false) -> Bool {
-        let captureBusy = isRecording || isFinishingRecording || isStartingRecording
-        let pending = pendingUploadCount > 0 || !recoveryState.targets.isEmpty || recoveryState.pendingStart != nil || recoveryState.pendingLegacyIntent != nil
+        // Nothing records until a window is chosen, so a start waiting on the chooser
+        // is cancelled rather than allowed to block Quit or Restart. Its binding fails
+        // its intent; a quit before that finishes is sealed on the next launch.
+        if isChoosingWindow { cancelWindowChoice() }
+        let cancelledTargetID = isCancellingStart ? activeTarget?.fallbackIntentId : nil
+        let captureBusy = isRecording || isFinishingRecording || (isStartingRecording && !isCancellingStart)
+        let pending = pendingUploadCount > 0 || recoveryState.targets.contains { $0.fallbackIntentId != cancelledTargetID }
+            || recoveryState.pendingStart != nil || recoveryState.pendingLegacyIntent != nil
         guard captureBusy || pending else { return true }
         let alert = NSAlert()
         alert.alertStyle = .warning

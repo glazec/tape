@@ -62,7 +62,7 @@ public enum RecorderStartFailure: Equatable, Sendable {
     public var message: String {
         switch self {
         case .serviceUnavailable: "Tape can't start a recording right now. Nothing was recorded."
-        case .meetingUnavailable: "This meeting can't take a recording. Record it as a new meeting instead."
+        case .meetingUnavailable: "That meeting can't take a recording. This one saves as a new meeting."
         case .signInRequired: "Sign in again to start recording."
         case .accessDenied: "Couldn't start recording. Check your workspace access and credit."
         case .retrySameMeeting: "Couldn't start recording. Try again to keep the same meeting."
@@ -72,7 +72,7 @@ public enum RecorderStartFailure: Equatable, Sendable {
 
     public var actionTitle: String {
         switch self {
-        case .meetingUnavailable: "Record a separate meeting"
+        case .meetingUnavailable: "Record new meeting"
         case .signInRequired: "Sign in again"
         case .chooseWindow: "Choose a window"
         default: "Try again"
@@ -137,6 +137,16 @@ public struct RecordingUploadReceipt: Identifiable {
     /// Capture never started: say so plainly instead of offering a file or a resend.
     public mutating func markNothingRecorded() {
         message = "Nothing was recorded. The recorder couldn’t start capture for this meeting."
+        isTerminal = true
+        needsAttention = true
+        canRetry = false
+        hasSavedFile = false
+    }
+
+    /// The desktop SDK uploads from its own process and keeps no file Tape can show or
+    /// resend, so its failed upload says so instead of offering Show file or Retry.
+    public mutating func markUploadFailedWithoutLocalCopy(message: String) {
+        self.message = message
         isTerminal = true
         needsAttention = true
         canRetry = false

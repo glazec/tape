@@ -167,6 +167,7 @@ final class LocalRecordingCaptureController {
         fallbackIntentId: String,
         appVersion: String,
         microphoneDeviceUID: String? = nil,
+        chooseWindow: @MainActor () async throws -> SelectedMeetingWindow,
         onScreenshotStatus: @escaping @Sendable (String?) -> Void = { _ in },
         onAudioLevel: @escaping @Sendable (LocalRecorderAudioSource, Float) -> Void = { _, _ in }
     ) async throws {
@@ -174,7 +175,7 @@ final class LocalRecordingCaptureController {
             throw LocalRecordingCaptureError.alreadyRecording
         }
 
-        let selectedWindow = try await MeetingWindowPicker().select()
+        let selectedWindow = try await chooseWindow()
         let session = try LocalRecordingCaptureSession(
             fallbackIntentId: fallbackIntentId,
             appVersion: appVersion,
