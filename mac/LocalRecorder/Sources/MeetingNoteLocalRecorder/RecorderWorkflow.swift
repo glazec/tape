@@ -154,10 +154,14 @@ extension RecorderAppModel {
         }
     }
 
-    func beginRecording(meetingId: String? = nil, title: String? = nil, legacyIntent: String? = nil, nativeOnly: Bool = false) {
+    /// `displayTitle` is only what the starting screen shows until the server names the target.
+    /// It is never sent, so an existing meeting keeps its own title.
+    func beginRecording(meetingId: String? = nil, title: String? = nil, displayTitle: String? = nil, legacyIntent: String? = nil, nativeOnly: Bool = false) {
         guard !isStartingRecording, !isRecording, !isFinishingRecording, !isConfiguringMeetingCapture else { return }
         guard canMonitor, let client = makeClient() else { statusText = "Login and permissions are needed first"; return }
-        startingRecordingTitle = meetingId.flatMap { id in
+        // The picked destination's title comes first: a meeting chosen from an earlier
+        // search may no longer be in `meetingChoices`, and the start must not read "New meeting".
+        startingRecordingTitle = displayTitle ?? meetingId.flatMap { id in
             id == nextScheduleMeeting?.meetingId ? nextScheduleMeeting?.title : meetingChoices.first(where: { $0.meetingId == id })?.title
         } ?? title ?? "New meeting"
         isStartingRecording = true

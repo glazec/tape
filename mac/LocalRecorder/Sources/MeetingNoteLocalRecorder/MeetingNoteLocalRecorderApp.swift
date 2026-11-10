@@ -754,10 +754,10 @@ final class RecorderAppModel: NSObject, ObservableObject, UNUserNotificationCent
             return
         }
         switch recordingDestination {
-        case .meeting(let id, _):
-            beginRecording(meetingId: id)
+        case .meeting(let id, let title):
+            beginRecording(meetingId: id, displayTitle: title)
         case .newMeeting(let title):
-            beginRecording(title: title)
+            beginRecording(title: title, displayTitle: title)
         }
     }
 

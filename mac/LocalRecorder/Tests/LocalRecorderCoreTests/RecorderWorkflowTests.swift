@@ -63,7 +63,7 @@ import Testing
     ))
     let error = localRecorderHTTPError(data: Data(#"{"error":"Meeting not found"}"#.utf8), response: response)
     #expect(RecorderStartFailure(error: error) == .meetingUnavailable)
-    #expect(RecorderStartFailure(error: error).actionTitle == "Record a separate meeting")
+    #expect(RecorderStartFailure(error: error).actionTitle == "Record new meeting")
     #expect(localRecorderTargetWasRejected(error))
 }
 

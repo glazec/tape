@@ -50,7 +50,7 @@ struct RecorderMeetingPicker: View {
                         .foregroundStyle(TapePalette.coralInk)
                         .fixedSize(horizontal: false, vertical: true)
                 } else {
-                    Text(model.isRecording ? "The whole recording moves to the meeting you choose." : "Record saves to the meeting you choose.")
+                    Text(model.isRecording ? "The whole recording moves to the meeting you choose." : "Pick a meeting to add this recording to, or start a new one.")
                         .font(TapeType.sans(11))
                         .foregroundStyle(TapePalette.muted)
                         .fixedSize(horizontal: false, vertical: true)
@@ -217,7 +217,7 @@ struct RecorderMeetingPicker: View {
         .disabled(model.isSwitchingMeeting || unavailable)
         .accessibilityLabel("\(meeting.title), \(timeLabel(meeting, section: section))")
         .accessibilityAddTraits(current ? .isSelected : [])
-        .accessibilityHint(current ? "Current destination" : (unavailable ? unavailableReason(meeting)?.full ?? "" : (model.isRecording ? "Move the whole recording to this meeting" : "Save the recording to this meeting")))
+        .accessibilityHint(current ? "Current destination" : (unavailable ? unavailableReason(meeting)?.full ?? "" : (model.isRecording ? "Move the whole recording to this meeting" : "Add this recording to this meeting")))
         .onKeyPress(.return) {
             guard !unavailable, !model.isSwitchingMeeting else { return .ignored }
             choose(meeting)
@@ -239,7 +239,8 @@ struct RecorderMeetingPicker: View {
                         .padding(.horizontal, 8)
                         .frame(height: 26)
                         .background(TapePalette.mist, in: RoundedRectangle(cornerRadius: 6))
-                    Button("Create", action: createMeeting)
+                    // Before recording nothing is created yet: the name is only kept for Record.
+                    Button(model.isRecording ? "Create" : "Use name", action: createMeeting)
                         .buttonStyle(RecorderActionButtonStyle(kind: .quiet, height: 26))
                         .disabled(model.isSwitchingMeeting || newTitle.utf16.count > 500)
                 }
@@ -252,7 +253,8 @@ struct RecorderMeetingPicker: View {
                 }
             } else {
                 Button {
-                    newTitle = trimmedSearch
+                    // A search wins; otherwise reopening a named new meeting edits that name.
+                    newTitle = trimmedSearch.isEmpty ? (currentNewMeetingTitle ?? "") : trimmedSearch
                     isCreatingMeeting = true
                     focus = .newTitle
                 } label: {
@@ -261,6 +263,8 @@ struct RecorderMeetingPicker: View {
                             .font(TapeType.sans(11, .medium))
                             .foregroundStyle(TapePalette.ash)
                         Text(newMeetingLabel)
+                            .lineLimit(1)
+                            .truncationMode(.tail)
                         Spacer(minLength: 0)
                         if isNewMeetingCurrent {
                             Image(systemName: "checkmark")
@@ -340,11 +344,19 @@ struct RecorderMeetingPicker: View {
         if !trimmedSearch.isEmpty && model.meetingChoices.isEmpty && !model.isLoadingMeetingChoices {
             return "Create \u{201C}\(trimmedSearch)\u{201D}"
         }
+        if let title = currentNewMeetingTitle { return "New meeting: \(title)" }
         return isNewMeetingCurrent ? "New meeting" : "New meeting\u{2026}"
     }
 
+    /// Any new meeting is the current destination, named or not, so the row keeps its checkmark.
     private var isNewMeetingCurrent: Bool {
-        !model.isRecording && model.recordingDestination == .newMeeting(title: nil)
+        guard !model.isRecording, case .newMeeting = model.recordingDestination else { return false }
+        return true
+    }
+
+    private var currentNewMeetingTitle: String? {
+        guard !model.isRecording, case .newMeeting(let title?) = model.recordingDestination else { return nil }
+        return title
     }
 
     /// A short trailing label plus the full reason for the tooltip.

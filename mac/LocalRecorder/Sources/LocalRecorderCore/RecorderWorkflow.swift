@@ -62,7 +62,7 @@ public enum RecorderStartFailure: Equatable, Sendable {
     public var message: String {
         switch self {
         case .serviceUnavailable: "Tape can't start a recording right now. Nothing was recorded."
-        case .meetingUnavailable: "This meeting can't take a recording. Record it as a new meeting instead."
+        case .meetingUnavailable: "That meeting can't take a recording. This one saves as a new meeting."
         case .signInRequired: "Sign in again to start recording."
         case .accessDenied: "Couldn't start recording. Check your workspace access and credit."
         case .retrySameMeeting: "Couldn't start recording. Try again to keep the same meeting."
@@ -72,7 +72,7 @@ public enum RecorderStartFailure: Equatable, Sendable {
 
     public var actionTitle: String {
         switch self {
-        case .meetingUnavailable: "Record a separate meeting"
+        case .meetingUnavailable: "Record new meeting"
         case .signInRequired: "Sign in again"
         case .chooseWindow: "Choose a window"
         default: "Try again"
