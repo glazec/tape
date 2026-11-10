@@ -143,6 +143,16 @@ public struct RecordingUploadReceipt: Identifiable {
         hasSavedFile = false
     }
 
+    /// The desktop SDK uploads from its own process and keeps no file Tape can show or
+    /// resend, so its failed upload says so instead of offering Show file or Retry.
+    public mutating func markUploadFailedWithoutLocalCopy(message: String) {
+        self.message = message
+        isTerminal = true
+        needsAttention = true
+        canRetry = false
+        hasSavedFile = false
+    }
+
     public mutating func update(target: RecordingTarget?, message: String, serverURL: URL?, terminal: Bool, failed: Bool = false, retryable: Bool = true) {
         // A late destination confirmation must not turn an uploaded receipt back
         // into Uploading. Metadata can still arrive after the upload completes.

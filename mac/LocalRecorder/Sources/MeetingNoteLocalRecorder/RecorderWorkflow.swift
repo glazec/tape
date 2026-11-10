@@ -166,7 +166,7 @@ extension RecorderAppModel {
         isMeetingPickerPresented = false
         statusText = "Starting recording"
         Task {
-            defer { isStartingRecording = false }
+            defer { isStartingRecording = false; isCancellingStart = false }
             do {
                 // A prior process may have stopped before sealing. Preserve that
                 // binding until the server acknowledges its final destination.
@@ -216,6 +216,13 @@ extension RecorderAppModel {
                     pendingDestination = nil
                     recoveryState.pendingStart = nil
                     try? persistCaptureRecovery()
+                }
+                // A cancelled start whose cleanup could not reach the server stays in
+                // recovery and is sealed later; the person chose this, so no failure card.
+                if isCancellingStart {
+                    statusText = "Recording cancelled"
+                    refreshPendingUploadCount()
+                    return
                 }
                 let failure = RecorderStartFailure(error: error)
                 recordingStartFailure = failure
@@ -465,8 +472,20 @@ extension RecorderAppModel {
                             }
                             return
                         }
-                        uploadStatusText = status.state == "completed" ? "Recording received. Transcript processing continues." : "Recording upload failed. Keep your saved recording files."
-                        updateUploadReceipt(intentID: target.fallbackIntentId, message: status.state == "completed" ? "Uploaded. Open meeting for transcript." : "Upload failed. Recording has not been confirmed.", terminal: true, failed: status.state == "failed", client: currentClient)
+                        if status.state == "completed" {
+                            uploadStatusText = "Recording received. Transcript processing continues."
+                            updateUploadReceipt(intentID: target.fallbackIntentId, message: "Uploaded. Open meeting for transcript.", terminal: true, client: currentClient)
+                            return
+                        }
+                        // SDK media never lands in Tape's upload queue, so there is no
+                        // saved file to point at and nothing Retry could resend.
+                        let message = "Upload failed. Recording has not been confirmed."
+                        // Worded so the summary's generic "Saved on this Mac" upload card never matches it.
+                        uploadStatusText = "The recording upload was not confirmed."
+                        updateUploadReceipt(intentID: target.fallbackIntentId, message: message, terminal: true, failed: true, retryable: false, client: currentClient)
+                        if let index = uploadReceipts.firstIndex(where: { $0.id == target.fallbackIntentId }) {
+                            uploadReceipts[index].markUploadFailedWithoutLocalCopy(message: message)
+                        }
                         return
                     }
                     if !neverCaptured {

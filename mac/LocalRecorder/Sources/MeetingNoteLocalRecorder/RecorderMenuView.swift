@@ -139,13 +139,19 @@ struct RecorderMenuView: View {
             if showsWindowChrome {
                 HStack(spacing: 2) {
                     Spacer()
-                    toolbarControls
+                    // The chooser has its own refresh, and settings cannot open over it.
+                    if !model.isChoosingWindow { toolbarControls }
                 }
                 .padding(.trailing, 6)
                 .frame(height: 28)
             }
 
-            if showsMeetingPicker {
+            if model.isChoosingWindow {
+                // A start waiting on a window owns the panel until it is chosen or cancelled.
+                RecorderWindowChooser(model: model)
+                    .padding(.top, showsWindowChrome ? 0 : 8)
+                    .transition(Self.pageTransition)
+            } else if showsMeetingPicker {
                 // A page inside the panel, not a popover: clicking into a popover
                 // makes the menu bar panel resign key and close both.
                 RecorderMeetingPicker(model: model)
@@ -159,7 +165,7 @@ struct RecorderMenuView: View {
                     .transition(Self.pageTransition)
             }
 
-            if model.isAdvancedExpanded && !showsMeetingPicker {
+            if model.isAdvancedExpanded && !showsMeetingPicker && !model.isChoosingWindow {
                 RecorderSettingsView(model: model, isSignedIn: isSignedIn)
                     .transition(.opacity)
             }
@@ -168,6 +174,7 @@ struct RecorderMenuView: View {
         // so the content and the window move together instead of the content snapping
         // and the edge catching up. Every path that opens or closes them is covered.
         .animation(PanelWindowFitter.animation, value: showsMeetingPicker)
+        .animation(PanelWindowFitter.animation, value: model.isChoosingWindow)
         .animation(PanelWindowFitter.animation, value: model.isAdvancedExpanded)
         .frame(width: 340)
         .fixedSize(horizontal: false, vertical: true)
@@ -411,7 +418,8 @@ struct RecorderMenuView: View {
             "No upcoming meetings", "Monitoring", "Recording \(model.activeRecordingTitle ?? "")",
             "Signed out", "Testing audio levels", "Recording", "Capture stopped", "Starting recording",
         ]
-        guard !routine.contains(text), !model.isFinishingRecording, !model.isRequestingPermissions else {
+        // While starting, the summary's detail line already shows the status.
+        guard !routine.contains(text), !model.isFinishingRecording, !model.isStartingRecording, !model.isRequestingPermissions else {
             return nil
         }
         if model.nextPermissionStep != nil, text.hasPrefix("Enable") {
@@ -474,7 +482,14 @@ struct RecorderMenuView: View {
             )
         }
         if model.isStartingRecording {
-            return RecorderSummaryState(eyebrow: "Starting", tone: TapePalette.amber, title: model.startingRecordingTitle, detail: "Preparing audio capture", actionTitle: "Starting", actionKind: .quiet, isActionDisabled: true)
+            // The model's status names the step that is actually running, such as
+            // waiting for a window, instead of a fixed line that hides a stalled start.
+            let detail = model.statusText == "Starting recording" ? "Preparing audio capture" : model.statusText
+            return RecorderSummaryState(
+                eyebrow: "Starting", tone: TapePalette.amber, title: model.startingRecordingTitle, detail: detail,
+                actionTitle: model.isChoosingWindow ? "Cancel" : "Starting", actionKind: .quiet,
+                isActionDisabled: !model.isChoosingWindow
+            )
         }
         if model.isFinishingRecording {
             let isUploading = model.statusText.localizedCaseInsensitiveContains("upload")
@@ -550,6 +565,7 @@ struct RecorderMenuView: View {
 
     private func performPrimaryAction() {
         if model.isFinishingRecording || model.isStartingRecording {
+            if model.isChoosingWindow { model.cancelWindowChoice() }
             return
         } else if model.isRecording {
             model.stopRecording()

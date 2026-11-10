@@ -248,3 +248,18 @@ import Testing
         #expect(!response.isTerminal)
     }
 }
+
+@Test func failedSDKUploadOffersNeitherShowFileNorRetry() {
+    var receipt = RecordingUploadReceipt(id: "intent", message: "Uploading. Keep Tape open.")
+    receipt.update(target: nil, message: "Upload failed. Recording has not been confirmed.", serverURL: nil, terminal: true, failed: true, retryable: false)
+    receipt.markUploadFailedWithoutLocalCopy(message: "Upload failed. Recording has not been confirmed.")
+    #expect(receipt.isTerminal)
+    #expect(receipt.needsAttention)
+    #expect(!receipt.canRetry)
+    #expect(!receipt.hasSavedFile)
+    // Retry cannot revive it, and a late poll cannot turn it back into Uploading.
+    receipt.markRetrying(message: "Retrying upload…")
+    receipt.update(target: nil, message: "Uploading. Keep Tape open.", serverURL: nil, terminal: false)
+    #expect(receipt.needsAttention)
+    #expect(receipt.message == "Upload failed. Recording has not been confirmed.")
+}

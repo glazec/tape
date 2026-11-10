@@ -41,6 +41,43 @@ enum LocalRecorderSnapshot {
         for (name, image) in pickers {
             write(image, to: directory.appendingPathComponent("\(name).png"))
         }
+
+        for (name, model) in windowChooserStates() {
+            write(capture(model: model, appearance: appearance), to: directory.appendingPathComponent("\(name).png"))
+        }
+    }
+
+    /// Plain rows stand in for real windows, so these render without Screen Recording access.
+    private static func windowChooserStates() -> [(String, RecorderAppModel)] {
+        let granted = PermissionChecklist(
+            microphone: .granted, screenCapture: .granted, accessibility: .granted,
+            notifications: .granted, startAtLogin: .granted
+        )
+        func starting() -> RecorderAppModel {
+            let model = RecorderAppModel(snapshotBearerToken: "token")
+            model.permissionChecklist = granted
+            model.isStartingRecording = true
+            model.startingRecordingTitle = "Design sync with Northwind"
+            return model
+        }
+        let chooser = starting()
+        chooser.isChoosingWindow = true
+        chooser.statusText = "Choose a window to record"
+        chooser.windowChoices = [
+            CaptureWindowChoice(id: 1, bundleID: "com.google.Chrome", appName: "Google Chrome", title: "Meet – Design sync with Northwind", width: 1440, height: 900),
+            CaptureWindowChoice(id: 2, bundleID: "com.google.Chrome", appName: "Google Chrome", title: "Northwind roadmap – Google Docs", width: 1200, height: 800),
+            CaptureWindowChoice(id: 3, bundleID: "us.zoom.xos", appName: "zoom.us", title: "Zoom Meeting", width: 1280, height: 720),
+            CaptureWindowChoice(id: 4, bundleID: "com.tinyspeck.slackmacgap", appName: "Slack", title: "design-sync (Channel) - Northwind - Slack", width: 1100, height: 760),
+        ]
+
+        let empty = starting()
+        empty.isChoosingWindow = true
+        empty.statusText = "Choose a window to record"
+
+        let afterChoice = starting()
+        afterChoice.statusText = "Starting audio capture"
+
+        return [("window-chooser", chooser), ("window-chooser-empty", empty), ("starting-capture", afterChoice)]
     }
 
     private static func pickerStates() -> [(String, RecorderAppModel)] {
