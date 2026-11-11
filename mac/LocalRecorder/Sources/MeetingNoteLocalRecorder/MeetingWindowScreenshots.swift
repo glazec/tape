@@ -115,7 +115,15 @@ final class MeetingWindowScreenshots {
     private func validateSelectedWindow() async throws {
         if let selectedWindowIdentity {
             let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
-            guard content.windows.contains(where: { $0.captureIdentity == selectedWindowIdentity }) else {
+            // Find the chosen window by ID and process before reading its tab: the browser
+            // tab lookup walks accessibility and must not run for every on-screen window.
+            guard let window = content.windows.first(where: {
+                      $0.windowID == selectedWindowIdentity.id
+                          && $0.owningApplication?.processID == selectedWindowIdentity.processID
+                  }),
+                  let current = window.captureIdentity,
+                  selectedWindowIdentity.isSameCaptureTarget(as: current)
+            else {
                 throw LocalRecordingCaptureError.writerFailed("The detected meeting is no longer visible in its window")
             }
         }
@@ -161,9 +169,10 @@ final class MeetingWindowScreenshots {
 
 private extension SCWindow {
     var captureIdentity: MeetingCaptureWindow? {
-        guard let application = owningApplication, let title else { return nil }
+        // A missing title is still the same window; matching never uses the title.
+        guard let application = owningApplication else { return nil }
         return MeetingCaptureWindow(id: windowID, processID: application.processID,
-                                    bundleID: application.bundleIdentifier, title: title,
+                                    bundleID: application.bundleIdentifier, title: title ?? "",
                                     activeTabURL: MeetingCaptureWindow.browserBundleIDs.contains(application.bundleIdentifier)
                                         ? BrowserMeetingTab.activeURL(processID: application.processID, frame: frame) : nil)
     }

@@ -22,6 +22,19 @@ public struct MeetingCaptureWindow: Equatable, Sendable {
     public var screenshotIdentity: MeetingCaptureWindow? {
         Self.browserBundleIDs.contains(bundleID) && activeTabURL == nil ? nil : self
     }
+
+    /// Whether `current` is still the window the user chose, so screenshots may continue.
+    /// The window ID and owning process decide it. Titles are ignored: they change with
+    /// notifications, unread counts and speakers. In a browser only a tab that is known
+    /// to differ stops screenshots, because a URL lookup that comes back empty says
+    /// nothing about which tab is showing.
+    public func isSameCaptureTarget(as current: MeetingCaptureWindow) -> Bool {
+        guard id == current.id, processID == current.processID else { return false }
+        if let chosenTab = activeTabURL, let currentTab = current.activeTabURL {
+            return chosenTab == currentTab
+        }
+        return true
+    }
 }
 
 /// One on-screen window as the in-app window chooser sees it. A plain value, so the

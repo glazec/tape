@@ -10,6 +10,28 @@ import Testing
     #expect(selected != switched)
 }
 
+@Test func screenshotsFollowTheChosenWindowByIDAndApp() {
+    let chosen = MeetingCaptureWindow(id: 7, processID: 123, bundleID: "com.google.Chrome", title: "Meet - Design sync",
+                                      activeTabURL: URL(string: "https://meet.google.com/abc-defg-hij"))
+    // Titles change with notifications, unread counts and speakers; that is the same window.
+    let retitled = MeetingCaptureWindow(id: 7, processID: 123, bundleID: chosen.bundleID, title: "(2) Meet - Design sync",
+                                        activeTabURL: chosen.activeTabURL)
+    #expect(chosen.isSameCaptureTarget(as: retitled))
+    // A tab URL lookup that comes back empty is not evidence of a different tab.
+    let unknownTab = MeetingCaptureWindow(id: 7, processID: 123, bundleID: chosen.bundleID, title: chosen.title)
+    #expect(chosen.isSameCaptureTarget(as: unknownTab))
+    // A known, different tab is: never screenshot a tab the user switched to.
+    let otherTab = MeetingCaptureWindow(id: 7, processID: 123, bundleID: chosen.bundleID, title: "Inbox",
+                                        activeTabURL: URL(string: "https://mail.google.com/mail/u/0"))
+    #expect(!chosen.isSameCaptureTarget(as: otherTab))
+    // Another window or another process is not the chosen window.
+    #expect(!chosen.isSameCaptureTarget(as: MeetingCaptureWindow(id: 8, processID: 123, bundleID: chosen.bundleID, title: chosen.title)))
+    #expect(!chosen.isSameCaptureTarget(as: MeetingCaptureWindow(id: 7, processID: 456, bundleID: chosen.bundleID, title: chosen.title)))
+
+    let zoom = MeetingCaptureWindow(id: 9, processID: 789, bundleID: "us.zoom.xos", title: "Zoom Meeting")
+    #expect(zoom.isSameCaptureTarget(as: MeetingCaptureWindow(id: 9, processID: 789, bundleID: zoom.bundleID, title: "Zoom Meeting 40-Minutes")))
+}
+
 @Test func unidentifiedBrowserTabStillRecordsButNeverScreenshots() {
     // Chrome often hides its tab URL from accessibility. Refusing the window used to
     // block audio entirely; now audio records and no tab is ever screenshotted.

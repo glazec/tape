@@ -52,7 +52,15 @@ enum LocalRecorderFileLocations {
     catch { if mode != "startup-exit" { throw error } }
     if mode == "startup-exit" {
       precondition(controller.didCaptureStart("first"), "Exit during startup must not erase the actual capture")
-      try await controller.shutdown(clientRecordingId: "first")
+      // The sidecar exits right after "started". When start() saw it alive, the exit is
+      // recorded by the termination handler a moment later; shut down only after that.
+      let deadline = Date().addingTimeInterval(5)
+      while true {
+        do { try await controller.shutdown(clientRecordingId: "first"); break }
+        catch RecallDesktopSDKRecordingError.startFailed("Capture is still active") where Date() < deadline {
+          try await Task.sleep(for: .milliseconds(20))
+        }
+      }
       print("upload evidence retained until cleanup")
       return
     }
