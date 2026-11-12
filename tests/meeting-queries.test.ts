@@ -34,17 +34,62 @@ function expectUsesCurrentTranscriptJob(condition: SQL) {
   expect(query.sql).toContain("current_jobs.mode = 'append'");
 }
 
-function expectSearchesTranslatedTranscriptText(condition: SQL, search: string) {
+function expectSearchesLibraryMatches(
+  condition: SQL,
+  search: string,
+  include: { participants: boolean; transcript: boolean },
+) {
   const query = toQuery(condition);
   const sql = query.sql.replace(/\s+/g, " ");
-
-  // Translated text sits in the same `or` group as the source text, so a
-  // segment that only matches after translation is still returned.
-  expect(sql).toMatch(
-    /"transcript_segments"\."text" ilike \$\d+ or "transcript_segments"\."translated_text" ilike \$\d+ or "transcript_segments"\."speaker" ilike \$\d+/,
+  const call = sql.match(
+    /"meetings"\."id" in \( select search_match\.meeting_id from app_private\.meeting_library_search_matches\( \$(\d+), (true|false), (true|false) \) as search_match \)/,
   );
-  expect(query.params).toContain(`%${search}%`);
-  expect(sql).toContain('app_private.speaker_name("transcript_segments"."meeting_speaker_id") ilike');
+
+  expect(call).not.toBeNull();
+  expect(query.params[Number(call?.[1]) - 1]).toBe(`%${search}%`);
+  expect(call?.[2]).toBe(String(include.participants));
+  expect(call?.[3]).toBe(String(include.transcript));
+  // Child rows are matched inside the security-definer function. Scanning
+  // them here runs their row policies and speaker_name() once per row.
+  expect(sql.match(/meeting_library_search_matches/g)).toHaveLength(1);
+  expect(sql).not.toContain('"transcript_segments"');
+  expect(sql).not.toContain('"meeting_attendees"');
+  expect(sql).not.toContain('"meeting_participant_timeline"');
+  expect(sql).not.toContain("app_private.speaker_name");
+
+  return sql;
+}
+
+async function getLibrarySearchCondition(search: string, searchScope?: string) {
+  const meetingWhere = vi.fn((condition: SQL) => {
+    void condition;
+
+    return {
+      orderBy: vi.fn().mockResolvedValue([]),
+    };
+  });
+
+  select.mockReturnValueOnce({
+    from: () => ({
+      leftJoin: () => ({
+        where: meetingWhere,
+      }),
+    }),
+  });
+  const { listMeetingsForWorkspace } = await import("@/lib/meeting-queries");
+
+  await listMeetingsForWorkspace(
+    {
+      teamId: "team_123",
+      userId: "user_123",
+      domain: "iosg.vc",
+      canCreateMeetings: true,
+    },
+    search,
+    searchScope ? { searchScope: searchScope as never } : undefined,
+  );
+
+  return meetingWhere.mock.calls[0][0] as SQL;
 }
 
 function expectScopesDashboardToUser(condition: SQL, userId: string) {
@@ -1183,105 +1228,49 @@ describe("listMeetingsForWorkspace", () => {
     ]);
   });
 
-  it("searches only the current transcript job text", async () => {
-    const meetingWhere = vi.fn((condition: SQL) => {
-      void condition;
-
-      return {
-        orderBy: vi.fn().mockResolvedValue([]),
-      };
+  it("searches transcripts through one library search call", async () => {
+    const condition = await getLibrarySearchCondition("valuation", "transcript");
+    const sql = expectSearchesLibraryMatches(condition, "valuation", {
+      participants: false,
+      transcript: true,
     });
 
-    select.mockReturnValueOnce({
-      from: () => ({
-        leftJoin: () => ({
-          where: meetingWhere,
-        }),
-      }),
-    });
-    const { listMeetingsForWorkspace } = await import("@/lib/meeting-queries");
-
-    await listMeetingsForWorkspace(
-      {
-        teamId: "team_123",
-        userId: "user_123",
-        domain: "iosg.vc",
-        canCreateMeetings: true,
-      },
-      "hello",
-      { searchScope: "transcript" },
-    );
-
-    expectUsesCurrentTranscriptJob(meetingWhere.mock.calls[0][0]);
+    expectScopesDashboardToUser(condition, "user_123");
+    expect(sql).not.toContain('"meetings"."title" ilike');
+    expect(sql).not.toContain("attendee_emails");
   });
 
-  it("searches translated transcript text in the transcript scope", async () => {
-    const meetingWhere = vi.fn((condition: SQL) => {
-      void condition;
-
-      return {
-        orderBy: vi.fn().mockResolvedValue([]),
-      };
+  it("searches participants through the calendar and one library search call", async () => {
+    const condition = await getLibrarySearchCondition("alice", "participants");
+    const sql = expectSearchesLibraryMatches(condition, "alice", {
+      participants: true,
+      transcript: false,
     });
 
-    select.mockReturnValueOnce({
-      from: () => ({
-        leftJoin: () => ({
-          where: meetingWhere,
-        }),
-      }),
-    });
-    const { listMeetingsForWorkspace } = await import("@/lib/meeting-queries");
-
-    await listMeetingsForWorkspace(
-      {
-        teamId: "team_123",
-        userId: "user_123",
-        domain: "iosg.vc",
-        canCreateMeetings: true,
-      },
-      "valuation",
-      { searchScope: "transcript" },
-    );
-
-    expectSearchesTranslatedTranscriptText(
-      meetingWhere.mock.calls[0][0],
-      "valuation",
-    );
+    expect(sql).toContain('"calendar_events"."attendee_emails"::text ilike');
+    expect(sql).not.toContain('"meetings"."title" ilike');
   });
 
-  it("searches translated transcript text without a scope", async () => {
-    const meetingWhere = vi.fn((condition: SQL) => {
-      void condition;
-
-      return {
-        orderBy: vi.fn().mockResolvedValue([]),
-      };
+  it("searches every field with one library search call without a scope", async () => {
+    const condition = await getLibrarySearchCondition("valuation");
+    const sql = expectSearchesLibraryMatches(condition, "valuation", {
+      participants: true,
+      transcript: true,
     });
 
-    select.mockReturnValueOnce({
-      from: () => ({
-        leftJoin: () => ({
-          where: meetingWhere,
-        }),
-      }),
-    });
-    const { listMeetingsForWorkspace } = await import("@/lib/meeting-queries");
+    expect(sql).toContain('"meetings"."title" ilike');
+    expect(sql).toContain('"meetings"."meeting_url" ilike');
+    expect(sql).toContain('"calendar_events"."attendee_emails"::text ilike');
+  });
 
-    await listMeetingsForWorkspace(
-      {
-        teamId: "team_123",
-        userId: "user_123",
-        domain: "iosg.vc",
-        canCreateMeetings: true,
-      },
-      "valuation",
-    );
+  it("searches titles without the library search call", async () => {
+    const condition = await getLibrarySearchCondition("valuation", "title");
+    const query = toQuery(condition);
+    const sql = query.sql.replace(/\s+/g, " ");
 
-    expectSearchesTranslatedTranscriptText(
-      meetingWhere.mock.calls[0][0],
-      "valuation",
-    );
+    expect(sql).toContain('"meetings"."title" ilike');
+    expect(query.params).toContain("%valuation%");
+    expect(sql).not.toContain("meeting_library_search_matches");
   });
 
   it("counts an unlabeled ready transcript as one participant", async () => {
