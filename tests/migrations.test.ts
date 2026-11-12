@@ -555,6 +555,43 @@ describe("database migrations", () => {
     );
   });
 
+  it("scopes meeting library search matches to readable meetings", () => {
+    const sql = readFileSync(
+      "db/migrations/0072_meeting_library_search.sql",
+      "utf8",
+    ).replace(/\s+/g, " ");
+
+    expect(sql).toContain(
+      "create or replace function app_private.meeting_library_search_matches( search_pattern text, search_participants boolean, search_transcript boolean )",
+    );
+    expect(sql).toContain("security definer");
+    expect(sql).toContain("set search_path = pg_catalog, public");
+    expect(sql).toContain(
+      "from app_private.readable_meeting_ids() as readable",
+    );
+    // Every child table joins the readable meetings.
+    expect(sql.match(/inner join readable using \(meeting_id\)/g)).toHaveLength(
+      5,
+    );
+    // Current transcript job rules match activeTranscriptJobIdsSubquery.
+    expect(sql).toContain("job.mode = 'replace'");
+    expect(sql).toContain("job.status = 'completed'");
+    expect(sql).toContain("job.generation_id = replacement.generation_id");
+    expect(sql).toContain("job.id > replacement.id");
+    expect(sql).toContain("segment.translated_text ilike search_pattern");
+    expect(sql).toContain("segment.speaker ilike search_pattern");
+    // Speaker names use the same precedence as app_private.speaker_name().
+    expect(sql).toContain(
+      "coalesce( person.preferred_name, speaker.display_name, speaker.source_label ) ilike search_pattern",
+    );
+    expect(sql).toContain(
+      "revoke all on function app_private.meeting_library_search_matches(text, boolean, boolean) from public",
+    );
+    expect(sql).toContain(
+      "grant execute on function app_private.meeting_library_search_matches(text, boolean, boolean) to tape_authenticated, tape_mcp",
+    );
+  });
+
   it("keeps operational rate limits private from tenant roles", () => {
     const sql = readFileSync(
       "db/migrations/0039_restrict_rate_limit_table.sql",

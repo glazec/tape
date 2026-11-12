@@ -950,55 +950,58 @@ function getMeetingLibrarySearchCondition(
 ) {
   const pattern = `%${search}%`;
   const titleCondition = ilike(meetings.title, pattern);
-  const participantCondition = or(
-    sql`${calendarEvents.attendeeEmails}::text ilike ${pattern}`,
-    sql`exists (
-      select 1
-      from ${meetingAttendees}
-      where ${meetingAttendees.meetingId} = ${meetings.id}
-        and ${meetingAttendees.email} ilike ${pattern}
-    )`,
-    sql`exists (
-      select 1
-      from ${meetingParticipantTimeline}
-      where ${meetingParticipantTimeline.meetingId} = ${meetings.id}
-        and (
-          ${meetingParticipantTimeline.name} ilike ${pattern}
-          or ${meetingParticipantTimeline.email} ilike ${pattern}
-        )
-    )`,
-  );
-  const transcriptCondition = sql`exists (
-    select 1
-    from ${transcriptSegments}
-    where ${transcriptSegments.meetingId} = ${meetings.id}
-      and ${transcriptSegments.jobId} in ${currentTranscriptJobIdsSubquery(meetings.id)}
-      and (
-        ${transcriptSegments.text} ilike ${pattern}
-        or ${transcriptSegments.translatedText} ilike ${pattern}
-        or ${transcriptSegments.speaker} ilike ${pattern}
-        or app_private.speaker_name(${transcriptSegments.meetingSpeakerId}) ilike ${pattern}
-      )
-  )`;
+  const calendarAttendeeCondition =
+    sql`${calendarEvents.attendeeEmails}::text ilike ${pattern}`;
 
   if (scope === "title") {
     return titleCondition;
   }
 
   if (scope === "participants") {
-    return participantCondition;
+    return or(
+      calendarAttendeeCondition,
+      getMeetingLibrarySearchMatchesCondition(pattern, {
+        participants: true,
+        transcript: false,
+      }),
+    );
   }
 
   if (scope === "transcript") {
-    return transcriptCondition;
+    return getMeetingLibrarySearchMatchesCondition(pattern, {
+      participants: false,
+      transcript: true,
+    });
   }
 
   return or(
     titleCondition,
     ilike(meetings.meetingUrl, pattern),
-    participantCondition,
-    transcriptCondition,
+    calendarAttendeeCondition,
+    getMeetingLibrarySearchMatchesCondition(pattern, {
+      participants: true,
+      transcript: true,
+    }),
   );
+}
+
+// Attendee, participant timeline, and current transcript matches come from
+// one security-definer call. Scanning those tables here would run their
+// row-level policies, and speaker_name(), once per row, which took minutes
+// for a single search. The function only returns meetings the caller can
+// read, and the outer query still applies the library's own access filter.
+function getMeetingLibrarySearchMatchesCondition(
+  pattern: string,
+  include: { participants: boolean; transcript: boolean },
+) {
+  return sql`${meetings.id} in (
+    select search_match.meeting_id
+    from app_private.meeting_library_search_matches(
+      ${pattern},
+      ${include.participants ? sql`true` : sql`false`},
+      ${include.transcript ? sql`true` : sql`false`}
+    ) as search_match
+  )`;
 }
 
 function getMeetingLibraryRank(
