@@ -20,68 +20,33 @@ export const LLM_USD_MICROS_PER_MEETING_HOUR = 100_000; // $0.10 / hr
 /** Fixed monthly hosting estimate (app + workers), not per meeting-hour. */
 export const HOSTING_USD_MICROS_PER_MONTH = 5_000_000; // $5 / mo
 
-/** Flat infra for self-hosted capture (bots + Whisper on a small VPS). */
-export const SELF_HOST_USD_MICROS_PER_MONTH = 10_000_000; // $10 / mo
-
-export type RecordingProvider = {
-  id: string;
-  label: string;
-  /** Per-hour rate; 0 when capture is a flat self-host monthly cost. */
-  rateUsdMicrosPerHour: number;
-  /** Flat monthly infra that replaces the per-hour rate when > 0. */
-  selfHostMonthlyUsdMicros?: number;
-  source: string;
-};
-
-export const recordingProviders: readonly RecordingProvider[] = [
-  {
-    id: "attendee",
-    label: "Attendee (self-host)",
-    rateUsdMicrosPerHour: 0,
-    selfHostMonthlyUsdMicros: SELF_HOST_USD_MICROS_PER_MONTH,
-    source: "https://github.com/attendee-labs/attendee",
-  },
+/**
+ * The two capture paths Tape ships. Only these are priced, so the estimate
+ * never quotes a provider the code does not integrate.
+ */
+export const recordingProviders = [
   {
     id: "recall",
-    label: "Recall.ai",
+    label: "Calendar bot (Recall.ai)",
     rateUsdMicrosPerHour: RECALL_RECORDING_USD_MICROS_PER_HOUR, // $0.50 / hr
     source: "https://www.recall.ai/pricing",
   },
+  {
+    id: "mac-app",
+    label: "Mac app, no bot",
+    // Records mic and system audio on the user's Mac; no capture fee.
+    rateUsdMicrosPerHour: 0,
+    source: "https://github.com/glazec/tape",
+  },
 ] as const;
 
+/** Tape transcribes with ElevenLabs Scribe only. */
 export const sttProviders = [
   {
     id: "elevenlabs",
     label: "ElevenLabs Scribe",
     rateUsdMicrosPerHour: ELEVENLABS_SCRIBE_USD_MICROS_PER_HOUR, // $0.22 / hr
     source: "https://elevenlabs.io/pricing/api?price.section=speech_to_text",
-  },
-  {
-    id: "aws-transcribe",
-    label: "AWS Transcribe",
-    rateUsdMicrosPerHour: 1_440_000, // $1.44 / hr ($0.024/min tier 1)
-    source: "https://aws.amazon.com/transcribe/pricing",
-  },
-  {
-    id: "fish-audio",
-    label: "Fish Audio",
-    rateUsdMicrosPerHour: 360_000, // $0.36 / hr
-    source:
-      "https://docs.fish.audio/developer-guide/models-pricing/pricing-and-rate-limits",
-  },
-  {
-    id: "ali-dashscope",
-    label: "Ali (Paraformer)",
-    rateUsdMicrosPerHour: 300_000, // ~$0.30 / hr, usage-based; per-hour not publicly fixed
-    approximate: true,
-    source: "https://www.alibabacloud.com/help/en/model-studio/asr-model",
-  },
-  {
-    id: "whisper",
-    label: "Whisper (self-host)",
-    // No per-hour fee; runs on the same self-host box as the capture bots.
-    rateUsdMicrosPerHour: 0,
-    source: "https://github.com/openai/whisper",
   },
 ] as const;
 
@@ -135,10 +100,6 @@ export const comparisonQuotes = [
 export type RecordingProviderId = (typeof recordingProviders)[number]["id"];
 export type SttProviderId = (typeof sttProviders)[number]["id"];
 export type DatabaseProviderId = (typeof databaseProviders)[number]["id"];
-
-/** Providers that share the self-host box, so its cost is only counted once. */
-const SELF_HOST_RECORDING_ID: RecordingProviderId = "attendee";
-const SELF_HOST_STT_ID: SttProviderId = "whisper";
 
 /** The three provider choices that drive every cost line. */
 export type ProviderSelection = {
@@ -349,15 +310,7 @@ export function computeCostFromHours(
     recordedMeetingHoursPerMonth * LLM_USD_MICROS_PER_MEETING_HOUR,
   );
   const databaseUsdMicros = database.monthlyUsdMicros;
-
-  // Self-host box is shared between capture and Whisper; count it once.
-  // Check the resolved providers so unknown ids that fall back to a self-host
-  // default still carry the box cost.
-  const usesSelfHost =
-    recording.id === SELF_HOST_RECORDING_ID || stt.id === SELF_HOST_STT_ID;
-  const hostingUsdMicros =
-    HOSTING_USD_MICROS_PER_MONTH +
-    (usesSelfHost ? SELF_HOST_USD_MICROS_PER_MONTH : 0);
+  const hostingUsdMicros = HOSTING_USD_MICROS_PER_MONTH;
 
   const totalUsdMicros =
     recordingUsdMicros +

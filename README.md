@@ -27,7 +27,7 @@ Any language in, follow-ups out, and your whole meeting archive readable by Clau
 - **Follow-ups with receipts.** To-dos with a name on each, who offered or needs what, who knows whom, and open research questions, each linked to the second it was said.
 - **Your AI reads all of it.** The MCP server ships in this repo. Assistants run read-only SQL across meetings, speakers, and transcripts, scoped by PostgreSQL row-level security rather than by the prompt.
 - **Make it yours.** The prompts behind every follow-up live in `lib/`, summaries run through OpenRouter so the model is one setting, and recordings land in your own database and bucket.
-- **Pay for compute, not seats.** No licence fee. A team of 10 runs at about $3.63 per person per month in provider costs ([estimate](https://tape.inevitable.tech)).
+- **Pay for compute, not seats.** No licence fee. You pay the providers per recorded hour, so a meeting three teammates share is billed once. See [What it costs](#what-it-costs) for the full breakdown.
 
 Tape is fair source: use it, change it, and host it for your own team, including at work. Every release becomes Apache 2.0 two years after it ships. See [License](#license) for the one thing you cannot do.
 
@@ -42,6 +42,28 @@ Tape is fair source: use it, change it, and host it for your own team, including
 | Licence per seat per month           | None, pay providers at cost | $8.33     | $14.00           | $10.00        |
 
 Seat prices are annual-billing list rates as of July 2026. Blank cells mean we have not verified that feature. Open an issue if something here is out of date.
+
+## What it costs
+
+Self-hosted Tape has no licence fee. You pay these providers at their list prices (snapshot July 2026):
+
+| Line                       | Provider             | Rate                                   |
+| -------------------------- | -------------------- | -------------------------------------- |
+| Recording, calendar bot    | Recall.ai            | $0.50 per recorded hour                |
+| Recording, Mac app         | none                 | $0                                     |
+| Transcription              | ElevenLabs Scribe    | $0.22 per recorded hour                |
+| Summaries and follow-ups   | OpenRouter           | about $0.10 per recorded hour (model dependent) |
+| Database                   | Neon (or any Postgres) | about $5 per month                   |
+| App and workers            | any host             | about $5 per month                     |
+
+Recorded hours are team size × meeting hours per week × share recorded ÷ Tape users on each call. Example: 10 people, 7.5 meeting hours a week each, 2 Tape users per meeting, everything recorded, comes to about 163 recorded hours a month.
+
+| How that team records         | Total per month | Per person |
+| ----------------------------- | --------------- | ---------- |
+| Calendar bot on every call    | about $144      | about $14.37 |
+| Mac app on every call         | about $62       | about $6.22  |
+
+The bot fee is the biggest line. A team that sends the bot to every meeting pays about what a per-seat tool costs. The saving comes from recording with the Mac app and from shared meetings being recorded once. Most teams mix the two, so their cost lands in between. These are estimates from list prices; your real usage shows up in Team settings (see [Review billing and credits](#review-billing-and-credits)). The [calculator](https://tape.inevitable.tech/#pricing) lets you change every assumption. It prices self-hosting, not the hosted version.
 
 ## Quickstart
 

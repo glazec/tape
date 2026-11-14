@@ -2,10 +2,13 @@ import { describe, expect, it } from "vitest";
 
 import {
   comparisonTotalUsdMicros,
+  computeCostFromHours,
   computeMonthlyCost,
   estimateMonthlyUsage,
   personMeetingHours,
   recordedMeetingHours,
+  recordingProviders,
+  sttProviders,
   WEEKS_PER_MONTH,
   WORKING_DAYS_PER_MONTH,
 } from "@/lib/pricing-calculator";
@@ -110,7 +113,7 @@ describe("computeMonthlyCost", () => {
   it("sums all cost categories into the total", () => {
     const breakdown = computeMonthlyCost({
       ...base,
-      recordingProviderId: "attendee",
+      recordingProviderId: "recall",
       sttProviderId: "elevenlabs",
       databaseProviderId: "neon",
     });
@@ -130,7 +133,7 @@ describe("computeMonthlyCost", () => {
       meetingHoursPerPersonPerDay: 1,
       avgAttendeesPerMeeting: 1, // every meeting distinct
       recordingProviderId: "recall",
-      sttProviderId: "aws-transcribe",
+      sttProviderId: "elevenlabs",
       databaseProviderId: "supabase",
     });
     const shared = computeMonthlyCost({
@@ -138,7 +141,7 @@ describe("computeMonthlyCost", () => {
       meetingHoursPerPersonPerDay: 1,
       avgAttendeesPerMeeting: 3, // three teammates per call
       recordingProviderId: "recall",
-      sttProviderId: "aws-transcribe",
+      sttProviderId: "elevenlabs",
       databaseProviderId: "supabase",
     });
 
@@ -159,8 +162,8 @@ describe("computeMonthlyCost", () => {
   it("divides the total by team size for the per-person figure", () => {
     const breakdown = computeMonthlyCost({
       ...base,
-      recordingProviderId: "attendee",
-      sttProviderId: "fish-audio",
+      recordingProviderId: "recall",
+      sttProviderId: "elevenlabs",
       databaseProviderId: "neon",
     });
 
@@ -187,6 +190,7 @@ describe("computeMonthlyCost", () => {
   it("falls back to defaults for unknown provider ids", () => {
     const breakdown = computeMonthlyCost({
       ...base,
+      // @ts-expect-error intentional unknown id
       recordingProviderId: "nope",
       // @ts-expect-error intentional unknown id
       sttProviderId: "nope",
@@ -197,7 +201,7 @@ describe("computeMonthlyCost", () => {
     const fallback = computeMonthlyCost({
       ...base,
       // Unknown ids fall back to the first entry of each provider list.
-      recordingProviderId: "attendee",
+      recordingProviderId: "recall",
       sttProviderId: "elevenlabs",
       databaseProviderId: "neon",
     });
@@ -205,42 +209,61 @@ describe("computeMonthlyCost", () => {
     expect(breakdown.totalUsdMicros).toBe(fallback.totalUsdMicros);
   });
 
-  it("counts the self-host box once when capture and STT share it", () => {
-    const shared = computeMonthlyCost({
-      ...base,
-      recordingProviderId: "attendee", // self-host
-      sttProviderId: "whisper", // self-host
-      databaseProviderId: "neon",
-    });
-    const paidStt = computeMonthlyCost({
-      ...base,
-      recordingProviderId: "attendee", // self-host
-      sttProviderId: "elevenlabs", // paid per-hour
-      databaseProviderId: "neon",
-    });
-
-    // Box cost is identical whether one or both self-host services use it.
-    expect(shared.hostingUsdMicros).toBe(paidStt.hostingUsdMicros);
-    // Self-host capture + transcription carry no per-hour charge.
-    expect(shared.recordingUsdMicros).toBe(0);
-    expect(shared.sttUsdMicros).toBe(0);
-    expect(shared.hostingUsdMicros).toBe(15_000_000); // $5 + $10
-  });
-
-  it("charges per-hour rates for managed capture even when STT self-hosts", () => {
+  it("charges no capture fee when the Mac app records", () => {
     const breakdown = computeMonthlyCost({
       teamSize: 1,
       meetingHoursPerPersonPerDay: 1,
       avgAttendeesPerMeeting: 1,
-      recordingProviderId: "recall", // $0.50/hr managed
-      sttProviderId: "whisper",
+      recordingProviderId: "mac-app",
+      sttProviderId: "elevenlabs",
       databaseProviderId: "neon",
     });
 
     const hours = WORKING_DAYS_PER_MONTH;
-    expect(breakdown.recordingUsdMicros).toBe(Math.round(hours * 500_000));
-    expect(breakdown.sttUsdMicros).toBe(0);
-    expect(breakdown.hostingUsdMicros).toBe(15_000_000); // box still needed for Whisper
+    expect(breakdown.recordingUsdMicros).toBe(0);
+    // Transcription and summaries still run on every recorded hour.
+    expect(breakdown.sttUsdMicros).toBe(Math.round(hours * 220_000));
+    expect(breakdown.llmUsdMicros).toBe(Math.round(hours * 100_000));
+    expect(breakdown.hostingUsdMicros).toBe(5_000_000);
+  });
+
+  it("only prices the capture and transcription paths Tape ships", () => {
+    expect(recordingProviders.map((p) => p.id)).toEqual(["recall", "mac-app"]);
+    expect(sttProviders.map((p) => p.id)).toEqual(["elevenlabs"]);
+  });
+});
+
+describe("published default estimate", () => {
+  // README and landing copy quote these: 10 people, 7.5 meeting hours a week,
+  // 2 Tape users per meeting, everything recorded, Neon.
+  const usage = estimateMonthlyUsage({
+    teamSize: 10,
+    meetingHoursPerPersonPerWeek: 7.5,
+    avgTapeUsersPerMeeting: 2,
+    recordingCoveragePercent: 100,
+  });
+  const costFor = (recordingProviderId: "recall" | "mac-app") =>
+    computeCostFromHours({
+      teamSize: usage.teamSize,
+      personMeetingHoursPerMonth: usage.personMeetingHoursPerMonth,
+      recordedMeetingHoursPerMonth: usage.recordedMeetingHoursPerMonth,
+      recordingProviderId,
+      sttProviderId: "elevenlabs",
+      databaseProviderId: "neon",
+    });
+
+  it("is about $14.37 per person with the bot on every call", () => {
+    expect(costFor("recall").perPersonUsdMicros / 1_000_000).toBeCloseTo(
+      14.37,
+      2,
+    );
+  });
+
+  it("is about $6.22 per person when the Mac app records", () => {
+    expect(costFor("mac-app").perPersonUsdMicros / 1_000_000).toBeCloseTo(
+      6.22,
+      2,
+    );
   });
 });
 

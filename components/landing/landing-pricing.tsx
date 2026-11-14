@@ -25,11 +25,12 @@ import {
   computeCostFromHours,
   databaseProviders,
   estimateMonthlyUsage,
+  HOSTING_USD_MICROS_PER_MONTH,
+  LLM_USD_MICROS_PER_MEETING_HOUR,
   recordingProviders,
   sttProviders,
   type DatabaseProviderId,
   type RecordingProviderId,
-  type SttProviderId,
 } from "@/lib/pricing-calculator";
 import { Plus } from "lucide-react";
 
@@ -57,6 +58,15 @@ function formatUsdMicros(costUsdMicros: number) {
 }
 
 type Mode = "manual" | "calendar";
+
+/** The only speech-to-text provider Tape integrates. */
+const TRANSCRIPTION = sttProviders[0];
+const BOT_RATE_USD_MICROS_PER_HOUR =
+  recordingProviders.find((p) => p.id === "recall")?.rateUsdMicrosPerHour ?? 0;
+
+function perHourLabel(usdMicros: number) {
+  return `$${(usdMicros / 1_000_000).toFixed(2)}`;
+}
 
 /** Providers the calculator prices, named so the estimate reads as concrete. */
 const STACK = [
@@ -473,8 +483,7 @@ export function LandingPricing({
       calendarAssumptionValues(calendarSummary),
     );
   const [recordingProviderId, setRecordingProviderId] =
-    useState<RecordingProviderId>("attendee");
-  const [sttProviderId, setSttProviderId] = useState<SttProviderId>("whisper");
+    useState<RecordingProviderId>("recall");
   const [databaseProviderId, setDatabaseProviderId] =
     useState<DatabaseProviderId>("neon");
 
@@ -520,18 +529,21 @@ export function LandingPricing({
       }),
     [activeAssumptions],
   );
-  const breakdown = useMemo(
-    () =>
+  const costFor = useMemo(
+    () => (recording: RecordingProviderId) =>
       computeCostFromHours({
         teamSize: usage.teamSize,
         personMeetingHoursPerMonth: usage.personMeetingHoursPerMonth,
         recordedMeetingHoursPerMonth: usage.recordedMeetingHoursPerMonth,
-        recordingProviderId,
-        sttProviderId,
+        recordingProviderId: recording,
+        sttProviderId: TRANSCRIPTION.id,
         databaseProviderId,
       }),
-    [usage, recordingProviderId, sttProviderId, databaseProviderId],
+    [usage, databaseProviderId],
   );
+  const breakdown = costFor(recordingProviderId);
+  const botBreakdown = costFor("recall");
+  const macBreakdown = costFor("mac-app");
 
   const effectiveTeamSize = usage.teamSize;
 
@@ -636,9 +648,9 @@ export function LandingPricing({
               <div className="mt-6 flex flex-col gap-3">
                 <BreakdownRow
                   label={
-                    breakdown.recordingUsdMicros === 0
-                      ? "Recording (self-hosted)"
-                      : "Recording"
+                    recordingProviderId === "mac-app"
+                      ? "Recording (Mac app)"
+                      : "Recording (bot)"
                   }
                   value={formatUsdMicros(breakdown.recordingUsdMicros)}
                 />
@@ -723,13 +735,59 @@ export function LandingPricing({
           </div>
           <p className="mt-4 max-w-[64ch] text-[0.8125rem] leading-5 text-ash">
             Estimates from public list prices, snapshot{" "}
-            {CALCULATOR_RATES_SNAPSHOT_DATE}. Recording and transcription scale
-            with meeting hours; database and hosting are flat monthly.
-            Self-hosted capture and transcription share one box, counted once.
-            Neon is usage-based, Ali Paraformer is not publicly fixed — both
-            shown as approximations. Per-seat quotes are annual-billing list
-            rates.
+            {CALCULATOR_RATES_SNAPSHOT_DATE}. Neon is usage-based, so its line
+            is an approximation. Per-seat quotes are annual-billing list rates.
           </p>
+
+          <div className="mt-10 max-w-[64ch]">
+            <p className="font-mono text-label uppercase tracking-[0.2em] text-graphite">
+              How the number is built
+            </p>
+            <ul className="mt-4 flex flex-col gap-2 text-[0.875rem] leading-6 text-ink">
+              <li>
+                Recorded hours: team size times meeting hours per week, times
+                the share you record, divided by the Tape users on each call. A
+                meeting three teammates share is recorded and billed once.
+              </li>
+              <li>
+                Recording: {perHourLabel(BOT_RATE_USD_MICROS_PER_HOUR)} per
+                recorded hour when the calendar bot joins (Recall.ai). Nothing
+                when the Mac app records mic and system audio itself.
+              </li>
+              <li>
+                Transcription:{" "}
+                {perHourLabel(TRANSCRIPTION.rateUsdMicrosPerHour)} per recorded
+                hour ({TRANSCRIPTION.label}).
+              </li>
+              <li>
+                AI summaries and follow-ups: about{" "}
+                {perHourLabel(LLM_USD_MICROS_PER_MEETING_HOUR)} per recorded
+                hour through OpenRouter. This line is an estimate; it depends on
+                the model you pick.
+              </li>
+              <li>
+                Database and hosting: flat monthly, about{" "}
+                {formatUsdMicros(breakdown.databaseUsdMicros)} and{" "}
+                {formatUsdMicros(HOSTING_USD_MICROS_PER_MONTH)}.
+              </li>
+            </ul>
+            <p className="mt-4 text-[0.875rem] leading-6 text-ink">
+              With these assumptions it comes to{" "}
+              <span className="font-medium tabular-nums">
+                {formatUsdMicros(botBreakdown.perPersonUsdMicros)}
+              </span>{" "}
+              per person if the bot records every meeting, or{" "}
+              <span className="font-medium tabular-nums">
+                {formatUsdMicros(macBreakdown.perPersonUsdMicros)}
+              </span>{" "}
+              if everyone records with the Mac app. Most teams mix the two. The
+              bot fee is the largest line, so a team that sends the bot to every
+              call can pay about what a per-seat tool costs. The saving comes
+              from the Mac app and from recording shared meetings once. This is
+              the cost of running Tape yourself, not a price for the hosted
+              version.
+            </p>
+          </div>
         </FadeIn>
 
         <FadeIn delay={0.15}>
@@ -926,26 +984,11 @@ export function LandingPricing({
                     label: p.label,
                     rateLabel:
                       p.rateUsdMicrosPerHour === 0
-                        ? `$${Math.round((p.selfHostMonthlyUsdMicros ?? 0) / 1_000_000)}/mo self-host`
-                        : `$${(p.rateUsdMicrosPerHour / 1_000_000).toFixed(2)}/hr`,
+                        ? "no capture fee"
+                        : `${perHourLabel(p.rateUsdMicrosPerHour)}/hr`,
                   }))}
                   value={recordingProviderId}
                   onChange={setRecordingProviderId}
-                />
-
-                <PickerGroup
-                  label="Speech to text"
-                  options={sttProviders.map((p) => ({
-                    id: p.id,
-                    label: p.label,
-                    rateLabel:
-                      p.rateUsdMicrosPerHour === 0
-                        ? "self-host"
-                        : `$${(p.rateUsdMicrosPerHour / 1_000_000).toFixed(2)}/hr`,
-                    approximate: "approximate" in p && p.approximate,
-                  }))}
-                  value={sttProviderId}
-                  onChange={setSttProviderId}
                 />
 
                 <PickerGroup

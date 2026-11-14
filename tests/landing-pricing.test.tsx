@@ -16,8 +16,12 @@ describe("LandingPricing", () => {
     expect(html).toContain("Estimated monthly total");
     expect(html.match(/data-slot="input"/g)).toHaveLength(4);
     expect(html).not.toContain('type="range"');
+    expect(html).toContain("How the number is built");
+    expect(html).toContain("$14.37");
+    expect(html).toContain("$6.22");
+    expect(html).not.toMatch(/Whisper|Attendee|AWS Transcribe|Fish Audio|Paraformer/);
     expect(html.indexOf("Estimated monthly total")).toBeLessThan(
-      html.indexOf("Attendee (self-host)"),
+      html.indexOf("Calendar bot (Recall.ai)"),
     );
   });
 
