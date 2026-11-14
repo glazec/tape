@@ -592,6 +592,57 @@ describe("database migrations", () => {
     );
   });
 
+  it("scopes dashboard segment stats to readable meetings", () => {
+    const sql = readFileSync(
+      "db/migrations/0073_dashboard_segment_stats.sql",
+      "utf8",
+    ).replace(/\s+/g, " ");
+
+    expect(sql).toContain(
+      "create or replace function app_private.dashboard_meeting_segment_stats( target_team_id uuid, target_owner_user_id uuid, window_start timestamptz, window_end timestamptz, user_aliases text[] )",
+    );
+    expect(sql).toContain("security definer");
+    expect(sql).toContain("set search_path = pg_catalog, public");
+    // Same meeting filters as the previous dashboard query, plus the read
+    // check its row-level policies applied.
+    expect(sql).toContain("meeting.team_id = target_team_id");
+    expect(sql).toContain("meeting.owner_user_id = target_owner_user_id");
+    expect(sql).toContain("meeting.status <> 'cancelled'");
+    expect(sql).toContain(
+      "coalesce(meeting.started_at, meeting.created_at) >= window_start",
+    );
+    expect(sql).toContain(
+      "coalesce(meeting.started_at, meeting.created_at) <= window_end",
+    );
+    expect(sql).toContain(
+      "where app_private.can_read_meeting(window_meetings.meeting_id)",
+    );
+    expect(sql.match(/inner join readable using \(meeting_id\)/g)).toHaveLength(
+      2,
+    );
+    // Current transcript job rules match activeTranscriptJobIdsSubquery.
+    expect(sql).toContain("job.mode = 'replace'");
+    expect(sql).toContain("job.status = 'completed'");
+    expect(sql).toContain("job.generation_id = replacement.generation_id");
+    expect(sql).toContain("job.id > replacement.id");
+    // Speaker names use the same precedence and access rule as
+    // app_private.speaker_name(), resolved once per speaker.
+    expect(sql).not.toMatch(/app_private\.speaker_name\(\s*[a-z]/);
+    expect(sql).toContain(
+      "coalesce( person.preferred_name, speaker.display_name, speaker.source_label ) as name",
+    );
+    expect(sql).toContain("or app_private.can_read_meeting(speaker.meeting_id)");
+    expect(sql).toContain(
+      "lower(regexp_replace(btrim(coalesce( speaker_names.name, segments.speaker, '' )), '[[:space:]]+', ' ', 'g')) = any(user_aliases) as is_user",
+    );
+    expect(sql).toContain(
+      "revoke all on function app_private.dashboard_meeting_segment_stats(uuid, uuid, timestamptz, timestamptz, text[]) from public",
+    );
+    expect(sql).toContain(
+      "grant execute on function app_private.dashboard_meeting_segment_stats(uuid, uuid, timestamptz, timestamptz, text[]) to tape_authenticated, tape_mcp",
+    );
+  });
+
   it("keeps operational rate limits private from tenant roles", () => {
     const sql = readFileSync(
       "db/migrations/0039_restrict_rate_limit_table.sql",

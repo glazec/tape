@@ -1214,14 +1214,6 @@ export async function getMeetingDashboardSummaryForWorkspace(
   const now = options.now ?? new Date();
   const statsCutoff = new Date(now.getTime() - 14 * 24 * 60 * 60 * 1000);
   const userAliases = [...getDashboardUserSpeakerAliases(options)];
-  const normalizedSpeaker = sql<string>`lower(regexp_replace(btrim(coalesce(
-    app_private.speaker_name(${transcriptSegments.meetingSpeakerId}),
-    ${transcriptSegments.speaker}, '')), '[[:space:]]+', ' ', 'g'))`;
-  const userSpeakerCondition =
-    userAliases.length > 0
-      ? inArray(normalizedSpeaker, userAliases)
-      : sql<boolean>`false`;
-  const segmentDurationMs = sql<number>`greatest(coalesce(${transcriptSegments.endMs}, ${transcriptSegments.startMs}) - ${transcriptSegments.startMs}, 0)`;
   const [rows, segmentRows] = await Promise.all([
     db
       .select({
@@ -1252,54 +1244,34 @@ export async function getMeetingDashboardSummaryForWorkspace(
           ne(meetings.status, "cancelled"),
         ),
       ),
-    db
-      .select({
-        meetingId: transcriptSegments.meetingId,
-        totalDurationMs: sql<number>`coalesce(sum(${segmentDurationMs}), 0)::int`,
-        userDurationMs: sql<number>`coalesce(sum(case when ${userSpeakerCondition} then ${segmentDurationMs} else 0 end), 0)::int`,
-        userTexts: sql<string[]>`coalesce(jsonb_agg(${transcriptSegments.text}) filter (where ${userSpeakerCondition}), '[]'::jsonb)`,
-        maxEndMs: sql<number>`coalesce(max(greatest(${transcriptSegments.startMs}, coalesce(${transcriptSegments.endMs}, ${transcriptSegments.startMs}))), 0)::int`,
-        hardEmotionScore: sql<number>`coalesce(sum(case when ${transcriptSegments.emotionLabel} = 'hard' then case when ${segmentDurationMs} > 0 then ${segmentDurationMs} else 1 end else 0 end), 0)::int`,
-        chillEmotionScore: sql<number>`coalesce(sum(case when ${transcriptSegments.emotionLabel} = 'chill' then case when ${segmentDurationMs} > 0 then ${segmentDurationMs} else 1 end else 0 end), 0)::int`,
-        neutralEmotionScore: sql<number>`coalesce(sum(case when ${transcriptSegments.emotionLabel} = 'neutral' then case when ${segmentDurationMs} > 0 then ${segmentDurationMs} else 1 end else 0 end), 0)::int`,
-      })
-      .from(transcriptSegments)
-      .innerJoin(meetings, eq(transcriptSegments.meetingId, meetings.id))
-      .where(
-        and(
-          eq(meetings.teamId, workspace.teamId),
-          eq(meetings.ownerUserId, workspace.userId),
-          ne(meetings.status, "cancelled"),
-          inArray(
-            transcriptSegments.jobId,
-            currentTranscriptJobIdsSubquery(meetings.id),
-          ),
-          sql`coalesce(${meetings.startedAt}, ${meetings.createdAt}) >= ${statsCutoff}`,
-          sql`coalesce(${meetings.startedAt}, ${meetings.createdAt}) <= ${now}`,
-        ),
-      )
-      .groupBy(transcriptSegments.meetingId),
+    getDashboardMeetingSegmentStats({
+      teamId: workspace.teamId,
+      ownerUserId: workspace.userId,
+      windowStart: statsCutoff,
+      windowEnd: now,
+      userAliases,
+    }),
   ]);
   const segmentStatsByMeetingId = new Map<
     string,
     DashboardWorkflowSegmentStats
   >(
     segmentRows.map((segment) => [
-      segment.meetingId,
+      segment.meeting_id,
       {
         emotionScores: {
-          hard: segment.hardEmotionScore,
-          chill: segment.chillEmotionScore,
-          neutral: segment.neutralEmotionScore,
+          hard: segment.hard_emotion_score,
+          chill: segment.chill_emotion_score,
+          neutral: segment.neutral_emotion_score,
         },
-        maxEndMs: segment.maxEndMs,
-        spokenWords: segment.userTexts.reduce(
+        maxEndMs: segment.max_end_ms,
+        spokenWords: segment.user_texts.reduce(
           (wordCount, text) =>
             wordCount + countDashboardTranscriptWords(text),
           0,
         ),
-        totalDurationMs: segment.totalDurationMs,
-        userDurationMs: segment.userDurationMs,
+        totalDurationMs: segment.total_duration_ms,
+        userDurationMs: segment.user_duration_ms,
       },
     ]),
   );
@@ -1329,6 +1301,49 @@ export async function getMeetingDashboardSummaryForWorkspace(
       userName: options.userName,
     },
   );
+}
+
+type DashboardMeetingSegmentStatsRow = {
+  chill_emotion_score: number;
+  hard_emotion_score: number;
+  max_end_ms: number;
+  meeting_id: string;
+  neutral_emotion_score: number;
+  total_duration_ms: number;
+  user_duration_ms: number;
+  user_texts: string[];
+};
+
+// Segment totals come from one security-definer call. Aggregating
+// transcript_segments here ran the row-level policies and
+// app_private.speaker_name() for every segment, which took about 20 s for a
+// user with 12,000 recent segments. The function checks meeting access once
+// per meeting under the current claims and resolves each speaker name once.
+async function getDashboardMeetingSegmentStats(input: {
+  teamId: string;
+  ownerUserId: string;
+  windowStart: Date;
+  windowEnd: Date;
+  userAliases: string[];
+}) {
+  return (await databaseSql`
+    select
+      meeting_id,
+      total_duration_ms,
+      user_duration_ms,
+      user_texts,
+      max_end_ms,
+      hard_emotion_score,
+      chill_emotion_score,
+      neutral_emotion_score
+    from app_private.dashboard_meeting_segment_stats(
+      ${input.teamId}::uuid,
+      ${input.ownerUserId}::uuid,
+      ${input.windowStart.toISOString()}::timestamptz,
+      ${input.windowEnd.toISOString()}::timestamptz,
+      ${input.userAliases}::text[]
+    )
+  `) as DashboardMeetingSegmentStatsRow[];
 }
 
 export async function getWorkspaceMeetingTranscript(

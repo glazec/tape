@@ -2496,6 +2496,7 @@ describe("getMeetingDashboardSummaryForWorkspace", () => {
   afterEach(() => {
     getWorkspace.mockReset();
     select.mockReset();
+    databaseSql.mockReset();
     vi.resetModules();
   });
 
@@ -2547,24 +2548,13 @@ describe("getMeetingDashboardSummaryForWorkspace", () => {
         createdAt: new Date("2026-06-27T08:00:00.000Z"),
       },
     ]);
-    const segmentGroupBy = vi.fn().mockResolvedValue([]);
-    const segmentWhere = vi.fn().mockReturnValue({
-      groupBy: segmentGroupBy,
-    });
+    databaseSql.mockResolvedValue([]);
 
-    select
-      .mockReturnValueOnce({
-        from: () => ({
-          where: meetingWhere,
-        }),
-      })
-      .mockReturnValueOnce({
-        from: () => ({
-          innerJoin: () => ({
-            where: segmentWhere,
-          }),
-        }),
-      });
+    select.mockReturnValueOnce({
+      from: () => ({
+        where: meetingWhere,
+      }),
+    });
     const { getMeetingDashboardSummaryForWorkspace } =
       await import("@/lib/meeting-queries");
 
@@ -2586,24 +2576,33 @@ describe("getMeetingDashboardSummaryForWorkspace", () => {
       },
     });
 
-    expectUsesCurrentTranscriptJob(segmentWhere.mock.calls[0][0]);
     expectScopesDashboardToUser(
       meetingWhere.mock.calls[0][0],
       "11111111-1111-4111-8111-111111111111",
     );
-    expectScopesDashboardToUser(
-      segmentWhere.mock.calls[0][0],
-      "11111111-1111-4111-8111-111111111111",
+    // Segment totals come from one security-definer call. Aggregating the
+    // segments here runs their row policies and speaker_name() per segment.
+    expect(select).toHaveBeenCalledTimes(1);
+    expect(databaseSql).toHaveBeenCalledTimes(1);
+    const [strings, ...params] = databaseSql.mock.calls[0] as [
+      TemplateStringsArray,
+      ...unknown[],
+    ];
+    const statsSql = strings.join("$").replace(/\s+/g, " ");
+
+    expect(statsSql).toContain(
+      "from app_private.dashboard_meeting_segment_stats( $::uuid, $::uuid, $::timestamptz, $::timestamptz, $::text[] )",
     );
-    expect(segmentGroupBy).toHaveBeenCalled();
-    expect(select.mock.calls[1][0]).toEqual(
-      expect.objectContaining({
-        meetingId: expect.anything(),
-        userTexts: expect.anything(),
-        totalDurationMs: expect.anything(),
-      }),
-    );
-    expect(select.mock.calls[1][0]).not.toHaveProperty("text");
+    expect(statsSql).not.toContain("app_private.speaker_name");
+    expect(statsSql).not.toContain("transcript_segments");
+    expect(params[0]).toBe("22222222-2222-4222-8222-222222222222");
+    expect(params[1]).toBe("11111111-1111-4111-8111-111111111111");
+    expect(params[3]).toEqual(expect.any(String));
+    expect(
+      new Date(params[3] as string).getTime() -
+        new Date(params[2] as string).getTime(),
+    ).toBe(14 * 24 * 60 * 60 * 1000);
+    expect(params[4]).toEqual([]);
   });
 
   it("builds user stats from transcript segments", async () => {
@@ -2631,37 +2630,29 @@ describe("getMeetingDashboardSummaryForWorkspace", () => {
             },
           ]),
         }),
-      })
-      .mockReturnValueOnce({
-        from: () => ({
-          innerJoin: () => ({
-            where: vi.fn().mockReturnValue({
-              groupBy: vi.fn().mockResolvedValue([
-                {
-                  meetingId: "11111111-1111-4111-8111-111111111111",
-                  totalDurationMs: 30000,
-                  userDurationMs: 10000,
-                  userTexts: ["one two three four"],
-                  maxEndMs: 30000,
-                  hardEmotionScore: 20000,
-                  chillEmotionScore: 10000,
-                  neutralEmotionScore: 0,
-                },
-                {
-                  meetingId: "22222222-2222-4222-8222-222222222222",
-                  totalDurationMs: 8000,
-                  userDurationMs: 8000,
-                  userTexts: ["one two"],
-                  maxEndMs: 8000,
-                  hardEmotionScore: 0,
-                  chillEmotionScore: 0,
-                  neutralEmotionScore: 8000,
-                },
-              ]),
-            }),
-          }),
-        }),
       });
+    databaseSql.mockResolvedValue([
+      {
+        meeting_id: "11111111-1111-4111-8111-111111111111",
+        total_duration_ms: 30000,
+        user_duration_ms: 10000,
+        user_texts: ["one two three four"],
+        max_end_ms: 30000,
+        hard_emotion_score: 20000,
+        chill_emotion_score: 10000,
+        neutral_emotion_score: 0,
+      },
+      {
+        meeting_id: "22222222-2222-4222-8222-222222222222",
+        total_duration_ms: 8000,
+        user_duration_ms: 8000,
+        user_texts: ["one two"],
+        max_end_ms: 8000,
+        hard_emotion_score: 0,
+        chill_emotion_score: 0,
+        neutral_emotion_score: 8000,
+      },
+    ]);
     const { getMeetingDashboardSummaryForWorkspace } =
       await import("@/lib/meeting-queries");
 
@@ -2689,6 +2680,16 @@ describe("getMeetingDashboardSummaryForWorkspace", () => {
         dominantEmotion: "hard",
       },
     });
+
+    const params = databaseSql.mock.calls[0]?.slice(1);
+
+    expect(params).toEqual([
+      "22222222-2222-4222-8222-222222222222",
+      "11111111-1111-4111-8111-111111111111",
+      "2026-06-14T12:00:00.000Z",
+      "2026-06-28T12:00:00.000Z",
+      expect.arrayContaining(["test", "test@iosg.vc"]),
+    ]);
   });
 });
 
