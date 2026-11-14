@@ -540,6 +540,7 @@ async function DashboardMeetingLibrary({
       status: activeViewConfig.status,
     },
   );
+  const renderedAtMs = new Date().getTime();
 
   return (
     <section
@@ -574,6 +575,7 @@ async function DashboardMeetingLibrary({
           }
         >
           <MeetingList
+            renderedAtMs={renderedAtMs}
             emptyMessage={
               isSharedOnly
                 ? "No transcripts have been shared with you yet"

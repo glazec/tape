@@ -315,23 +315,18 @@ export async function listMissedLocalRecorderMeetings(input: {
     .orderBy(desc(meetings.startedAt))
     .limit(50);
   const items: LocalRecorderMeetingItem[] = [];
+  const recallLookupDeadline = AbortSignal.timeout(3_000);
 
   for (const row of rows) {
-    if (
-      !isLocalRecorderCandidateVisibleInLookup({
-        now: input.now,
-        startedAt: row.startedAt,
-      })
-    ) {
+    if (!isLocalRecorderCandidateVisibleInLookup({ now: input.now, startedAt: row.startedAt })) {
       continue;
     }
 
-    const recallState = await getLatestRecallBotState(row.recallBotId);
     const candidate: LocalRecorderCandidate = {
       activeTranscriptJob: row.activeTranscriptJob,
       endedAt: row.endedAt,
-      latestRecallCode: recallState.latestRecallCode,
-      latestRecallStatus: recallState.latestRecallStatus,
+      latestRecallCode: null,
+      latestRecallStatus: null,
       meetingId: row.id,
       meetingUrl: row.meetingUrl,
       recallAudioAsset: row.recallAudioAsset,
@@ -339,12 +334,27 @@ export async function listMissedLocalRecorderMeetings(input: {
       startedAt: row.startedAt,
       status: row.status,
     };
-    const eligibility = getLocalRecorderEligibility(candidate, {
+    let eligibility = getLocalRecorderEligibility(candidate, {
       now: input.now,
     });
 
     if (!eligibility.eligible || !row.startedAt) {
       continue;
+    }
+
+    if (row.recallBotId) {
+      if (recallLookupDeadline.aborted) continue;
+      const recallState = await getLatestRecallBotState(
+        row.recallBotId,
+        recallLookupDeadline,
+      );
+      // Recheck next poll if there was no time to confirm the bot's status.
+      if (recallLookupDeadline.aborted) continue;
+      eligibility = getLocalRecorderEligibility(
+        { ...candidate, ...recallState },
+        { now: input.now },
+      );
+      if (!eligibility.eligible) continue;
     }
 
     const activeAttempt = await findLocalRecorderAttempt({
@@ -531,7 +541,10 @@ export async function createManualLocalRecorderIntent(input: {
   };
 }
 
-async function getLatestRecallBotState(recallBotId: string | null) {
+async function getLatestRecallBotState(
+  recallBotId: string | null,
+  signal?: AbortSignal,
+) {
   if (!recallBotId) {
     return {
       latestRecallCode: null,
@@ -540,7 +553,10 @@ async function getLatestRecallBotState(recallBotId: string | null) {
   }
 
   try {
-    return extractLatestRecallBotState(await retrieveRecallBot(recallBotId));
+    const bot = signal
+      ? await retrieveRecallBot(recallBotId, signal)
+      : await retrieveRecallBot(recallBotId);
+    return extractLatestRecallBotState(bot);
   } catch {
     return {
       latestRecallCode: null,

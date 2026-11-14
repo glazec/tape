@@ -932,12 +932,13 @@ export class RecallBotRetrievalError extends Error {
   }
 }
 
-export async function retrieveRecallBot(botId: string) {
+export async function retrieveRecallBot(botId: string, signal?: AbortSignal) {
   const env = recallApiEnvSchema.parse(process.env);
   const response = await fetch(
     buildRecallApiUrl(env, `/api/v1/bot/${botId}/`),
     {
       method: "GET",
+      ...(signal ? { signal } : {}),
       headers: {
         Authorization: `Token ${env.RECALL_API_KEY}`,
         Accept: "application/json",

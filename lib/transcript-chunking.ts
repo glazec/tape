@@ -79,8 +79,16 @@ export function mergeElevenLabsChunkTranscripts(
   const ordered = [...chunks].sort(
     (left, right) => left.plan.index - right.plan.index,
   );
-  const words = ordered.flatMap(({ plan, transcript }) =>
-    (transcript.words ?? []).flatMap((word) => {
+  const words = ordered.flatMap<ElevenLabsWord>(({ plan, transcript }) => {
+    const sourceWords = transcript.words ?? [];
+    const text = transcript.text?.trim();
+    if (text && !sourceWords.some((word) => word.text?.trim() &&
+      (Number.isFinite(word.start) || Number.isFinite(word.end)))) {
+      // Preserve provider text at the chunk boundary when word timing is missing.
+      return [{ start: plan.ownershipStartMs / 1_000, text, type: "chunk_text" }];
+    }
+
+    return sourceWords.flatMap((word) => {
       const absoluteStartMs = secondsToMs(word.start) + plan.startMs;
       const absoluteEndMs = secondsToMs(word.end) + plan.startMs;
       const midpointMs =
@@ -102,8 +110,8 @@ export function mergeElevenLabsChunkTranscripts(
           end: absoluteEndMs / 1_000,
         },
       ];
-    }),
-  );
+    });
+  });
 
   return {
     entities: ordered.flatMap(({ transcript }) => transcript.entities ?? []),

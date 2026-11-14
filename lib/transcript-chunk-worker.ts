@@ -1,4 +1,5 @@
 import { eq } from "drizzle-orm";
+import { NonRetriableError } from "inngest";
 
 import { db } from "@/db/client";
 import { meetings } from "@/db/schema";
@@ -245,12 +246,15 @@ export async function persistCompletedTranscriptChunks(input: {
   });
   const result = await applyElevenLabsTranscriptEvent(event);
 
-  if (result.action !== "complete") {
-    throw new Error(
-      `Unable to persist chunked transcript: ${
-        "reason" in result ? result.reason : "provider transcript failed"
-      }`,
+  if (result.action === "fail") {
+    // Inngest reuses the same completed chunk payloads when persistence retries.
+    throw new NonRetriableError(
+      result.errorMessage ?? "Chunked transcription returned no usable transcript",
     );
+  }
+
+  if (result.action !== "complete") {
+    throw new Error(`Unable to persist chunked transcript: ${result.reason}`);
   }
 
   const translationLanguage = await getMeetingTranslationLanguage(

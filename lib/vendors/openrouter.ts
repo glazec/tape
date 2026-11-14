@@ -20,7 +20,7 @@ import {
 import type { TranslationLanguage } from "@/lib/meeting-translation-language";
 import type { ProviderUsageCategory } from "@/lib/provider-usage";
 import { searchWebWithExa } from "@/lib/vendors/exa";
-import { createGatewayCompletion, generateGatewayFollowup } from "@/lib/vendors/ai-gateway";
+import { createGatewayCompletion, gatewayFallbackDetails, generateGatewayFollowup } from "@/lib/vendors/ai-gateway";
 
 const optionalUrl = z.preprocess(
   (value) =>
@@ -185,9 +185,9 @@ export async function generateMeetingFollowup(
       try {
         const gatewayContent = await generateGatewayFollowup({ messages: input.messages, schema, maxTokens: input.maxTokens });
         if (gatewayContent !== null) return parseMeetingFollowup(gatewayContent, source);
-      } catch {
+      } catch (error) {
         // Never log provider bodies, prompts, or credentials on fallback.
-        console.warn("meeting_followup_gateway_fallback", { meetingId });
+        console.warn("meeting_followup_gateway_fallback", { meetingId, ...gatewayFallbackDetails(error) });
       }
     }
     const content = await createOpenRouterChatCompletion(input);
@@ -744,7 +744,11 @@ export async function createOpenRouterChatCompletion(input: {
         input.validateGatewayContent?.(gateway.message.content);
         return gateway.message.content;
       }
-    } catch { console.warn("ai_gateway_fallback", { model, meetingId: input.usageContext?.meetingId }); }
+    } catch (error) {
+      console.warn("ai_gateway_fallback", {
+        model, meetingId: input.usageContext?.meetingId, ...gatewayFallbackDetails(error),
+      });
+    }
   }
   let lastError: unknown;
 

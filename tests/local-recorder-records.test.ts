@@ -531,7 +531,7 @@ describe("local recorder records", () => {
         },
       }),
     ).resolves.toEqual([]);
-    expect(retrieveRecallBot).toHaveBeenCalledWith("bot_123");
+    expect(retrieveRecallBot).toHaveBeenCalledWith("bot_123", expect.any(AbortSignal));
     expect(attemptValues).not.toHaveBeenCalled();
   });
 
@@ -578,7 +578,7 @@ describe("local recorder records", () => {
         title: "Weekly sync",
       }),
     ]);
-    expect(retrieveRecallBot).toHaveBeenCalledWith("bot_123");
+    expect(retrieveRecallBot).toHaveBeenCalledWith("bot_123", expect.any(AbortSignal));
     expect(attemptValues).toHaveBeenCalledWith(
       expect.objectContaining({
         attemptState: "notified",
@@ -586,6 +586,72 @@ describe("local recorder records", () => {
         notificationState: "pending",
       }),
     );
+  });
+
+  it("skips Recall for meetings that already have audio or are outside the recording window", async () => {
+    const row = {
+      activeTranscriptJob: false,
+      endedAt: new Date("2026-07-01T12:30:00.000Z"),
+      id: "meeting_123",
+      meetingUrl: "https://meet.google.com/abc-defg-hij",
+      recallAudioAsset: false,
+      recallBotId: "bot_123",
+      recallRecordingId: null,
+      startedAt: new Date("2026-07-01T12:00:00.000Z"),
+      status: "scheduled",
+      title: "Weekly sync",
+    };
+    db.insert.mockReturnValueOnce({
+      values: vi.fn(() => ({ onConflictDoUpdate: vi.fn() })),
+    });
+    db.select.mockReturnValueOnce(selectRows([
+      { ...row, recallAudioAsset: true },
+      { ...row, endedAt: new Date("2026-07-01T11:30:00.000Z") },
+    ]));
+
+    await expect(listMissedLocalRecorderMeetings({
+      deviceId: "mac_123",
+      now: new Date("2026-07-01T12:02:00.000Z"),
+      workspace: workspace(),
+    })).resolves.toEqual([]);
+    expect(retrieveRecallBot).not.toHaveBeenCalled();
+    expect(db.insert).toHaveBeenCalledOnce();
+  });
+
+  it("defers the fallback when the Recall lookup runs out of time", async () => {
+    const deadline = new AbortController();
+    const timeout = vi.spyOn(AbortSignal, "timeout").mockReturnValue(deadline.signal);
+    db.insert.mockReturnValueOnce({
+      values: vi.fn(() => ({ onConflictDoUpdate: vi.fn() })),
+    });
+    db.select.mockReturnValueOnce(selectRows([{
+      activeTranscriptJob: false,
+      endedAt: new Date("2026-07-01T12:30:00.000Z"),
+      id: "meeting_123",
+      meetingUrl: "https://meet.google.com/abc-defg-hij",
+      recallAudioAsset: false,
+      recallBotId: "bot_123",
+      recallRecordingId: null,
+      startedAt: new Date("2026-07-01T12:00:00.000Z"),
+      status: "scheduled",
+      title: "Weekly sync",
+    }]));
+    retrieveRecallBot.mockImplementationOnce(async () => {
+      deadline.abort();
+      throw deadline.signal.reason;
+    });
+
+    try {
+      await expect(listMissedLocalRecorderMeetings({
+        deviceId: "mac_123",
+        now: new Date("2026-07-01T12:02:00.000Z"),
+        workspace: workspace(),
+      })).resolves.toEqual([]);
+      expect(retrieveRecallBot).toHaveBeenCalledWith("bot_123", deadline.signal);
+      expect(db.insert).toHaveBeenCalledOnce();
+    } finally {
+      timeout.mockRestore();
+    }
   });
 
   it("creates one fallback intent for an eligible Microsoft Teams meeting", async () => {

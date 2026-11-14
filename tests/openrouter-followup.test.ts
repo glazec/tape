@@ -35,6 +35,7 @@ const completion = (result: unknown) =>
   });
 
 afterEach(() => {
+  vi.restoreAllMocks();
   vi.unstubAllGlobals();
   vi.unstubAllEnvs();
   vi.clearAllMocks();
@@ -68,6 +69,19 @@ describe("followup provider", () => {
     expect(request.store).toBe(false);
     expect(request.text.format.schema.properties.connections.items.required).toContain("mutual");
     expect(recordUsage).not.toHaveBeenCalled();
+  });
+
+  it("logs the gateway status without including the provider response", async () => {
+    setup()
+      .mockResolvedValueOnce(new Response("private provider response", { status: 503 }))
+      .mockResolvedValueOnce(completion(output));
+    vi.stubEnv("AI_GATEWAY_API_KEY", "gateway-test-key");
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    expect(await generateMeetingFollowup(source, "meeting-id")).toEqual(output);
+    expect(warn).toHaveBeenCalledExactlyOnceWith("meeting_followup_gateway_fallback", {
+      meetingId: "meeting-id", reason: "http_error", status: 503,
+    });
   });
 
   it.each(["timeout", "http", "empty", "incomplete", "invalid_json", "invalid_evidence"])(

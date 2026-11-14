@@ -873,6 +873,20 @@ function buildTranscriptSegments(
       continue;
     }
 
+    if (word.type === "chunk_text") {
+      pushSegment(segments, current);
+      pushSegment(segments, {
+        speaker: null,
+        startMs: secondsToMs(word.start) ?? 0,
+        endMs: null,
+        text: word.text,
+      });
+      current = null;
+      currentSpeakerId = null;
+      currentSpeakerLabel = null;
+      continue;
+    }
+
     const nextSpeakerId: string | null = word.speakerId ?? currentSpeakerId;
     const nextSpeakerLabel = formatSpeaker(
       nextSpeakerId,

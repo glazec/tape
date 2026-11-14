@@ -77,4 +77,24 @@ describe("transcript chunking", () => {
     expect(merged.words.at(-1)?.start).toBe(3_587);
     expect(merged.transcriptionIds).toEqual(["part_1", "part_2"]);
   });
+
+  it("preserves untimed provider text without inventing speaker or end time", () => {
+    const [first, second] = planTranscriptChunks(61 * 60 * 1_000);
+    const merged = mergeElevenLabsChunkTranscripts([
+      { plan: first!, transcript: { text: "First chunk", words: [] } },
+      { plan: second!, transcript: { text: "Second chunk", words: [{ text: "Second" }] } },
+    ]);
+
+    expect(merged.words).toEqual([
+      { text: "First chunk", start: 0, type: "chunk_text" },
+      { text: "Second chunk", start: 3_585, type: "chunk_text" },
+    ]);
+  });
+
+  it("leaves a silent chunk empty", () => {
+    const [plan] = planTranscriptChunks(60_000);
+    expect(mergeElevenLabsChunkTranscripts([
+      { plan: plan!, transcript: { text: " ", words: [] } },
+    ]).words).toEqual([]);
+  });
 });

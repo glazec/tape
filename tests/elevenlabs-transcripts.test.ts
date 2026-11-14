@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { buildElevenLabsTranscriptPersistence } from "@/lib/elevenlabs-transcripts";
+import { mergeElevenLabsChunkTranscripts, planTranscriptChunks } from "@/lib/transcript-chunking";
 import { normalizeElevenLabsWebhook } from "@/lib/vendors/elevenlabs";
 
 vi.mock("@/db/client", () => ({
@@ -721,6 +722,30 @@ describe("buildElevenLabsTranscriptPersistence", () => {
       errorMessage: "No transcript text returned",
       providerJobId: "req_123",
       transcriptJobId: "22222222-2222-4222-8222-222222222222",
+    });
+  });
+
+  it("persists text-only chunks separately from timestamped speech", () => {
+    const [first, second] = planTranscriptChunks(61 * 60 * 1_000);
+    const merged = mergeElevenLabsChunkTranscripts([
+      { plan: first!, transcript: { words: [{ start: 10, end: 12, text: "Timed speech", speaker_id: "speaker_0" }] } },
+      { plan: second!, transcript: { text: "Untimed speech", words: [] } },
+    ]);
+    const event = normalizeElevenLabsWebhook({
+      type: "speech_to_text_transcription",
+      data: {
+        request_id: "chunks:fixture",
+        webhook_metadata: { meetingId: "meeting", transcriptJobId: "job" },
+        transcription: { status: "completed", words: merged.words },
+      },
+    });
+
+    expect(buildElevenLabsTranscriptPersistence(event)).toMatchObject({
+      action: "complete",
+      segments: [
+        { startMs: 10_000, endMs: 12_000, text: "Timed speech" },
+        { speaker: null, startMs: 3_585_000, endMs: null, text: "Untimed speech" },
+      ],
     });
   });
 

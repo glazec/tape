@@ -17,6 +17,25 @@ const responseSchema = z.object({
 type ToolCall = { id: string; type: "function"; function: { name: string; arguments: string } };
 type GatewayMessage = { role: string; content: string | null; tool_calls?: ToolCall[]; tool_call_id?: string };
 
+export function gatewayFallbackDetails(error: unknown) {
+  if (error instanceof GatewayHttpError) {
+    return { reason: "http_error", status: error.status };
+  }
+  if (error instanceof Error) {
+    if (error.name === "TimeoutError" || error.name === "AbortError") return { reason: "timeout" };
+    if (error instanceof SyntaxError) return { reason: "invalid_json" };
+    if (error instanceof z.ZodError) return { reason: "invalid_response" };
+    if (error instanceof TypeError) return { reason: "request_failed" };
+  }
+  return { reason: "response_rejected" };
+}
+
+class GatewayHttpError extends Error {
+  constructor(readonly status: number) {
+    super(`AI gateway returned HTTP ${status}`);
+  }
+}
+
 export async function createGatewayCompletion(input: {
   messages: GatewayMessage[];
   reasoningEffort: "low" | "medium";
@@ -66,7 +85,7 @@ export async function createGatewayCompletion(input: {
       ...(input.tools ? { tools: input.tools.map(tool => ({ type: "function", ...tool.function })), tool_choice: input.toolChoice ?? "auto", parallel_tool_calls: false } : {}),
     }),
   });
-  if (!response.ok) throw new Error(`AI gateway returned HTTP ${response.status}`);
+  if (!response.ok) throw new GatewayHttpError(response.status);
   const parsed = responseSchema.parse(await response.json());
   const content = parsed.output.filter(item => item.type === "message")
     .flatMap(item => item.content ?? []).filter(item => item.type === "output_text")

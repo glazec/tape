@@ -84,6 +84,7 @@ export type MeetingListRelatedItem = MeetingListBaseItem;
 type MeetingListProps = {
   emptyMessage?: string;
   meetings: MeetingListItem[];
+  renderedAtMs?: number;
   sort?: MeetingLibrarySort;
   sortLinks?: Partial<
     Record<"duration" | "participantCount" | "startedAt" | "title", string>
@@ -114,6 +115,7 @@ const statusLabels: Record<MeetingDisplayStatus, string> = {
 export function MeetingList({
   emptyMessage = "No meetings found",
   meetings,
+  renderedAtMs,
   sort = "smart",
   sortLinks,
 }: MeetingListProps) {
@@ -231,6 +233,7 @@ export function MeetingList({
                     }
                     onToggle={() => toggleMeeting(meeting.id)}
                     relatedCount={relatedMeetings.length || (meeting.hasMoreRelatedMeetings ? 1 : 0)}
+                    renderedAtMs={renderedAtMs}
                   />
                   {isExpanded
                     ? [
@@ -239,6 +242,7 @@ export function MeetingList({
                             isChild
                             key={relatedMeeting.id}
                             meeting={relatedMeeting}
+                            renderedAtMs={renderedAtMs}
                           />
                         )),
                       ]
@@ -284,6 +288,7 @@ function MeetingTableRow({
   moreAction = null,
   onToggle,
   relatedCount = 0,
+  renderedAtMs,
 }: {
   grouped?: boolean;
   isChild?: boolean;
@@ -292,6 +297,7 @@ function MeetingTableRow({
   moreAction?: ReactNode;
   onToggle?: () => void;
   relatedCount?: number;
+  renderedAtMs?: number;
 }) {
   const displayStatus = getMeetingDisplayStatus({
     botState: meeting.botState,
@@ -322,6 +328,7 @@ function MeetingTableRow({
           moreAction={moreAction}
           onToggle={onToggle}
           relatedCount={relatedCount}
+          renderedAtMs={renderedAtMs}
         />
       </TableCell>
       <TableCell className="w-28 pr-4 align-top pt-3 text-right">
@@ -503,6 +510,7 @@ function MeetingTitleCell({
   moreAction,
   onToggle,
   relatedCount,
+  renderedAtMs,
 }: {
   isChild: boolean;
   isExpanded: boolean;
@@ -510,6 +518,7 @@ function MeetingTitleCell({
   moreAction: ReactNode;
   onToggle?: () => void;
   relatedCount: number;
+  renderedAtMs?: number;
 }) {
   const displayStatus = getMeetingDisplayStatus({
     botState: meeting.botState,
@@ -544,6 +553,7 @@ function MeetingTitleCell({
         <MeetingMeta
           displayStatus={displayStatus}
           meeting={meeting}
+          renderedAtMs={renderedAtMs}
           related={
             relatedCount > 0 ? (
               <>
@@ -685,16 +695,19 @@ function MeetingMeta({
   displayStatus,
   meeting,
   related = null,
+  renderedAtMs,
 }: {
   displayStatus: MeetingDisplayStatus;
   meeting: MeetingListBaseItem;
   related?: ReactNode;
+  renderedAtMs?: number;
 }) {
   const duration = formatMeetingDuration({
     durationMs: meeting.durationMs,
     endedAt: meeting.endedAt,
     startedAt: meeting.startedAt,
     status: meeting.status,
+    renderedAtMs,
   });
   const coverageNote = getMeetingCoverageNote({
     accessScope: meeting.accessScope,
@@ -856,6 +869,7 @@ function formatMeetingDuration(input: {
   endedAt?: string | null;
   startedAt: string;
   status: MeetingRecordStatus;
+  renderedAtMs?: number;
 }) {
   if (typeof input.durationMs === "number" && input.durationMs > 0) {
     return formatDurationMs(input.durationMs);
@@ -863,7 +877,8 @@ function formatMeetingDuration(input: {
 
   if (
     input.status === "scheduled" &&
-    new Date(input.startedAt).getTime() > Date.now() &&
+    input.renderedAtMs !== undefined &&
+    new Date(input.startedAt).getTime() > input.renderedAtMs &&
     input.endedAt
   ) {
     const startedTime = new Date(input.startedAt).getTime();

@@ -36,6 +36,7 @@ describe("MeetingList", () => {
   it("uses planned duration only for an upcoming scheduled meeting", () => {
     const html = renderToStaticMarkup(
       <MeetingList
+        renderedAtMs={Date.parse("2999-01-01T11:59:59.000Z")}
         meetings={[
           {
             id: "11111111-1111-4111-8111-111111111111",
@@ -50,6 +51,32 @@ describe("MeetingList", () => {
     );
 
     expect(html).toContain("1h 30m");
+  });
+
+  it("keeps the planned duration stable if the meeting starts before hydration", () => {
+    const startedAt = Date.parse("2026-11-14T12:00:00.000Z");
+    const clock = vi.spyOn(Date, "now");
+    const render = () => renderToStaticMarkup(
+      <MeetingList
+        renderedAtMs={startedAt - 1}
+        meetings={[{
+          id: "meeting", title: "Scheduled meeting", platform: "zoom",
+          startedAt: new Date(startedAt).toISOString(),
+          endedAt: new Date(startedAt + 30 * 60 * 1000).toISOString(),
+          status: "scheduled",
+        }]}
+      />,
+    );
+
+    try {
+      clock.mockReturnValue(startedAt - 1);
+      const initial = render();
+      clock.mockReturnValue(startedAt + 1);
+      expect(initial).toContain("30m");
+      expect(render()).toEqual(initial);
+    } finally {
+      clock.mockRestore();
+    }
   });
 
   it("labels Microsoft Teams meetings in the dashboard list", () => {

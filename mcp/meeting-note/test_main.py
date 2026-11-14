@@ -13,7 +13,13 @@ class SpeakerDisplayProjectionTests(unittest.TestCase):
             "select speaker from readable_transcript_segments", "authorized_meeting", "'shared'"
         )
         self.assertIn("and authorized_meeting", query)
-        self.assertIn("coalesce(app_private.speaker_name(ts.meeting_speaker_id), ts.speaker) as speaker", query)
+        self.assertIn("transcript_speaker_names as materialized", query)
+        self.assertIn("app_private.speaker_name(ms.id) as speaker", query)
+        self.assertIn("inner join meeting_speakers ms on ms.meeting_id = rm.id", query)
+        self.assertIn("coalesce(sn.speaker, ts.speaker) as speaker", query)
+        self.assertNotIn("speaker_name(ts.meeting_speaker_id)", query)
+        with self.assertRaises(ValueError):
+            main._validate_agent_sql("select * from transcript_speaker_names")
         self.assertNotIn("participantEmail", query)
         self.assertNotIn("person_emails", query)
         self.assertNotIn("workspace_people", query)
