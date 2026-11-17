@@ -256,7 +256,15 @@ describe("meeting share service", () => {
 
 // Exercises the actual service statements under PostgreSQL RLS, not an admin connection.
 describe.skipIf(!process.env.TAPE_SHARING_TEST_DATABASE)("email sharing under real tenant RLS", () => {
-  it.each(["molly@organization.test", "guest@outside.test"])("invites unregistered %s without a whitelist", async (email) => {
+  it.each([
+    ["owner", "molly@organization.test", false, "new"],
+    ["owner", "guest@outside.test", false, "new"],
+    ["reader", "registered@organization.test", true, "new"],
+    ["reader", "guest@outside.test", false, "new"],
+    ["reader", "registered@organization.test", true, "already_shared"],
+    ["reader", "guest@outside.test", false, "excluded"],
+    ["owner", "guest@outside.test", false, "excluded"],
+  ] as const)("shares as %s with %s (registered: %s, prior state: %s)", async (actor, email, registered, priorState) => {
     const { execFileSync } = await import("node:child_process");
     const database = process.env.TAPE_SHARING_TEST_DATABASE!;
     const url = new URL(database);
@@ -274,8 +282,11 @@ describe.skipIf(!process.env.TAPE_SHARING_TEST_DATABASE)("email sharing under re
       return [];
     });
     const { createMeetingSharePolicy } = await import("@/lib/meeting-share-service");
+    const actorId = actor === "owner"
+      ? "20000000-0000-4000-8000-000000000001"
+      : "20000000-0000-4000-8000-000000000002";
     await createMeetingSharePolicy({
-      createdByUserId: "20000000-0000-4000-8000-000000000001",
+      createdByUserId: actorId,
       ownerUserId: "20000000-0000-4000-8000-000000000001",
       teamId: "10000000-0000-4000-8000-000000000001",
       seedMeetingId: "30000000-0000-4000-8000-000000000001",
@@ -287,14 +298,55 @@ describe.skipIf(!process.env.TAPE_SHARING_TEST_DATABASE)("email sharing under re
       input: `begin;
         insert into teams (id, name) values ('10000000-0000-4000-8000-000000000001', 'Share test');
         insert into users (id, auth_user_id, email) values ('20000000-0000-4000-8000-000000000001', 'share-owner', 'owner@organization.test');
-        insert into team_memberships (team_id, user_id, role) values ('10000000-0000-4000-8000-000000000001', '20000000-0000-4000-8000-000000000001', 'member');
+        insert into users (id, auth_user_id, email) values
+          ('20000000-0000-4000-8000-000000000002', 'share-reader', 'reader@organization.test'),
+          ('20000000-0000-4000-8000-000000000003', 'share-recipient', 'registered@organization.test');
+        insert into team_memberships (team_id, user_id, role) values
+          ('10000000-0000-4000-8000-000000000001', '20000000-0000-4000-8000-000000000001', 'member'),
+          ('10000000-0000-4000-8000-000000000001', '20000000-0000-4000-8000-000000000002', 'member'),
+          ('10000000-0000-4000-8000-000000000001', '20000000-0000-4000-8000-000000000003', 'member');
         insert into meetings (id, team_id, owner_user_id, title, platform) values ('30000000-0000-4000-8000-000000000001', '10000000-0000-4000-8000-000000000001', '20000000-0000-4000-8000-000000000001', 'Test', 'zoom');
+        insert into meeting_access (meeting_id, user_id, role) values
+          ('30000000-0000-4000-8000-000000000001', '20000000-0000-4000-8000-000000000002', 'shared');
+        ${priorState === "already_shared" ? `
+          insert into meeting_share_policies
+            (id, team_id, owner_user_id, seed_meeting_id, recipient_email, scope, role, created_by_user_id)
+          values (
+            '40000000-0000-4000-8000-000000000001',
+            '10000000-0000-4000-8000-000000000001',
+            '20000000-0000-4000-8000-000000000001',
+            '30000000-0000-4000-8000-000000000001',
+            ${literal(email)}, 'single', 'shared', '20000000-0000-4000-8000-000000000001');
+          insert into meeting_access_sources (meeting_id, recipient_email, source, source_id, role, created_by_user_id)
+          values ('30000000-0000-4000-8000-000000000001', ${literal(email)}, 'share_policy',
+            '40000000-0000-4000-8000-000000000001', 'shared', '20000000-0000-4000-8000-000000000001');
+          insert into meeting_access (meeting_id, user_id, role, source, source_id)
+          values ('30000000-0000-4000-8000-000000000001', '20000000-0000-4000-8000-000000000003',
+            'shared', 'effective', 'materialized');
+        ` : ""}
+        ${priorState === "excluded" ? `
+          insert into meeting_access_exclusions (meeting_id, recipient_email, created_by_user_id)
+          values ('30000000-0000-4000-8000-000000000001', ${literal(email)}, '20000000-0000-4000-8000-000000000001');
+        ` : ""}
         set local role tape_authenticated;
-        select set_config('request.jwt.claims', '{"sub":"share-owner","email":"owner@organization.test"}', true);
+        select set_config('request.jwt.claims', '{"sub":"share-${actor}","email":"${actor}@organization.test"}', true);
         ${statements.join(";\n")};
+        ${statements.join(";\n")};
+        select 'visible_grants=' || count(*) from meeting_access where user_id = '20000000-0000-4000-8000-000000000003';
+        select 'visible_invites=' || count(*) from meeting_share_invites where email = ${literal(email)};
+        reset role;
+        select 'grant_count=' || count(*) from meeting_access
+          join users on users.id = meeting_access.user_id
+          where users.email = ${literal(email)} and revoked_at is null;
         select 'invite_count=' || count(*) from meeting_share_invites where email = ${literal(email)} and revoked_at is null;
         rollback;`,
     });
-    expect(output).toContain("invite_count=1");
+    const canShare = actor === "owner" || priorState !== "excluded";
+    expect(output).toContain(`grant_count=${Number(canShare && registered)}`);
+    expect(output).toContain(`invite_count=${Number(canShare && !registered)}`);
+    if (actor === "reader") {
+      expect(output).toContain("visible_grants=0");
+      expect(output).toContain("visible_invites=0");
+    }
   });
 });

@@ -10,7 +10,14 @@ import { resampleAudioPeaks } from "@/lib/audio-waveform";
 
 export const AUDIO_WAVEFORM_FILTER =
   "aresample=16000,asetnsamples=n=1600:p=0,astats=metadata=1:reset=1,ametadata=mode=print:key=lavfi.astats.Overall.RMS_level:file=-";
-const MAX_AUDIO_BYTES = 256 * 1024 * 1024;
+const MAX_AUDIO_BYTES = 512 * 1024 * 1024;
+
+export class WaveformSourceTooLargeError extends Error {
+  constructor() {
+    super("Audio source is too large for waveform generation");
+    this.name = "WaveformSourceTooLargeError";
+  }
+}
 
 export function createAudioWaveformGenerator(
   runProcess: ProcessRunner,
@@ -109,13 +116,13 @@ async function downloadAudio(
     redirect: "error",
     signal: AbortSignal.timeout(60_000),
   });
-  if (
-    !response.ok ||
-    !response.body ||
-    Number(response.headers.get("content-length")) > MAX_AUDIO_BYTES
-  ) {
+  if (!response.ok || !response.body) {
     await response.body?.cancel();
-    throw new Error("Audio download unavailable or too large");
+    throw new Error("Audio download unavailable");
+  }
+  if (Number(response.headers.get("content-length")) > MAX_AUDIO_BYTES) {
+    await response.body.cancel();
+    throw new WaveformSourceTooLargeError();
   }
   const file = await open(path, "wx", 0o600);
   const reader = response.body.getReader();
@@ -125,8 +132,9 @@ async function downloadAudio(
       const { done, value } = await reader.read();
       if (done) break;
       size += value.byteLength;
-      if (size > MAX_AUDIO_BYTES)
-        throw new Error("Audio download is too large");
+      if (size > MAX_AUDIO_BYTES) {
+        throw new WaveformSourceTooLargeError();
+      }
       await file.writeFile(value);
     }
   } finally {

@@ -36,7 +36,10 @@ function toQuery(condition: SQL) {
   return dialect.sqlToQuery(condition);
 }
 
-vi.mock("@/lib/audio-waveform-server", () => ({ generateAudioWaveform }));
+vi.mock("@/lib/audio-waveform-server", async (importOriginal) => ({
+  ...await importOriginal<typeof import("@/lib/audio-waveform-server")>(),
+  generateAudioWaveform,
+}));
 
 vi.mock("@/lib/auth", () => ({
   getCurrentUser,
@@ -154,6 +157,20 @@ describe("GET /api/meetings/[meetingId]/audio", () => {
     const response = await getMeetingAudio("https://app.example.com/api/meetings/11111111-1111-4111-8111-111111111111/audio?waveform=1");
     expect(response.status).toBe(503);
     expect(await response.json()).toEqual({ error: "Audio waveform unavailable" });
+  });
+
+  it("lets the viewer fall back when the recording is too large for a waveform", async () => {
+    const { WaveformSourceTooLargeError } = await import("@/lib/audio-waveform-server");
+    getCurrentUser.mockResolvedValue({ id: "user_123", email: "user@example.com" });
+    getWorkspace.mockResolvedValue({ teamId: "team_123" });
+    limit.mockResolvedValue([{ objectKey: "audio.mp3" }]);
+    createReadUrl.mockResolvedValue("https://r2.example.com/audio.mp3");
+    generateAudioWaveform.mockRejectedValue(new WaveformSourceTooLargeError());
+
+    const response = await getMeetingAudio("https://app.example.com/api/meetings/11111111-1111-4111-8111-111111111111/audio?waveform=1");
+
+    expect(response.status).toBe(422);
+    expect(response.headers.get("cache-control")).toBe("private, no-store");
   });
 
   it("redirects authenticated workspace users to a signed audio URL", async () => {

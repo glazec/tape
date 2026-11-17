@@ -62,15 +62,15 @@ export async function createMeetingSharePolicy(input: {
         seed_meeting_id,
         recipient_email,
         scope
-      ) where revoked_at is null do update
-      set role = excluded.role,
-          created_by_user_id = excluded.created_by_user_id,
-          updated_at = now()
-      returning id
+      ) where revoked_at is null do nothing
     `,
     transaction`
       with active_policy as (
-        select id
+        select id,
+          (
+            created_by_user_id = ${input.createdByUserId}::uuid
+            or app_private.can_write_meeting(seed_meeting_id)
+          ) as can_update
         from meeting_share_policies
         where team_id = ${input.teamId}::uuid
           and owner_user_id = ${input.ownerUserId}::uuid
@@ -92,11 +92,13 @@ export async function createMeetingSharePolicy(input: {
         where meeting_id = any(${input.meetingIds}::uuid[])
           and recipient_email = ${input.recipientEmail}
           and app_private.can_write_meeting(${input.seedMeetingId}::uuid)
+        returning meeting_id
       ), new_keys as (
         insert into meeting_share_policy_keys (policy_id, match_key)
         select active_policy.id, key
         from active_policy
         cross join unnest(${input.matchKeys}::text[]) as key
+        where active_policy.can_update
         on conflict (policy_id, match_key) do nothing
       ), new_sources as (
         insert into meeting_access_sources (
@@ -116,78 +118,44 @@ export async function createMeetingSharePolicy(input: {
           ${input.createdByUserId}::uuid
         from active_policy
         cross join unnest(${input.meetingIds}::uuid[]) as target(meeting_id)
-        where not exists (
-          select 1
-          from meeting_access_exclusions
-          where meeting_access_exclusions.meeting_id = target.meeting_id
-            and meeting_access_exclusions.recipient_email = ${input.recipientEmail}
+        where active_policy.can_update and (
+          exists (
+            select 1 from cleared_exclusions
+            where cleared_exclusions.meeting_id = target.meeting_id
+          ) or not exists (
+            select 1
+            from meeting_access_exclusions
+            where meeting_access_exclusions.meeting_id = target.meeting_id
+              and meeting_access_exclusions.recipient_email = ${input.recipientEmail}
+          )
         )
         on conflict (meeting_id, recipient_email, source, source_id) do update
         set role = excluded.role,
             created_by_user_id = excluded.created_by_user_id,
             revoked_at = null,
             updated_at = now()
-        returning meeting_id, recipient_email
-      ), access_grants as (
-        insert into meeting_access (
-          meeting_id,
-          user_id,
-          role,
-          source,
-          source_id,
-          created_by_user_id
-        )
-        select
-          new_sources.meeting_id,
-          app_user.id,
-          'shared',
-          'effective',
-          'materialized',
-          ${input.createdByUserId}::uuid
-        from new_sources
-        join users as app_user on lower(app_user.email) = ${input.recipientEmail}
-        on conflict (meeting_id, user_id) do update
-        set role = excluded.role,
-            source = 'effective',
-            source_id = 'materialized',
-            created_by_user_id = excluded.created_by_user_id,
-            revoked_at = null,
-            updated_at = now()
-      ), invite_grants as (
-        insert into meeting_share_invites (
-          meeting_id,
-          email,
-          role,
-          created_by_user_id,
-          source,
-          source_id
-        )
-        select
-          new_sources.meeting_id,
-          ${input.recipientEmail},
-          'shared',
-          ${input.createdByUserId}::uuid,
-          'effective',
-          'materialized'
-        from new_sources
-        where not exists (
-          select 1 from users where lower(email) = ${input.recipientEmail}
-        )
-        on conflict (meeting_id, email) do update
-        set role = excluded.role,
-            created_by_user_id = excluded.created_by_user_id,
-            source = 'effective',
-            source_id = 'materialized',
-            accepted_at = null,
-            revoked_at = null,
-            updated_at = now()
+        returning id
+      ), recipient as (
+        select id from users where lower(email) = ${input.recipientEmail}
       )
       select
         active_policy.id,
-        exists (select 1 from new_sources) as shared,
-        not exists (
-          select 1 from users where lower(email) = ${input.recipientEmail}
-        ) as pending
+        coalesce((
+          select bool_or(app_private.materialize_meeting_share_source(
+            new_sources.id, (select id from recipient)
+          ))
+          from new_sources
+        ), false) or (
+          not active_policy.can_update and exists (
+            select 1 from meeting_access_sources as source
+            where source.meeting_id = ${input.seedMeetingId}::uuid
+              and source.recipient_email = ${input.recipientEmail}
+              and source.source = 'share_policy'
+              and source.source_id = active_policy.id::text
+              and source.revoked_at is null
+          )
+        ) as shared,
+        not exists (select 1 from recipient) as pending
       from active_policy
     `,
   ]);
