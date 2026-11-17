@@ -2240,6 +2240,74 @@ describe("buildMeetingLibraryPage", () => {
     });
   });
 
+  it("leads a group with its newest ready recording when a later invite was missed", async () => {
+    const { buildMeetingLibraryPage } = await import("@/lib/meeting-queries");
+    const title = "IOSG Ventures IC Meeting";
+    const now = new Date("2026-11-17T17:00:00.000Z");
+    const meetings = [
+      libraryMeeting({
+        id: "missed-invite",
+        title,
+        platform: "zoom",
+        startedAt: "2026-11-13T06:00:00.000Z",
+        status: "missed",
+      }),
+      libraryMeeting({
+        id: "different-meeting",
+        title: "Portfolio review",
+        platform: "zoom",
+        startedAt: "2026-11-13T04:00:00.000Z",
+      }),
+      libraryMeeting({
+        id: "latest-recording",
+        title,
+        platform: "zoom",
+        startedAt: "2026-11-13T01:30:00.000Z",
+      }),
+      libraryMeeting({
+        id: "previous-recording",
+        title,
+        platform: "zoom",
+        startedAt: "2026-11-06T01:30:00.000Z",
+      }),
+    ];
+
+    const page = buildMeetingLibraryPage(meetings, { now });
+
+    expect(page.meetings.map((meeting) => meeting.id)).toEqual([
+      "different-meeting",
+      "latest-recording",
+    ]);
+    expect(page.meetings[1]).toMatchObject({
+      status: "ready",
+      relatedMeetings: [
+        { id: "missed-invite", status: "missed" },
+        { id: "previous-recording", status: "ready" },
+      ],
+    });
+    expect(
+      buildMeetingLibraryPage(meetings, { now, sort: "time_desc" }).meetings.map(
+        (meeting) => meeting.id,
+      ),
+    ).toEqual([
+      "missed-invite",
+      "different-meeting",
+      "latest-recording",
+      "previous-recording",
+    ]);
+
+    const onlyOlderRecording = buildMeetingLibraryPage(
+      meetings.filter((meeting) => meeting.id !== "latest-recording"),
+      { now },
+    );
+
+    expect(onlyOlderRecording.meetings[0]).toMatchObject({
+      id: "missed-invite",
+      status: "missed",
+      relatedMeetings: [{ id: "previous-recording", status: "ready" }],
+    });
+  });
+
   it("keeps introductions separate even when smart folding sees identical titles", async () => {
     const { buildMeetingLibraryPage } = await import("@/lib/meeting-queries");
     const page = buildMeetingLibraryPage([

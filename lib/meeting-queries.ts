@@ -106,6 +106,7 @@ import { getMeetingManagerCondition } from "@/lib/meeting-write-policy";
 
 const uuidSchema = z.uuid();
 const MEETING_LIBRARY_PAGE_SIZE = 50;
+const RELATED_RECORDING_START_WINDOW_MS = 24 * 60 * 60 * 1000;
 export const DEFAULT_MEETING_LIBRARY_HISTORY_MONTHS = 6;
 export const DEFAULT_RELATED_MEETING_HISTORY_MONTHS = 2;
 export const MEETING_LIBRARY_HISTORY_MONTH_STEP = 6;
@@ -559,9 +560,9 @@ export function buildMeetingLibraryPage(
         relatedMeetings: allRelatedMeetingsByRoot.get(meeting.id) ?? [],
       }),
     );
-  const sortedMeetings = meetingsForVisibleWindow.toSorted((left, right) =>
-    compareMeetingLibraryItems(left, right, scheduledBotMeetingIds, sort),
-  );
+  const compareMeetings = (left: MeetingListItem, right: MeetingListItem) =>
+    compareMeetingLibraryItems(left, right, scheduledBotMeetingIds, sort);
+  const sortedMeetings = meetingsForVisibleWindow.toSorted(compareMeetings);
   const hasOlderMeetings = allRootMeetings.some(
     (meeting) => !isMeetingInsideHistoryWindow(meeting, historyCutoff),
   );
@@ -574,6 +575,10 @@ export function buildMeetingLibraryPage(
         ])),
         nowTime,
       )
+        .map((meeting) =>
+          preferReadyMeetingInGroup(meeting, historyCutoff, relatedHistoryCutoff),
+        )
+        .sort(compareMeetings)
     : sortedMeetings;
   const page = normalizePage(options.page);
   const pageSize = normalizePageSize(options.pageSize);
@@ -678,6 +683,44 @@ function foldSimilarMeetings(
 function isUnresolvedMeeting(meeting: MeetingListItem, nowTime: number) {
   return ["recording", "processing", "failed"].includes(meeting.status) ||
     (meeting.status === "scheduled" && new Date(meeting.startedAt).getTime() <= nowTime);
+}
+
+function preferReadyMeetingInGroup(
+  meeting: MeetingListItem,
+  historyCutoff: Date,
+  relatedHistoryCutoff: Date,
+): MeetingListItem {
+  if (meeting.status !== "missed" || !meeting.relatedMeetings?.length) {
+    return meeting;
+  }
+
+  const title = normalizeMeetingTitleGroupingKey(meeting.title);
+  const startedAt = Date.parse(meeting.startedAt);
+  const relatedMeetings = meeting.relatedMeetings.toSorted((left, right) =>
+    right.startedAt.localeCompare(left.startedAt),
+  );
+  const readyMeeting = relatedMeetings.find(
+    (related) =>
+      related.status === "ready" &&
+      normalizeMeetingTitleGroupingKey(related.title) === title &&
+      Math.abs(Date.parse(related.startedAt) - startedAt) < RELATED_RECORDING_START_WINDOW_MS &&
+      isMeetingInsideHistoryWindow(related, historyCutoff) &&
+      isMeetingInsideHistoryWindow(related, relatedHistoryCutoff),
+  );
+
+  if (!readyMeeting) {
+    return meeting;
+  }
+
+  return toLibraryRootMeeting({
+    meeting: readyMeeting,
+    hasMoreRelatedMeetings: Boolean(meeting.hasMoreRelatedMeetings),
+    relatedMeetings: [
+      toRelatedMeeting(meeting),
+      ...relatedMeetings.filter((related) => related.id !== readyMeeting.id),
+    ],
+    olderRelatedMeetings: meeting.olderRelatedMeetings,
+  });
 }
 
 function shouldShowMeetingInLibrary(
