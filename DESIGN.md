@@ -222,6 +222,8 @@ Do not expose every detected entity, provider detail, or repeated meeting relati
 
 Related meeting groups start collapsed, so the library reads as one timeline; the parent row shows how many related meetings it holds. Expanding a group shows at most four meetings, including the parent, and only related meetings from the past two months. A Show more control on the parent row reveals up to four additional meetings in that group, including older history once recent meetings are exhausted.
 
+In Smart order, a Ready meeting in the group's visible history can lead a group headed by a No recording entry when their titles match and their start times are less than 24 hours apart. The missed entry is available when the group expands.
+
 When the library is ordered by time, upcoming meetings sit under one Upcoming heading and past meetings under one heading per local day, and the Started column shows only the time. Day boundaries follow the viewer's timezone, so the headings render in the browser. Search applies as the person types and filters apply when picked; there is no separate Search button. Manual collapse controls should preserve the user’s place. Keep page size and rendered length small enough that the next meeting and pagination remain easy to reach.
 
 Automatic groups require the same set of external organizations from attendee email domains. A conversation with A stays separate from an introduction involving A and B, even if the title or an attendee overlaps. Personal email addresses identify individual participants. Meetings without attendee evidence may match each other by title, but must not bridge groups with known participants.
