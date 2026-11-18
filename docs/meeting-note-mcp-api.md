@@ -14,7 +14,7 @@ Timestamp anchors in personal notes remain private and are excluded from MCP. Th
 
 Automatically generated answers and user corrections inside personal notes are also excluded from MCP. Their transcript citations do not change meeting access or expose the private question.
 
-SQL is the primary analytical retrieval surface. `list_accessible_meetings` is the canonical inventory tool so an agent cannot mistake one keyword result for the caller's complete meeting library. More specialized one off tools like `search_meetings`, `get_meeting_transcript`, `get_meeting_entities`, `find_related_meetings`, and `get_person_speaking_timeline` are not exposed because `execute_meeting_sql` can express those queries more flexibly.
+Use `list_accessible_meetings` to browse the full inventory or look up a meeting by title and date. Use `get_meeting_transcript` and `get_meeting_followup` for a particular meeting. SQL remains available for analysis across meetings, including entity search and speaking timelines. Use `search_people` and `get_person_profile` for the Tape workspace directory and saved person profiles.
 
 Media retrieval remains in dedicated tools because audio and image access must stay behind authenticated application routes instead of exposing storage or Recall URLs from MCP.
 
@@ -33,6 +33,10 @@ Visible tools:
 9. `get_meeting_images`
 10. `prepare_meeting_upload`
 11. `complete_meeting_upload`
+12. `get_meeting_transcript`
+13. `get_meeting_followup`
+14. `search_people`
+15. `get_person_profile`
 
 ## Access Model
 
@@ -55,6 +59,8 @@ The MCP does not create users, memberships, shares, or translations. Users must 
 
 MCP database access stays read only. Upload preparation and completion use HMAC signed requests to dedicated Tape web routes. The web backend applies the same workspace, provider credit, rate limit, media validation, R2, and transcription dispatch rules as the browser upload flow.
 
+Dedicated transcript, followup, and person reads also use signed requests to the Tape web backend. The web backend resolves the authenticated Tape user and applies the meeting or internal workspace membership policy for each read.
+
 ## Safe SQL Model
 
 `execute_meeting_sql` is intentionally not unrestricted database access. It only accepts read only `select` or `with` queries over safe, caller scoped tables:
@@ -66,7 +72,7 @@ MCP database access stays read only. Upload preparation and completion use HMAC 
 
 The server rejects mutation keywords, semicolons, physical app table names, Postgres catalog or `information_schema` access, unknown relations, schema qualified relations, safe table shadowing in user CTEs, `pg_*` identifiers, schema qualified functions, SQL executing functions, and SQL that does not reference a safe table. Only a small allowlist of analytical functions such as `count`, `array_agg`, `lag`, `lead`, `coalesce`, `lower`, `regexp_replace`, and simple aggregates is allowed.
 
-Transcript segment tables use the latest completed transcript job, ordered by `updated_at` then `created_at`, matching the app transcript reader.
+The SQL transcript table uses the latest completed transcript job ordered by `updated_at` then `created_at`. The dedicated transcript tool reads the current recording generation, including completed appended recordings, as the meeting page does.
 
 ## Tools
 
@@ -125,14 +131,33 @@ Current categories:
 
 ### list_accessible_meetings
 
-List the caller's complete authorized, non cancelled meeting inventory before applying topic or transcript filters.
+List authorized, non cancelled meetings. Omit all filters for the complete inventory. To find a meeting on a specific day, provide both date boundaries with the relevant timezone offset.
 
 Arguments:
 
 1. `limit`: default 100, max 500
 2. `offset`: default 0, max 1,000,000
+3. `title`: optional literal title substring, case insensitive
+4. `started_after`: optional inclusive ISO 8601 date and time with timezone offset
+5. `started_before`: optional exclusive ISO 8601 date and time with timezone offset
 
-Returns the inventory page, total authorized meeting count, pagination state, meeting metadata, and each meeting's `workspace` or `shared` access scope.
+Returns the inventory page, total matching count, pagination state, meeting metadata, and each meeting's `workspace` or `shared` access scope.
+
+### get_meeting_transcript
+
+Provide `meeting_id` as a UUID or Tape meeting URL. Optional `limit` defaults to 50 and is capped at 100. Optional `offset` defaults to 0. Each segment includes its ID, speaker display label, timestamps in milliseconds, and original, polished, and translated text when available. Continue at `next_offset` until it is null. An empty page includes the meeting status.
+
+### get_meeting_followup
+
+Provide `meeting_id` as a UUID or Tape meeting URL. Returns the current saved AI followup with transcript evidence when available. `followup` is null when the meeting has no current saved result. Use the transcript segment IDs to verify evidence.
+
+### search_people
+
+Provide `query` as a name substring, alternate name substring, or exact email. Optional `limit` defaults to 10 and is capped at 25. Results give the person ID, preferred name, and workspace ID. Use the workspace to disambiguate duplicate names. Search covers workspaces where the caller is an internal member.
+
+### get_person_profile
+
+Provide `person_id` from `search_people` or a Tape person page. Returns the canonical person, confirmed names and emails, and their existing workspace AI profile with source meeting citations. `profile` is null when a saved profile is unavailable. The person directory and profile require internal membership in that person's workspace.
 
 ### execute_meeting_sql
 
@@ -384,7 +409,7 @@ Meeting reads evaluate administrator membership against each meeting’s workspa
 
 ## Combined meetings in the web application
 
-The web application can compose source meetings with Merge meetings and Continue recording. The original meeting IDs, media, private notes, and permissions remain independent. Existing MCP read and export operations continue to address the original source records; they do not flatten the web application's combined view. Use each accessible source ID when retrieving all parts through MCP.
+The web application can compose source meetings with Merge meetings and Continue recording. The original meeting IDs, media, private notes, and permissions remain independent. Use each accessible source ID when reading transcripts and media. The saved followup for a combined meeting is checked against the same readable parts as on its meeting page.
 
 ## Intel web workspace
 

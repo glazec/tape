@@ -788,12 +788,12 @@ def _current_user_id() -> str | None:
 
 
 class MeetingBackendError(RuntimeError):
-    """Raised when the Tape web backend rejects an MCP mutation."""
+    """Raised when the Tape web backend rejects a signed MCP request."""
 
 
 def _backend_endpoint(path: str) -> str:
     if not APP_BASE_URL:
-        raise RuntimeError("APP_BASE_URL is required for meeting uploads")
+        raise RuntimeError("APP_BASE_URL is required for signed Tape requests")
 
     parsed = urlparse(APP_BASE_URL)
     if parsed.scheme != "https" and not _is_local_host(APP_BASE_URL):
@@ -1177,6 +1177,18 @@ def _uuid(value: str, name: str = "id") -> str:
         return str(UUID(str(value)))
     except ValueError as exc:
         raise ValueError(f"{name} must be a UUID") from exc
+
+
+def _meeting_reference(value: str) -> str:
+    value = value.strip()
+    if "://" in value:
+        link = urlparse(value)
+        app = urlparse(APP_BASE_URL)
+        match = re.fullmatch(r"/meetings/([^/]+)/?", link.path)
+        if not app.netloc or (link.scheme, link.netloc) != (app.scheme, app.netloc) or not match:
+            raise ValueError("meeting_id must be a UUID or a Tape meeting link")
+        value = match[1]
+    return _uuid(value, "meeting_id")
 
 
 def _clean(value: str | None) -> str | None:
@@ -1890,12 +1902,22 @@ def list_common_meeting_queries(category: str | None = None) -> dict[str, Any]:
 async def list_accessible_meetings(
     limit: int = 100,
     offset: int = 0,
+    title: str | None = None,
+    started_after: datetime | None = None,
+    started_before: datetime | None = None,
 ) -> dict[str, Any]:
-    """List the caller's complete authorized meeting inventory before applying topic or transcript filters. Excludes cancelled meetings and returns a total count so a filtered SQL result is never mistaken for the full inventory."""
+    """List authorized meetings. To find a past meeting, use a title substring or an inclusive start and exclusive end with timezone offsets. Omitting filters returns the full inventory."""
+    title = _clean(title)
+    for boundary in (started_after, started_before):
+        if boundary is not None and boundary.utcoffset() is None:
+            raise ValueError("Meeting date filters must include a timezone offset")
     workspace = await _workspace_for_current_user()
     query_params: dict[str, Any] = {
         "inventory_limit": _limit(limit, 100, 500),
         "inventory_offset": _offset(offset),
+        "inventory_title": title,
+        "inventory_started_after": started_after,
+        "inventory_started_before": started_before,
     }
     access_sql = _access_condition(
         workspace,
@@ -1920,6 +1942,12 @@ async def list_accessible_meetings(
             from meetings m
             where m.status::text <> 'cancelled'
               and {access_sql}
+              and (%(inventory_title)s::text is null or
+                   strpos(lower(m.title), lower(%(inventory_title)s::text)) > 0)
+              and (%(inventory_started_after)s::timestamptz is null or
+                   coalesce(m.started_at, m.created_at) >= %(inventory_started_after)s)
+              and (%(inventory_started_before)s::timestamptz is null or
+                   coalesce(m.started_at, m.created_at) < %(inventory_started_before)s)
         )
         select
             page.*,
@@ -1954,11 +1982,56 @@ async def list_accessible_meetings(
         "offset": normalized_offset,
         "has_more": normalized_offset + len(meeting_rows) < total_count,
         "scope_note": (
-            "This is the caller's full authorized inventory page. "
-            "Use execute_meeting_sql only after this when filtering by topic, "
-            "participant, entity, or transcript text."
+            "This page and total count reflect the supplied inventory filters."
+            if any(value is not None for value in (title, started_after, started_before))
+            else "This is the caller's full authorized inventory page."
         ),
     }
+
+
+@mcp.tool(annotations={"readOnlyHint": True})
+async def get_meeting_transcript(
+    meeting_id: str,
+    limit: int = 50,
+    offset: int = 0,
+) -> dict[str, Any]:
+    """Read timestamped transcript segments for a Tape meeting UUID or link. Follow next_offset to read the rest. Segment IDs and start_ms can be used for citations."""
+    return await _post_tape_backend(
+        "api/mcp/read",
+        {
+            "operation": "transcript",
+            "meetingId": _meeting_reference(meeting_id),
+            "limit": _limit(limit, 50, 100),
+            "offset": _offset(offset),
+        },
+    )
+
+
+@mcp.tool(annotations={"readOnlyHint": True})
+async def get_meeting_followup(meeting_id: str) -> dict[str, Any]:
+    """Read the saved AI followup for an accessible Tape meeting UUID or link, including its evidence. Returns null if there is no current saved followup."""
+    return await _post_tape_backend(
+        "api/mcp/read",
+        {"operation": "followup", "meetingId": _meeting_reference(meeting_id)},
+    )
+
+
+@mcp.tool(annotations={"readOnlyHint": True})
+async def search_people(query: str, limit: int = 10) -> dict[str, Any]:
+    """Find existing Tape people by name, alternate name, or exact email in workspaces where you are an internal member. Use the returned person ID with get_person_profile."""
+    return await _post_tape_backend(
+        "api/mcp/read",
+        {"operation": "search_people", "query": query.strip(), "limit": _limit(limit, 10, 25)},
+    )
+
+
+@mcp.tool(annotations={"readOnlyHint": True})
+async def get_person_profile(person_id: str) -> dict[str, Any]:
+    """Read an existing Tape person and their saved AI profile with meeting citations. Use search_people to resolve the identity first."""
+    return await _post_tape_backend(
+        "api/mcp/read",
+        {"operation": "person_profile", "personId": _uuid(person_id, "person_id")},
+    )
 
 
 @mcp.tool

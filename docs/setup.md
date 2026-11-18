@@ -82,7 +82,7 @@ For a new installation, generate the Web session signing secret locally and stor
 openssl rand -base64 32
 ```
 
-Generate a separate MCP backend secret with the same command. Set that value as `MCP_BACKEND_SHARED_SECRET` on both `tape-web` and the Tape MCP service. It signs short lived identity bound upload requests and must not reuse the OAuth JWT signing key.
+Generate a separate MCP backend secret with the same command. Set that value as `MCP_BACKEND_SHARED_SECRET` on both `tape-web` and the Tape MCP service. It signs short lived identity bound upload, transcript, followup, and person requests. Use a separate key for OAuth JWT signing.
 
 MCP Google OAuth refresh sessions have no local calendar expiry. Keep `FASTMCP_JWT_SIGNING_KEY` stable and `OAUTH_STORAGE_PATH` on the service's persistent volume. Access tokens remain short lived; Google revocation or upstream authorization expiry still requires login. Existing valid MCP sessions adopt this behavior on their next refresh. Already expired sessions require reconnecting once. This does not change Calendar authorization or browser sessions.
 

@@ -140,6 +140,8 @@ npx vitest run tests/mcp-backend-auth.test.ts tests/mcp-upload-routes.test.ts te
 npm run test:mcp
 ```
 
+For MCP reads, run `npx vitest run tests/mcp-read-route.test.ts` and `npm run test:mcp`. After deploying the web backend and MCP service, check the authenticated MCP tool list, filter by a known meeting date, and read a transcript and saved followup. Use an internal workspace member to verify person search and profile retrieval. A meeting shared with an external guest provides a transcript access check for the same guest who should receive no workspace directory matches.
+
 Browser tests can identify their telemetry explicitly by setting a UUID in
 session storage before the application loads:
 

@@ -81,10 +81,12 @@ export type PersonPageData = {
   viewerName: string;
 };
 
-export type PersonLookup =
-  | { kind: "found"; data: PersonPageData }
+type PersonLookupResult<T> =
+  | { kind: "found"; data: T }
   | { kind: "merged"; personId: string }
   | { kind: "missing" };
+
+export type PersonLookup = PersonLookupResult<PersonPageData>;
 
 const uuidSchema = z.uuid();
 
@@ -92,7 +94,10 @@ type Row = Record<string, unknown>;
 async function rows<T extends Row>(query: ReturnType<typeof sql>) {
   return (await db.execute(query)).rows as T[];
 }
-export async function getPersonPage(workspace: WorkspaceContext, personId: string, language: string): Promise<PersonLookup> {
+export async function getPersonIdentity(
+  workspace: WorkspaceContext,
+  personId: string,
+): Promise<PersonLookupResult<{ person: PersonSummary; canMerge: boolean }>> {
   if (!uuidSchema.safeParse(personId).success) return { kind: "missing" };
   const [person] = await rows<{ id: string; name: string; mergedIntoId: string | null }>(sql`
     with recursive chain as (
@@ -114,8 +119,20 @@ export async function getPersonPage(workspace: WorkspaceContext, personId: strin
     select
       (select array_agg(email order by confirmed_at, email) from person_emails where person_id = ${personId}) as emails,
       (select array_agg(name order by created_at, name) from person_names where person_id = ${personId}) as names`);
-  const emails = identity?.emails ?? [];
   const isTeammate = await isPersonColleague(personId);
+  return {
+    kind: "found",
+    data: {
+      person: { id: person.id, name: person.name, emails: identity?.emails ?? [], names: identity?.names ?? [], isTeammate },
+      canMerge: Boolean(access.canMerge),
+    },
+  };
+}
+
+export async function getPersonPage(workspace: WorkspaceContext, personId: string, language: string): Promise<PersonLookup> {
+  const lookup = await getPersonIdentity(workspace, personId);
+  if (lookup.kind !== "found") return lookup;
+  const { person, canMerge } = lookup.data;
 
   // Team-wide: every workspace meeting with the person (gated to colleagues in SQL).
   const meetingRows = await rows<{
@@ -143,7 +160,7 @@ export async function getPersonPage(workspace: WorkspaceContext, personId: strin
   const personSegments = spokenIds.length ? await rows<{ id: string; meetingId: string; names: string[] }>(sql`
     select id, "meetingId", names from app_private.person_team_segments(${personId}::uuid, ${`{${spokenIds.join(",")}}`}::uuid[], true)`) : [];
   const segmentsById = new Map(personSegments.map(segment => [segment.id, segment]));
-  const personNames = new Set([person.name, ...(identity?.names ?? [])].map(name => personNameKey(name)).filter(Boolean));
+  const personNames = new Set([person.name, ...person.names].map(name => personNameKey(name)).filter(Boolean));
 
   const todos: PersonFollowupItem[] = [];
   const dynamics: PersonFollowupItem[] = [];
@@ -165,8 +182,8 @@ export async function getPersonPage(workspace: WorkspaceContext, personId: strin
   return {
     kind: "found",
     data: {
-      person: { id: person.id, name: person.name, emails, names: identity?.names ?? [], isTeammate },
-      canMerge: Boolean(access.canMerge),
+      person,
+      canMerge,
       meetings: meetingList,
       todos, dynamics, connections,
       colleagues: summarizeColleagues(meetingList),

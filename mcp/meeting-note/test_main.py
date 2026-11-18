@@ -1,6 +1,7 @@
 import asyncio
 import json
 import unittest
+from datetime import datetime, timezone
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
@@ -740,6 +741,27 @@ class MeetingAccessConditionTests(unittest.TestCase):
 
 
 class AccessibleMeetingInventoryTests(unittest.IsolatedAsyncioTestCase):
+    async def test_filters_inventory_by_literal_title_and_timezone_aware_window(self):
+        workspace = main.Workspace("member@example.com", "user-id", "team-id", True, False)
+        after = datetime(2026, 11, 13, tzinfo=timezone.utc)
+        before = datetime(2026, 11, 14, tzinfo=timezone.utc)
+        with (
+            patch.object(main, "_workspace_for_current_user", AsyncMock(return_value=workspace)),
+            patch.object(main, "_fetch_all", AsyncMock(return_value=[])) as fetch,
+        ):
+            result = await main.list_accessible_meetings(
+                title=" IC% ", started_after=after, started_before=before,
+            )
+            with self.assertRaisesRegex(ValueError, "timezone offset"):
+                await main.list_accessible_meetings(started_after=datetime(2026, 11, 13))
+
+        sql, params = fetch.await_args.args
+        self.assertIn("strpos(lower(m.title)", sql)
+        self.assertEqual(params["inventory_title"], "IC%")
+        self.assertEqual(params["inventory_started_after"], after)
+        self.assertEqual(params["inventory_started_before"], before)
+        self.assertIn("reflect the supplied inventory filters", result["scope_note"])
+
     async def test_lists_the_complete_authorized_inventory_without_topic_filters(self):
         workspace = main.Workspace(
             email="momir@iosg.vc",
