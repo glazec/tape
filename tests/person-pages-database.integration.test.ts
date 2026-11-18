@@ -1,6 +1,27 @@
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { Client } from "pg";
 import { randomUUID } from "node:crypto";
+import { type SQL } from "drizzle-orm";
+import { PgDialect } from "drizzle-orm/pg-core";
+
+vi.mock("@/db/client", () => ({
+  db: { execute: (statement: SQL) => {
+    const query = new PgDialect().sqlToQuery(statement);
+    return db.query(query.sql, query.params);
+  } },
+}));
+vi.mock("@/lib/meeting-followup-generation", () => ({
+  getMeetingOwnerWorkspace: async () => ({ teamId: team, userId: owner, domain: "team.test" }),
+}));
+vi.mock("@/lib/provider-credit", async (importOriginal) => ({
+  ...await importOriginal<typeof import("@/lib/provider-credit")>(),
+  assertWorkspaceHasProviderCredit: vi.fn(),
+}));
+vi.mock("@/lib/vendors/openrouter", () => ({ createOpenRouterChatCompletion: vi.fn() }));
+
+import { generatePersonProfileOnTranscript, queuePersonProfilesOnTranscript } from "@/inngest/person-profile";
+import { createOpenRouterChatCompletion } from "@/lib/vendors/openrouter";
+import { getStoredPersonProfile } from "@/lib/person-profile";
 
 // Opt in with a migrated, disposable localhost database. Fixtures roll back.
 const url = process.env.PERSON_TEST_DATABASE_URL;
@@ -164,6 +185,52 @@ describe.skipIf(!url)("person pages PostgreSQL", () => {
     await expect(as(guest, () => db.query("select * from app_private.person_team_meetings($1)", [person]))).rejects.toThrow(/not found/i);
     await expect(as(outsider, () => db.query("select * from app_private.person_team_segments($1,$2::uuid[],false)", [person, [spoke.meeting]]))).rejects.toThrow(/not found/i);
     expect(await as(member, async () => (await db.query("select app_private.is_person_colleague($1) c", [person])).rows[0].c)).toBe(false);
+  });
+
+  it("generates and refreshes a linked external speaker from transcript completion without a page visit", async () => {
+    const person = await newPerson("Tara Shah", ["tara@acme.test"]);
+    await newPerson("Team Member", ["member@team.test"]);
+    const { meeting, job, segments } = await meetingWith(["tara@acme.test", "member@team.test", "Speaker 3"]);
+    const input = { meetingId: meeting, transcriptJobId: job };
+    const generation = vi.mocked(createOpenRouterChatCompletion);
+    const skill = { level: "unclear", summary: "Not enough evidence.", sources: [] };
+    generation.mockResolvedValue(JSON.stringify({
+      headline: null, background: [], role: [], achievements: [],
+      expertise: { technical: skill, operational: skill, business: skill, social: skill },
+      recentFocus: [{ text: "She greeted the team.", sources: [segments[0].id] }],
+    }));
+    const run = async (_name: string, work: () => unknown) => work();
+    const sendEvent = vi.fn();
+    const queue = (data: unknown) => (queuePersonProfilesOnTranscript as unknown as {
+      fn: (input: unknown) => Promise<unknown>;
+    }).fn({ event: { data }, step: { run, sendEvent } });
+    const generate = (data: unknown) => (generatePersonProfileOnTranscript as unknown as {
+      fn: (input: unknown) => Promise<unknown>;
+    }).fn({ event: { data }, step: { run } });
+
+    expect(await as(owner, () => queue(input))).toEqual({ queued: 0 });
+    expect(sendEvent).not.toHaveBeenCalled();
+    expect(await as(owner, () => queue({ ...input, sendCompletionEmail: true }))).toEqual({ queued: 1 });
+    expect(sendEvent).toHaveBeenCalledWith("queue-person-profiles", [{
+      id: `person-profile:${job}:${person}`, name: "person/profile.generate", data: { ...input, personId: person },
+    }]);
+    expect(await as(owner, () => generate({ ...input, personId: person }))).toEqual({ status: "ready" });
+    const profile = await as(member, () => getStoredPersonProfile({ teamId: team, userId: member, domain: "team.test" }, person));
+    expect(profile?.profile.recentFocus[0].sources).toEqual([segments[0].id]);
+    expect(profile?.sourceMeetings.map(item => item.id)).toEqual([meeting]);
+    expect(await as(owner, () => generate({ ...input, personId: person }))).toEqual({ status: "ready" });
+    expect(generation).toHaveBeenCalledTimes(1);
+
+    const next = await meetingWith(["tara@acme.test"]);
+    const nextInput = { meetingId: next.meeting, transcriptJobId: next.job, personId: person };
+    expect(await as(owner, () => generate(nextInput))).toEqual({ status: "ready" });
+    expect(generation).toHaveBeenCalledTimes(2);
+    const updated = await as(member, () => getStoredPersonProfile({ teamId: team, userId: member, domain: "team.test" }, person));
+    expect(updated?.sourceMeetings.map(item => item.id)).toContain(next.meeting);
+
+    await db.query("insert into transcript_jobs(meeting_id,status,created_at) values($1,'queued',now() + interval '1 minute')", [next.meeting]);
+    expect(await as(owner, () => generate(nextInput))).toEqual({ status: "skipped" });
+    expect(generation).toHaveBeenCalledTimes(2);
   });
 
   it("shares a person's profile and to do progress with colleagues only", async () => {

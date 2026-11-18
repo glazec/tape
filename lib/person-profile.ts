@@ -1,7 +1,11 @@
+import { createHash } from "node:crypto";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
 
 import { db } from "@/db/client";
+import { withDatabaseWorkspace } from "@/db/rls-context";
+import { currentTranscriptJobIdsSubquery } from "@/lib/current-transcript-job";
+import { getMeetingOwnerWorkspace } from "@/lib/meeting-followup-generation";
 import { assertWorkspaceHasProviderCredit } from "@/lib/provider-credit";
 import { createOpenRouterChatCompletion } from "@/lib/vendors/openrouter";
 import type { WorkspaceContext } from "@/lib/workspace";
@@ -180,23 +184,85 @@ export function groundProfile(raw: unknown, included: SegmentRow[]): PersonProfi
 
 export type ProfileGeneration = { status: "ready"; profile: StoredPersonProfile } | { status: "no_meetings" };
 
+type CompletedTranscript = { meetingId: string; transcriptJobId: string };
+type ProfilePerson = { id: string; name: string };
+
+function profileSpeakersQuery(workspace: WorkspaceContext, transcript: CompletedTranscript, personId?: string) {
+  const currentJobs = currentTranscriptJobIdsSubquery(transcript.meetingId);
+  return sql`
+    select distinct p.id, p.preferred_name as name
+    from meetings m
+    join transcript_segments s on s.meeting_id = m.id
+    join meeting_speakers g on g.id = s.meeting_speaker_id and g.meeting_id = m.id
+    join workspace_people p on p.id = g.person_id and p.team_id = m.team_id
+    where m.id = ${transcript.meetingId} and m.team_id = ${workspace.teamId}
+      and m.owner_user_id = ${workspace.userId} and m.status <> 'cancelled'
+      and app_private.is_internal_member(m.team_id)
+      and ${transcript.transcriptJobId}::uuid in ${currentJobs}
+      and s.job_id in ${currentJobs}
+      and p.merged_into_id is null and not app_private.is_person_colleague(p.id)
+      ${personId ? sql`and p.id = ${personId}` : sql.empty()}`;
+}
+
+export async function listTranscriptProfilePeople(transcript: CompletedTranscript) {
+  const workspace = await getMeetingOwnerWorkspace(transcript.meetingId);
+  if (!workspace) return [];
+  return withDatabaseWorkspace(workspace, async () => {
+    const { rows } = await db.execute<{ id: string }>(profileSpeakersQuery(workspace, transcript));
+    return rows.map(person => person.id);
+  });
+}
+
+export async function generatePersonProfileAfterTranscript(transcript: CompletedTranscript, personId: string) {
+  const workspace = await getMeetingOwnerWorkspace(transcript.meetingId);
+  if (!workspace) return { status: "skipped" } as const;
+  return withDatabaseWorkspace(workspace, async () => {
+    const eligibility = profileSpeakersQuery(workspace, transcript, personId);
+    const [person] = (await db.execute<ProfilePerson>(eligibility)).rows;
+    if (!person) return { status: "skipped" } as const;
+    const outcome = await writePersonProfile(workspace, person, eligibility);
+    return { status: outcome.status };
+  });
+}
+
 export async function generatePersonProfile(workspace: WorkspaceContext, person: { id: string; name: string }): Promise<ProfileGeneration> {
   const key = `${workspace.teamId}:${person.id}`;
   const running = inFlight.get(key);
   if (running) return running;
-  const recent = await getStoredPersonProfile(workspace, person.id);
-  if (recent && Date.now() - new Date(recent.generatedAt).getTime() < REGENERATE_COOLDOWN_MS) return { status: "ready", profile: recent };
-  const job = writePersonProfile(workspace, person).finally(() => inFlight.delete(key));
+  const job = (async (): Promise<ProfileGeneration> => {
+    const recent = await getStoredPersonProfile(workspace, person.id);
+    if (recent && Date.now() - new Date(recent.generatedAt).getTime() < REGENERATE_COOLDOWN_MS) {
+      return { status: "ready", profile: recent };
+    }
+    return writePersonProfile(workspace, person);
+  })().finally(() => inFlight.delete(key));
   inFlight.set(key, job);
   return job;
 }
 
-async function writePersonProfile(workspace: WorkspaceContext, person: { id: string; name: string }): Promise<ProfileGeneration> {
+async function writePersonProfile(
+  workspace: WorkspaceContext,
+  person: ProfilePerson,
+  eligibility?: ReturnType<typeof profileSpeakersQuery>,
+): Promise<ProfileGeneration> {
+  // Order overlapping manual and automatic writes by when they read the sources.
+  const generatedAt = new Date();
   const sourceMeetings = await selectSourceMeetings(person.id);
   if (!sourceMeetings.length) return { status: "no_meetings" };
   const segments = await loadSegments(sourceMeetings.map(meeting => meeting.id), person.id);
   const { transcript, included } = buildProfileTranscript(sourceMeetings, segments);
   if (!included.some(segment => segment.subject)) return { status: "no_meetings" };
+  const source = JSON.stringify({ personName: person.name, transcripts: transcript });
+  const sourceHash = createHash("sha256").update(source).digest("hex");
+  if (eligibility) {
+    const { rows } = await db.execute(sql`
+      select 1 from person_profiles where person_id = ${person.id} and team_id = ${workspace.teamId}
+        and profile->>'sourceHash' = ${sourceHash}`);
+    if (rows.length) {
+      const current = await getStoredPersonProfile(workspace, person.id);
+      if (current) return { status: "ready", profile: current };
+    }
+  }
   await assertWorkspaceHasProviderCredit(workspace);
   const content = await createOpenRouterChatCompletion({
     model: "openai/gpt-6-luna",
@@ -207,18 +273,25 @@ async function writePersonProfile(workspace: WorkspaceContext, person: { id: str
     temperature: 0.2,
     messages: [
       { role: "system", content: PROFILE_PROMPT },
-      { role: "user", content: JSON.stringify({ personName: person.name, transcripts: transcript }) },
+      { role: "user", content: source },
     ],
     responseFormat: { type: "json_schema", json_schema: { name: "person_profile", strict: true, schema: responseSchema } },
     usageContext: { category: "assistant", meetingId: null, metadata: { feature: "person_profile", personId: person.id } },
   });
   const profile = groundProfile(JSON.parse(content), included);
   const usedMeetings = sourceMeetings.filter(meeting => included.some(segment => segment.meetingId === meeting.id));
-  const generatedAt = new Date();
-  await db.execute(sql`
+  const { rows: saved } = await db.execute(sql`
     insert into person_profiles (person_id, generated_by, team_id, profile, source_meeting_ids, generated_at)
-    values (${person.id}, ${workspace.userId}, ${workspace.teamId}, ${JSON.stringify(profile)}::jsonb, ${JSON.stringify(usedMeetings.map(meeting => meeting.id))}::jsonb, ${generatedAt})
+    select ${person.id}::uuid, ${workspace.userId}::uuid, ${workspace.teamId}::uuid, ${JSON.stringify({ ...profile, sourceHash })}::jsonb,
+      ${JSON.stringify(usedMeetings.map(meeting => meeting.id))}::jsonb, ${generatedAt}::timestamptz
+    ${eligibility ? sql`where exists (${eligibility})` : sql.empty()}
     on conflict (person_id) do update set profile = excluded.profile, source_meeting_ids = excluded.source_meeting_ids,
-      generated_at = excluded.generated_at, generated_by = excluded.generated_by`);
+      generated_at = excluded.generated_at, generated_by = excluded.generated_by
+    where person_profiles.generated_at < excluded.generated_at
+    returning person_id`);
+  if (!saved.length) {
+    const current = await getStoredPersonProfile(workspace, person.id);
+    return current ? { status: "ready", profile: current } : { status: "no_meetings" };
+  }
   return { status: "ready", profile: { profile, generatedAt: generatedAt.toISOString(), sourceMeetings: usedMeetings } };
 }

@@ -228,6 +228,14 @@ describe("Inngest functions", () => {
         triggers: [{ event: "meeting/enrich.transcript" }],
       },
       {
+        id: "queue-person-profiles-on-transcript",
+        triggers: [{ event: "meeting/enrich.transcript" }],
+      },
+      {
+        id: "generate-person-profile-on-transcript",
+        triggers: [{ event: "person/profile.generate" }],
+      },
+      {
         id: "send-location-reminder",
         triggers: [{ event: "meeting/send.location-reminder" }],
       },

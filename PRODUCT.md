@@ -138,6 +138,6 @@ A person page is shared team knowledge. It draws on every workspace meeting with
 
 To-dos are shared: one click marks a to-do In progress, the next marks it Done (struck through), a third reopens it. Each change shows who made it and when.
 
-An AI profile (background, current role, technical, operational, business and people expertise, achievements, recent focus) is written the first time anyone opens the page, from the team's first meeting with the person and every team meeting in the last three months, and again only when someone presses Refresh. Each line cites its transcript moment; uncited claims are dropped. The profile is shared by the team. Colleagues of the workspace get no AI profile.
+When a meeting transcript finishes, Tape generates or refreshes the shared AI profile for each linked speaker outside the workspace. The profile draws on the team's first transcript with that person and up to eight recent transcripts from the past 90 days. Each line cites its transcript moment. The person page also offers Generate and Refresh.
 
 Merge duplicate records folds other records into the current person: meetings, emails and names move, old pages redirect, and Undo restores the latest merge. Merging needs a workspace admin or edit rights in every affected meeting. After a merge, new transcripts attribute speakers whose label is one of the person's full names or confirmed emails; lone first names and names remembered for two people never attribute automatically. Existing unlinked speakers are not relinked.

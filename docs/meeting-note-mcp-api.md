@@ -157,7 +157,7 @@ Provide `query` as a name substring, alternate name substring, or exact email. O
 
 ### get_person_profile
 
-Provide `person_id` from `search_people` or a Tape person page. Returns the canonical person, confirmed names and emails, and their existing workspace AI profile with source meeting citations. `profile` is null when a saved profile is unavailable. The person directory and profile require internal membership in that person's workspace.
+Provide `person_id` from `search_people` or a Tape person page. Returns the canonical person, confirmed names and emails, and their existing workspace AI profile with source meeting citations. Tape queues profiles when a transcript finishes for linked speakers outside the workspace. `profile` is null until a profile is saved. The person directory and profile require internal membership in that person's workspace.
 
 ### execute_meeting_sql
 

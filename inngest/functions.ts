@@ -10,6 +10,7 @@ import { inngest } from "./client";
 import { reconcileMeetingEmails, sendMeetingEmail } from "./meeting-email";
 import { generateMeetingFollowupOnTranscript, translateSharedFollowup } from "./meeting-followup";
 import { shareMeetingWithParticipantsOnTranscript } from "./meeting-participant-sharing";
+import { generatePersonProfileOnTranscript, queuePersonProfilesOnTranscript } from "./person-profile";
 import { currentTranscriptJobIdsSubquery } from "@/lib/current-transcript-job";
 import { convertVideoObjectToAudio } from "@/lib/media-conversion";
 import { createReadUrl } from "@/lib/r2";
@@ -851,6 +852,8 @@ export const functions = [
   generateMeetingFollowupOnTranscript,
   translateSharedFollowup,
   shareMeetingWithParticipantsOnTranscript,
+  queuePersonProfilesOnTranscript,
+  generatePersonProfileOnTranscript,
   sendLocationReminder,
   reconcileLocationReminderSchedules,
   syncRecallCalendarsHourly,

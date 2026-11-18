@@ -624,6 +624,8 @@ Local media upload recovery uses authenticated multipart requests; deploy the se
 
 Personal meeting language requires migration `0068_user_language_shared_followup`. Apply it with `npm run db:migrate` before deploying the updated web service. Run `npm run inngest:sync` to register `translate-shared-followup` for readers who need a translated copy. Confirm that a reader can change Settings → Preferences → Default language and open the same meeting in either language with identical evidence links.
 
+After deploying automatic person profiles, run `npm run inngest:sync` to register `queue-person-profiles-on-transcript` and `generate-person-profile-on-transcript`. The jobs use the existing transcription completion event and workspace AI credit.
+
 ## Speaker person identity
 
 Apply migration `0070_speaker_person_identity` using `npm run db:migrate` before deploying this application version. It adds workspace contacts, associated emails, immutable speaker groups, assignment history and meeting attribution revisions. The backfill retains existing transcript speaker text and creates groups per transcription job and exact source label. It makes no automatic person links and cannot recover identities already merged by earlier label edits. New transcript inserts receive groups through a database trigger.
