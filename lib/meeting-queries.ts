@@ -57,6 +57,8 @@ import {
 import { normalizeEmailAddress } from "@/lib/email-domains";
 import {
   getMeetingDisplayStatus,
+  needsMoreSpeakerLabels,
+  type SpeakerLabelCounts,
   type TranscriptJobStatus,
 } from "@/lib/meeting-display-status";
 import { isRecentFailedMeetingBotRecoveryEligible } from "@/lib/meeting-bot-recovery-policy";
@@ -128,7 +130,7 @@ const genericMeetingGroupTitles = new Set([
 export type MeetingTranscript = {
   aiFollowup?: unknown;
   followupSource?: FollowupSource;
-  needsSpeakerLabel?: boolean;
+  speakerLabelCounts?: SpeakerLabelCounts;
   attributionRevision?: number;
   id: string;
   title: string;
@@ -254,14 +256,15 @@ type MeetingLibraryTranscriptStats = {
   segmentCount: number;
 };
 
-function needsSpeakerLabel(meetingId: SQL) {
-  return sql<boolean>`exists (
-    select 1 from meeting_speakers g
-    where g.meeting_id = ${meetingId}
-      and g.job_id in ${currentTranscriptJobIdsSubquery(meetingId)}
-      and g.person_id is null
-      and btrim(coalesce(g.display_name, g.source_label, ''))
+function speakerLabelCounts(meetingIds: SQL) {
+  return sql<SpeakerLabelCounts>`(
+    select json_build_object('total', count(*), 'unlabeled', count(*) filter (
+      where g.person_id is null and btrim(coalesce(g.display_name, g.source_label, ''))
         ~* '^(|unknown( speaker)?|guest|participant|(.+ · )?speaker[ _-]*[0-9]+|pc sound( [0-9]+)?)$'
+    ))
+    from meeting_speakers g
+    where g.meeting_id in (${meetingIds})
+      and g.job_id in ${currentTranscriptJobIdsSubquery(sql`g.meeting_id`)}
       and exists (select 1 from transcript_segments s
         where s.meeting_id = g.meeting_id and s.meeting_speaker_id = g.id)
   )`;
@@ -349,11 +352,11 @@ export async function listMeetingLibraryPageForWorkspace(
           else null
         end
       )`,
-      needsSpeakerLabel: sql<boolean>`(${needsSpeakerLabel(sql`${meetings.id}`)} or exists (
-        select 1 from meeting_parts p where p.meeting_id = ${meetings.id}
-          and app_private.can_read_meeting(p.source_meeting_id)
-          and ${needsSpeakerLabel(sql`p.source_meeting_id`)}
-      ))`,
+      speakerLabelCounts: speakerLabelCounts(sql`
+        select ${meetings.id} union all
+        select p.source_meeting_id from meeting_parts p
+        where p.meeting_id = ${meetings.id} and app_private.can_read_meeting(p.source_meeting_id)
+      `),
       calendarAttendeeEmails: getMeetingAttendeeEmailsSnapshot(),
       recallBotId: meetings.recallBotId,
       botState: meetings.botState,
@@ -415,7 +418,7 @@ export async function listMeetingLibraryPageForWorkspace(
       status: meeting.status,
       botState: meeting.botState,
       transcriptJobStatus: meeting.transcriptJobStatus,
-      needsSpeakerLabel: meeting.needsSpeakerLabel,
+      needsSpeakerLabel: needsMoreSpeakerLabels([meeting.speakerLabelCounts]),
       hasRecallBot: Boolean(meeting.recallBotId),
       startedAt: (meeting.startedAt ?? meeting.createdAt).toISOString(),
       endedAt: meeting.endedAt?.toISOString() ?? null,
@@ -1455,7 +1458,7 @@ export async function getMeetingTranscriptForWorkspace(
         where ${transcriptSegments.meetingId} = ${meetings.id}
           and ${transcriptSegments.jobId} in ${currentTranscriptJobIdsSubquery(meetings.id)}
       )`,
-      needsSpeakerLabel: needsSpeakerLabel(sql`${meetings.id}`),
+      speakerLabelCounts: speakerLabelCounts(sql`${meetings.id}`),
       aiFollowup: meetings.aiFollowup,
       attributionRevision: meetings.attributionRevision,
       recordedDurationMs: latestRecordingDurationMsSubquery(meetings.id),
@@ -1707,7 +1710,7 @@ export async function getMeetingTranscriptForWorkspace(
           getTranscriptDurationMs(meeting.transcriptDurationMs) ??
           null,
     transcriptJobStatus: meeting.transcriptJobStatus,
-    needsSpeakerLabel: meeting.needsSpeakerLabel,
+    speakerLabelCounts: meeting.speakerLabelCounts,
     translationLanguage: normalizeTranslationLanguage(
       meeting.translationLanguage,
     ),

@@ -16,6 +16,19 @@ export type MeetingDisplayStatus =
   | "queued"
   | "transcribing";
 
+export type SpeakerLabelCounts = { total: number; unlabeled: number };
+
+export function needsMoreSpeakerLabels(counts: (SpeakerLabelCounts | undefined)[]): boolean {
+  let total = 0;
+  let unlabeled = 0;
+  for (const count of counts) {
+    if (!count) continue;
+    total += count.total;
+    unlabeled += count.unlabeled;
+  }
+  return total > 0 && unlabeled * 5 >= total;
+}
+
 export function getMeetingDisplayStatus(input: {
   botState?: string | null;
   needsSpeakerLabel?: boolean;

@@ -1066,6 +1066,7 @@ describe("listMeetingsForWorkspace", () => {
         platform: "upload",
         status: "processing",
         transcriptJobStatus: "queued",
+        needsSpeakerLabel: false,
         hasRecallBot: false,
         startedAt: "2026-06-27T12:00:00.000Z",
         endedAt: "2026-06-27T12:45:00.000Z",

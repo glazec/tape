@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
 
-import { getMeetingDisplayStatus } from "@/lib/meeting-display-status";
+import { getMeetingDisplayStatus, needsMoreSpeakerLabels } from "@/lib/meeting-display-status";
 
 describe("getMeetingDisplayStatus", () => {
-  it("flags a ready transcript until the last speaker is labeled", () => {
+  it("flags ready transcripts that need more speaker labels", () => {
     expect(getMeetingDisplayStatus({ meetingStatus: "ready", needsSpeakerLabel: true })).toBe("wait_speaker_label");
     expect(getMeetingDisplayStatus({ meetingStatus: "ready", needsSpeakerLabel: false })).toBe("ready");
     expect(getMeetingDisplayStatus({ meetingStatus: "processing", needsSpeakerLabel: true })).toBe("processing");
@@ -58,5 +58,21 @@ describe("getMeetingDisplayStatus", () => {
         meetingStatus: "missed",
       }),
     ).toBe("missed");
+  });
+});
+
+describe("needsMoreSpeakerLabels", () => {
+  it.each([
+    [0, 0, false],
+    [5, 2, true],
+    [5, 1, true],
+    [6, 1, false],
+    [1, 0, false],
+  ] as const)("checks %i speaker groups with %i unlabeled", (total, unlabeled, expected) => {
+    expect(needsMoreSpeakerLabels([{ total, unlabeled }])).toBe(expected);
+  });
+
+  it("counts speaker groups across recordings before applying the threshold", () => {
+    expect(needsMoreSpeakerLabels([{ total: 5, unlabeled: 0 }, { total: 1, unlabeled: 1 }])).toBe(false);
   });
 });
