@@ -135,7 +135,7 @@ describe("TranscriptViewer interactions", () => {
       }),
     ).toBeNull();
     expect(
-      screen.getByText("No matching participant. You can still use this name."),
+      screen.getByRole("option", { name: /Use as label only/ }),
     ).toBeTruthy();
     fireEvent.change(input, { target: { value: "" } });
     fireEvent.click(screen.getByRole("button", { name: "Save speaker" }));
@@ -256,7 +256,7 @@ describe("TranscriptViewer interactions", () => {
     expect(JSON.parse(String(vi.mocked(fetch).mock.calls[0]?.[1]?.body))).toMatchObject({ speaker: "Yiping", linkAction: "preserve" });
   });
 
-  it("retains the chosen email and requires workspace consent for its edited name", async () => {
+  it("keeps a typed name when creating a person from a chosen meeting email", async () => {
     vi.mocked(fetch).mockResolvedValueOnce(new Response(null, { status: 200 }));
     render(<TranscriptViewer meetingId="meeting" segments={segments} speakerSuggestions={[{ name: "Yiping", email: "yiping@iosf.vc" }, { name: "Yiping", email: "yiping@other.vc" }]} />);
     fireEvent.click(screen.getByRole("button", { name: "Edit speaker Speaker 1" }));
@@ -265,11 +265,8 @@ describe("TranscriptViewer interactions", () => {
     fireEvent.pointerDown(choice, { pointerType: "mouse" });
     fireEvent.click(choice);
     fireEvent.change(screen.getByLabelText("Speaker name"), { target: { value: "Yiping Chen" } });
-    fireEvent.click(screen.getByRole("checkbox", { name: /Use edited name across this workspace/ }));
-    fireEvent.click(screen.getByRole("button", { name: "Save speaker" }));
-    expect(await screen.findByRole("alert")).toHaveProperty("textContent", "To change this linked name, enable Use edited name across this workspace or choose Unlink.");
-    expect(fetch).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByRole("checkbox", { name: /Use edited name across this workspace/ }));
+    fireEvent.keyDown(screen.getByLabelText("Speaker name"), { key: "Escape" });
+    expect(screen.getByRole("group", { name: "Linked to Yiping Chen" })).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Save speaker" }));
     await waitFor(() => expect(fetch).toHaveBeenCalledTimes(1));
     expect(JSON.parse(String(vi.mocked(fetch).mock.calls[0]?.[1]?.body))).toMatchObject({ speaker: "Yiping Chen", participantEmail: "yiping@iosf.vc", linkAction: "create" });
