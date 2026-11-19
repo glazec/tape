@@ -12,11 +12,13 @@ export type TranscriptJobStatus = "queued" | "running" | "completed" | "failed";
 export type MeetingDisplayStatus =
   | MeetingRecordStatus
   | "waiting_room"
+  | "wait_speaker_label"
   | "queued"
   | "transcribing";
 
 export function getMeetingDisplayStatus(input: {
   botState?: string | null;
+  needsSpeakerLabel?: boolean;
   meetingStatus: MeetingRecordStatus;
   transcriptJobStatus?: TranscriptJobStatus | null;
 }): MeetingDisplayStatus {
@@ -27,6 +29,8 @@ export function getMeetingDisplayStatus(input: {
   ) {
     return "waiting_room";
   }
+
+  if (input.meetingStatus === "ready" && input.needsSpeakerLabel) return "wait_speaker_label";
 
   if (input.meetingStatus !== "processing") {
     return input.meetingStatus;
@@ -54,6 +58,8 @@ export function getMeetingStatusClassName(status: string): string {
       return "border-slate-200 bg-slate-100 text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200";
     case "ready":
       return "border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-emerald-800 dark:bg-emerald-950 dark:text-emerald-200";
+    case "wait_speaker_label":
+    case "wait speaker label":
     case "queued":
     case "transcribing":
     case "processing":

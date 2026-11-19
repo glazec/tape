@@ -13,5 +13,6 @@ export function getTranscriptViewerRenderKey({
   displayStatus: string;
   meetingId: string;
 }) {
-  return [meetingId, displayStatus].join(":");
+  const viewerStatus = displayStatus === "wait_speaker_label" ? "ready" : displayStatus;
+  return [meetingId, viewerStatus].join(":");
 }

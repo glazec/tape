@@ -14,6 +14,7 @@ import {
   ne,
   or,
   sql,
+  type SQL,
 } from "drizzle-orm";
 import { z } from "zod";
 
@@ -127,6 +128,7 @@ const genericMeetingGroupTitles = new Set([
 export type MeetingTranscript = {
   aiFollowup?: unknown;
   followupSource?: FollowupSource;
+  needsSpeakerLabel?: boolean;
   attributionRevision?: number;
   id: string;
   title: string;
@@ -252,6 +254,19 @@ type MeetingLibraryTranscriptStats = {
   segmentCount: number;
 };
 
+function needsSpeakerLabel(meetingId: SQL) {
+  return sql<boolean>`exists (
+    select 1 from meeting_speakers g
+    where g.meeting_id = ${meetingId}
+      and g.job_id in ${currentTranscriptJobIdsSubquery(meetingId)}
+      and g.person_id is null
+      and btrim(coalesce(g.display_name, g.source_label, ''))
+        ~* '^(|unknown( speaker)?|guest|participant|(.+ · )?speaker[ _-]*[0-9]+|pc sound( [0-9]+)?)$'
+      and exists (select 1 from transcript_segments s
+        where s.meeting_id = g.meeting_id and s.meeting_speaker_id = g.id)
+  )`;
+}
+
 export async function listMeetingsForWorkspace(
   workspace: WorkspaceContext,
   query?: string,
@@ -334,6 +349,11 @@ export async function listMeetingLibraryPageForWorkspace(
           else null
         end
       )`,
+      needsSpeakerLabel: sql<boolean>`(${needsSpeakerLabel(sql`${meetings.id}`)} or exists (
+        select 1 from meeting_parts p where p.meeting_id = ${meetings.id}
+          and app_private.can_read_meeting(p.source_meeting_id)
+          and ${needsSpeakerLabel(sql`p.source_meeting_id`)}
+      ))`,
       calendarAttendeeEmails: getMeetingAttendeeEmailsSnapshot(),
       recallBotId: meetings.recallBotId,
       botState: meetings.botState,
@@ -395,6 +415,7 @@ export async function listMeetingLibraryPageForWorkspace(
       status: meeting.status,
       botState: meeting.botState,
       transcriptJobStatus: meeting.transcriptJobStatus,
+      needsSpeakerLabel: meeting.needsSpeakerLabel,
       hasRecallBot: Boolean(meeting.recallBotId),
       startedAt: (meeting.startedAt ?? meeting.createdAt).toISOString(),
       endedAt: meeting.endedAt?.toISOString() ?? null,
@@ -780,6 +801,7 @@ function toRelatedMeeting(meeting: MeetingListItem): MeetingListRelatedItem {
       : {}),
     status: meeting.status,
     transcriptJobStatus: meeting.transcriptJobStatus,
+    needsSpeakerLabel: meeting.needsSpeakerLabel,
     hasRecallBot: meeting.hasRecallBot,
     accessScope: meeting.accessScope,
     primaryEntity: meeting.primaryEntity,
@@ -798,6 +820,7 @@ function toLibraryRootMeeting(input: {
     platform: input.meeting.platform,
     status: input.meeting.status,
     transcriptJobStatus: input.meeting.transcriptJobStatus,
+    needsSpeakerLabel: input.meeting.needsSpeakerLabel,
     hasRecallBot: input.meeting.hasRecallBot,
     startedAt: input.meeting.startedAt,
     endedAt: input.meeting.endedAt,
@@ -970,6 +993,7 @@ function matchesMeetingLibraryStatus(
 
   const displayStatus = getMeetingDisplayStatus({
     botState: meeting.botState,
+    needsSpeakerLabel: meeting.needsSpeakerLabel,
     meetingStatus: meeting.status,
     transcriptJobStatus: meeting.transcriptJobStatus,
   });
@@ -1431,6 +1455,7 @@ export async function getMeetingTranscriptForWorkspace(
         where ${transcriptSegments.meetingId} = ${meetings.id}
           and ${transcriptSegments.jobId} in ${currentTranscriptJobIdsSubquery(meetings.id)}
       )`,
+      needsSpeakerLabel: needsSpeakerLabel(sql`${meetings.id}`),
       aiFollowup: meetings.aiFollowup,
       attributionRevision: meetings.attributionRevision,
       recordedDurationMs: latestRecordingDurationMsSubquery(meetings.id),
@@ -1682,6 +1707,7 @@ export async function getMeetingTranscriptForWorkspace(
           getTranscriptDurationMs(meeting.transcriptDurationMs) ??
           null,
     transcriptJobStatus: meeting.transcriptJobStatus,
+    needsSpeakerLabel: meeting.needsSpeakerLabel,
     translationLanguage: normalizeTranslationLanguage(
       meeting.translationLanguage,
     ),

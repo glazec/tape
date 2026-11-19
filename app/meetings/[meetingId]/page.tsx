@@ -112,6 +112,7 @@ export default async function MeetingPage({
   for (const part of parts) applyPreferredTranscriptLanguage(part, preferredLanguage);
   const primaryDisplayStatus = getMeetingDisplayStatus({
     botState: meeting.botState,
+    needsSpeakerLabel: meeting.needsSpeakerLabel,
     meetingStatus: meeting.status,
     transcriptJobStatus: meeting.transcriptJobStatus,
   });
@@ -119,7 +120,8 @@ export default async function MeetingPage({
     ? parts.some(part => part.status === "recording") ? "recording"
       : hasActivePart ? "scheduled"
       : parts.some(part => ["queued", "running"].includes(part.transcriptJobStatus ?? "") || part.status === "processing") ? "processing"
-      : parts.some(part => part.status === "failed") ? "failed" : primaryDisplayStatus
+      : parts.some(part => part.status === "failed") ? "failed"
+      : primaryDisplayStatus === "ready" && parts.some(part => part.needsSpeakerLabel) ? "wait_speaker_label" : primaryDisplayStatus
     : primaryDisplayStatus;
   const recordingParts = meeting.recordingParts ?? [];
   const continuousVisualAssets =
@@ -452,6 +454,8 @@ function formatPlatform(platform: string) {
 }
 
 function formatStatus(status: string) {
+  if (status === "wait_speaker_label") return "Wait speaker label";
+
   if (status === "missed") {
     return "No recording";
   }
