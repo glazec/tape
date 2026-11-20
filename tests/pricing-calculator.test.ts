@@ -175,13 +175,13 @@ describe("computeMonthlyCost", () => {
       meetingHoursPerPersonPerDay: 1,
       avgAttendeesPerMeeting: 1,
       recordingProviderId: "recall", // $0.50/hr
-      sttProviderId: "elevenlabs", // $0.22/hr
+      sttProviderId: "elevenlabs", // $0.20/hr
       databaseProviderId: "neon",
     });
 
     const hours = WORKING_DAYS_PER_MONTH; // 1 person, 1 hr/day, 1 attendee
     expect(breakdown.recordingUsdMicros).toBe(Math.round(hours * 500_000));
-    expect(breakdown.sttUsdMicros).toBe(Math.round(hours * 220_000));
+    expect(breakdown.sttUsdMicros).toBe(Math.round(hours * 200_000));
   });
 
   it("falls back to defaults for unknown provider ids", () => {

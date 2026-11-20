@@ -22,9 +22,11 @@ import {
   providerUsagePeriodOptions,
 } from "@/lib/provider-usage-queries";
 import {
-  ELEVENLABS_ENTITY_DETECTION_USD_MICROS_PER_HOUR,
   ELEVENLABS_KEYTERM_PROMPTING_USD_MICROS_PER_HOUR,
+  ELEVENLABS_PRICING_SNAPSHOT_DATE,
   ELEVENLABS_SCRIBE_USD_MICROS_PER_HOUR,
+} from "@/lib/elevenlabs-model";
+import {
   PROVIDER_PRICING_SNAPSHOT_DATE,
   RECALL_RECORDING_USD_MICROS_PER_HOUR,
   providerPricingSources,
@@ -328,15 +330,14 @@ export default async function UsagePage({ searchParams }: UsagePageProps) {
                 </a>
                 {": "}
                 {formatHourlyRate(ELEVENLABS_SCRIBE_USD_MICROS_PER_HOUR)} for
-                Scribe v2, plus{" "}
-                {formatHourlyRate(
-                  ELEVENLABS_ENTITY_DETECTION_USD_MICROS_PER_HOUR,
-                )}{" "}
-                for entity detection and{" "}
+                Scribe v3, plus{" "}
                 {formatHourlyRate(
                   ELEVENLABS_KEYTERM_PROMPTING_USD_MICROS_PER_HOUR,
                 )}{" "}
-                when vocabulary keyterms are used.
+                when vocabulary keyterms are used. Published rates checked{" "}
+                <time dateTime={ELEVENLABS_PRICING_SNAPSHOT_DATE}>
+                  November 18, 2026
+                </time>.
               </li>
               <li>
                 <a
@@ -351,7 +352,7 @@ export default async function UsagePage({ searchParams }: UsagePageProps) {
               </li>
             </ul>
             <p>
-              Published rates checked{" "}
+              Recall rates checked{" "}
               <time dateTime={PROVIDER_PRICING_SNAPSHOT_DATE}>
                 July 23, 2026
               </time>

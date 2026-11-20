@@ -100,12 +100,14 @@ describe("empty transcript recovery", () => {
     ).resolves.toEqual({
       keyterms: ["IOSG"],
       meetingId: "11111111-1111-4111-8111-111111111111",
+      model: "scribe_v3",
       recallBotId: "recall_bot_123",
       recallRecordingId: "recall_recording_123",
       recordingId: "33333333-3333-4333-8333-333333333333",
       transcriptJobId: "22222222-2222-4222-8222-222222222222",
     });
     expect(transcriptSet).toHaveBeenCalledWith({
+      billingKeytermsUsed: true,
       errorMessage:
         "Direct transcription returned no text; chunked recovery queued",
       status: "running",

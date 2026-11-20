@@ -180,7 +180,7 @@ Recall recording recovery checks started bot meetings every five minutes, indepe
 | Tenant isolation | Forced PostgreSQL RLS for signed in web and MCP reads |
 | Media | Cloudflare R2 with authenticated application routes |
 | Cloud meeting capture | Recall.ai bots and Calendar V2 |
-| Transcription | ElevenLabs Speech to Text using `scribe_v2`, with Railway chunking for recordings over 60 minutes |
+| Transcription | ElevenLabs Speech to Text using `scribe_v3` on the completed recording, with Railway chunking for recordings over 60 minutes |
 | Translation and live answers | OpenRouter, with optional Exa web search for live answers |
 | Provider usage accounting | Idempotent per meeting cost events with personal and organization summaries |
 | Background work | Self hosted Inngest on Railway for transcription, scheduling, translation, reminders, and repair |

@@ -155,6 +155,12 @@ export async function POST(request: Request) {
     const summary = { id: meeting.id, title: meeting.title, status: meeting.status };
 
     if (read.operation === "ongoing_transcript") {
+      if (meeting.status !== "recording") {
+        const message = meeting.status === "scheduled"
+          ? "Recording has not started."
+          : "Recording has ended. Use get_meeting_transcript for the saved transcript once processing completes.";
+        return Response.json({ error: message }, { status: 409, headers: privateHeaders });
+      }
       return Response.json({ meeting: summary, bot_id: meeting.bot_id }, { headers: privateHeaders });
     }
 

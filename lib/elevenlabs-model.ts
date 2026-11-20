@@ -1,0 +1,6 @@
+export const ELEVENLABS_BATCH_MODEL = "scribe_v3";
+export type ElevenLabsBatchModel = "scribe_v2" | typeof ELEVENLABS_BATCH_MODEL;
+
+export const ELEVENLABS_PRICING_SNAPSHOT_DATE = "2026-11-18";
+export const ELEVENLABS_SCRIBE_USD_MICROS_PER_HOUR = 200_000;
+export const ELEVENLABS_KEYTERM_PROMPTING_USD_MICROS_PER_HOUR = 50_000;

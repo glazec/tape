@@ -249,6 +249,7 @@ describe("image worker", () => {
     const data = {
       keyterms: ["IOSG"],
       meetingId: "22222222-2222-4222-8222-222222222222",
+      model: "scribe_v3",
       objectKey: "users/user_123/uploads/long.mp3",
       recordingId: "33333333-3333-4333-8333-333333333333",
       transcriptJobId: "44444444-4444-4444-8444-444444444444",
@@ -273,9 +274,14 @@ describe("image worker", () => {
     expect(persistCompletedTranscriptChunks).toHaveBeenCalledWith({
       chunks: completed,
       meetingId: data.meetingId,
+      model: data.model,
       recordingId: data.recordingId,
       transcriptJobId: data.transcriptJobId,
     });
+    expect(transcribePreparedTranscriptChunk).toHaveBeenCalledWith(expect.objectContaining({
+      keyterms: data.keyterms,
+      model: data.model,
+    }));
     expect(markChunkedTranscriptJobFailed).not.toHaveBeenCalled();
   });
 
@@ -305,7 +311,7 @@ describe("image worker", () => {
         },
       }),
     ).rejects.toThrow(error.message);
-    expect(prepareTranscriptAudioChunks).toHaveBeenCalledWith(data);
+    expect(prepareTranscriptAudioChunks).toHaveBeenCalledWith({ ...data, model: "scribe_v2" });
     expect(markChunkedTranscriptJobFailed).not.toHaveBeenCalled();
   });
 

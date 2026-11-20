@@ -87,6 +87,23 @@ describe("signed MCP reads", () => {
     expect(mocks.select).toHaveBeenCalledTimes(2);
   });
 
+  it.each(["scheduled", "processing", "ready", "failed", "missed"])(
+    "stops provisional transcription for a %s meeting", async (status) => {
+      readRows([{ id: userId }]);
+      readRows([{ id: meetingId, title: "Weekly", status, bot_id: "bot" }]);
+      const response = await POST(request({ operation: "ongoing_transcript", meetingId }));
+      expect(response.status).toBe(409);
+      expect(await response.json()).not.toHaveProperty("bot_id");
+    },
+  );
+
+  it("allows provisional transcription while recording", async () => {
+    readRows([{ id: userId }]);
+    readRows([{ id: meetingId, title: "Weekly", status: "recording", bot_id: "bot" }]);
+    const response = await POST(request({ operation: "ongoing_transcript", meetingId }));
+    expect(await response.json()).toMatchObject({ bot_id: "bot" });
+  });
+
   it("pages timestamped segments only from the active recording generation", async () => {
     readRows([{ id: userId }]);
     readRows([{ id: meetingId, teamId, title: "Friday IC", status: "ready" }]);

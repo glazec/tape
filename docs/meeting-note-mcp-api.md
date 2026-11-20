@@ -423,3 +423,5 @@ Intel search and private search history are web features at `/intel`, `/api/inte
 ### Ongoing meeting transcript
 
 Call `get_ongoing_meeting_transcript(meeting_id)` with a readable meeting UUID or Tape link. Tape captures mixed audio for newly configured Recall bot and Desktop SDK recordings and submits buffered audio to Groq only on demand. Calls return provisional text with captured intervals in milliseconds relative to each recording. Repeated calls share cached text. A gap between intervals indicates missing capture. The tool returns `no_buffered_audio` when capture has not started, is unsupported, or has expired. Use `get_meeting_transcript` for the saved transcript. Local fallback recordings do not stream audio.
+
+Once recording ends, the ongoing tool stops serving provisional text. Tape sends the completed audio to ElevenLabs Scribe v3 to produce the saved transcript, including when the meeting was previously queried through Groq.

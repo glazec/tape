@@ -7,7 +7,7 @@ describe("ElevenLabs vendor", () => {
     vi.resetModules();
   });
 
-  it("passes team vocabulary and all entity detection into Scribe", async () => {
+  it("passes meeting vocabulary and relevant entity types into Scribe v3", async () => {
     vi.stubEnv("ELEVENLABS_API_KEY", "eleven-key\n");
     const fetchMock = vi.fn().mockResolvedValue(
       new Response(JSON.stringify({ request_id: "req_123" }), {
@@ -31,10 +31,17 @@ describe("ElevenLabs vendor", () => {
     const [, init] = fetchMock.mock.calls[0];
     const body = init.body as FormData;
 
-    expect(body.get("model_id")).toBe("scribe_v2");
-    expect(body.get("entity_detection")).toBe("all");
+    expect(body.get("model_id")).toBe("scribe_v3");
+    expect(body.getAll("entity_detection")).toEqual([
+      "organization", "name", "money", "product_or_service",
+    ]);
     expect(body.get("detect_entities")).toBeNull();
     expect(body.getAll("keyterms")).toEqual(["IOSG", "TCG platform"]);
+    expect(JSON.parse(String(body.get("webhook_metadata")))).toMatchObject({
+      keytermsUsed: true,
+      meetingId: "meeting_123",
+      transcriptionModel: "scribe_v3",
+    });
   });
 
   it("keeps keyterms inside provider limits before sending them", async () => {
@@ -129,6 +136,8 @@ describe("ElevenLabs vendor", () => {
     const body = init.body as FormData;
 
     expect(body.get("file")).toBeInstanceOf(Blob);
+    expect(body.get("model_id")).toBe("scribe_v3");
+    expect(body.getAll("entity_detection")).toContain("product_or_service");
     expect(body.get("webhook")).toBeNull();
     expect(body.getAll("keyterms")).toEqual(["IOSG"]);
   });

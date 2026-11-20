@@ -1,5 +1,6 @@
 import { z } from "zod";
 
+import { ELEVENLABS_BATCH_MODEL } from "@/lib/elevenlabs-model";
 import { persistRecallMeetingVideoFrames } from "@/lib/meeting-video-frames";
 import {
   cleanupCompletedTranscriptChunks,
@@ -22,6 +23,7 @@ const chunkedTranscriptionDataSchema = z
     audioUrl: z.url().optional(),
     keyterms: z.array(z.string().trim().min(1)).default([]),
     meetingId: z.uuid(),
+    model: z.enum(["scribe_v2", ELEVENLABS_BATCH_MODEL]).default("scribe_v2"),
     objectKey: z.string().trim().min(1).optional(),
     recallBotId: z.string().trim().min(1).optional(),
     recallRecordingId: z.string().trim().min(1).optional(),
@@ -87,6 +89,7 @@ export const transcribeMeetingInChunks = imageWorkerInngest.createFunction(
               chunk,
               keyterms: data.keyterms,
               meetingId: data.meetingId,
+              model: data.model,
               transcriptJobId: data.transcriptJobId,
             }),
           ),
@@ -97,6 +100,7 @@ export const transcribeMeetingInChunks = imageWorkerInngest.createFunction(
         persistCompletedTranscriptChunks({
           chunks: completedChunks,
           meetingId: data.meetingId,
+          model: data.model,
           ...(data.recordingId ? { recordingId: data.recordingId } : {}),
           transcriptJobId: data.transcriptJobId,
         }),

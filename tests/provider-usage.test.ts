@@ -23,8 +23,10 @@ describe("provider usage pricing", () => {
   });
 
   it("includes the ElevenLabs features Tape enables", () => {
-    expect(getElevenLabsRateUsdMicrosPerHour(false)).toBe(290_000);
-    expect(getElevenLabsRateUsdMicrosPerHour(true)).toBe(340_000);
+    expect(getElevenLabsRateUsdMicrosPerHour(false)).toBe(200_000);
+    expect(getElevenLabsRateUsdMicrosPerHour(true)).toBe(250_000);
+    expect(getElevenLabsRateUsdMicrosPerHour(false, "scribe_v2")).toBe(290_000);
+    expect(getElevenLabsRateUsdMicrosPerHour(true, "scribe_v2")).toBe(340_000);
   });
 
   it("stores provider reported dollars as integer microdollars", () => {
