@@ -57,11 +57,10 @@ LANGUAGE sql SECURITY DEFINER SET search_path=pg_catalog,public AS $$
 $$;
 --> statement-breakpoint
 -- Recheck after each merge because a profile may connect several email groups.
-LOCK TABLE public.person_emails IN SHARE ROW EXCLUSIVE MODE;
---> statement-breakpoint
 DO $$
 DECLARE owners uuid[];
 BEGIN
+ LOCK TABLE public.person_emails IN SHARE ROW EXCLUSIVE MODE;
  LOOP
   SELECT array_agg(person_id ORDER BY confirmed_at,person_id) INTO owners
   FROM public.person_emails GROUP BY team_id,email HAVING count(*)>1

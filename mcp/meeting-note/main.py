@@ -1907,7 +1907,7 @@ async def list_accessible_meetings(
     started_after: datetime | None = None,
     started_before: datetime | None = None,
 ) -> dict[str, Any]:
-    """List authorized meetings. To find a past meeting, use a title substring or an inclusive start and exclusive end with timezone offsets. Omitting filters returns the full inventory."""
+    """List authorized meetings. To find a past meeting, use a title substring or an inclusive start and exclusive end with timezone offsets. Recent and ongoing meetings come first, followed by upcoming meetings soonest first."""
     title = _clean(title)
     for boundary in (started_after, started_before):
         if boundary is not None and boundary.utcoffset() is None:
@@ -1939,7 +1939,9 @@ async def list_accessible_meetings(
                 m.status::text as status,
                 m.started_at,
                 m.ended_at,
-                m.created_at
+                m.created_at,
+                case when coalesce(m.started_at, m.created_at) > now()
+                     then coalesce(m.started_at, m.created_at) end as upcoming_at
             from meetings m
             where m.status::text <> 'cancelled'
               and {access_sql}
@@ -1960,11 +1962,11 @@ async def list_accessible_meetings(
         left join lateral (
             select *
             from accessible_meetings
-            order by coalesce(started_at, created_at) desc, id
+            order by upcoming_at asc nulls first, coalesce(started_at, created_at) desc, id
             limit %(inventory_limit)s
             offset %(inventory_offset)s
         ) page on true
-        order by coalesce(page.started_at, page.created_at) desc, page.id
+        order by page.upcoming_at asc nulls first, coalesce(page.started_at, page.created_at) desc, page.id
         """,
         query_params,
     )

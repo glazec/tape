@@ -136,6 +136,8 @@ To find outstanding commitments from meetings three to four weeks ago, supply th
 
 ### list_accessible_meetings
 
+Recent and ongoing meetings appear in descending start time before future meetings. Upcoming meetings appear soonest first.
+
 List authorized, non cancelled meetings. Omit all filters for the complete inventory. To find a meeting on a specific day, provide both date boundaries with the relevant timezone offset.
 
 Arguments:

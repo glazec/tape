@@ -769,6 +769,8 @@ class AccessibleMeetingInventoryTests(unittest.IsolatedAsyncioTestCase):
                 await main.list_accessible_meetings(started_after=datetime(2026, 11, 13))
 
         sql, params = fetch.await_args.args
+        self.assertIn("order by upcoming_at asc nulls first, coalesce(started_at, created_at) desc, id", sql)
+        self.assertIn("order by page.upcoming_at asc nulls first", sql)
         self.assertIn("strpos(lower(m.title)", sql)
         self.assertEqual(params["inventory_title"], "IC%")
         self.assertEqual(params["inventory_started_after"], after)

@@ -7,6 +7,8 @@ import { getCurrentUser } from "@/lib/auth";
 import { getPersonIdentity, getPersonWorkspace } from "@/lib/people";
 import { exportTranscriptSection, sanitizeFilename } from "@/lib/transcript-export";
 
+export const runtime = "nodejs";
+
 export async function GET(_request: Request, context: { params: Promise<{ personId: string }> }) {
   const user = await getCurrentUser();
   if (!user) return Response.json({ error: "Unauthorized" }, { status: 401 });
