@@ -37,4 +37,8 @@ it("shows the generated profile on the page and reuses a saved profile on the ne
   render(<PersonProfile initialProfile={profile} personId="one" personName="Simon" />);
   expect(screen.getByText(profile.profile.headline)).toBeTruthy();
   expect(fetch).toHaveBeenCalledTimes(1);
+  fetch.mockResolvedValueOnce(Response.json({ status: "no_meetings" }));
+  fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
+  expect(await screen.findByText(/Could not refresh this profile/)).toBeTruthy();
+  expect(screen.getByText(profile.profile.headline)).toBeTruthy();
 });

@@ -13,11 +13,13 @@ it("distinguishes missing audio from a missing transcript and upcoming or privat
   render(<PersonMeetingList meetings={[
     { ...meeting, id: "next", title: "Next call", at: "2026-12-01T00:00:00Z", status: "scheduled" },
     meeting,
+    { ...meeting, id: "labels", title: "Unlabeled call", status: "wait_speaker_label", hasRecording: true },
     { ...meeting, id: "processing", title: "Recorded call", status: "processing", hasRecording: true },
     { ...meeting, id: "private", title: "Locked call", status: null, canOpen: false },
   ]} nowIso="2026-11-19T00:00:00Z" viewerName="Jordan" />);
   expect(within(screen.getByRole("link", { name: /Missed call/ })).getByText("Missed · No recording")).toBeTruthy();
   expect(screen.getByText("Processing · Recording available")).toBeTruthy();
+  expect(screen.getByText("Wait speaker label · Recording available")).toBeTruthy();
   expect(screen.getByText("Scheduled")).toBeTruthy();
   expect(screen.getByText("Private")).toBeTruthy();
   expect(screen.queryByRole("link", { name: /Locked call/ })).toBeNull();

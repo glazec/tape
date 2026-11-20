@@ -92,8 +92,8 @@ function MeetingRow({ meeting, isClient, upcoming }: { meeting: PersonMeeting; i
           {share ? <span className="hidden sm:inline"> · they spoke {share}%</span> : null}
         </span>
         <span className="block text-xs text-muted-foreground">
-          {meeting.status ? meeting.status[0].toUpperCase() + meeting.status.slice(1) : "Private"}
-          {meeting.status && !upcoming && meeting.status !== "recording" && (
+          {meeting.status ? meeting.status[0].toUpperCase() + meeting.status.slice(1).replaceAll("_", " ") : "Private"}
+          {meeting.status && !upcoming && meeting.status !== "recording" && meeting.status !== "waiting_room" && (
             meeting.hasRecording ? " · Recording available" : " · No recording"
           )}
         </span>

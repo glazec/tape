@@ -38,3 +38,12 @@ it("downloads every returned meeting in order, including those beyond the page l
   expect(response.headers.get("content-disposition")).toContain('filename="Simon transcripts.txt"');
   expect(await response.text()).toBe(meetings.map(m => "2026-11-01 · " + m.title + "\nTranscript " + m.id + "\n").join(""));
 });
+
+it("explains an empty export and encodes punctuation in international filenames", async () => {
+  mocks.getPersonIdentity.mockResolvedValue({ kind: "found", data: { person: { id: personId, name: "李 (Simon)" } } });
+  mocks.execute.mockResolvedValue({ rows: [] });
+  const response = await get();
+  expect(response.headers.get("content-disposition")).toContain("%E6%9D%8E%20%28Simon%29");
+  expect(await response.text()).toContain("No transcripts available");
+  expect(mocks.exportTranscriptSection).not.toHaveBeenCalled();
+});

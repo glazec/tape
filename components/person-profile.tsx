@@ -89,9 +89,10 @@ export function PersonProfile({
         </div>
       ) : status === "loading" ? (
         <ProfileSkeleton name={personName} />
-      ) : status !== "error" ? (
+      ) : null}
+      {status === "no_meetings" ? (
         <p className="mt-3 max-w-[52ch] text-sm leading-6 text-muted-foreground text-pretty">
-          To generate a profile, open a meeting transcript and link {personName} to their speaker label. If the meeting has no transcript yet, upload its recording first.
+          {stored ? "Could not refresh this profile. " : ""}To generate a profile, open a meeting transcript and link {personName} to their speaker label. If the meeting has no transcript yet, upload its recording first.
         </p>
       ) : null}
       {status === "error" && error ? (

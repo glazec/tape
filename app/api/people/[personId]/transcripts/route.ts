@@ -2,6 +2,7 @@ import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db/client";
 import { withDatabaseWorkspace } from "@/db/rls-context";
+import { currentTranscriptJobIdsSubquery } from "@/lib/current-transcript-job";
 import { getCurrentUser } from "@/lib/auth";
 import { getPersonIdentity, getPersonWorkspace } from "@/lib/people";
 import { exportTranscriptSection, sanitizeFilename } from "@/lib/transcript-export";
@@ -37,6 +38,8 @@ export async function GET(_request: Request, context: { params: Promise<{ person
     select m.id, m.title, coalesce(m.started_at, c.starts_at, m.created_at) as at
     from sources s join meetings m on m.id = s.id left join calendar_events c on c.id = m.calendar_event_id
     where m.team_id = ${workspace.teamId} and app_private.can_read_meeting(m.id)
+      and exists (select 1 from transcript_segments s where s.meeting_id = m.id
+        and s.job_id in ${currentTranscriptJobIdsSubquery(sql`m.id`)})
     order by at, m.id`);
   const meetings = result.rows as Array<{ id: string; title: string; at: string | Date }>;
   let index = 0;
@@ -44,7 +47,7 @@ export async function GET(_request: Request, context: { params: Promise<{ person
   const stream = new ReadableStream<Uint8Array>({
     async pull(controller) {
       if (index === meetings.length) {
-        if (!index) controller.enqueue(encoder.encode("No accessible meetings to export.\n"));
+        if (!index) controller.enqueue(encoder.encode("No transcripts available from meetings you can open.\n"));
         controller.close();
         return;
       }
@@ -56,7 +59,7 @@ export async function GET(_request: Request, context: { params: Promise<{ person
   });
   return new Response(stream, { headers: {
     "content-type": "text/plain; charset=utf-8",
-    "content-disposition": `attachment; filename="${sanitizeFilename(person.name)} transcripts.txt"; filename*=UTF-8''${encodeURIComponent(person.name + " transcripts.txt").replace(/'/g, "%27")}`,
+    "content-disposition": `attachment; filename="${sanitizeFilename(person.name)} transcripts.txt"; filename*=UTF-8''${encodeURIComponent(person.name + " transcripts.txt").replace(/['()*]/g, char => "%" + char.charCodeAt(0).toString(16).toUpperCase())}`,
     "cache-control": "private, no-store",
   } });
 }
