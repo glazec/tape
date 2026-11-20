@@ -267,7 +267,11 @@ function speakerLabelCounts(meetingIds: SQL) {
     ))
     from meeting_speakers g
     where g.meeting_id = any(array(${meetingIds}))
-      and g.job_id in ${currentTranscriptJobIdsSubquery(sql`g.meeting_id`)}
+      and g.job_id = any(array(
+        select j.id from (${meetingIds}) source(id)
+        join transcript_jobs j on j.meeting_id = source.id and j.status = 'completed'
+        where j.id = any(array(select active.id from ${activeTranscriptJobIdsSubquery(sql`source.id`)} active(id)))
+      ))
       and exists (select 1 from transcript_segments s
         where s.meeting_id = g.meeting_id and s.meeting_speaker_id = g.id)
   )`;
@@ -290,6 +294,14 @@ export async function listMeetingLibraryPageForWorkspace(
   workspace: WorkspaceContext,
   options: MeetingLibraryPageOptions = {},
 ): Promise<MeetingLibraryPage> {
+  const { loadDetails } = await prepareMeetingLibraryPage(workspace, options);
+  return loadDetails();
+}
+
+export async function prepareMeetingLibraryPage(
+  workspace: WorkspaceContext,
+  options: MeetingLibraryPageOptions = {},
+) {
   const now = options.now ?? new Date();
   const search = options.query?.trim();
   const searchScope = parseMeetingLibrarySearchScope(options.searchScope);
@@ -338,29 +350,13 @@ export async function listMeetingLibraryPageForWorkspace(
           where p.meeting_id=${meetings.id} and app_private.can_read_meeting(child.id) and child.status='failed') then 'failed'::meeting_status
         else ${meetings.status} end`,
       transcriptJobStatus: sql<TranscriptJobStatus | null>`(
-        select case
-          when exists (
-            select 1 from ${transcriptJobs} active_job
-            where active_job.id in ${activeTranscriptJobIdsSubquery(meetings.id)}
-              and active_job.status = 'running'
-          ) then 'running'::job_status
-          when exists (
-            select 1 from ${transcriptJobs} active_job
-            where active_job.id in ${activeTranscriptJobIdsSubquery(meetings.id)}
-              and active_job.status = 'queued'
-          ) then 'queued'::job_status
-          when exists (
-            select 1 from ${transcriptJobs} active_job
-            where active_job.id in ${activeTranscriptJobIdsSubquery(meetings.id)}
-              and active_job.status = 'failed'
-          ) then 'failed'::job_status
-          when exists (
-            select 1 from ${transcriptJobs} active_job
-            where active_job.id in ${activeTranscriptJobIdsSubquery(meetings.id)}
-              and active_job.status = 'completed'
-          ) then 'completed'::job_status
-          else null
-        end
+        select active_job.status from transcript_jobs active_job
+        where active_job.meeting_id = ${meetings.id}
+          and active_job.id in ${activeTranscriptJobIdsSubquery(meetings.id)}
+          and active_job.status in ('running', 'queued', 'failed', 'completed')
+        order by case active_job.status when 'running' then 1 when 'queued' then 2
+          when 'failed' then 3 else 4 end
+        limit 1
       )`,
       speakerLabelCounts: filterBySpeakerLabels ? librarySpeakerCounts : sql<null>`null`,
       calendarAttendeeEmails: getMeetingAttendeeEmailsSnapshot(),
@@ -475,50 +471,54 @@ export async function listMeetingLibraryPageForWorkspace(
       )
     : baseItems;
   const page = buildMeetingLibraryPage(itemsForPaging, options);
-  const pageMeetingIds = getMeetingLibraryPageMeetingIds(page.meetings);
-  const readyPageIds = filterBySpeakerLabels ? [] : pageMeetingIds.filter(
-    (id) => baseDetailsByMeetingId.get(id)?.status === "ready",
-  );
-  const [pageRecordingStatsByMeetingId, pageTranscriptStatsByMeetingId, speakerRows] =
-    await Promise.all([
-      getMeetingLibraryRecordingStats(
-        needsRecordingStatsForPaging ? [] : pageMeetingIds,
+  return { page, loadDetails };
+
+  async function loadDetails(): Promise<MeetingLibraryPage> {
+    const pageMeetingIds = getMeetingLibraryPageMeetingIds(page.meetings);
+    const readyPageIds = filterBySpeakerLabels ? [] : pageMeetingIds.filter(
+      (id) => baseDetailsByMeetingId.get(id)?.status === "ready",
+    );
+    const [pageRecordingStatsByMeetingId, pageTranscriptStatsByMeetingId, speakerRows] =
+      await Promise.all([
+        getMeetingLibraryRecordingStats(
+          needsRecordingStatsForPaging ? [] : pageMeetingIds,
+        ),
+        getMeetingLibraryTranscriptStats(
+          needsTranscriptStatsForPaging ? [] : pageMeetingIds,
+        ),
+        readyPageIds.length
+          ? db.select({ id: meetings.id, counts: librarySpeakerCounts })
+              .from(meetings)
+              .where(inArray(meetings.id, readyPageIds))
+          : [],
+      ]);
+
+    for (const row of speakerRows) {
+      const details = baseDetailsByMeetingId.get(row.id);
+      if (details) details.needsSpeakerLabel = needsMoreSpeakerLabels([row.counts]);
+    }
+
+    for (const [meetingId, stats] of pageRecordingStatsByMeetingId) {
+      recordingStatsByMeetingId.set(meetingId, stats);
+    }
+
+    for (const [meetingId, stats] of pageTranscriptStatsByMeetingId) {
+      transcriptStatsByMeetingId.set(meetingId, stats);
+    }
+
+    return {
+      ...page,
+      meetings: page.meetings.map((meeting) =>
+        enrichMeetingLibraryItem({
+          baseDetailsByMeetingId,
+          meeting,
+          now,
+          recordingStatsByMeetingId,
+          transcriptStatsByMeetingId,
+        }),
       ),
-      getMeetingLibraryTranscriptStats(
-        needsTranscriptStatsForPaging ? [] : pageMeetingIds,
-      ),
-      readyPageIds.length
-        ? db.select({ id: meetings.id, counts: librarySpeakerCounts })
-            .from(meetings)
-            .where(inArray(meetings.id, readyPageIds))
-        : [],
-    ]);
-
-  for (const row of speakerRows) {
-    const details = baseDetailsByMeetingId.get(row.id);
-    if (details) details.needsSpeakerLabel = needsMoreSpeakerLabels([row.counts]);
+    };
   }
-
-  for (const [meetingId, stats] of pageRecordingStatsByMeetingId) {
-    recordingStatsByMeetingId.set(meetingId, stats);
-  }
-
-  for (const [meetingId, stats] of pageTranscriptStatsByMeetingId) {
-    transcriptStatsByMeetingId.set(meetingId, stats);
-  }
-
-  return {
-    ...page,
-    meetings: page.meetings.map((meeting) =>
-      enrichMeetingLibraryItem({
-        baseDetailsByMeetingId,
-        meeting,
-        now,
-        recordingStatsByMeetingId,
-        transcriptStatsByMeetingId,
-      }),
-    ),
-  };
 }
 
 export function buildMeetingLibraryPage(
