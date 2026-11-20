@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { ProductLogo } from "@/components/product-logo";
 import { Skeleton } from "@/components/ui/skeleton";
 
@@ -92,5 +93,28 @@ export function MeetingLibrarySkeleton() {
       </div>
       <span className="sr-only">Loading meetings</span>
     </section>
+  );
+}
+
+export function MeetingLibraryRowsScaffold({
+  meetings,
+}: {
+  meetings: { id: string; title: string }[];
+}) {
+  return (
+    <ul aria-label="Meetings" className="divide-y divide-border/50">
+      {meetings.map((meeting) => (
+        <li key={meeting.id} className="flex items-center gap-4 py-3.5">
+          <Skeleton aria-hidden="true" className="hidden h-4 w-24 md:block" />
+          <div className="min-w-0 flex-1">
+            <Link href={`/meetings/${meeting.id}`} prefetch={false} className="text-sm font-medium hover:underline">
+              {meeting.title}
+            </Link>
+            <Skeleton aria-hidden="true" className="mt-2 h-3 w-24" />
+          </div>
+          <Skeleton aria-hidden="true" className="h-4 w-16" />
+        </li>
+      ))}
+    </ul>
   );
 }

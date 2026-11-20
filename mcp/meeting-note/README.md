@@ -4,9 +4,13 @@
 
 # Tape MCP
 
+Use `list_meeting_todos` for team followups by meeting date, assignee and shared status.
+
 FastMCP server for authenticated Tape access. Python 3.13 or newer is required.
 
-It exposes caller identity, a canonical authorized meeting inventory, dated followups with shared status, schema discovery, common SQL templates, safe read only SQL, protected application URLs for meeting audio and images, and a backend mediated local audio upload flow. See the [complete tool and access contract](../../docs/meeting-note-mcp-api.md).
+Find meetings by title and date, read timestamped transcripts and saved AI followups, and look up workspace people and their saved AI profiles. See the [MCP API](../../docs/meeting-note-mcp-api.md) for tool arguments and permissions.
+
+It exposes caller identity, a canonical authorized meeting inventory, schema discovery, common SQL templates, safe read only SQL, protected application URLs for meeting audio and images, and a backend mediated local audio upload flow. See the [complete tool and access contract](../../docs/meeting-note-mcp-api.md).
 
 Personal notes entered in My notes on the web meeting page, including timestamp anchors, are not exposed through MCP. Browser calendar destination selection does not add a destination parameter to MCP tools. Sharing a meeting does not share personal notes.
 
@@ -56,7 +60,7 @@ Meeting reads evaluate administrator membership against each meeting’s workspa
 
 ## Web meeting combinations
 
-Merge meetings and Continue recording in the web application retain independent source records. MCP tools still read the requested source meeting ID; they do not flatten the combined web view. Source permissions remain authoritative. See `docs/meeting-note-mcp-api.md` for this boundary.
+Merge meetings and Continue recording retain independent source records. Read transcripts and media by source meeting ID. Saved followups for a combined meeting use the same readable parts as the web application.
 
 ## Intel
 

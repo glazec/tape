@@ -1,6 +1,6 @@
 {
-  "id": "e019de0e-c86f-4414-9c5c-06beb91a88f2",
-  "prevId": "34fd486d-98be-4937-a5c5-8ef3b356621b",
+  "id": "5857ed85-0427-4289-ad52-afcfa81ea256",
+  "prevId": "ef358e4c-576f-4774-952b-e4b23411af9d",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -4341,8 +4341,8 @@
           "method": "btree",
           "with": {}
         },
-        "person_emails_team_email_unique": {
-          "name": "person_emails_team_email_unique",
+        "person_emails_team_email_index": {
+          "name": "person_emails_team_email_index",
           "columns": [
             {
               "expression": "team_id",
@@ -4357,7 +4357,7 @@
               "nulls": "last"
             }
           ],
-          "isUnique": true,
+          "isUnique": false,
           "concurrently": false,
           "method": "btree",
           "with": {}

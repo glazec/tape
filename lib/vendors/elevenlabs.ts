@@ -58,7 +58,7 @@ const elevenLabsWebhookErrorSchema = z.object({
 const elevenLabsTranscriptInputSchema = z.object({
   audioUrl: z.url(),
   webhookUrl: z.url(),
-  keyterms: z.array(z.string()).optional(),
+  keyterms: z.array(z.string().trim().min(1)).optional(),
   metadata: z.record(z.string(), z.string()).optional(),
 });
 

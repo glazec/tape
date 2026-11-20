@@ -61,7 +61,7 @@ describe("ElevenLabs vendor", () => {
     await createElevenLabsTranscriptJob({
       audioUrl: "https://audio.example.com/recording.mp3",
       webhookUrl: "https://app.example.com/api/elevenlabs/webhook",
-      keyterms: [" IOSG ", "iosg", "a".repeat(51), "", "[invalid]", "Ledger"],
+      keyterms: [" IOSG ", "iosg", "a".repeat(51), "Ledger"],
     });
 
     const [, init] = fetchMock.mock.calls[0];

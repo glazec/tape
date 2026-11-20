@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import { Loader2, RefreshCw } from "lucide-react";
 
 import { AppLabel } from "@/components/app-label";
@@ -18,11 +18,6 @@ const expertiseLabels = {
   social: "People",
 } as const;
 
-/**
- * The AI profile is written the first time anyone opens the page, then only
- * when someone presses Refresh. It is shared by the team and reads every team
- * meeting with the person.
- */
 export function PersonProfile({
   initialProfile,
   personId,
@@ -33,9 +28,8 @@ export function PersonProfile({
   personName: string;
 }) {
   const [stored, setStored] = useState(initialProfile);
-  const [status, setStatus] = useState<Status>(initialProfile ? "idle" : "loading");
+  const [status, setStatus] = useState<Status>("idle");
   const [error, setError] = useState<string | null>(null);
-  const started = useRef(false);
 
   async function generate() {
     setStatus("loading");
@@ -56,14 +50,6 @@ export function PersonProfile({
     }
   }
 
-  useEffect(() => {
-    if (initialProfile || started.current) return;
-    started.current = true;
-    void generate();
-    // Runs once per page open; Refresh regenerates explicitly.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
   const busy = status === "loading";
 
   return (
@@ -77,7 +63,6 @@ export function PersonProfile({
           {stored ? (
             <span className="hidden text-xs text-muted-foreground sm:inline"><LocalDateTime dateOnly value={stored.generatedAt} /></span>
           ) : null}
-        {stored || status === "error" ? (
           <Button
             disabled={busy}
             onClick={() => void generate()}
@@ -86,9 +71,8 @@ export function PersonProfile({
             variant="ghost"
           >
             {busy ? <Loader2 className="animate-spin" /> : <RefreshCw />}
-            {busy ? "Writing" : status === "error" && !stored ? "Try again" : "Refresh"}
+            {busy ? "Writing" : stored ? "Refresh" : status === "error" ? "Try again" : "Generate"}
           </Button>
-        ) : null}
         </div>
       </div>
 
@@ -98,7 +82,7 @@ export function PersonProfile({
         </div>
       ) : status === "loading" ? (
         <ProfileSkeleton name={personName} />
-      ) : status === "no_meetings" ? (
+      ) : status !== "error" ? (
         <p className="mt-3 max-w-[52ch] text-sm leading-6 text-muted-foreground text-pretty">
           No profile yet.
         </p>

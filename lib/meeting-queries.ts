@@ -26,8 +26,8 @@ import {
   meetingAccessSources,
   meetingAttendees,
   meetingEntities,
-  meetingParticipantTimeline,
   meetingSpeakerChanges,
+  meetingParticipantTimeline,
   meetings,
   recordings,
   teamMemberships,
@@ -58,6 +58,8 @@ import {
 import { normalizeEmailAddress } from "@/lib/email-domains";
 import {
   getMeetingDisplayStatus,
+  needsMoreSpeakerLabels,
+  type SpeakerLabelCounts,
   type TranscriptJobStatus,
 } from "@/lib/meeting-display-status";
 import { isRecentFailedMeetingBotRecoveryEligible } from "@/lib/meeting-bot-recovery-policy";
@@ -129,7 +131,7 @@ const genericMeetingGroupTitles = new Set([
 export type MeetingTranscript = {
   aiFollowup?: unknown;
   followupSource?: FollowupSource;
-  needsSpeakerLabel?: boolean;
+  speakerLabelCounts?: SpeakerLabelCounts;
   lastSpeakerEditMs?: number;
   attributionRevision?: number;
   id: string;
@@ -233,6 +235,7 @@ export type MeetingLibraryPageOptions = {
 };
 
 type MeetingLibraryBaseDetails = {
+  needsSpeakerLabel?: boolean;
   attendeeEmails: unknown;
   canManage: boolean;
   createdAt: Date;
@@ -256,14 +259,19 @@ type MeetingLibraryTranscriptStats = {
   segmentCount: number;
 };
 
-function needsSpeakerLabel(meetingId: SQL) {
-  return sql<boolean>`exists (
-    select 1 from meeting_speakers g
-    where g.meeting_id = ${meetingId}
-      and g.job_id in ${currentTranscriptJobIdsSubquery(meetingId)}
-      and g.person_id is null
-      and btrim(coalesce(g.display_name, g.source_label, ''))
-        ~* '^(|unknown( speaker)?|(.+ · )?speaker[ _-]*[0-9]+|pc sound( [0-9]+)?)$'
+function speakerLabelCounts(meetingIds: SQL) {
+  return sql<SpeakerLabelCounts>`(
+    select json_build_object('total', count(*), 'unlabeled', count(*) filter (
+      where g.person_id is null and btrim(coalesce(g.display_name, g.source_label, ''))
+        ~* '^(|unknown( speaker)?|guest|participant|(.+ · )?speaker[ _-]*[0-9]+|pc sound( [0-9]+)?)$'
+    ))
+    from meeting_speakers g
+    where g.meeting_id = any(array(${meetingIds}))
+      and g.job_id = any(array(
+        select j.id from (${meetingIds}) source(id)
+        join transcript_jobs j on j.meeting_id = source.id and j.status = 'completed'
+        where j.id = any(array(select active.id from ${activeTranscriptJobIdsSubquery(sql`source.id`)} active(id)))
+      ))
       and exists (select 1 from transcript_segments s
         where s.meeting_id = g.meeting_id and s.meeting_speaker_id = g.id)
   )`;
@@ -286,6 +294,14 @@ export async function listMeetingLibraryPageForWorkspace(
   workspace: WorkspaceContext,
   options: MeetingLibraryPageOptions = {},
 ): Promise<MeetingLibraryPage> {
+  const { loadDetails } = await prepareMeetingLibraryPage(workspace, options);
+  return loadDetails();
+}
+
+export async function prepareMeetingLibraryPage(
+  workspace: WorkspaceContext,
+  options: MeetingLibraryPageOptions = {},
+) {
   const now = options.now ?? new Date();
   const search = options.query?.trim();
   const searchScope = parseMeetingLibrarySearchScope(options.searchScope);
@@ -308,6 +324,13 @@ export async function listMeetingLibraryPageForWorkspace(
     else 1
   end`;
 
+  const filterBySpeakerLabels =
+    options.status === "ready" || options.status === "wait_speaker_label";
+  const librarySpeakerCounts = speakerLabelCounts(sql`
+    select ${meetings.id} union all
+    select p.source_meeting_id from meeting_parts p
+    where p.meeting_id = ${meetings.id} and app_private.can_read_meeting(p.source_meeting_id)
+  `);
   const storedRows = await db
     .select({
       id: meetings.id,
@@ -327,35 +350,15 @@ export async function listMeetingLibraryPageForWorkspace(
           where p.meeting_id=${meetings.id} and app_private.can_read_meeting(child.id) and child.status='failed') then 'failed'::meeting_status
         else ${meetings.status} end`,
       transcriptJobStatus: sql<TranscriptJobStatus | null>`(
-        select case
-          when exists (
-            select 1 from ${transcriptJobs} active_job
-            where active_job.id in ${activeTranscriptJobIdsSubquery(meetings.id)}
-              and active_job.status = 'running'
-          ) then 'running'::job_status
-          when exists (
-            select 1 from ${transcriptJobs} active_job
-            where active_job.id in ${activeTranscriptJobIdsSubquery(meetings.id)}
-              and active_job.status = 'queued'
-          ) then 'queued'::job_status
-          when exists (
-            select 1 from ${transcriptJobs} active_job
-            where active_job.id in ${activeTranscriptJobIdsSubquery(meetings.id)}
-              and active_job.status = 'failed'
-          ) then 'failed'::job_status
-          when exists (
-            select 1 from ${transcriptJobs} active_job
-            where active_job.id in ${activeTranscriptJobIdsSubquery(meetings.id)}
-              and active_job.status = 'completed'
-          ) then 'completed'::job_status
-          else null
-        end
+        select active_job.status from transcript_jobs active_job
+        where active_job.meeting_id = ${meetings.id}
+          and active_job.id in ${activeTranscriptJobIdsSubquery(meetings.id)}
+          and active_job.status in ('running', 'queued', 'failed', 'completed')
+        order by case active_job.status when 'running' then 1 when 'queued' then 2
+          when 'failed' then 3 else 4 end
+        limit 1
       )`,
-      needsSpeakerLabel: sql<boolean>`(${needsSpeakerLabel(sql`${meetings.id}`)} or exists (
-        select 1 from meeting_parts p where p.meeting_id = ${meetings.id}
-          and app_private.can_read_meeting(p.source_meeting_id)
-          and ${needsSpeakerLabel(sql`p.source_meeting_id`)}
-      ))`,
+      speakerLabelCounts: filterBySpeakerLabels ? librarySpeakerCounts : sql<null>`null`,
       calendarAttendeeEmails: getMeetingAttendeeEmailsSnapshot(),
       recallBotId: meetings.recallBotId,
       botState: meetings.botState,
@@ -417,7 +420,7 @@ export async function listMeetingLibraryPageForWorkspace(
       status: meeting.status,
       botState: meeting.botState,
       transcriptJobStatus: meeting.transcriptJobStatus,
-      needsSpeakerLabel: meeting.needsSpeakerLabel,
+      needsSpeakerLabel: needsMoreSpeakerLabels([meeting.speakerLabelCounts ?? undefined]),
       hasRecallBot: Boolean(meeting.recallBotId),
       startedAt: (meeting.startedAt ?? meeting.createdAt).toISOString(),
       endedAt: meeting.endedAt?.toISOString() ?? null,
@@ -468,37 +471,54 @@ export async function listMeetingLibraryPageForWorkspace(
       )
     : baseItems;
   const page = buildMeetingLibraryPage(itemsForPaging, options);
-  const pageMeetingIds = getMeetingLibraryPageMeetingIds(page.meetings);
-  const [pageRecordingStatsByMeetingId, pageTranscriptStatsByMeetingId] =
-    await Promise.all([
-      getMeetingLibraryRecordingStats(
-        needsRecordingStatsForPaging ? [] : pageMeetingIds,
+  return { page, loadDetails };
+
+  async function loadDetails(): Promise<MeetingLibraryPage> {
+    const pageMeetingIds = getMeetingLibraryPageMeetingIds(page.meetings);
+    const readyPageIds = filterBySpeakerLabels ? [] : pageMeetingIds.filter(
+      (id) => baseDetailsByMeetingId.get(id)?.status === "ready",
+    );
+    const [pageRecordingStatsByMeetingId, pageTranscriptStatsByMeetingId, speakerRows] =
+      await Promise.all([
+        getMeetingLibraryRecordingStats(
+          needsRecordingStatsForPaging ? [] : pageMeetingIds,
+        ),
+        getMeetingLibraryTranscriptStats(
+          needsTranscriptStatsForPaging ? [] : pageMeetingIds,
+        ),
+        readyPageIds.length
+          ? db.select({ id: meetings.id, counts: librarySpeakerCounts })
+              .from(meetings)
+              .where(inArray(meetings.id, readyPageIds))
+          : [],
+      ]);
+
+    for (const row of speakerRows) {
+      const details = baseDetailsByMeetingId.get(row.id);
+      if (details) details.needsSpeakerLabel = needsMoreSpeakerLabels([row.counts]);
+    }
+
+    for (const [meetingId, stats] of pageRecordingStatsByMeetingId) {
+      recordingStatsByMeetingId.set(meetingId, stats);
+    }
+
+    for (const [meetingId, stats] of pageTranscriptStatsByMeetingId) {
+      transcriptStatsByMeetingId.set(meetingId, stats);
+    }
+
+    return {
+      ...page,
+      meetings: page.meetings.map((meeting) =>
+        enrichMeetingLibraryItem({
+          baseDetailsByMeetingId,
+          meeting,
+          now,
+          recordingStatsByMeetingId,
+          transcriptStatsByMeetingId,
+        }),
       ),
-      getMeetingLibraryTranscriptStats(
-        needsTranscriptStatsForPaging ? [] : pageMeetingIds,
-      ),
-    ]);
-
-  for (const [meetingId, stats] of pageRecordingStatsByMeetingId) {
-    recordingStatsByMeetingId.set(meetingId, stats);
+    };
   }
-
-  for (const [meetingId, stats] of pageTranscriptStatsByMeetingId) {
-    transcriptStatsByMeetingId.set(meetingId, stats);
-  }
-
-  return {
-    ...page,
-    meetings: page.meetings.map((meeting) =>
-      enrichMeetingLibraryItem({
-        baseDetailsByMeetingId,
-        meeting,
-        now,
-        recordingStatsByMeetingId,
-        transcriptStatsByMeetingId,
-      }),
-    ),
-  };
 }
 
 export function buildMeetingLibraryPage(
@@ -1457,11 +1477,11 @@ export async function getMeetingTranscriptForWorkspace(
         where ${transcriptSegments.meetingId} = ${meetings.id}
           and ${transcriptSegments.jobId} in ${currentTranscriptJobIdsSubquery(meetings.id)}
       )`,
-      needsSpeakerLabel: needsSpeakerLabel(sql`${meetings.id}`),
+      speakerLabelCounts: speakerLabelCounts(sql`select ${meetings.id}`),
       aiFollowup: meetings.aiFollowup,
-      attributionRevision: meetings.attributionRevision,
       lastSpeakerEditMs: sql<number>`(select extract(epoch from max(${meetingSpeakerChanges.createdAt})) * 1000
         from ${meetingSpeakerChanges} where ${meetingSpeakerChanges.meetingId} = ${meetings.id})`.mapWith(Number),
+      attributionRevision: meetings.attributionRevision,
       recordedDurationMs: latestRecordingDurationMsSubquery(meetings.id),
       recordedStartedAt: latestRecordingStartedAtSubquery(meetings.id),
       recordedEndedAt: latestRecordingEndedAtSubquery(meetings.id),
@@ -1656,9 +1676,9 @@ export async function getMeetingTranscriptForWorkspace(
     : applySpeakerAliasesToSegments([segment], speakerAliases)[0]);
 
   return {
+    lastSpeakerEditMs: meeting.lastSpeakerEditMs ?? 0,
     lastRecordingEndedAt: meeting.recordedEndedAt?.toISOString() ?? null,
     aiFollowup: meeting.aiFollowup,
-    lastSpeakerEditMs: meeting.lastSpeakerEditMs ?? 0,
     attributionRevision: meeting.attributionRevision ?? 0,
     followupSource: {
       title: meeting.title,
@@ -1712,7 +1732,7 @@ export async function getMeetingTranscriptForWorkspace(
           getTranscriptDurationMs(meeting.transcriptDurationMs) ??
           null,
     transcriptJobStatus: meeting.transcriptJobStatus,
-    needsSpeakerLabel: meeting.needsSpeakerLabel,
+    speakerLabelCounts: meeting.speakerLabelCounts,
     translationLanguage: normalizeTranslationLanguage(
       meeting.translationLanguage,
     ),
@@ -2003,6 +2023,7 @@ function enrichMeetingLibraryItem({
 
   return {
     ...meeting,
+    needsSpeakerLabel: baseDetails.needsSpeakerLabel ?? meeting.needsSpeakerLabel,
     ...(canRecoverBot
       ? { canRecoverBot: true, meetingUrl: baseDetails.meetingUrl }
       : {}),

@@ -35,7 +35,7 @@ import {
   getFollowupSource,
   isFollowupReady,
 } from "@/lib/meeting-followup-source";
-import { getMeetingDisplayStatus } from "@/lib/meeting-display-status";
+import { getMeetingDisplayStatus, needsMoreSpeakerLabels } from "@/lib/meeting-display-status";
 import {
   isMeetingBotRecoveryEligible,
 } from "@/lib/meeting-bot-recovery-policy";
@@ -129,7 +129,7 @@ export default async function MeetingPage({
   for (const part of parts) applyPreferredTranscriptLanguage(part, preferredLanguage);
   const primaryDisplayStatus = getMeetingDisplayStatus({
     botState: meeting.botState,
-    needsSpeakerLabel: meeting.needsSpeakerLabel,
+    needsSpeakerLabel: needsMoreSpeakerLabels(parts.map(part => part.speakerLabelCounts)),
     meetingStatus: meeting.status,
     transcriptJobStatus: meeting.transcriptJobStatus,
   });
@@ -138,7 +138,7 @@ export default async function MeetingPage({
       : hasActivePart ? "scheduled"
       : parts.some(part => ["queued", "running"].includes(part.transcriptJobStatus ?? "") || part.status === "processing") ? "processing"
       : parts.some(part => part.status === "failed") ? "failed"
-      : primaryDisplayStatus === "ready" && parts.some(part => part.needsSpeakerLabel) ? "wait_speaker_label" : primaryDisplayStatus
+      : primaryDisplayStatus
     : primaryDisplayStatus;
   const recordingParts = meeting.recordingParts ?? [];
   const continuousVisualAssets =

@@ -5,7 +5,10 @@ import { z } from "zod";
 import { db } from "@/db/client";
 import { mediaAssets, meetings, recordings } from "@/db/schema";
 import { getCurrentUser } from "@/lib/auth";
-import { generateAudioWaveform } from "@/lib/audio-waveform-server";
+import {
+  generateAudioWaveform,
+  WaveformSourceTooLargeError,
+} from "@/lib/audio-waveform-server";
 import { getReadableMeetingsCondition } from "@/lib/meeting-access-policy";
 import { createReadUrl } from "@/lib/r2";
 import {
@@ -161,7 +164,10 @@ async function waveformResponse(audioUrl: string, sourceKey: string) {
   try {
     const peaks = await generateAudioWaveform(audioUrl, sourceKey);
     return Response.json({ peaks }, { headers });
-  } catch {
+  } catch (error) {
+    if (error instanceof WaveformSourceTooLargeError) {
+      return Response.json({ error: error.message }, { status: 422, headers });
+    }
     return Response.json({ error: "Audio waveform unavailable" }, { status: 503, headers });
   }
 }

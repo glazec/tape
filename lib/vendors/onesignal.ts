@@ -14,7 +14,14 @@ type OneSignalNotificationResponse = {
   errors?: unknown;
 };
 
-export class OneSignalInvalidExternalAliasError extends Error {
+export class OneSignalNoPushSubscriptionError extends Error {
+  constructor(message = "OneSignal found no matching push subscriptions") {
+    super(message);
+    this.name = "OneSignalNoPushSubscriptionError";
+  }
+}
+
+export class OneSignalInvalidExternalAliasError extends OneSignalNoPushSubscriptionError {
   constructor() {
     super("OneSignal notification failed: invalid_aliases.external_id");
     this.name = "OneSignalInvalidExternalAliasError";
@@ -62,6 +69,15 @@ export async function sendOneSignalLocationReminder(input: {
     );
   }
 
+  if (
+    data?.id === "" &&
+    Array.isArray(data.errors) &&
+    data.errors.length > 0 &&
+    data.errors.every((error) => typeof error === "string")
+  ) {
+    throw new OneSignalNoPushSubscriptionError();
+  }
+
   if (data?.errors) {
     if (hasInvalidExternalAlias(data.errors)) {
       throw new OneSignalInvalidExternalAliasError();
@@ -95,6 +111,10 @@ function hasInvalidExternalAlias(errors: unknown) {
 }
 
 function formatOneSignalErrors(errors: unknown) {
+  if (Array.isArray(errors)) {
+    return `provider returned ${errors.length} errors`;
+  }
+
   if (!errors || typeof errors !== "object") {
     return String(errors);
   }

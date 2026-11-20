@@ -19,6 +19,7 @@ describe("reconcileStaleMeetingJobs", () => {
     execute.mockResolvedValue({
       rows: [
         {
+          missed_scheduled_count: 5,
           failed_processing_count: 4,
           failed_recording_count: 3,
           failed_transcript_job_count: 2,
@@ -36,6 +37,7 @@ describe("reconcileStaleMeetingJobs", () => {
         now: new Date("2026-07-11T18:00:00.000Z"),
       }),
     ).resolves.toEqual({
+      missedScheduledCount: 5,
       failedProcessingCount: 4,
       failedRecordingCount: 3,
       failedTranscriptJobCount: 2,

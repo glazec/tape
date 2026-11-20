@@ -857,7 +857,9 @@ describe("listMeetingDetailRelatedMeetingsForWorkspace", () => {
 describe("listMeetingsForWorkspace", () => {
   beforeEach(() => {
     databaseSql.mockResolvedValue([]);
-    select.mockImplementation(() => ({
+    select.mockImplementation((fields) => fields?.counts ? {
+      from: () => ({ where: vi.fn().mockResolvedValue([]) }),
+    } : ({
       from: () => ({
         where: () => ({
           groupBy: vi.fn().mockResolvedValue([]),
@@ -1066,6 +1068,7 @@ describe("listMeetingsForWorkspace", () => {
         platform: "upload",
         status: "processing",
         transcriptJobStatus: "queued",
+        needsSpeakerLabel: false,
         hasRecallBot: false,
         startedAt: "2026-06-27T12:00:00.000Z",
         endedAt: "2026-06-27T12:45:00.000Z",
@@ -1109,13 +1112,6 @@ describe("listMeetingsForWorkspace", () => {
                 },
               ]),
             }),
-          }),
-        }),
-      })
-      .mockReturnValueOnce({
-        from: () => ({
-          where: () => ({
-            orderBy: vi.fn().mockResolvedValue([]),
           }),
         }),
       })
@@ -1194,13 +1190,6 @@ describe("listMeetingsForWorkspace", () => {
                 },
               ]),
             }),
-          }),
-        }),
-      })
-      .mockReturnValueOnce({
-        from: () => ({
-          where: () => ({
-            orderBy: vi.fn().mockResolvedValue([]),
           }),
         }),
       })
@@ -1313,13 +1302,6 @@ describe("listMeetingsForWorkspace", () => {
             orderBy: vi.fn().mockResolvedValue([]),
           }),
         }),
-      })
-      .mockReturnValueOnce({
-        from: () => ({
-          where: () => ({
-            orderBy: vi.fn().mockResolvedValue([]),
-          }),
-        }),
       });
     const { listMeetingsForWorkspace } = await import("@/lib/meeting-queries");
 
@@ -1369,13 +1351,6 @@ describe("listMeetingsForWorkspace", () => {
                 },
               ]),
             }),
-          }),
-        }),
-      })
-      .mockReturnValueOnce({
-        from: () => ({
-          where: () => ({
-            orderBy: vi.fn().mockResolvedValue([]),
           }),
         }),
       })
@@ -1467,6 +1442,9 @@ describe("listMeetingsForWorkspace", () => {
       };
     });
 
+    const speakerWhere = vi.fn(async (_condition: SQL) => [{
+      id: visibleMeetingIds[0], counts: { total: 2, unlabeled: 1 },
+    }]);
     select
       .mockReturnValueOnce({
         from: () => ({
@@ -1481,7 +1459,8 @@ describe("listMeetingsForWorkspace", () => {
         from: () => ({
           where: recordingWhere,
         }),
-      });
+      })
+      .mockReturnValueOnce({ from: () => ({ where: speakerWhere }) });
     const { listMeetingLibraryPageForWorkspace } = await import(
       "@/lib/meeting-queries"
     );
@@ -1498,6 +1477,9 @@ describe("listMeetingsForWorkspace", () => {
     expect(page.meetings.map((meeting) => meeting.id)).toEqual(
       visibleMeetingIds,
     );
+    expect(toQuery(speakerWhere.mock.calls[0][0]).params).toEqual(visibleMeetingIds);
+    expect(page.meetings[0].needsSpeakerLabel).toBe(true);
+    expect(toQuery(select.mock.calls[0][0].speakerLabelCounts).sql).toBe("null");
     expect(databaseSql.mock.calls[0]?.[1]).toEqual(visibleMeetingIds);
     expect(toQuery(recordingWhere.mock.calls[0][0]).params).toContain(
       visibleMeetingIds[0],
@@ -1576,7 +1558,7 @@ describe("listMeetingsForWorkspace", () => {
       shorterMeetingId,
       longerMeetingId,
     ]);
-    expect(select).toHaveBeenCalledTimes(2);
+    expect(select).toHaveBeenCalledTimes(3);
   });
 
   it("shows past in person meetings and only the next 3 scheduled bot meetings", async () => {
@@ -1861,7 +1843,7 @@ describe("listMeetingsForWorkspace", () => {
         relatedMeetings: [],
       }),
     ]);
-    expect(select).toHaveBeenCalledTimes(2);
+    expect(select).toHaveBeenCalledTimes(3);
     expect(select.mock.calls[1][0]).not.toHaveProperty("normalizedValue");
     expect(select.mock.calls[1][0]).not.toHaveProperty("type");
   });

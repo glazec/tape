@@ -7,7 +7,7 @@ import { ArrowUpRight, CircleAlert, Loader2 } from "lucide-react";
 import { MeetingAutoRefresh } from "@/components/meeting-auto-refresh";
 import { formatMeetingHeaderDateTime } from "@/components/meeting-header-metadata";
 import { TranscriptViewer } from "@/components/transcript-viewer";
-import { getMeetingDisplayStatus } from "@/lib/meeting-display-status";
+import { getMeetingDisplayStatus, needsMoreSpeakerLabels } from "@/lib/meeting-display-status";
 import type { MeetingTranscript } from "@/lib/meeting-queries";
 import { moveRecordingTimestampToAppendedTimeline } from "@/lib/meeting-recording-timeline";
 import { getTranscriptViewerRenderKey } from "@/lib/meeting-transcript-render-key";
@@ -28,7 +28,7 @@ export function MeetingComposedTranscripts({
         const status = getMeetingDisplayStatus({
           meetingStatus: meeting.status,
           transcriptJobStatus: meeting.transcriptJobStatus,
-          needsSpeakerLabel: meeting.needsSpeakerLabel,
+          needsSpeakerLabel: needsMoreSpeakerLabels([meeting.speakerLabelCounts]),
         });
         const parts = meeting.recordingParts ?? [];
         const visualAssets =
@@ -154,7 +154,7 @@ function RecordingPartHeader({
   const status = getMeetingDisplayStatus({
     meetingStatus: meeting.status,
     transcriptJobStatus: meeting.transcriptJobStatus,
-    needsSpeakerLabel: meeting.needsSpeakerLabel,
+    needsSpeakerLabel: needsMoreSpeakerLabels([meeting.speakerLabelCounts]),
   });
   const dateLabel = useSyncExternalStore(
     subscribe,

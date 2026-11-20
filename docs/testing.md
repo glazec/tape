@@ -142,6 +142,8 @@ npx vitest run tests/mcp-backend-auth.test.ts tests/mcp-upload-routes.test.ts te
 npm run test:mcp
 ```
 
+For MCP reads, run `npx vitest run tests/mcp-read-route.test.ts` and `npm run test:mcp`. After deploying the web backend and MCP service, check the authenticated MCP tool list, filter by a known meeting date, and read a transcript and saved followup. Use an internal workspace member to verify person search and profile retrieval. A meeting shared with an external guest provides a transcript access check for the same guest who should receive no workspace directory matches.
+
 Browser tests can identify their telemetry explicitly by setting a UUID in
 session storage before the application loads:
 
@@ -282,7 +284,7 @@ For the actual React component preview, run `node tests/fixtures/meeting-continu
 
 Run `npx vitest run tests/audio-waveform.test.ts tests/audio-waveform-integration.test.ts tests/meeting-audio-route.test.ts tests/transcript-viewer.test.tsx tests/transcript-viewer-interactions.test.tsx`. The integration test runs the bundled ffmpeg binary against downloaded synthetic audio. These cover quiet, loud, and silent audio, sparse speech, transient peaks, mobile resampling, the authenticated waveform response, source cache invalidation, bounded decoder concurrency, long recordings, and independent playback after waveform failure.
 
-Verify a real recording longer than 45 minutes on desktop and mobile. Its audio request with `waveform=1` should return measured levels, without downloading decoded PCM into the browser. Confirm quiet passages have shorter bars and playback and seeking still work. The server needs `FFMPEG_PATH`, `FFMPEG_BIN`, the bundled ffmpeg executable, or ffmpeg on PATH. Generation is bounded to two processes per server process, a 256 MiB download limit, a 60 second download timeout, a 120 second decoder timeout, and 16 MiB of analysis output; failures leave the transcript activity fallback available. Combined recordings retain their transcript activity waveform.
+Verify a real recording longer than 45 minutes on desktop and mobile. Its audio request with `waveform=1` should return measured levels, without downloading decoded PCM into the browser. Confirm quiet passages have shorter bars and playback and seeking still work. The server needs `FFMPEG_PATH`, `FFMPEG_BIN`, the bundled ffmpeg executable, or ffmpeg on PATH. Generation is bounded to two processes per server process, a 512 MiB download limit, a 60 second download timeout, a 120 second decoder timeout, and 16 MiB of analysis output. Sources above the limit return HTTP 422, and the viewer falls back to transcript activity. Combined recordings retain their transcript activity waveform.
 ## Recall delivery regression checks
 
 `tests/elevenlabs-transcripts.test.ts` also covers the top-level `webhook_error` payload, preserving the provider error and marking the job failed instead of leaving an accepted request running. Clipboard fallback assertions wait for the selection effect before checking the selected range.
@@ -348,6 +350,8 @@ Followup provider routing is covered by `tests/openrouter-followup.test.ts`: gat
 
 ## Person pages
 
+Run `npx vitest run tests/person-profile-interactions.test.tsx` to verify that opening the page waits for a saved profile or an explicit Generate action. The PostgreSQL suite also exercises the transcript completion event, duplicate delivery, profile refresh on a later meeting, and a superseded transcript.
+
 Run `npx vitest run tests/people.test.ts tests/people-routes.test.ts`. Coverage includes name normalization, likely duplicate ranking, follow-up attribution by cited speaker identity (including first-name subjects and translated copies), stable to-do keys, relationship cadence, time together per month, colleague ranking, talk share, profile transcript selection, uncited claim removal and expertise downgrades, route authentication, manageable meeting checks, merge validation and Undo, to-do status changes, skipped profiles for colleagues, and provider failure messages that do not leak details.
 
 Replay all migrations into a disposable local PostgreSQL database, set `PERSON_TEST_DATABASE_URL` to it and run `npx vitest run tests/person-pages-database.integration.test.ts`. Remote hosts are rejected and fixtures roll back. It runs the functions as `tape_authenticated` and checks: opening a speaker or participant without bumping the meeting attribution revision, reuse by confirmed email or unique full name, edit-rights gates, merge permission (admin, or edit rights in every affected meeting; never external guests), merge moves and audit rows, exact Undo, automatic attribution of new speakers by remembered full names and emails, no attribution from ambiguous or lone first names or across workspaces, team-shared profiles hidden from external guests, and team-wide to-do status that colleagues can change without opening the meeting while guests and other workspaces cannot.
@@ -359,3 +363,5 @@ Captured images without speech: `npx vitest run tests/meeting-page.test.tsx test
 SDK selection and confirmation tests run with `npm test --prefix mac/LocalRecorder/Sidecar`. They cover scheduled Meet and Zoom URL matching, ambiguous calls, meeting updates, delayed capture confirmation, asynchronous errors, and Raw Media versus local capture reporting. `npm run test:swift` checks native workflow and window identity handling. The explicit window fallback does not prove shared media capture. Release acceptance still requires an installed Dev app recording a real call, capturing shared slides through tab changes, saving no screenshots while sharing is off, uploading media, and verifying playback and restart recovery.
 
 After packaging, run `node mac/LocalRecorder/script/verify_sdk_runtime.mjs "/Applications/Tape Desktop Dev.app"` against the intended bundle. This verifies its signature and initializes then shuts down its actual SDK with automatic permission requests and telemetry disabled. It catches dynamic library loading failures that `codesign --verify` alone misses. It does not prove recording, permissions, workspace Raw Media enablement, or uploads. The SDK executable needs the app's library validation entitlement when signed with a local certificate without an Apple Team ID.
+
+Run the MCP Python unittest suite including `test_ongoing_audio.py` for signed audio capture, retries, concurrent queries, and incremental transcript caching.

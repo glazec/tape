@@ -19,7 +19,7 @@ export function getPersonalReadableMeetingsCondition(
 }
 
 export function getReadableMeetingsCondition(
-  workspace: WorkspaceContext,
+  workspace: Pick<WorkspaceContext, "userId"> | WorkspaceContext,
 ): SQL {
   const teamManagerCondition = sql`exists (
     select 1
@@ -39,7 +39,7 @@ export function getMeetingAccessScope(canManage: boolean) {
   return canManage ? "workspace" : "shared";
 }
 
-function getActiveGrantCondition(workspace: WorkspaceContext): SQL {
+function getActiveGrantCondition(workspace: Pick<WorkspaceContext, "userId">): SQL {
   return sql`exists (
     select 1
     from ${meetingAccess}

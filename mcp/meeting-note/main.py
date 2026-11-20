@@ -25,6 +25,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+import ongoing_audio
 import psycopg
 import jwt
 import sqlglot
@@ -788,12 +789,12 @@ def _current_user_id() -> str | None:
 
 
 class MeetingBackendError(RuntimeError):
-    """Raised when the Tape web backend rejects an MCP mutation."""
+    """Raised when the Tape web backend rejects a signed MCP request."""
 
 
 def _backend_endpoint(path: str) -> str:
     if not APP_BASE_URL:
-        raise RuntimeError("APP_BASE_URL is required for meeting uploads")
+        raise RuntimeError("APP_BASE_URL is required for signed Tape requests")
 
     parsed = urlparse(APP_BASE_URL)
     if parsed.scheme != "https" and not _is_local_host(APP_BASE_URL):
@@ -1177,6 +1178,18 @@ def _uuid(value: str, name: str = "id") -> str:
         return str(UUID(str(value)))
     except ValueError as exc:
         raise ValueError(f"{name} must be a UUID") from exc
+
+
+def _meeting_reference(value: str) -> str:
+    value = value.strip()
+    if "://" in value:
+        link = urlparse(value)
+        app = urlparse(APP_BASE_URL)
+        match = re.fullmatch(r"/meetings/([^/]+)/?", link.path)
+        if not app.netloc or (link.scheme, link.netloc) != (app.scheme, app.netloc) or not match:
+            raise ValueError("meeting_id must be a UUID or a Tape meeting link")
+        value = match[1]
+    return _uuid(value, "meeting_id")
 
 
 def _clean(value: str | None) -> str | None:
@@ -1890,12 +1903,22 @@ def list_common_meeting_queries(category: str | None = None) -> dict[str, Any]:
 async def list_accessible_meetings(
     limit: int = 100,
     offset: int = 0,
+    title: str | None = None,
+    started_after: datetime | None = None,
+    started_before: datetime | None = None,
 ) -> dict[str, Any]:
-    """List the caller's complete authorized meeting inventory before applying topic or transcript filters. Excludes cancelled meetings and returns a total count so a filtered SQL result is never mistaken for the full inventory."""
+    """List authorized meetings. To find a past meeting, use a title substring or an inclusive start and exclusive end with timezone offsets. Omitting filters returns the full inventory."""
+    title = _clean(title)
+    for boundary in (started_after, started_before):
+        if boundary is not None and boundary.utcoffset() is None:
+            raise ValueError("Meeting date filters must include a timezone offset")
     workspace = await _workspace_for_current_user()
     query_params: dict[str, Any] = {
         "inventory_limit": _limit(limit, 100, 500),
         "inventory_offset": _offset(offset),
+        "inventory_title": title,
+        "inventory_started_after": started_after,
+        "inventory_started_before": started_before,
     }
     access_sql = _access_condition(
         workspace,
@@ -1920,6 +1943,12 @@ async def list_accessible_meetings(
             from meetings m
             where m.status::text <> 'cancelled'
               and {access_sql}
+              and (%(inventory_title)s::text is null or
+                   strpos(lower(m.title), lower(%(inventory_title)s::text)) > 0)
+              and (%(inventory_started_after)s::timestamptz is null or
+                   coalesce(m.started_at, m.created_at) >= %(inventory_started_after)s)
+              and (%(inventory_started_before)s::timestamptz is null or
+                   coalesce(m.started_at, m.created_at) < %(inventory_started_before)s)
         )
         select
             page.*,
@@ -1954,64 +1983,100 @@ async def list_accessible_meetings(
         "offset": normalized_offset,
         "has_more": normalized_offset + len(meeting_rows) < total_count,
         "scope_note": (
-            "This is the caller's full authorized inventory page. "
-            "Use execute_meeting_sql only after this when filtering by topic, "
-            "participant, entity, or transcript text."
+            "This page and total count reflect the supplied inventory filters."
+            if any(value is not None for value in (title, started_after, started_before))
+            else "This is the caller's full authorized inventory page."
         ),
     }
 
 
+@mcp.tool(annotations={"readOnlyHint": True})
+async def get_meeting_transcript(
+    meeting_id: str,
+    limit: int = 50,
+    offset: int = 0,
+) -> dict[str, Any]:
+    """Read timestamped transcript segments for a Tape meeting UUID or link. Follow next_offset to read the rest. Segment IDs and start_ms can be used for citations."""
+    return await _post_tape_backend(
+        "api/mcp/read",
+        {
+            "operation": "transcript",
+            "meetingId": _meeting_reference(meeting_id),
+            "limit": _limit(limit, 50, 100),
+            "offset": _offset(offset),
+        },
+    )
+
+
 @mcp.tool
+async def get_ongoing_meeting_transcript(meeting_id: str) -> dict[str, Any]:
+    """Transcribe captured audio so far for an ongoing Tape meeting UUID or link. Reuses earlier results. For the saved final transcript use get_meeting_transcript."""
+    meeting_id = _meeting_reference(meeting_id)
+    access = await _post_tape_backend(
+        "api/mcp/read", {"operation": "ongoing_transcript", "meetingId": meeting_id},
+    )
+    sources = [ongoing_audio.source_file("meeting", meeting_id)]
+    if access.get("bot_id"):
+        try:
+            sources.append(ongoing_audio.source_file("bot", access["bot_id"]))
+        except ValueError:
+            pass  # Historical meetings can have non-UUID provider identifiers.
+    # Prefer the bot if both the bot and a desktop recorded the same conversation.
+    segments = []
+    for source in reversed(sources):
+        segments = await ongoing_audio.snapshot(source)
+        if segments:
+            break
+    return {"meeting": access["meeting"], "segments": segments,
+            "status": "available" if segments else "no_buffered_audio"}
+
+
+@mcp.tool(annotations={"readOnlyHint": True})
+async def get_meeting_followup(meeting_id: str) -> dict[str, Any]:
+    """Read the saved AI followup for an accessible Tape meeting UUID or link, including its evidence. Returns null if there is no current saved followup."""
+    return await _post_tape_backend(
+        "api/mcp/read",
+        {"operation": "followup", "meetingId": _meeting_reference(meeting_id)},
+    )
+
+
+@mcp.tool(annotations={"readOnlyHint": True})
 async def list_meeting_todos(
     start_date: date | None = None,
     end_date: date | None = None,
     status: Literal["todo", "done", "cancelled"] | None = None,
     assignee: str | None = None,
     meeting_id: str | None = None,
-    limit: int = 100,
+    limit: int = 10,
     offset: int = 0,
 ) -> dict[str, Any]:
-    """Find saved followups from accessible meetings by inclusive UTC meeting dates, status and exact speaker name (case insensitive). Use status=todo for outstanding work. Returns the recorded assignee, action, timing, shared status and meeting."""
+    """Find team followups by inclusive UTC meeting dates, shared status and exact speaker name (case insensitive). For outstanding work use status=todo. Each page scans up to limit meetings. Follow next_offset even on an empty page."""
     if start_date and end_date and start_date > end_date:
         raise ValueError("start_date must be on or before end_date")
-    workspace = await _workspace_for_current_user()
-    page_size = _limit(limit, 100, 500)
-    params = {
-        "start": start_date, "end": end_date, "status": status, "assignee": _clean(assignee),
-        "meeting": _uuid(meeting_id, "meeting_id") if meeting_id else None,
-        "limit": page_size + 1, "offset": _offset(offset),
-    }
-    access = _access_condition(workspace, params)
-    rows = await _fetch_all(f"""
-        select m.id as meeting_id, m.title as meeting_title, coalesce(m.started_at, m.created_at) as meeting_at,
-               item->>'person' as assignee, item->>'text' as action, item->>'timing' as timing,
-               coalesce(s.status, 'todo') as status
-        from meetings m
-        cross join lateral jsonb_array_elements(m.ai_followup #> '{{result,todos}}') with ordinality as tasks(item, position)
-        left join followup_todo_states s on s.meeting_id = m.id and s.todo_key =
-          left(encode(sha256(convert_to(concat(item #>> '{{evidence,0,segmentId}}', chr(10), btrim(item->>'text')), 'UTF8')), 'hex'), 32)
-        where m.status::text = 'ready' and {access} and app_private.is_internal_member(m.team_id)
-          and (%(meeting)s::uuid is null or m.id = %(meeting)s::uuid)
-          and (%(start)s::date is null or (coalesce(m.started_at,m.created_at) at time zone 'UTC')::date >= %(start)s::date)
-          and (%(end)s::date is null or (coalesce(m.started_at,m.created_at) at time zone 'UTC')::date <= %(end)s::date)
-          and (%(status)s::text is null or coalesce(s.status,'todo') = %(status)s)
-          and (%(assignee)s::text is null or lower(item->>'person') = lower(%(assignee)s))
-          and jsonb_array_length(item->'evidence') > 0
-          and not exists (
-            select 1 from jsonb_array_elements(item->'evidence') ev
-            where not exists (
-              select 1 from transcript_segments ts
-              where ts.id::text = ev->>'segmentId'
-                and (ts.meeting_id = m.id or exists (
-                  select 1 from meeting_parts part where part.meeting_id = m.id and part.source_meeting_id = ts.meeting_id))
-                and ts.job_id = ({_current_transcript_job_subquery("ts.meeting_id")})
-            )
-          )
-        order by meeting_at desc, m.id, tasks.position
-        limit %(limit)s offset %(offset)s
-    """, params)
-    return {"todos": _json_safe_rows(rows[:page_size]), "has_more": len(rows) > page_size,
-            "limit": page_size, "offset": params["offset"]}
+    return await _post_tape_backend("api/mcp/read", {
+        "operation": "todos", "start": start_date.isoformat() if start_date else None,
+        "end": end_date.isoformat() if end_date else None, "status": status,
+        "assignee": _clean(assignee), "meetingId": _meeting_reference(meeting_id) if meeting_id else None,
+        "limit": _limit(limit, 10, 25), "offset": _offset(offset),
+    })
+
+
+@mcp.tool(annotations={"readOnlyHint": True})
+async def search_people(query: str, limit: int = 10) -> dict[str, Any]:
+    """Find existing Tape people by name, alternate name, or exact email in workspaces where you are an internal member. Use the returned person ID with get_person_profile."""
+    return await _post_tape_backend(
+        "api/mcp/read",
+        {"operation": "search_people", "query": query.strip(), "limit": _limit(limit, 10, 25)},
+    )
+
+
+@mcp.tool(annotations={"readOnlyHint": True})
+async def get_person_profile(person_id: str) -> dict[str, Any]:
+    """Read an existing Tape person and their saved AI profile with meeting citations. Use search_people to resolve the identity first."""
+    return await _post_tape_backend(
+        "api/mcp/read",
+        {"operation": "person_profile", "personId": _uuid(person_id, "person_id")},
+    )
 
 
 @mcp.tool
@@ -2136,13 +2201,30 @@ async def execute_meeting_sql(
 
 
 if __name__ == "__main__":
-    mcp.run(
-        transport="http",
-        port=MCP_PORT,
-        host=MCP_HOST,
-        stateless_http=True,
-        uvicorn_config={
-            "proxy_headers": True,
-            "forwarded_allow_ips": "*",
-        },
-    )
+    import uvicorn
+    from contextlib import asynccontextmanager
+    from starlette.routing import WebSocketRoute
+
+    app = mcp.http_app(stateless_http=True)
+    for path in ("/audio/recall/", "/audio/recall"):
+        app.router.routes.insert(0, WebSocketRoute(path, ongoing_audio.receive_audio))
+    original_lifespan = app.router.lifespan_context
+
+    async def cleanup():
+        while True:
+            ongoing_audio.expire_buffers()
+            await asyncio.sleep(600)
+
+    @asynccontextmanager
+    async def lifespan(app):
+        async with original_lifespan(app) as state:
+            task = asyncio.create_task(cleanup())
+            try:
+                yield state
+            finally:
+                task.cancel()
+                await asyncio.gather(task, return_exceptions=True)
+
+    app.router.lifespan_context = lifespan
+    uvicorn.run(app, port=MCP_PORT, host=MCP_HOST, proxy_headers=True,
+                forwarded_allow_ips="*", log_level="warning", access_log=False)

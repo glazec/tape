@@ -82,6 +82,12 @@ describe("page rendering configuration", () => {
     );
   });
 
+  it("preserves transcript playback when the last speaker is labeled", () => {
+    const meetingId = "meeting_123";
+    expect(getTranscriptViewerRenderKey({ meetingId, displayStatus: "wait_speaker_label" }))
+      .toBe(getTranscriptViewerRenderKey({ meetingId, displayStatus: "ready" }));
+  });
+
   it("remounts meeting transcript when display status or meeting changes", () => {
     const baseKey = getTranscriptViewerRenderKey({
       displayStatus: "processing",

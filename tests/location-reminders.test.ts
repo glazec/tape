@@ -3,14 +3,14 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 const {
   inngestSend,
   insert,
-  OneSignalInvalidExternalAliasError,
+  OneSignalNoPushSubscriptionError,
   select,
   sendOneSignalLocationReminder,
   update,
 } = vi.hoisted(() => ({
     inngestSend: vi.fn(),
     insert: vi.fn(),
-    OneSignalInvalidExternalAliasError: class extends Error {},
+    OneSignalNoPushSubscriptionError: class extends Error {},
     select: vi.fn(),
     sendOneSignalLocationReminder: vi.fn(),
     update: vi.fn(),
@@ -25,7 +25,7 @@ vi.mock("@/inngest/client", () => ({
 }));
 
 vi.mock("@/lib/vendors/onesignal", () => ({
-  OneSignalInvalidExternalAliasError,
+  OneSignalNoPushSubscriptionError,
   sendOneSignalLocationReminder,
 }));
 
@@ -439,7 +439,7 @@ describe("location reminders", () => {
     update
       .mockReturnValueOnce({ set: claimSet })
       .mockReturnValueOnce({ set: failedSet });
-    const error = new OneSignalInvalidExternalAliasError();
+    const error = new OneSignalNoPushSubscriptionError();
     sendOneSignalLocationReminder.mockRejectedValue(error);
 
     const { sendScheduledLocationReminder } =

@@ -110,7 +110,7 @@ describe("OneSignal vendor", () => {
     );
   });
 
-  it("reports HTTP, missing id, and primitive API errors", async () => {
+  it("distinguishes missing subscriptions from retryable delivery failures", async () => {
     vi.stubEnv("ONESIGNAL_REST_API_KEY", "rest-key");
     vi.stubEnv(
       "NEXT_PUBLIC_ONESIGNAL_APP_ID",
@@ -122,11 +122,16 @@ describe("OneSignal vendor", () => {
         statusText: "Unavailable",
       }))
       .mockResolvedValueOnce(Response.json({}))
-      .mockResolvedValueOnce(Response.json({ errors: "invalid player" }));
+      .mockResolvedValueOnce(Response.json({ errors: "invalid player" }))
+      .mockResolvedValueOnce(Response.json({
+        id: "",
+        errors: ["All included players are not subscribed"],
+      }));
     vi.stubGlobal("fetch", fetchMock);
-    const { sendOneSignalLocationReminder } = await import(
-      "@/lib/vendors/onesignal"
-    );
+    const {
+      OneSignalNoPushSubscriptionError,
+      sendOneSignalLocationReminder,
+    } = await import("@/lib/vendors/onesignal");
     const input = {
       idempotencyKey: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
       externalUserId: "user_1",
@@ -143,6 +148,9 @@ describe("OneSignal vendor", () => {
     );
     await expect(sendOneSignalLocationReminder(input)).rejects.toThrow(
       "OneSignal notification failed: invalid player",
+    );
+    await expect(sendOneSignalLocationReminder(input)).rejects.toBeInstanceOf(
+      OneSignalNoPushSubscriptionError,
     );
   });
 });

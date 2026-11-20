@@ -1,6 +1,7 @@
 import asyncio
 import json
 import unittest
+from datetime import datetime, timezone
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
@@ -739,26 +740,41 @@ class MeetingAccessConditionTests(unittest.TestCase):
         self.assertNotIn("access_team_id", params)
 
 
-class MeetingTodoTests(unittest.IsolatedAsyncioTestCase):
-    async def test_filters_open_work_by_meeting_dates_and_assignee_before_paging(self):
-        workspace = main.Workspace("alex@example.test", "user", "team", True, False)
-        rows = [{"status": "todo", "action": "Send the draft"}, {"status": "todo"}]
-        with (
-            patch.object(main, "_workspace_for_current_user", AsyncMock(return_value=workspace)),
-            patch.object(main, "_fetch_all", AsyncMock(return_value=rows)) as fetch,
-        ):
-            start, end = main.date(2026, 10, 22), main.date(2026, 10, 29)
-            result = await main.list_meeting_todos(start, end, "todo", " Alex ", limit=1)
-        self.assertEqual(result["todos"], rows[:1])
-        self.assertTrue(result["has_more"])
-        query, params = fetch.await_args.args
-        self.assertEqual((params["start"], params["end"], params["assignee"], params["status"]), (start, end, "Alex", "todo"))
-        self.assertEqual(params["access_user_id"], workspace.user_id)
-        self.assertIn("access_ma.revoked_at is null", query)
-        self.assertIn("app_private.is_internal_member(m.team_id)", query)
+class MeetingTodosTests(unittest.IsolatedAsyncioTestCase):
+    async def test_forwards_date_assignee_status_and_page(self):
+        with patch.object(main, "_post_tape_backend", AsyncMock(return_value={"todos": [], "next_offset": 10})) as fetch:
+            result = await main.list_meeting_todos(
+                main.date(2026, 10, 22), main.date(2026, 10, 29), status="todo", assignee=" Alex ",
+            )
+        fetch.assert_awaited_once_with("api/mcp/read", {
+            "operation": "todos", "start": "2026-10-22", "end": "2026-10-29",
+            "status": "todo", "assignee": "Alex", "meetingId": None, "limit": 10, "offset": 0,
+        })
+        self.assertEqual(result["next_offset"], 10)
 
 
 class AccessibleMeetingInventoryTests(unittest.IsolatedAsyncioTestCase):
+    async def test_filters_inventory_by_literal_title_and_timezone_aware_window(self):
+        workspace = main.Workspace("member@example.com", "user-id", "team-id", True, False)
+        after = datetime(2026, 11, 13, tzinfo=timezone.utc)
+        before = datetime(2026, 11, 14, tzinfo=timezone.utc)
+        with (
+            patch.object(main, "_workspace_for_current_user", AsyncMock(return_value=workspace)),
+            patch.object(main, "_fetch_all", AsyncMock(return_value=[])) as fetch,
+        ):
+            result = await main.list_accessible_meetings(
+                title=" IC% ", started_after=after, started_before=before,
+            )
+            with self.assertRaisesRegex(ValueError, "timezone offset"):
+                await main.list_accessible_meetings(started_after=datetime(2026, 11, 13))
+
+        sql, params = fetch.await_args.args
+        self.assertIn("strpos(lower(m.title)", sql)
+        self.assertEqual(params["inventory_title"], "IC%")
+        self.assertEqual(params["inventory_started_after"], after)
+        self.assertEqual(params["inventory_started_before"], before)
+        self.assertIn("reflect the supplied inventory filters", result["scope_note"])
+
     async def test_lists_the_complete_authorized_inventory_without_topic_filters(self):
         workspace = main.Workspace(
             email="momir@iosg.vc",

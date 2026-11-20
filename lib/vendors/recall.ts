@@ -1,3 +1,4 @@
+import { createHmac, randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { z } from "zod";
@@ -216,10 +217,27 @@ const RECALL_PARTICIPANT_UPDATE_EVENT = "participant_events.update";
 const RECALL_SPEECH_ON_EVENT = "participant_events.speech_on";
 const RECALL_SPEECH_OFF_EVENT = "participant_events.speech_off";
 
+function groqAudioEndpoint(scope: string) {
+  const origin = process.env.TAPE_AUDIO_WEBSOCKET_URL;
+  const secret = process.env.TAPE_AUDIO_SIGNING_SECRET;
+  if (!origin || !secret) return [];
+  const url = new URL(origin);
+  if (!url.pathname.endsWith("/")) url.pathname += "/";
+  const nonce = randomUUID();
+  url.searchParams.set("scope", scope);
+  url.searchParams.set("nonce", nonce);
+  url.searchParams.set("signature", createHmac("sha256", secret)
+    .update(`v1:${scope}:${nonce}`).digest("hex"));
+  return [{ type: "websocket", url: url.href, events: ["audio_mixed_raw.data"] }];
+}
+
 function buildRecallRealtimeRecordingConfig(webhookUrl: string) {
+  const audio = groqAudioEndpoint("bot");
   return {
+    ...(audio.length ? { audio_mixed_raw: {} } : {}),
     video_mixed_participant_video_when_screenshare: "hide",
     realtime_endpoints: [
+      ...audio,
       {
         type: "webhook",
         url: webhookUrl,
@@ -237,12 +255,15 @@ function buildRecallDesktopSdkRealtimeRecordingConfig(
   webhookUrl: string,
   metadata?: Record<string, string>,
 ) {
+  const audio = metadata?.meetingId ? groqAudioEndpoint(metadata.meetingId) : [];
   return {
+    ...(audio.length ? { audio_mixed_raw: {} } : {}),
     metadata,
     participant_events: {},
     video_mixed_mp4: {},
     video_mixed_participant_video_when_screenshare: "hide",
     realtime_endpoints: [
+      ...audio,
       {
         type: "webhook",
         url: webhookUrl,

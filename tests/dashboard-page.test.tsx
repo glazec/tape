@@ -13,6 +13,7 @@ const {
   getWorkspace,
   getWorkspaceAccessSummary,
   listMeetingLibraryPageForWorkspace,
+  loadDetails,
   requireCurrentUser,
 } = vi.hoisted(() => ({
   cookies: vi.fn(),
@@ -25,6 +26,7 @@ const {
   getWorkspace: vi.fn(),
   getWorkspaceAccessSummary: vi.fn(),
   listMeetingLibraryPageForWorkspace: vi.fn(),
+  loadDetails: vi.fn((page) => Promise.resolve(page)),
   requireCurrentUser: vi.fn(),
 }));
 
@@ -76,7 +78,10 @@ vi.mock("@/lib/meeting-queries", () => ({
   MAX_MEETING_LIBRARY_HISTORY_MONTHS: 60,
   MEETING_LIBRARY_HISTORY_MONTH_STEP: 6,
   getMeetingDashboardSummaryForWorkspace,
-  listMeetingLibraryPageForWorkspace,
+  prepareMeetingLibraryPage: async (...args: unknown[]) => {
+    const page = await listMeetingLibraryPageForWorkspace(...args);
+    return { page, loadDetails: () => loadDetails(page) };
+  },
 }));
 
 vi.mock("@/lib/meeting-library-views", () => ({
@@ -249,6 +254,34 @@ describe("DashboardPage", () => {
     expect(html).toContain('aria-label="Loading meetings"');
 
     await reader.cancel();
+  });
+
+  it("streams clickable meeting titles while row details are pending", async () => {
+    requireCurrentUser.mockResolvedValue({ id: "user", email: "member@example.com" });
+    getWorkspace.mockResolvedValue({ userId: "user", teamId: "team", canCreateMeetings: false });
+    getWorkspaceAccessSummary.mockResolvedValue({ isSharedOnly: true });
+    getDefaultMeetingLibraryView.mockResolvedValue(null);
+    listMeetingLibraryPageForWorkspace.mockResolvedValue({
+      meetings: [{ id: "meeting", title: "Weekly review" }],
+      page: 1, historyMonths: 6, relatedHistoryMonths: 2,
+    });
+    loadDetails.mockImplementationOnce(() => new Promise(() => {}));
+    const { default: DashboardPage } = await import("@/app/dashboard/page");
+    const page = await DashboardPage({ searchParams: Promise.resolve({}) });
+    const stream = await renderToReadableStream(page);
+    const reader = stream.getReader();
+    let html = "";
+    try {
+      while (!html.includes("Weekly review")) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        html += new TextDecoder().decode(value);
+      }
+      expect(html).toContain('href="/meetings/meeting"');
+      expect(html).toContain("Weekly review");
+    } finally {
+      await reader.cancel();
+    }
   });
 
   it("streams dashboard section skeletons before their queries finish", async () => {

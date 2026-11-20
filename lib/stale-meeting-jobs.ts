@@ -10,12 +10,34 @@ export async function reconcileStaleMeetingJobs(
   const now = input.now ?? new Date();
   const cutoff = new Date(now.getTime() - STALE_MEETING_JOB_TIMEOUT_MS);
   const rows = await db.execute<{
+    missed_scheduled_count: number;
     failed_processing_count: number;
     failed_recording_count: number;
     failed_transcript_job_count: number;
     failed_translation_count: number;
   }>(sql`
-    with stale_transcript_jobs as (
+    with missed_scheduled_meetings as (
+      update meetings as meeting
+      set status = 'missed',
+        -- Use the event time so backfilling history does not reopen bot recovery.
+        updated_at = greatest(meeting.updated_at, coalesce(meeting.ended_at,
+          coalesce(meeting.started_at, meeting.created_at) + interval '2 hours'))
+      where meeting.status = 'scheduled'
+        and coalesce(meeting.ended_at,
+          coalesce(meeting.started_at, meeting.created_at) + interval '2 hours') <= ${now}
+        -- A rejoin can be scheduled after the original event ended.
+        and meeting.updated_at <= ${now}::timestamptz - interval '15 minutes'
+        and meeting.recall_recording_id is null
+        and not exists (select 1 from recordings r where r.meeting_id = meeting.id)
+        and not exists (select 1 from media_assets a where a.meeting_id = meeting.id)
+        and not exists (select 1 from transcript_jobs j where j.meeting_id = meeting.id)
+        and not exists (
+          select 1 from local_recording_attempts a where a.meeting_id = meeting.id
+            and a.attempt_state in ('started', 'sealed', 'uploading', 'uploaded', 'completed')
+        )
+      returning meeting.id
+    ),
+    stale_transcript_jobs as (
       update transcript_jobs
       set
         status = 'failed',
@@ -116,6 +138,7 @@ export async function reconcileStaleMeetingJobs(
       returning meeting.id
     )
     select
+      (select count(*)::integer from missed_scheduled_meetings) as missed_scheduled_count,
       (select count(*)::integer from stale_transcript_jobs)
         as failed_transcript_job_count,
       (select count(*)::integer from failed_meetings)
@@ -128,6 +151,7 @@ export async function reconcileStaleMeetingJobs(
   const result = rows.rows[0];
 
   return {
+    missedScheduledCount: Number(result?.missed_scheduled_count ?? 0),
     failedProcessingCount: Number(result?.failed_processing_count ?? 0),
     failedRecordingCount: Number(result?.failed_recording_count ?? 0),
     failedTranscriptJobCount: Number(result?.failed_transcript_job_count ?? 0),

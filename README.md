@@ -25,7 +25,7 @@ Any language in, follow-ups out, and your whole meeting archive readable by Clau
 - **Three ways in, one archive.** A calendar bot for Zoom and Google Meet, a bot-free macOS recorder for calls and in-person rooms, and uploads from any voice recorder.
 - **Language is detected, not picked.** A sentence that starts in English and ends in Mandarin comes back as one clean line, with the translation beside it.
 - **Follow-ups with receipts.** To-dos with a name on each, who offered or needs what, who knows whom, and open research questions, each linked to the second it was said.
-- **Your AI reads all of it.** The MCP server ships in this repo. Assistants run read-only SQL across meetings, speakers, and transcripts, scoped by PostgreSQL row-level security rather than by the prompt.
+- **Your AI can read Tape.** The MCP server lets assistants find meetings by title and date, read transcripts and saved AI followups, and look up workspace people. Read-only SQL remains available for analysis across meetings. Tape enforces the caller's permissions.
 - **Make it yours.** The prompts behind every follow-up live in `lib/`, summaries run through OpenRouter so the model is one setting, and recordings land in your own database and bucket.
 - **Pay for compute, not seats.** No licence fee. You pay the providers per recorded hour, so a meeting three teammates share is billed once. See [What it costs](#what-it-costs) for the full breakdown.
 
@@ -202,7 +202,7 @@ Recall recording recovery checks started bot meetings every five minutes, indepe
 | Tenant isolation | Forced PostgreSQL RLS for signed in web and MCP reads |
 | Media | Cloudflare R2 with authenticated application routes |
 | Cloud meeting capture | Recall.ai bots and Calendar V2 |
-| Transcription | ElevenLabs Speech to Text using `scribe_v3`, with Railway chunking for recordings over 60 minutes |
+| Transcription | ElevenLabs Speech to Text using `scribe_v3` on the completed recording, with Railway chunking for recordings over 60 minutes |
 | Translation and live answers | OpenRouter, with optional Exa web search for live answers |
 | Provider usage accounting | Idempotent per meeting cost events with personal and organization summaries |
 | Background work | Self hosted Inngest on Railway for transcription, scheduling, translation, reminders, and repair |

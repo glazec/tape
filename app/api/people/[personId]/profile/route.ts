@@ -10,8 +10,7 @@ import { ProviderCreditExhaustedError } from "@/lib/provider-credit";
 export const runtime = "nodejs";
 export const maxDuration = 150;
 
-// Generates (or regenerates) the viewer's own profile of this person. The page
-// calls it once when no profile exists, and again only on Refresh.
+// Handles the person page's manual Generate and Refresh actions.
 export async function POST(_request: Request, context: { params: Promise<{ personId: string }> }) {
   const user = await getCurrentUser();
   if (!user) return Response.json({ error: "Unauthorized" }, { status: 401 });

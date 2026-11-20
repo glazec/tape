@@ -18,6 +18,7 @@ import {
   DashboardOverviewSkeleton,
   DashboardStatsSkeleton,
   MeetingLibrarySkeleton,
+  MeetingLibraryRowsScaffold,
 } from "@/components/dashboard-loading";
 import { DashboardStats } from "@/components/dashboard-stats";
 import { MeetingLibrarySearch } from "@/components/meeting-library-search";
@@ -54,7 +55,7 @@ import {
   DEFAULT_RELATED_MEETING_HISTORY_MONTHS,
   MAX_MEETING_LIBRARY_HISTORY_MONTHS,
   MEETING_LIBRARY_HISTORY_MONTH_STEP,
-  listMeetingLibraryPageForWorkspace,
+  prepareMeetingLibraryPage,
 } from "@/lib/meeting-queries";
 import {
   getOnboardingHiddenCookieName,
@@ -528,7 +529,7 @@ async function DashboardMeetingLibrary({
     shouldUseSavedMeetingLibraryView(searchParams) && savedViewConfig
       ? savedViewConfig
       : requestedViewConfig;
-  const meetingLibraryPage = await listMeetingLibraryPageForWorkspace(
+  const { page: meetingLibraryPage, loadDetails } = await prepareMeetingLibraryPage(
     workspace,
     {
       historyMonths,
@@ -576,27 +577,30 @@ async function DashboardMeetingLibrary({
             />
           }
         >
-          <MeetingList
-            renderedAtMs={renderedAtMs}
-            emptyMessage={
-              isSharedOnly
-                ? "No transcripts have been shared with you yet"
-                : "No meetings found"
-            }
-            meetings={withRelatedHistoryLinks(meetingLibraryPage.meetings, {
-              activeViewConfig,
-              historyMonths: meetingLibraryPage.historyMonths,
-              relatedHistoryMonths: meetingLibraryPage.relatedHistoryMonths,
-              syncCalendar,
-            })}
-            sort={activeViewConfig.sort}
-            sortLinks={getMeetingLibrarySortLinks({
-              activeViewConfig,
-              historyMonths: meetingLibraryPage.historyMonths,
-              relatedHistoryMonths: meetingLibraryPage.relatedHistoryMonths,
-              syncCalendar,
-            })}
-          />
+          <Suspense fallback={<MeetingLibraryRowsScaffold meetings={meetingLibraryPage.meetings} />}>
+            <DetailedMeetingList
+              loadDetails={loadDetails}
+              renderedAtMs={renderedAtMs}
+              emptyMessage={
+                isSharedOnly
+                  ? "No transcripts have been shared with you yet"
+                  : "No meetings found"
+              }
+              historyOptions={{
+                activeViewConfig,
+                historyMonths: meetingLibraryPage.historyMonths,
+                relatedHistoryMonths: meetingLibraryPage.relatedHistoryMonths,
+                syncCalendar,
+              }}
+              sort={activeViewConfig.sort}
+              sortLinks={getMeetingLibrarySortLinks({
+                activeViewConfig,
+                historyMonths: meetingLibraryPage.historyMonths,
+                relatedHistoryMonths: meetingLibraryPage.relatedHistoryMonths,
+                syncCalendar,
+              })}
+            />
+          </Suspense>
           <MeetingLibraryPagination
             className="pt-5"
             hasNextPage={meetingLibraryPage.hasNextPage}
@@ -637,6 +641,18 @@ async function DashboardMeetingLibrary({
         </MeetingLibrarySearch>
     </section>
   );
+}
+
+async function DetailedMeetingList({
+  loadDetails,
+  historyOptions,
+  ...props
+}: Omit<React.ComponentProps<typeof MeetingList>, "meetings"> & {
+  loadDetails: Awaited<ReturnType<typeof prepareMeetingLibraryPage>>["loadDetails"];
+  historyOptions: Parameters<typeof withRelatedHistoryLinks>[1];
+}) {
+  const page = await loadDetails();
+  return <MeetingList {...props} meetings={withRelatedHistoryLinks(page.meetings, historyOptions)} />;
 }
 
 function getCalendarErrorMessage(error: string | undefined) {

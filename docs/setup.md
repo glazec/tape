@@ -82,7 +82,7 @@ For a new installation, generate the Web session signing secret locally and stor
 openssl rand -base64 32
 ```
 
-Generate a separate MCP backend secret with the same command. Set that value as `MCP_BACKEND_SHARED_SECRET` on both `tape-web` and the Tape MCP service. It signs short lived identity bound upload requests and must not reuse the OAuth JWT signing key.
+Generate a separate MCP backend secret with the same command. Set that value as `MCP_BACKEND_SHARED_SECRET` on both `tape-web` and the Tape MCP service. It signs short lived identity bound upload, transcript, followup, and person requests. Use a separate key for OAuth JWT signing.
 
 MCP Google OAuth refresh sessions have no local calendar expiry. Keep `FASTMCP_JWT_SIGNING_KEY` stable and `OAUTH_STORAGE_PATH` on the service's persistent volume. Access tokens remain short lived; Google revocation or upstream authorization expiry still requires login. Existing valid MCP sessions adopt this behavior on their next refresh. Already expired sessions require reconnecting once. This does not change Calendar authorization or browser sessions.
 
@@ -624,6 +624,8 @@ Local media upload recovery uses authenticated multipart requests; deploy the se
 
 Personal meeting language requires migration `0068_user_language_shared_followup`. Apply it with `npm run db:migrate` before deploying the updated web service. Run `npm run inngest:sync` to register `translate-shared-followup` for readers who need a translated copy. Confirm that a reader can change Settings → Preferences → Default language and open the same meeting in either language with identical evidence links.
 
+After deploying automatic person profiles, run `npm run inngest:sync` to register `queue-person-profiles-on-transcript` and `generate-person-profile-on-transcript`. The jobs use the existing transcription completion event and workspace AI credit.
+
 ## Speaker person identity
 
 Apply migration `0070_speaker_person_identity` using `npm run db:migrate` before deploying this application version. It adds workspace contacts, associated emails, immutable speaker groups, assignment history and meeting attribution revisions. The backfill retains existing transcript speaker text and creates groups per transcription job and exact source label. It makes no automatic person links and cannot recover identities already merged by earlier label edits. New transcript inserts receive groups through a database trigger.
@@ -631,3 +633,7 @@ Apply migration `0070_speaker_person_identity` using `npm run db:migrate` before
 Contact directory access requires actual workspace membership. Display projection for shared readers returns only accessible speaker labels; associated emails require identity management access. Mutation functions enforce membership, current transcript generation, segment ownership and revision checks atomically. Background reads bind the trusted meeting owner's workspace within an isolated database context. No new provider or environment variable is required. This migration does not grant meeting access or change private notes.
 
 Preferred name changes preserve canonical generated source hashes. Changing a person assignment or splitting a speaker group increments attribution revision and invalidates stale Intel and followups, including composed sources. Deploying old application code after the migration can still read historical labels, but cannot interpret the new preferred name and assignment metadata; rollback should not discard the additive tables.
+
+### On demand meeting transcription
+
+Set `GROQ_API_KEY` on the MCP service and a shared random `TAPE_AUDIO_SIGNING_SECRET` on web and MCP. Set `TAPE_AUDIO_WEBSOCKET_URL` on web to the MCP service's public `wss://` origin with path `/audio/recall/`. New Recall recording configurations then include mixed audio delivery. The single MCP replica uses its mounted volume for temporary audio and transcript caching. A cleanup task removes idle buffers after two hours, checking every ten minutes.

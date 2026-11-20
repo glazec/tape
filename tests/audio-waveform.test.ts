@@ -1,6 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 import { normalizeAudioPeaks, resampleAudioPeaks } from "@/lib/audio-waveform";
-import { createAudioWaveformGenerator as createGenerator } from "@/lib/audio-waveform-server";
+import {
+  createAudioWaveformGenerator as createGenerator,
+  WaveformSourceTooLargeError,
+} from "@/lib/audio-waveform-server";
 
 const createAudioWaveformGenerator = (
   run: Parameters<typeof createGenerator>[0],
@@ -13,13 +16,13 @@ describe("audio waveform", () => {
     const fetchAudio = vi.fn(
       async () =>
         new Response(new ReadableStream({ cancel }), {
-          headers: { "content-length": String(257 * 1024 * 1024) },
+          headers: { "content-length": String(513 * 1024 * 1024) },
         }),
     );
     const generate = createGenerator(run, fetchAudio);
     await expect(
       generate("https://audio.example.com/file", "large"),
-    ).rejects.toThrow("too large");
+    ).rejects.toBeInstanceOf(WaveformSourceTooLargeError);
     expect(run).not.toHaveBeenCalled();
     expect(cancel).toHaveBeenCalled();
   });

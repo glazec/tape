@@ -6,7 +6,7 @@ import { db } from "@/db/client";
 import { calendarEvents, meetingReminders, meetings } from "@/db/schema";
 import { inngest } from "@/inngest/client";
 import {
-  OneSignalInvalidExternalAliasError,
+  OneSignalNoPushSubscriptionError,
   sendOneSignalLocationReminder,
 } from "@/lib/vendors/onesignal";
 
@@ -244,7 +244,7 @@ export async function sendScheduledLocationReminder(
 
     return { action: "sent" as const };
   } catch (error) {
-    if (error instanceof OneSignalInvalidExternalAliasError) {
+    if (error instanceof OneSignalNoPushSubscriptionError) {
       await markLocationReminderFailed({
         errorMessage: error.message,
         reminderId: reminder.id,

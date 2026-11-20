@@ -1,5 +1,5 @@
 {
-  "id": "34fd486d-98be-4937-a5c5-8ef3b356621b",
+  "id": "ef358e4c-576f-4774-952b-e4b23411af9d",
   "prevId": "fa201947-97e6-4cb1-91bb-2f5a9b2f4f25",
   "version": "7",
   "dialect": "postgresql",
@@ -641,7 +641,7 @@
       "checkConstraints": {
         "followup_todo_states_status_check": {
           "name": "followup_todo_states_status_check",
-          "value": "\"followup_todo_states\".\"status\" in ('todo', 'done', 'cancelled')"
+          "value": "\"followup_todo_states\".\"status\" in ('todo', 'in_progress', 'done')"
         }
       },
       "isRLSEnabled": false

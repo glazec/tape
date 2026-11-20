@@ -18,7 +18,3 @@ BEGIN
  WHERE s.meeting_id=target_meeting AND s.todo_key=key;
  RETURN result;
 END $$;
---> statement-breakpoint
-GRANT SELECT (meeting_id, todo_key, status) ON followup_todo_states TO tape_mcp;
-CREATE POLICY followup_todo_states_mcp_read ON followup_todo_states FOR SELECT TO tape_mcp
-  USING (app_private.is_internal_member(team_id) AND app_private.can_read_meeting(meeting_id));
