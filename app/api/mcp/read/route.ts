@@ -27,6 +27,7 @@ const readSchema = z.discriminatedUnion("operation", [
     status: z.enum(["todo", "done", "cancelled"]).nullable(), assignee: z.string().trim().nullable(),
     meetingId: z.uuid().nullable(), limit: z.int().min(1).max(25), offset: z.int().min(0).max(1_000_000),
   }),
+  z.strictObject({ operation: z.literal("ongoing_transcript"), meetingId: z.uuid() }),
   z.strictObject({ operation: z.literal("followup"), meetingId: z.uuid() }),
   z.strictObject({
     operation: z.literal("search_people"),
@@ -147,10 +148,15 @@ export async function POST(request: Request) {
       id: meetings.id,
       teamId: meetings.teamId,
       title: meetings.title,
+      bot_id: meetings.recallBotId,
       status: meetings.status,
     }).from(meetings).where(meetingCondition).limit(1);
     if (!meeting) return Response.json({ error: "Meeting not found" }, { status: 404 });
     const summary = { id: meeting.id, title: meeting.title, status: meeting.status };
+
+    if (read.operation === "ongoing_transcript") {
+      return Response.json({ meeting: summary, bot_id: meeting.bot_id }, { headers: privateHeaders });
+    }
 
     if (read.operation === "followup") {
       const current = await readFollowup(meeting);

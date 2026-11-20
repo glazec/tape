@@ -25,6 +25,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+import ongoing_audio
 import psycopg
 import jwt
 import sqlglot
@@ -2007,6 +2008,29 @@ async def get_meeting_transcript(
     )
 
 
+@mcp.tool
+async def get_ongoing_meeting_transcript(meeting_id: str) -> dict[str, Any]:
+    """Transcribe captured audio so far for an ongoing Tape meeting UUID or link. Reuses earlier results. For the saved final transcript use get_meeting_transcript."""
+    meeting_id = _meeting_reference(meeting_id)
+    access = await _post_tape_backend(
+        "api/mcp/read", {"operation": "ongoing_transcript", "meetingId": meeting_id},
+    )
+    sources = [ongoing_audio.source_file("meeting", meeting_id)]
+    if access.get("bot_id"):
+        try:
+            sources.append(ongoing_audio.source_file("bot", access["bot_id"]))
+        except ValueError:
+            pass  # Historical meetings can have non-UUID provider identifiers.
+    # Prefer the bot if both the bot and a desktop recorded the same conversation.
+    segments = []
+    for source in reversed(sources):
+        segments = await ongoing_audio.snapshot(source)
+        if segments:
+            break
+    return {"meeting": access["meeting"], "segments": segments,
+            "status": "available" if segments else "no_buffered_audio"}
+
+
 @mcp.tool(annotations={"readOnlyHint": True})
 async def get_meeting_followup(meeting_id: str) -> dict[str, Any]:
     """Read the saved AI followup for an accessible Tape meeting UUID or link, including its evidence. Returns null if there is no current saved followup."""
@@ -2177,13 +2201,29 @@ async def execute_meeting_sql(
 
 
 if __name__ == "__main__":
-    mcp.run(
-        transport="http",
-        port=MCP_PORT,
-        host=MCP_HOST,
-        stateless_http=True,
-        uvicorn_config={
-            "proxy_headers": True,
-            "forwarded_allow_ips": "*",
-        },
-    )
+    import uvicorn
+    from contextlib import asynccontextmanager
+    from starlette.routing import WebSocketRoute
+
+    app = mcp.http_app(stateless_http=True)
+    app.router.routes.insert(0, WebSocketRoute("/audio/recall", ongoing_audio.receive_audio))
+    original_lifespan = app.router.lifespan_context
+
+    async def cleanup():
+        while True:
+            ongoing_audio.expire_buffers()
+            await asyncio.sleep(600)
+
+    @asynccontextmanager
+    async def lifespan(app):
+        async with original_lifespan(app) as state:
+            task = asyncio.create_task(cleanup())
+            try:
+                yield state
+            finally:
+                task.cancel()
+                await asyncio.gather(task, return_exceptions=True)
+
+    app.router.lifespan_context = lifespan
+    uvicorn.run(app, port=MCP_PORT, host=MCP_HOST, proxy_headers=True,
+                forwarded_allow_ips="*", log_level="warning", access_log=False)

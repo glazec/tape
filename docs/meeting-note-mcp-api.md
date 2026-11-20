@@ -419,3 +419,7 @@ The web application can compose source meetings with Merge meetings and Continue
 ## Intel web workspace
 
 Intel search and private search history are web features at `/intel`, `/api/intel/search`, and `/api/intel/history`. No Intel matching tool is added to MCP. The new history table has no `tape_mcp` grant. Existing transcript tools and their caller permissions remain unchanged.
+
+### Ongoing meeting transcript
+
+Call `get_ongoing_meeting_transcript(meeting_id)` with a readable meeting UUID or Tape link. Tape captures mixed audio for newly configured Recall bot and Desktop SDK recordings and submits buffered audio to Groq only on demand. Calls return provisional text with captured intervals in milliseconds relative to each recording. Repeated calls share cached text. A gap between intervals indicates missing capture. The tool returns `no_buffered_audio` when capture has not started, is unsupported, or has expired. Use `get_meeting_transcript` for the saved transcript. Local fallback recordings do not stream audio.

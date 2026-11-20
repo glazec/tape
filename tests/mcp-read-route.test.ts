@@ -73,7 +73,7 @@ describe("signed MCP reads", () => {
     expect(mocks.select).not.toHaveBeenCalled();
   });
 
-  it.each(["transcript", "followup"])("blocks %s when the caller cannot read the meeting", async (operation) => {
+  it.each(["transcript", "followup", "ongoing_transcript"])("blocks %s when the caller cannot read the meeting", async (operation) => {
     readRows([{ id: userId }]);
     const meeting = readRows([]);
     const pageParams = operation === "transcript" ? { limit: 50, offset: 0 } : {};

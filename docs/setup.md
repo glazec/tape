@@ -633,3 +633,7 @@ Apply migration `0070_speaker_person_identity` using `npm run db:migrate` before
 Contact directory access requires actual workspace membership. Display projection for shared readers returns only accessible speaker labels; associated emails require identity management access. Mutation functions enforce membership, current transcript generation, segment ownership and revision checks atomically. Background reads bind the trusted meeting owner's workspace within an isolated database context. No new provider or environment variable is required. This migration does not grant meeting access or change private notes.
 
 Preferred name changes preserve canonical generated source hashes. Changing a person assignment or splitting a speaker group increments attribution revision and invalidates stale Intel and followups, including composed sources. Deploying old application code after the migration can still read historical labels, but cannot interpret the new preferred name and assignment metadata; rollback should not discard the additive tables.
+
+### On demand meeting transcription
+
+Set `GROQ_API_KEY` on the MCP service and a shared random `TAPE_AUDIO_SIGNING_SECRET` on web and MCP. Set `TAPE_AUDIO_WEBSOCKET_URL` on web to the MCP service's public `wss://` origin with path `/audio/recall`. New Recall recording configurations then include mixed audio delivery. The single MCP replica uses its mounted volume for temporary audio and transcript caching. A cleanup task removes idle buffers after two hours, checking every ten minutes.
