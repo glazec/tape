@@ -526,6 +526,13 @@
       "when": 1794939784512,
       "tag": "0074_materialize_meeting_shares",
       "breakpoints": true
+    },
+    {
+      "idx": 75,
+      "version": "7",
+      "when": 1795136718822,
+      "tag": "0075_shared_todo_status",
+      "breakpoints": true
     }
   ]
 }

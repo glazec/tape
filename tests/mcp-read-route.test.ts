@@ -6,6 +6,7 @@ const mocks = vi.hoisted(() => ({
   select: vi.fn(),
   getComposedMeetingForFollowup: vi.fn(),
   getCurrentMeetingFollowup: vi.fn(),
+  getMeetingTodoControls: vi.fn(),
   getPersonIdentity: vi.fn(),
   getStoredPersonProfile: vi.fn(),
 }));
@@ -16,8 +17,9 @@ vi.mock("@/lib/meeting-composition", () => ({
 }));
 vi.mock("@/lib/meeting-followup-source", () => ({
   getCurrentMeetingFollowup: mocks.getCurrentMeetingFollowup,
+  storedFollowupSchema: { parse: (value: unknown) => value },
 }));
-vi.mock("@/lib/people", () => ({ getPersonIdentity: mocks.getPersonIdentity }));
+vi.mock("@/lib/people", () => ({ getPersonIdentity: mocks.getPersonIdentity, getMeetingTodoControls: mocks.getMeetingTodoControls }));
 vi.mock("@/lib/person-profile", () => ({ getStoredPersonProfile: mocks.getStoredPersonProfile }));
 
 import { POST } from "@/app/api/mcp/read/route";
@@ -117,6 +119,30 @@ describe("signed MCP reads", () => {
       followup: null,
     });
     expect(mocks.getCurrentMeetingFollowup).toHaveBeenCalledWith(composed);
+  });
+
+  it("finds dated commitments using the current assignee and the original item status", async () => {
+    readRows([{ id: userId }]);
+    const candidate = { id: meetingId, teamId, title: "October review", at: "2026-10-25T12:00:00Z" };
+    const candidates = readRows([candidate, { ...candidate, id: "next" }]);
+    const old = { person: "Speaker 1", text: "Speaker 1 will send the draft" };
+    mocks.getComposedMeetingForFollowup.mockResolvedValue({ status: "ready", aiFollowup: { result: { todos: [old] } } });
+    mocks.getCurrentMeetingFollowup.mockReturnValue({ todos: [{ ...old, person: "Alex", text: "Alex will send the draft" }] });
+    mocks.getMeetingTodoControls.mockResolvedValue([{ status: "done" }]);
+    const input = { operation: "todos", start: "2026-10-22", end: "2026-10-29", meetingId: null,
+      assignee: "alex", status: "done", limit: 1, offset: 0 };
+    const response = await POST(request(input));
+    expect(await response.json()).toEqual({ next_offset: 1, todos: [{
+      meeting_id: meetingId, meeting_title: candidate.title, meeting_at: candidate.at,
+      assignee: "Alex", action: "Alex will send the draft", status: "done",
+    }] });
+    expect(mocks.getMeetingTodoControls).toHaveBeenCalledWith(meetingId, [old]);
+    const condition = dialect.sqlToQuery(candidates.where.mock.calls[0][0]);
+    expect(condition.sql).toContain("is_internal_member");
+    expect(condition.params).toEqual(expect.arrayContaining([input.start, input.end]));
+    readRows([{ id: userId }]);
+    readRows([candidate]);
+    expect(await (await POST(request({ ...input, status: "todo" }))).json()).toEqual({ todos: [], next_offset: null });
   });
 
   it("lists only active people scoped to explicit internal workspace membership", async () => {

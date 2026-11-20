@@ -1053,12 +1053,12 @@ export const followupTodoStates = pgTable("followup_todo_states", {
   teamId: uuid("team_id").notNull().references(() => teams.id, { onDelete: "cascade" }),
   meetingId: uuid("meeting_id").notNull().references(() => meetings.id, { onDelete: "cascade" }),
   todoKey: text("todo_key").notNull(),
-  status: text("status").$type<"todo" | "in_progress" | "done">().notNull(),
+  status: text("status").$type<"todo" | "done" | "cancelled">().notNull(),
   updatedBy: uuid("updated_by").references(() => users.id, { onDelete: "set null" }),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 }, table => [
   uniqueIndex("followup_todo_states_meeting_key_unique").on(table.meetingId, table.todoKey),
-  check("followup_todo_states_status_check", sql`${table.status} in ('todo', 'in_progress', 'done')`),
+  check("followup_todo_states_status_check", sql`${table.status} in ('todo', 'done', 'cancelled')`),
 ]);
 
 export const personMerges = pgTable("person_merges", {

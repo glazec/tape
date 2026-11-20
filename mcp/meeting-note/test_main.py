@@ -740,6 +740,19 @@ class MeetingAccessConditionTests(unittest.TestCase):
         self.assertNotIn("access_team_id", params)
 
 
+class MeetingTodosTests(unittest.IsolatedAsyncioTestCase):
+    async def test_forwards_date_assignee_status_and_page(self):
+        with patch.object(main, "_post_tape_backend", AsyncMock(return_value={"todos": [], "next_offset": 10})) as fetch:
+            result = await main.list_meeting_todos(
+                main.date(2026, 10, 22), main.date(2026, 10, 29), status="todo", assignee=" Alex ",
+            )
+        fetch.assert_awaited_once_with("api/mcp/read", {
+            "operation": "todos", "start": "2026-10-22", "end": "2026-10-29",
+            "status": "todo", "assignee": "Alex", "meetingId": None, "limit": 10, "offset": 0,
+        })
+        self.assertEqual(result["next_offset"], 10)
+
+
 class AccessibleMeetingInventoryTests(unittest.IsolatedAsyncioTestCase):
     async def test_filters_inventory_by_literal_title_and_timezone_aware_window(self):
         workspace = main.Workspace("member@example.com", "user-id", "team-id", True, False)

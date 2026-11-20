@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from decimal import Decimal
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 from urllib.parse import urlparse
 from uuid import UUID, uuid4
 import asyncio
@@ -2014,6 +2014,27 @@ async def get_meeting_followup(meeting_id: str) -> dict[str, Any]:
         "api/mcp/read",
         {"operation": "followup", "meetingId": _meeting_reference(meeting_id)},
     )
+
+
+@mcp.tool(annotations={"readOnlyHint": True})
+async def list_meeting_todos(
+    start_date: date | None = None,
+    end_date: date | None = None,
+    status: Literal["todo", "done", "cancelled"] | None = None,
+    assignee: str | None = None,
+    meeting_id: str | None = None,
+    limit: int = 10,
+    offset: int = 0,
+) -> dict[str, Any]:
+    """Find team followups by inclusive UTC meeting dates, shared status and exact speaker name (case insensitive). For outstanding work use status=todo. Each page scans up to limit meetings. Follow next_offset even on an empty page."""
+    if start_date and end_date and start_date > end_date:
+        raise ValueError("start_date must be on or before end_date")
+    return await _post_tape_backend("api/mcp/read", {
+        "operation": "todos", "start": start_date.isoformat() if start_date else None,
+        "end": end_date.isoformat() if end_date else None, "status": status,
+        "assignee": _clean(assignee), "meetingId": _meeting_reference(meeting_id) if meeting_id else None,
+        "limit": _limit(limit, 10, 25), "offset": _offset(offset),
+    })
 
 
 @mcp.tool(annotations={"readOnlyHint": True})

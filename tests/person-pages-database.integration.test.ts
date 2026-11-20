@@ -246,8 +246,8 @@ describe.skipIf(!url)("person pages PostgreSQL", () => {
     // A colleague who cannot open the meeting still moves its to do along.
     const { meeting } = await meetingWith(["Kai Moss"]);
     const key = "a".repeat(32);
-    const progress = await as(member, async () => (await db.query("select app_private.set_todo_status($1,$2,'in_progress') s", [meeting, key])).rows[0].s);
-    expect(progress).toMatchObject({ status: "in_progress", updatedBy: "member@team.test" });
+    const progress = await as(member, async () => (await db.query("select app_private.set_todo_status($1,$2,'cancelled') s", [meeting, key])).rows[0].s);
+    expect(progress).toMatchObject({ status: "cancelled", updatedBy: "member@team.test" });
     const done = await as(owner, async () => (await db.query("select app_private.set_todo_status($1,$2,'done') s", [meeting, key])).rows[0].s);
     expect(done).toMatchObject({ status: "done", updatedBy: "owner@team.test" });
     expect(await as(member, async () => (await db.query("select status from followup_todo_states where meeting_id=$1", [meeting])).rows)).toEqual([{ status: "done" }]);

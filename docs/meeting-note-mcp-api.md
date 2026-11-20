@@ -37,6 +37,7 @@ Visible tools:
 13. `get_meeting_followup`
 14. `search_people`
 15. `get_person_profile`
+16. `list_meeting_todos`
 
 ## Access Model
 
@@ -128,6 +129,10 @@ Current categories:
 4. `meeting_search`
 5. `related`
 6. `transcript`
+
+### list_meeting_todos
+
+To find outstanding commitments from meetings three to four weeks ago, supply the inclusive UTC meeting dates, `status="todo"`, and optionally the assignee’s recorded speaker name. Omit status to include done and cancelled items. Each result includes the meeting, person, action, timing, status and evidence. Each page scans up to `limit` accessible team meetings. Follow `next_offset` until null, including after an empty page. Team members also see shared status in `get_meeting_followup`.
 
 ### list_accessible_meetings
 

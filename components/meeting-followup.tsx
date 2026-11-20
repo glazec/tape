@@ -6,6 +6,8 @@ import { useRouter } from "next/navigation";
 import { Popover } from "@base-ui/react/popover";
 import { Check, Copy, LoaderCircle, Pencil, Sparkles } from "lucide-react";
 
+import { TodoStatusButton } from "@/components/todo-status-button";
+import type { TodoStatus } from "@/lib/people";
 import { ConnectionEditor } from "@/components/connection-editor";
 import { Button } from "@/components/ui/button";
 import type { MeetingFollowup as Followup } from "@/lib/meeting-followup";
@@ -25,6 +27,7 @@ export function MeetingFollowup({
   waitForBackground = false,
   canGenerate,
   initialResult,
+  todoControls = [],
   initialConnections = EMPTY_CONNECTIONS,
   initialConnectionsRevision = "",
   initialConnectionIds = EMPTY_IDS,
@@ -42,6 +45,7 @@ export function MeetingFollowup({
   /** The transcript just finished, so the background job is likely generating already. */
   waitForBackground?: boolean;
   canGenerate: boolean;
+  todoControls?: Array<{ key: string; status: TodoStatus; updatedAt: string | null }>;
   initialResult: Followup | null;
   initialConnections?: MeetingConnection[];
   initialConnectionsRevision?: string;
@@ -205,7 +209,7 @@ export function MeetingFollowup({
       setConnectionsRevision(data.connectionsRevision ?? "");
       setConnectionIds(data.connectionIds ?? []);
       setAnnouncement(t("Followup ready.", "会后跟进已生成。"));
-      if (needsTranslation) router.refresh();
+      router.refresh();
     } catch (cause) {
       if (controller.signal.aborted) return;
       setError(
@@ -326,11 +330,16 @@ export function MeetingFollowup({
     );
   }
 
-  function renderItems(items: Followup["dynamics"] | Followup["todos"]) {
+  function renderItems(items: Followup["dynamics"] | Followup["todos"], showStatus = false) {
     return (
       <ul className="space-y-4">
         {items.map((item, index) => (
           <li className="min-w-0 text-sm leading-6" key={index}>
+            {showStatus && result === initialResult && todoControls[index] && (
+              <TodoStatusButton key={`${todoControls[index].key}:${todoControls[index].updatedAt}`}
+                meetingId={meetingId} todoKey={todoControls[index].key} initialStatus={todoControls[index].status}
+                chinese={chinese} text={item.text} />
+            )}
             <p className="max-w-[60ch] break-words text-pretty">
               <span className="font-semibold">@{item.person}</span>
               {item.text.slice(item.person.length)}
@@ -442,7 +451,7 @@ export function MeetingFollowup({
               <div>
                 <h3 className={SUBHEAD}>{t("To do list", "待办事项")}</h3>
                 {result.todos.length ? (
-                  renderItems(result.todos)
+                  renderItems(result.todos, true)
                 ) : (
                   <p className="text-sm leading-6 text-muted-foreground">
                     {t("No explicit next actions.", "暂无明确的后续行动。")}

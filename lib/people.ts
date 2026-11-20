@@ -38,7 +38,7 @@ export type PersonMeeting = {
   durationMs: number;
 };
 
-export type TodoStatus = "todo" | "in_progress" | "done";
+export type TodoStatus = "todo" | "done" | "cancelled";
 export type TodoState = { status: TodoStatus; updatedBy: string | null; updatedAt: string | null };
 
 export type PersonFollowupItem = {
@@ -209,6 +209,19 @@ async function getTodoStates(meetingIds: string[]) {
     where s.meeting_id in (select jsonb_array_elements_text(${JSON.stringify([...new Set(meetingIds)])}::jsonb)::uuid)`);
   for (const row of found) states.set(`${row.meetingId}:${row.todoKey}`, { status: row.status, updatedBy: row.updatedBy, updatedAt: new Date(row.updatedAt).toISOString() });
   return states;
+}
+
+export async function getMeetingTodoControls(meetingId: string, todos: Array<Parameters<typeof todoKey>[0]>) {
+  if (!todos.length) return [];
+  const [membership] = await rows<{ internal: boolean }>(sql`
+    select app_private.is_internal_member(team_id) as internal from meetings where id = ${meetingId}`);
+  if (!membership?.internal) return [];
+  const states = await getTodoStates([meetingId]);
+  return todos.map(item => {
+    const key = todoKey(item);
+    const state = states.get(`${meetingId}:${key}`);
+    return { key, status: state?.status ?? "todo" as const, updatedAt: state?.updatedAt ?? null };
+  });
 }
 
 /** Stable identity of a followup to do within its meeting. */

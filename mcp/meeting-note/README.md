@@ -4,6 +4,8 @@
 
 # Tape MCP
 
+Use `list_meeting_todos` for team followups by meeting date, assignee and shared status.
+
 FastMCP server for authenticated Tape access. Python 3.13 or newer is required.
 
 Find meetings by title and date, read timestamped transcripts and saved AI followups, and look up workspace people and their saved AI profiles. See the [MCP API](../../docs/meeting-note-mcp-api.md) for tool arguments and permissions.

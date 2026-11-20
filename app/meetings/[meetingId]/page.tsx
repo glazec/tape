@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { PersonLink } from "@/components/person-link";
-import { findPeopleByEmail, isMeetingWorkspaceMember } from "@/lib/people";
+import { findPeopleByEmail, getMeetingTodoControls, isMeetingWorkspaceMember } from "@/lib/people";
 import { MeetingComposedTranscripts } from "@/components/meeting-composed-transcripts";
 import { getMeetingCompositionForWorkspace, composeMeetingForFollowup } from "@/lib/meeting-composition";
 import { listShareRecipientSuggestions } from "@/lib/share-recipient-suggestions";
@@ -107,6 +107,8 @@ export default async function MeetingPage({
     : [[], [], null];
   const preferredLanguage = await getUserLanguage(workspace.userId, teamConfiguration?.translationLanguage);
   const savedFollowup = storedFollowupSchema.safeParse(followupMeeting.aiFollowup);
+  const todoControls = followupResult && savedFollowup.success && canOpenPeople
+    ? await getMeetingTodoControls(meetingId, savedFollowup.data.result.todos) : [];
   const cachedFollowup = followupResult && savedFollowup.success ? savedFollowup.data.translations?.[preferredLanguage] : undefined;
   const translatedFollowup = cachedFollowup && followupResult ? resolveTranslatedFollowupSubjects(cachedFollowup, followupResult) : undefined;
   for (const part of parts) applyPreferredTranscriptLanguage(part, preferredLanguage);
@@ -209,6 +211,7 @@ export default async function MeetingPage({
           autoGenerate
           waitForBackground={followupJobMayBeRunning}
           canGenerate={canManage}
+          todoControls={todoControls}
           initialResult={translatedFollowup ?? followupResult}
           needsTranslation={!!followupResult && preferredLanguage !== "en" && !translatedFollowup}
           preferredLanguage={preferredLanguage}

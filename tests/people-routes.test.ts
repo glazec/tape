@@ -84,10 +84,10 @@ describe("people routes", () => {
   });
 
   it("records team-wide to do progress with who and when", async () => {
-    const state = { status: "in_progress", updatedBy: "Yiping", updatedAt: "2026-11-07T00:00:00.000Z" };
+    const state = { status: "cancelled", updatedBy: "Yiping", updatedAt: "2026-11-07T00:00:00.000Z" };
     execute.mockResolvedValue({ rows: [{ state }] });
     const patch = (body: unknown) => setTodo(new Request("https://example.test", { method: "PATCH", body: JSON.stringify(body) }), meeting);
-    expect(await (await patch({ todoKey: "a".repeat(32), status: "in_progress" })).json()).toEqual(state);
+    expect(await (await patch({ todoKey: "a".repeat(32), status: "cancelled" })).json()).toEqual(state);
     expect((await patch({ todoKey: "a".repeat(32), status: "archived" })).status).toBe(400);
     expect((await patch({ todoKey: "short", status: "done" })).status).toBe(400);
     execute.mockRejectedValueOnce({ cause: { code: "42501" } });

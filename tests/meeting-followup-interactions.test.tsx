@@ -64,6 +64,18 @@ afterEach(() => {
 });
 
 describe("meeting followup interaction", () => {
+  it("uses the shared item key and saved status on the meeting page", async () => {
+    const key = "a".repeat(32);
+    const fetch = vi.fn(async () => Response.json({ status: "cancelled" }));
+    vi.stubGlobal("fetch", fetch);
+    render(<MeetingFollowup {...props} initialResult={result} canGenerate={false}
+      todoControls={[{ key, status: "done", updatedAt: null }]} />);
+    fireEvent.click(screen.getByRole("button", { name: /Cancel: Momir/ }));
+    await waitFor(() => expect(screen.getByRole("button", { name: /Reopen: Momir/ })).toBeTruthy());
+    expect(fetch).toHaveBeenCalledWith("/api/meetings/meeting-one/todos", expect.objectContaining({
+      method: "PATCH", body: JSON.stringify({ todoKey: key, status: "cancelled" }),
+    }));
+  });
   const connection: MeetingConnection = {
     kind: "team", name: null, company: "Citi", title: null,
     context: "Works with the debt financing team.", relationship: "works_with",

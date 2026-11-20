@@ -136,7 +136,7 @@ Every named speaker and participant opens a person page at `/people/:personId` f
 
 A person page is shared team knowledge. It draws on every workspace meeting with the person, including meetings the viewer cannot open; those appear with a lock and no link, and their transcripts stay closed. It shows how often the team meets the person (meetings, cadence, time together, their share of the talking, last and next meeting), time together per month for the past year, which colleagues meet them (meetings, time, last met), their to-dos, offers and needs, connections they mentioned, and every team meeting with them, grouped by day with an All meetings or With me filter.
 
-To-dos are shared: one click marks a to-do In progress, the next marks it Done (struck through), a third reopens it. Each change shows who made it and when.
+Team members can click a status on the meeting or person page to cycle from To do to Done to Cancelled and back to To do. Both pages use the same saved status.
 
 When a meeting transcript finishes, Tape generates or refreshes the shared AI profile for each linked speaker outside the workspace. The profile draws on the team's first transcript with that person and up to eight recent transcripts from the past 90 days. Each line cites its transcript moment. The person page also offers Generate and Refresh.
 
