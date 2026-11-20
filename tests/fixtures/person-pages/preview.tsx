@@ -11,7 +11,7 @@ import type { StoredPersonProfile } from "@/lib/person-profile";
 const now = new Date();
 const daysAgo = (days: number) => new Date(now.getTime() - days * 86_400_000).toISOString();
 const meeting = (id: string, title: string, days: number, spoke = true, talkMs = 240_000, colleagues = ["Jordan Park"], canOpen = true) => ({
-  id, title, at: daysAgo(days), ownerName: colleagues[0], colleagues, canOpen, spoke, talkMs: spoke ? talkMs : 0,
+  id, title, at: daysAgo(days), ownerName: colleagues[0], colleagues, canOpen, status: canOpen ? ("ready" as const) : null, hasRecording: spoke, spoke, talkMs: spoke ? talkMs : 0,
   totalMs: spoke ? 1_800_000 : 0, durationMs: spoke ? 1_800_000 + talkMs : 1_500_000,
 });
 const data: PersonPageData = {

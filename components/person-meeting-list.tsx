@@ -60,7 +60,7 @@ export function PersonMeetingList({ meetings, nowIso, viewerName }: { meetings: 
         <section className="mt-6" key={group.label}>
           <AppLabel as="h3">{group.label}</AppLabel>
           <ul className="mt-1 -mx-2">
-            {group.items.map(meeting => <MeetingRow isClient={isClient} key={meeting.id} meeting={meeting} />)}
+            {group.items.map(meeting => <MeetingRow isClient={isClient} key={meeting.id} meeting={meeting} upcoming={meeting.at > nowIso} />)}
           </ul>
         </section>
       ))}
@@ -73,7 +73,7 @@ export function PersonMeetingList({ meetings, nowIso, viewerName }: { meetings: 
   );
 }
 
-function MeetingRow({ meeting, isClient }: { meeting: PersonMeeting; isClient: boolean }) {
+function MeetingRow({ meeting, isClient, upcoming }: { meeting: PersonMeeting; isClient: boolean; upcoming: boolean }) {
   const time = isClient ? new Intl.DateTimeFormat("en", { hour: "numeric", minute: "2-digit" }).format(new Date(meeting.at)) : "";
   const share = meeting.totalMs && meeting.talkMs ? Math.max(1, Math.round((meeting.talkMs / meeting.totalMs) * 100)) : null;
   const people = meeting.colleagues.length ? meeting.colleagues : [meeting.ownerName];
@@ -90,6 +90,12 @@ function MeetingRow({ meeting, isClient }: { meeting: PersonMeeting; isClient: b
           {detail}
           {/* On phones the names and duration matter more than talk share. */}
           {share ? <span className="hidden sm:inline"> · they spoke {share}%</span> : null}
+        </span>
+        <span className="block text-xs text-muted-foreground">
+          {meeting.status ? meeting.status[0].toUpperCase() + meeting.status.slice(1) : "Private"}
+          {meeting.status && !upcoming && meeting.status !== "recording" && (
+            meeting.hasRecording ? " · Recording available" : " · No recording"
+          )}
         </span>
       </span>
       <span className="shrink-0 text-xs tabular-nums text-muted-foreground">{time}</span>

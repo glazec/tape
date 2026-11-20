@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Loader2, RefreshCw } from "lucide-react";
 
 import { AppLabel } from "@/components/app-label";
@@ -28,10 +28,11 @@ export function PersonProfile({
   personName: string;
 }) {
   const [stored, setStored] = useState(initialProfile);
-  const [status, setStatus] = useState<Status>("idle");
+  const [status, setStatus] = useState<Status>(initialProfile ? "idle" : "loading");
   const [error, setError] = useState<string | null>(null);
 
-  async function generate() {
+  const requested = useRef(false);
+  const generate = useCallback(async () => {
     setStatus("loading");
     setError(null);
     try {
@@ -48,7 +49,13 @@ export function PersonProfile({
       setError(cause instanceof Error ? cause.message : "Could not write the profile. Try again.");
       setStatus("error");
     }
-  }
+  }, [personId]);
+
+  useEffect(() => {
+    if (initialProfile || requested.current) return;
+    requested.current = true;
+    void generate();
+  }, [generate, initialProfile]);
 
   const busy = status === "loading";
 
@@ -84,7 +91,7 @@ export function PersonProfile({
         <ProfileSkeleton name={personName} />
       ) : status !== "error" ? (
         <p className="mt-3 max-w-[52ch] text-sm leading-6 text-muted-foreground text-pretty">
-          No profile yet.
+          To generate a profile, open a meeting transcript and link {personName} to their speaker label. If the meeting has no transcript yet, upload its recording first.
         </p>
       ) : null}
       {status === "error" && error ? (

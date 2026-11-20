@@ -70,12 +70,15 @@ export function PersonPageView({ data, profile, now = new Date() }: { data: Pers
         </section>
       ) : null}
 
-      {person.isTeammate ? null : <PersonProfile initialProfile={profile} personId={person.id} personName={person.name} />}
+      {person.isTeammate ? null : <PersonProfile key={person.id} initialProfile={profile} personId={person.id} personName={person.name} />}
 
       {connections.length ? <Connections connections={connections} /> : null}
 
       <section aria-labelledby="person-meetings-heading">
-        <h2 className="text-base font-semibold" id="person-meetings-heading">Meetings</h2>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <h2 className="text-base font-semibold" id="person-meetings-heading">Meetings</h2>
+          {meetings.length > 0 && <a className="text-sm underline underline-offset-4" href={`/api/people/${person.id}/transcripts`} download>Export transcripts</a>}
+        </div>
         {meetings.length ? (
           <PersonMeetingList meetings={meetings} nowIso={now.toISOString()} viewerName={data.viewerName} />
         ) : (

@@ -348,7 +348,7 @@ Followup provider routing is covered by `tests/openrouter-followup.test.ts`: gat
 
 ## Person pages
 
-Run `npx vitest run tests/person-profile-interactions.test.tsx` to verify that opening the page waits for a saved profile or an explicit Generate action. The PostgreSQL suite also exercises the transcript completion event, duplicate delivery, profile refresh on a later meeting, and a superseded transcript.
+Run `npx vitest run tests/person-profile-interactions.test.tsx` to verify that opening the page requests a missing profile and allows a retry after speaker attribution. The PostgreSQL suite also exercises the transcript completion event, duplicate delivery, profile refresh on a later meeting, and a superseded transcript.
 
 Run `npx vitest run tests/people.test.ts tests/people-routes.test.ts`. Coverage includes name normalization, likely duplicate ranking, follow-up attribution by cited speaker identity (including first-name subjects and translated copies), stable to-do keys, relationship cadence, time together per month, colleague ranking, talk share, profile transcript selection, uncited claim removal and expertise downgrades, route authentication, manageable meeting checks, merge validation and Undo, to-do status changes, skipped profiles for colleagues, and provider failure messages that do not leak details.
 

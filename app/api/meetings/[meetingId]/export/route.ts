@@ -1,13 +1,12 @@
-import { attachSpeakerIdentities } from "@/lib/speaker-identity";
+import { exportTranscriptSection, sanitizeFilename } from "@/lib/transcript-export";
 import { listReadableMeetingSources } from "@/lib/meeting-composition";
 import { currentVisualAssetCondition } from "@/lib/current-audio-asset";
 import { and, asc, eq, inArray, or } from "drizzle-orm";
 import { z } from "zod";
 
 import { db } from "@/db/client";
-import { mediaAssets, meetings, transcriptSegments } from "@/db/schema";
+import { mediaAssets, meetings } from "@/db/schema";
 import { getCurrentUser } from "@/lib/auth";
-import { currentTranscriptJobIdsSubquery } from "@/lib/current-transcript-job";
 import { getReadableMeetingsCondition } from "@/lib/meeting-access-policy";
 import { buildImageEntryName } from "@/lib/meeting-image-export";
 import { createReadUrl } from "@/lib/r2";
@@ -17,9 +16,6 @@ import { buildZipArchive, type ZipEntry } from "@/lib/zip";
 export const runtime = "nodejs";
 
 const meetingIdSchema = z.uuid();
-const transcriptFallbackWordPattern = /[A-Za-z0-9]+(?:['\u2019][A-Za-z0-9]+)?/g;
-const transcriptCjkCharacterPattern = /[\u3400-\u9fff\uf900-\ufaff]/g;
-const transcriptWordSegmenter = createTranscriptWordSegmenter();
 
 export async function GET(
   request: Request,
@@ -87,32 +83,10 @@ export async function GET(
   }
   const sections: string[] = [];
   for (const [index, part] of exportParts.entries()) {
-  const segments = await db
-    .select({
-      id: transcriptSegments.id,
-      meetingSpeakerId: transcriptSegments.meetingSpeakerId,
-      speaker: transcriptSegments.speaker,
-      startMs: transcriptSegments.startMs,
-      endMs: transcriptSegments.endMs,
-      text: transcriptSegments.text,
-      emotionLabel: transcriptSegments.emotionLabel,
-    })
-    .from(transcriptSegments)
-    .where(
-      and(
-        eq(transcriptSegments.meetingId, part.id),
-        inArray(
-          transcriptSegments.jobId,
-          currentTranscriptJobIdsSubquery(part.id),
-        ),
-      ),
-    )
-    .orderBy(asc(transcriptSegments.startMs));
-  const displaySegments = await attachSpeakerIdentities(part.id, segments, { workspace });
-  sections.push(formatTranscriptExport(exportParts.length > 1 ? `Part ${index + 1}: ${part.title}` : part.title, displaySegments));
-  if (segments.length === 0) sections.push("Transcript not available yet.\n");
+    const title = exportParts.length > 1 ? `Part ${index + 1}: ${part.title}` : part.title;
+    sections.push(await exportTranscriptSection(workspace, part.id, title));
   }
-  const filename = getTranscriptFilename(meeting.title);
+  const filename = `${sanitizeFilename(meeting.title)} transcript.txt`;
 
   return new Response(sections.join("\n"), {
     headers: {
@@ -175,129 +149,4 @@ async function exportMeetingImages(meeting: { id: string; title: string }, sourc
       "content-type": "application/zip",
     },
   });
-}
-
-function formatTranscriptExport(
-  title: string,
-  segments: Array<{
-    speaker: string | null;
-    startMs: number;
-    endMs: number | null;
-    text: string;
-    emotionLabel: string | null;
-  }>,
-) {
-  const lines = [
-    title,
-    "Raw Transcript",
-    "",
-    ...segments.map(
-      (segment, index) =>
-        `[${formatTimestamp(segment.startMs)}] ${segment.speaker ?? "Unknown speaker"} | emotion: ${formatEmotionLabel(segment.emotionLabel)} | wpm: ${formatWordsPerMinute(segment, segments[index + 1])}: ${segment.text}`,
-    ),
-  ];
-
-  return `${lines.join("\n")}\n`;
-}
-
-function formatEmotionLabel(label: string | null) {
-  if (!label) {
-    return "unknown";
-  }
-
-  return `${label.charAt(0).toUpperCase()}${label.slice(1)}`;
-}
-
-function formatWordsPerMinute(
-  segment: {
-    startMs: number;
-    endMs?: number | null;
-    text: string;
-  },
-  nextSegment?: { startMs: number },
-) {
-  const endMs = getEffectiveSegmentEndMs(segment, nextSegment);
-
-  if (endMs === null) {
-    return "unknown";
-  }
-
-  const durationMinutes = (endMs - segment.startMs) / 60000;
-  const wordsPerMinute = countTranscriptWords(segment.text) / durationMinutes;
-
-  return String(Math.round(wordsPerMinute));
-}
-
-function getEffectiveSegmentEndMs(
-  segment: { startMs: number; endMs?: number | null },
-  nextSegment?: { startMs: number },
-) {
-  if (typeof segment.endMs === "number" && segment.endMs > segment.startMs) {
-    return segment.endMs;
-  }
-
-  return nextSegment && nextSegment.startMs > segment.startMs
-    ? nextSegment.startMs
-    : null;
-}
-
-function countTranscriptWords(text: string) {
-  const trimmedText = text.trim();
-
-  if (!trimmedText) {
-    return 0;
-  }
-
-  if (transcriptWordSegmenter) {
-    let wordCount = 0;
-
-    for (const segment of transcriptWordSegmenter.segment(trimmedText)) {
-      if (segment.isWordLike) {
-        wordCount += 1;
-      }
-    }
-
-    if (wordCount > 0) {
-      return wordCount;
-    }
-  }
-
-  const latinWordCount =
-    trimmedText
-      .replace(transcriptCjkCharacterPattern, " ")
-      .match(transcriptFallbackWordPattern)?.length ?? 0;
-  const cjkCharacterCount =
-    trimmedText.match(transcriptCjkCharacterPattern)?.length ?? 0;
-
-  return latinWordCount + cjkCharacterCount;
-}
-
-function createTranscriptWordSegmenter() {
-  if (typeof Intl.Segmenter !== "function") {
-    return null;
-  }
-
-  return new Intl.Segmenter(undefined, { granularity: "word" });
-}
-
-function getTranscriptFilename(title: string) {
-  return `${sanitizeFilename(title)} transcript.txt`;
-}
-
-function formatTimestamp(startMs: number) {
-  const totalSeconds = Math.floor(startMs / 1000);
-  const minutes = Math.floor(totalSeconds / 60);
-  const seconds = totalSeconds % 60;
-
-  return `${minutes}:${seconds.toString().padStart(2, "0")}`;
-}
-
-function sanitizeFilename(value: string) {
-  return (
-    value
-      .replace(/[^\w .()[\]]+/g, " ")
-      .replace(/\s+/g, " ")
-      .trim()
-      .slice(0, 80) || "meeting"
-  );
 }

@@ -6,6 +6,8 @@ import { createHash } from "node:crypto";
 import { db } from "@/db/client";
 import { applyConnectionEdits, connectionRelationshipLabels, type MeetingConnection } from "@/lib/meeting-connections";
 import { storedFollowupSchema } from "@/lib/meeting-followup-source";
+import { activeTranscriptJobIdsSubquery } from "@/lib/current-transcript-job";
+import type { MeetingRecordStatus } from "@/lib/meeting-display-status";
 import { personNameKey } from "@/lib/person-names";
 import { summarizeColleagues } from "@/lib/person-relationship";
 import { getOrCreateWorkspaceForSessionUser, type WorkspaceContext } from "@/lib/workspace";
@@ -32,6 +34,8 @@ export type PersonMeeting = {
   colleagues: string[];
   /** Whether this viewer can open the meeting itself. */
   canOpen: boolean;
+  status: MeetingRecordStatus | null;
+  hasRecording: boolean;
   spoke: boolean;
   talkMs: number;
   totalMs: number;
@@ -137,9 +141,22 @@ export async function getPersonPage(workspace: WorkspaceContext, personId: strin
   // Team-wide: every workspace meeting with the person (gated to colleagues in SQL).
   const meetingRows = await rows<{
     id: string; title: string; at: Date | string; ownerName: string; canOpen: boolean;
+    status: MeetingRecordStatus | null; hasRecording: boolean;
     aiFollowup: unknown; talkMs: number | string | null; totalMs: number | string | null; wallMs: number | string | null;
     colleagues: string[] | null;
-  }>(sql`select * from app_private.person_team_meetings(${personId}::uuid)`);
+  }>(sql`select t.*, m.status, exists (
+      select 1 from meetings source where (source.id = m.id or source.id in (
+        select part.source_meeting_id from meeting_parts part where part.meeting_id = m.id
+      )) and app_private.can_read_meeting(source.id) and (
+      source.recall_recording_id is not null
+      or exists (select 1 from media_assets a where a.meeting_id = source.id and a.type in ('audio', 'synthesized_audio'))
+      or exists (select 1 from transcript_jobs j where j.meeting_id = source.id and j.recording_id is not null
+        and j.id in ${activeTranscriptJobIdsSubquery(sql`source.id`)})
+      )
+    ) as "hasRecording"
+    from app_private.person_team_meetings(${personId}::uuid) t
+    left join meetings m on m.id = t.id and t."canOpen"
+    order by t.at desc, t.id`);
   const truncated = meetingRows.length > PERSON_MEETING_LIMIT;
   const visible = meetingRows.slice(0, PERSON_MEETING_LIMIT);
   const meetingList: PersonMeeting[] = visible.map(row => {
@@ -149,7 +166,7 @@ export async function getPersonPage(workspace: WorkspaceContext, personId: strin
       id: row.id, title: row.title, at: new Date(row.at).toISOString(),
       ownerName: row.ownerName,
       colleagues: (row.colleagues ?? []).sort(),
-      canOpen: Boolean(row.canOpen),
+      canOpen: Boolean(row.canOpen), status: row.status, hasRecording: row.hasRecording,
       talkMs: Number(row.talkMs ?? 0), totalMs, spoke: Number(row.talkMs ?? 0) > 0,
       // Recorded length when there is a transcript, else the call's own length.
       durationMs: totalMs > 0 ? Math.max(totalMs, wallMs) : wallMs,
