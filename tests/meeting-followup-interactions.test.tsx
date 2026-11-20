@@ -287,6 +287,30 @@ describe("meeting followup interaction", () => {
     expect(fetch).toHaveBeenCalledTimes(1);
   });
 
+  it.each([false, true])("restarts the speaker edit delay and generates once (manual = %s)", async (manual) => {
+    vi.useFakeTimers();
+    try {
+      const fetch = vi.fn().mockResolvedValue(Response.json({ result }));
+      vi.stubGlobal("fetch", fetch);
+      const firstSave = Date.now();
+      const { rerender } = render(<MeetingFollowup {...props} autoGenerate lastSpeakerEditMs={firstSave} />);
+      await act(() => vi.advanceTimersByTimeAsync(45_000));
+      const sourceHash = "b".repeat(64);
+      rerender(<MeetingFollowup {...props} autoGenerate lastSpeakerEditMs={Date.now()} sourceHash={sourceHash} />);
+      await act(() => vi.advanceTimersByTimeAsync(59_999));
+      expect(fetch).not.toHaveBeenCalled();
+      if (manual) {
+        await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Generate followup" })); });
+        expect(fetch).toHaveBeenCalledTimes(1);
+      }
+      await act(() => vi.advanceTimersByTimeAsync(60_000));
+      expect(fetch).toHaveBeenCalledTimes(1);
+      expect(fetch.mock.calls[0][1].body).toBe(JSON.stringify({ sourceHash }));
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("waits for the background job before generating a just finished transcript", async () => {
     vi.useFakeTimers();
     const fetch = vi.fn().mockResolvedValue(Response.json({ result }));

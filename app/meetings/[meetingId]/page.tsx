@@ -209,6 +209,7 @@ export default async function MeetingPage({
       {isFollowupReady(followupMeeting) ? (
         <MeetingFollowup
           autoGenerate
+          lastSpeakerEditMs={followupMeeting.lastSpeakerEditMs}
           waitForBackground={followupJobMayBeRunning}
           canGenerate={canManage}
           todoControls={todoControls}

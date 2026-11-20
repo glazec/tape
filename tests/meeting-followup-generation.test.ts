@@ -97,6 +97,12 @@ describe("autoGenerateMeetingFollowup", () => {
     expect(mocks.generate).not.toHaveBeenCalled();
   });
 
+  it("defers the background job during the speaker edit delay", async () => {
+    mocks.composed.mockResolvedValue({ ...meeting, lastSpeakerEditMs: Date.now() });
+    expect(await autoGenerateMeetingFollowup(meetingId)).toEqual({ status: "not_ready" });
+    expect(mocks.generate).not.toHaveBeenCalled();
+  });
+
   it("reports a meeting that is not ready yet", async () => {
     mocks.ready.mockReturnValue(false);
 
