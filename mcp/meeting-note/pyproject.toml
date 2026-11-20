@@ -11,6 +11,7 @@ dependencies = [
     "psycopg[binary]==3.3.4",
     "pyjwt[crypto]==2.13.0",
     "sqlglot==30.11.0",
+    "soundfile==0.13.1",
 ]
 
 [tool.uv]

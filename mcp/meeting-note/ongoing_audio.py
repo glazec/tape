@@ -10,10 +10,10 @@ from pathlib import Path
 import sqlite3
 import time
 from uuid import UUID
-import wave
 import weakref
 import zlib
 
+import soundfile
 import httpx
 from starlette.websockets import WebSocket, WebSocketDisconnect
 
@@ -111,16 +111,21 @@ async def receive_audio(socket: WebSocket):
                     del OPEN_SOURCES[source]
 
 
-async def transcribe(pcm):
+def encode_flac(pcm):
     stream = io.BytesIO()
-    with wave.open(stream, "wb") as wav:
-        wav.setparams((1, 2, RATE, 0, "NONE", "not compressed"))
-        wav.writeframes(pcm)
+    with soundfile.SoundFile(stream, "w", samplerate=RATE, channels=1,
+                             format="FLAC", subtype="PCM_16") as file:
+        file.buffer_write(pcm, dtype="int16")
+    return stream.getvalue()
+
+
+async def transcribe(pcm):
+    compressed = await asyncio.to_thread(encode_flac, pcm)
     async with httpx.AsyncClient(timeout=90) as client:
         result = await client.post(
             "https://api.groq.com/openai/v1/audio/transcriptions",
             headers={"Authorization": "Bearer " + os.environ["GROQ_API_KEY"]},
-            files={"file": ("meeting.wav", stream.getvalue(), "audio/wav")},
+            files={"file": ("meeting.flac", compressed, "audio/flac")},
             data={"model": "whisper-large-v3-turbo", "response_format": "json"},
         )
         result.raise_for_status()
@@ -136,30 +141,45 @@ async def snapshot(path):
         db = connect(path)
         try:
             cutoff = db.execute("select max(rowid) from frames").fetchone()[0] or 0
+            position = ("", -1)
             while True:
-                first = db.execute("""select recording,sample from frames where
-                    audio is not null and rowid<=? order by recording,sample limit 1""",
-                    (cutoff,)).fetchone()
-                if not first:
-                    break
-                recording, start = first
-                pcm = bytearray()
-                stop = start
-                for sample, length, audio in db.execute("""select sample,length,audio from frames
-                    where recording=? and sample>=? and sample<? and rowid<=?
-                    order by sample""", (recording, start, start+BATCH_SAMPLES, cutoff)):
-                    # Preserve substantial capture gaps as separate transcript intervals.
-                    if audio is None or sample > stop + RATE//4:
+                pending = []
+                for _ in range(3):
+                    first = db.execute("""select recording,sample from frames where
+                        audio is not null and rowid<=? and (recording,sample)>(?,?)
+                        order by recording,sample limit 1""", (cutoff, *position)).fetchone()
+                    if not first:
                         break
-                    pcm.extend(bytes(max(0, sample-stop)*2))
-                    pcm.extend(zlib.decompress(audio)[max(0,stop-sample)*2:])
-                    stop = max(stop, sample+length)
-                    last = sample
-                text = await transcribe(bytes(pcm)) if any(pcm) else ""
+                    recording, start = first
+                    pcm = bytearray()
+                    stop = start
+                    for sample, length, audio in db.execute("""select sample,length,audio from frames
+                        where recording=? and sample>=? and sample<? and rowid<=?
+                        order by sample""", (recording, start, start+BATCH_SAMPLES, cutoff)):
+                        if audio is None or sample > stop + RATE//4:
+                            break
+                        pcm.extend(bytes(max(0, sample-stop)*2))
+                        pcm.extend(zlib.decompress(audio)[max(0, stop-sample)*2:])
+                        stop = max(stop, sample+length)
+                        position = (recording, sample)
+                    pending.append((recording, start, stop, position[1], pcm))
+                if not pending:
+                    break
+                results = await asyncio.gather(*(
+                    transcribe(pcm) if any(pcm) else asyncio.sleep(0, result="")
+                    for _, _, _, _, pcm in pending
+                ), return_exceptions=True)
+                # Save successful siblings even when another provider request needs retrying.
                 with db:
-                    db.execute("insert into excerpts values(?,?,?,?)", (recording,start,stop,text))
-                    db.execute("""update frames set audio=null where recording=? and
-                        sample between ? and ? and rowid<=?""", (recording,start,last,cutoff))
+                    for (recording, start, stop, last, _), text in zip(pending, results):
+                        if isinstance(text, BaseException):
+                            continue
+                        db.execute("insert into excerpts values(?,?,?,?)", (recording,start,stop,text))
+                        db.execute("""update frames set audio=null where recording=? and
+                            sample between ? and ? and rowid<=?""", (recording,start,last,cutoff))
+                for result in results:
+                    if isinstance(result, BaseException):
+                        raise result
             return [{"recording_id": rec, "start_ms": round(start*1000/RATE),
                      "end_ms": round(stop*1000/RATE), "text": text}
                     for rec,start,stop,text in db.execute(
