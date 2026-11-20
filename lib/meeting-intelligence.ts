@@ -10,11 +10,6 @@ import {
   getWorkspaceDisplayName,
 } from "@/lib/team-name";
 
-type VocabularyTerm = {
-  term: string;
-  hint?: string | null;
-};
-
 const ELEVENLABS_BATCH_KEYTERM_LIMIT = 1000;
 const ELEVENLABS_BATCH_KEYTERM_MAX_LENGTH = 50;
 const ELEVENLABS_BATCH_KEYTERM_MAX_SPACES = 4;
@@ -108,22 +103,19 @@ const hardSignals = [
 ];
 const chillSignals = ["chill", "cool", "easy", "fine", "relaxed", "steady"];
 
-export function buildTeamVocabularyKeyterms(terms: VocabularyTerm[]) {
-  return buildTranscriptionKeyterms(terms.map((item) => item.term));
-}
-
 export function buildTranscriptionKeyterms(...termGroups: string[][]) {
   const seen = new Set<string>();
   const keyterms: string[] = [];
 
   for (const rawTerm of termGroups.flat()) {
     const term = rawTerm.replace(/\s+/g, " ").trim();
-    const key = term.toLowerCase();
+    const key = term.normalize("NFKC").toLowerCase();
 
     if (
       !term ||
       term.length > ELEVENLABS_BATCH_KEYTERM_MAX_LENGTH ||
       countSpaces(term) > ELEVENLABS_BATCH_KEYTERM_MAX_SPACES ||
+      /[<>{}\[\]\\]/.test(key) ||
       seen.has(key)
     ) {
       continue;
@@ -195,12 +187,14 @@ export function extractMeetingEntities(
   const workspaceEntity = getWorkspaceOrganizationEntity(context.workspaceDomain);
 
   for (const entity of context.transcriptEntities ?? []) {
-    if (!isSupportedEntityType(entity.type)) {
+    const providerType = entity.type.toLowerCase();
+    const type = providerType === "product_or_service" ? "product" : providerType;
+    if (!isSupportedEntityType(type)) {
       continue;
     }
 
     if (
-      entity.type.toLowerCase() === "organization" &&
+      type === "organization" &&
       isWorkspaceOrganizationEntity(entity.value, workspaceEntity)
     ) {
       continue;
@@ -208,7 +202,7 @@ export function extractMeetingEntities(
 
     addOrMergeEntity({
       aliases:
-        entity.type.toLowerCase() === "organization"
+        type === "organization"
           ? mergeAliases(
               buildOrganizationAliases(entity.value),
               getOrganizationDomainAliases(
@@ -220,7 +214,7 @@ export function extractMeetingEntities(
       entities,
       segmentId: findSegmentIdForEntity(segments, entity.value),
       source: entity.source ?? "elevenlabs",
-      type: entity.type.toLowerCase() as MeetingEntityType,
+      type,
       value: entity.value,
     });
   }
@@ -232,13 +226,22 @@ export function extractMeetingEntities(
       continue;
     }
 
+    const mentionedOrganization = entities.find((entity) =>
+      entity.type === "organization" &&
+      entity.aliases.some((alias) => alias.toLowerCase() === domain),
+    );
+    if (mentionedOrganization) {
+      continue;
+    }
+
+    const company = context.organizationDomains?.find((item) => item.domain === domain);
     addOrMergeEntity({
       aliases: [domain],
       entities,
       segmentId: null,
       source: "calendar",
       type: "organization",
-      value: domain,
+      value: company?.name ?? domain,
     });
   }
 
@@ -394,14 +397,12 @@ function normalizeEntityValue(value: string) {
     .replace(/\s+/g, " ");
 }
 
-function isSupportedEntityType(type: string) {
-  const normalized = type.toLowerCase();
-
+function isSupportedEntityType(type: string): type is MeetingEntityType {
   return (
-    normalized === "money" ||
-    normalized === "name" ||
-    normalized === "organization" ||
-    normalized === "product"
+    type === "money" ||
+    type === "name" ||
+    type === "organization" ||
+    type === "product"
   );
 }
 

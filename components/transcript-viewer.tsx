@@ -3,7 +3,6 @@
 import { appLabelClassName } from "@/components/app-label";
 import {
   type ChangeEvent,
-  type FormEvent,
   type MouseEvent,
   type PointerEvent,
   type RefObject,
@@ -19,7 +18,6 @@ import { useRouter } from "next/navigation";
 import {
   ChevronLeft,
   ChevronRight,
-  Check,
   Images,
   Languages,
   LoaderCircle,
@@ -42,13 +40,6 @@ import {
   getAudioPlaylistPosition,
   type AudioPlaylistPart,
 } from "@/lib/audio-playlist";
-import {
-  Combobox,
-  ComboboxEmpty,
-  ComboboxInput,
-  ComboboxItem,
-  ComboboxList,
-} from "@/components/ui/combobox";
 import {
   Select,
   SelectContent,
@@ -74,6 +65,13 @@ import {
 } from "@/lib/speaker-alias-normalization";
 import { NOTE_MOMENT_NAVIGATE, NOTE_PLAYBACK_POSITION, type NoteMomentNavigation } from "@/lib/note-moments";
 import { cn } from "@/lib/utils";
+import {
+  SpeakerPersonEditor,
+  type SpeakerDirectoryParticipant,
+  type SpeakerDirectoryPerson,
+  type SpeakerEditDecision,
+  type SpeakerLinkedPerson,
+} from "@/components/speaker-person-editor";
 
 export type TranscriptSegment = {
   translationCopies?: Partial<Record<TranslationLanguage, string>> | null;
@@ -134,7 +132,7 @@ export function matchesSpeakerSuggestion(
   );
 }
 
-const WORKSPACE_NAME_EDIT_HINT = "To change this linked name, enable Use edited name across this workspace or choose Unlink.";
+const NO_DIRECTORY_PEOPLE: SpeakerDirectoryPerson[] = [];
 const WAVEFORM_DESKTOP_BAR_COUNT = 120;
 const WAVEFORM_MOBILE_BAR_COUNT = 56;
 const WAVEFORM_MOBILE_QUERY = "(max-width: 640px)";
@@ -435,21 +433,11 @@ export function TranscriptViewer({
   const [editingSpeaker, setEditingSpeaker] = useState<EditingSpeaker | null>(
     null,
   );
-  const [draftSpeaker, setDraftSpeaker] = useState("");
-  const [initialDraftSpeaker, setInitialDraftSpeaker] = useState("");
-  const [participantEmail, setParticipantEmail] = useState<string | null>(null);
-  const [rememberName, setRememberName] = useState(true);
-  const [linkedPerson, setLinkedPerson] = useState<SpeakerSuggestion | null>(null);
-  const [linkAction, setLinkAction] = useState<"preserve" | "link" | "create" | "unlink">("preserve");
-  const [choosingPerson, setChoosingPerson] = useState(true);
-  const [nameEdited, setNameEdited] = useState(false);
-  const [directorySuggestions, setDirectorySuggestions] = useState<SpeakerSuggestion[]>([]);
-  const [meetingParticipants, setMeetingParticipants] = useState<SpeakerSuggestion[]>(speakerSuggestions);
+  const [editingName, setEditingName] = useState("");
+  const [editingPerson, setEditingPerson] = useState<SpeakerLinkedPerson | null>(null);
+  const [speakerDirectory, setSpeakerDirectory] = useState<{ people: SpeakerDirectoryPerson[]; participants: SpeakerDirectoryParticipant[] } | null>(null);
   const directoryRequestRef = useRef(0);
-  const needsWorkspaceNameConsent = Boolean(linkedPerson && nameEdited && !rememberName && draftSpeaker.trim() !== linkedPerson.name.trim());
   const [speakerError, setSpeakerError] = useState<string | null>(null);
-  const [speakerApplyScope, setSpeakerApplyScope] =
-    useState<SpeakerApplyScope>("matching_speaker");
   const [savingSpeakerKey, setSavingSpeakerKey] = useState<string | null>(null);
   const [errorSpeakerKey, setErrorSpeakerKey] = useState<string | null>(null);
   const [isRequestingTranslation, setIsRequestingTranslation] = useState(false);
@@ -564,7 +552,12 @@ export function TranscriptViewer({
     for (const speaker of speakerStats) statsByRawKey.set(speaker.speakerKey, speaker);
     return statsByRawKey;
   }, [speakerStats]);
-  const speakerRenameSuggestions = directorySuggestions.length ? directorySuggestions : getSpeakerRenameSuggestions(speakerSuggestions);
+  const fallbackParticipants = useMemo(
+    () => getSpeakerRenameSuggestions(speakerSuggestions).map(suggestion => ({ name: suggestion.name, email: suggestion.email })),
+    [speakerSuggestions],
+  );
+  const editorPeople = speakerDirectory?.people ?? NO_DIRECTORY_PEOPLE;
+  const editorParticipants = speakerDirectory?.participants ?? fallbackParticipants;
   const displaySegments = rawDisplaySegments;
   const activeSegmentId = useMemo(() => {
     const currentMs = currentTime * 1000;
@@ -921,58 +914,33 @@ export function TranscriptViewer({
     if (!anchor) return;
     const speakerKey = getSegmentSpeakerKey(anchor);
     setEditingSpeaker({ allowSegmentScope: Boolean(segmentId), currentSpeaker: anchor.speaker, speakerAliases: [], segmentId: anchor.id, speakerKey, meetingSpeakerId: anchor.meetingSpeakerId, speakerRevision: anchor.speakerRevision });
-    const initialSpeaker = anchor.speaker ?? "";
-    setParticipantEmail(null);
-    setLinkedPerson(anchor.personId ? { id: anchor.personId, name: initialSpeaker, email: anchor.participantEmail ?? "" } : null);
-    setLinkAction("preserve");
-    setChoosingPerson(!anchor.personId);
-    setNameEdited(false);
-    setRememberName(true);
+    setEditingName(anchor.speaker ?? "");
+    setEditingPerson(anchor.personId ? { id: anchor.personId, name: anchor.speaker ?? "", email: anchor.participantEmail ?? null } : null);
     setSpeakerError(null);
-    setDraftSpeaker(initialSpeaker);
-    setInitialDraftSpeaker(initialSpeaker);
-    setSpeakerApplyScope("matching_speaker");
     setErrorSpeakerKey(null);
-    setDirectorySuggestions([]);
-    setMeetingParticipants(speakerSuggestions);
+    setSpeakerDirectory(null);
     const request = ++directoryRequestRef.current;
     if (anchor.meetingSpeakerId && meetingId) {
       void fetch(`/api/meetings/${encodeURIComponent(meetingId)}/speakers/people`)
         .then(response => response.ok ? response.json() : null)
         .then(data => {
           if (!data || request !== directoryRequestRef.current) return;
-          const people: SpeakerSuggestion[] = (data.people ?? []).map((person: { id: string; name: string; emails: string[] }) => ({ id: person.id, name: person.name, email: person.emails.join(", ") }));
-          const participants: SpeakerSuggestion[] = (data.participants ?? []).map((participant: { name: string | null; email: string }) => ({
-            name: participant.name?.trim() || participant.email,
-            email: participant.email,
-          }));
-          setDirectorySuggestions([...people, ...participants]);
-          setMeetingParticipants(participants);
+          setSpeakerDirectory({
+            people: (data.people ?? []).map((person: { id: string; name: string; emails: string[]; inMeeting?: boolean }) => ({ id: person.id, name: person.name, emails: person.emails ?? [], inMeeting: Boolean(person.inMeeting) })),
+            participants: (data.participants ?? []).map((participant: { name: string | null; email: string }) => ({ name: participant.name?.trim() || participant.email, email: participant.email })),
+          });
         }).catch(() => {});
     }
   }
 
-  async function saveSpeaker(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const speaker = draftSpeaker.trim();
+  async function saveSpeaker(decision: SpeakerEditDecision) {
+    const { speaker, applyTo } = decision;
 
     if (!meetingId || !editingSpeaker || savingSpeakerKey) {
       return;
     }
 
     const speakerKey = editingSpeaker.speakerKey;
-
-    if (!speaker) {
-      setSpeakerError("Add a speaker name.");
-      setErrorSpeakerKey(speakerKey);
-      return;
-    }
-
-    if (needsWorkspaceNameConsent) {
-      setSpeakerError(WORKSPACE_NAME_EDIT_HINT);
-      setErrorSpeakerKey(speakerKey);
-      return;
-    }
 
     setSavingSpeakerKey(speakerKey);
     setErrorSpeakerKey(null);
@@ -985,16 +953,11 @@ export function TranscriptViewer({
           method: "PATCH",
           headers: { "content-type": "application/json" },
           body: JSON.stringify({
-            applyTo: speakerApplyScope,
+            ...decision,
             currentSpeaker: editingSpeaker.currentSpeaker,
             segmentId: editingSpeaker.segmentId,
-            speaker,
             meetingSpeakerId: editingSpeaker.meetingSpeakerId,
             expectedRevision: editingSpeaker.speakerRevision,
-            linkAction,
-            ...(linkAction === "link" ? { personId: linkedPerson?.id } : {}),
-            ...(participantEmail && (linkAction === "create" || linkAction === "link") ? { participantEmail } : {}),
-            ...(nameEdited && linkedPerson && rememberName ? { preferredName: speaker } : {}),
           }),
         },
       );
@@ -1012,7 +975,7 @@ export function TranscriptViewer({
       setSavingSpeakerKey(null);
     }
 
-    const updates = returnedSegments ?? applySpeakerUpdateToSegments(segments.filter(segment => shouldApplySpeakerUpdate(segment, editingSpeaker, speakerApplyScope)), editingSpeaker, speakerApplyScope, speaker);
+    const updates = returnedSegments ?? applySpeakerUpdateToSegments(segments.filter(segment => shouldApplySpeakerUpdate(segment, editingSpeaker, applyTo)), editingSpeaker, applyTo, speaker);
     const byId = new Map(updates.map(segment => [segment.id, segment]));
     setSegments(current => current.map(segment => byId.has(segment.id) ? { ...segment, ...byId.get(segment.id) } : segment));
     window.dispatchEvent(new CustomEvent(SPEAKER_LABELS_CHANGED, { detail: updates.map(({ id, speaker, meetingSpeakerId, personId, sourceSpeaker, participantEmail, speakerRevision }) => ({ id, speaker, meetingSpeakerId, personId, sourceSpeaker, participantEmail, speakerRevision })) }));
@@ -1075,176 +1038,20 @@ export function TranscriptViewer({
     showScope: boolean;
   }) {
     return (
-      <form className="flex w-full max-w-xl flex-col gap-2" onSubmit={saveSpeaker}>
-        <div className="flex min-w-0 flex-wrap items-start gap-1.5">
-          <div className="relative min-w-[min(100%,12rem)] flex-1">
-            <Combobox<SpeakerSuggestion>
-              filter={(suggestion, query) =>
-                matchesSpeakerSuggestion(
-                  suggestion,
-                  query,
-                  initialDraftSpeaker,
-                )
-              }
-              inline
-              inputValue={draftSpeaker}
-              isItemEqualToValue={(suggestion, value) =>
-                suggestion.id ? suggestion.id === value.id : suggestion.email === value.email
-              }
-              items={speakerRenameSuggestions}
-              itemToStringLabel={(suggestion) => suggestion.name}
-              itemToStringValue={(suggestion) => suggestion.name}
-              onInputValueChange={(value) => { setDraftSpeaker(value); setNameEdited(true); }}
-              onValueChange={(suggestion) => {
-                if (suggestion) {
-                  if (!nameEdited || !draftSpeaker.trim() || getFullParticipantEmail(draftSpeaker)) setDraftSpeaker(suggestion.name);
-                  setLinkedPerson(suggestion);
-                  setParticipantEmail(suggestion.id ? null : getFullParticipantEmail(suggestion.email));
-                  setLinkAction(suggestion.id ? "link" : "create");
-                  setChoosingPerson(false);
-                }
-              }}
-              open={choosingPerson}
-            >
-              <ComboboxInput
-                aria-label="Speaker name"
-                aria-invalid={hasError}
-                autoComplete="off"
-                autoFocus
-                hideTrigger
-                onKeyDown={(event) => {
-                  if (
-                    event.key === "Enter" &&
-                    !event.nativeEvent.isComposing &&
-                    !event.currentTarget.getAttribute("aria-activedescendant")
-                  ) {
-                    event.preventDefault();
-                    event.currentTarget.form?.requestSubmit();
-                  }
-                }}
-                placeholder="Speaker name"
-              />
-              {choosingPerson ? <div className="absolute inset-x-0 top-full z-30 mt-1 max-h-44 overflow-y-auto rounded-lg bg-popover shadow-md ring-1 ring-foreground/10 empty:hidden">
-                <ComboboxEmpty>
-                  No matching participant. You can still use this name.
-                </ComboboxEmpty>
-                <ComboboxList>
-                  {(suggestion: SpeakerSuggestion) => (
-                    <ComboboxItem key={suggestion.id ?? suggestion.email} value={suggestion}>
-                      <span className="min-w-0">
-                        <span className="block truncate font-medium">
-                          {suggestion.name}
-                        </span>
-                        <span className="block truncate text-xs text-muted-foreground">
-                          {suggestion.email}
-                        </span>
-                      </span>
-                    </ComboboxItem>
-                  )}
-                </ComboboxList>
-              </div> : null}
-            </Combobox>
-          </div>
-          {previewClips.length > 0 && canSeekTranscript ? (
-            <Button
-              aria-label="Preview speaker voice"
-              className="h-11 sm:h-7"
-              disabled={isSaving}
-              onClick={() => playSpeakerPreview(previewClips)}
-              size="sm"
-              title="Preview speaker voice"
-              type="button"
-              variant="outline"
-            >
-              <Play className="size-3.5" />
-              Preview
-            </Button>
-          ) : null}
-          <Button
-            aria-label="Save speaker"
-            className="size-11 sm:size-8"
-            disabled={isSaving}
-            size="icon"
-            type="submit"
-          >
-            <Check />
-          </Button>
-          <Button
-            aria-label="Cancel speaker edit"
-            className="size-11 sm:size-8"
-            disabled={isSaving}
-            onClick={() => setEditingSpeaker(null)}
-            size="icon"
-            type="button"
-            variant="outline"
-          >
-            <X />
-          </Button>
-        </div>
-        {showScope ? (
-          <div className="inline-flex w-fit rounded-md border bg-background p-0.5">
-            <button
-              aria-pressed={speakerApplyScope === "matching_speaker"}
-              className={cn(
-                "h-11 rounded px-2 text-xs font-medium outline-none focus-visible:ring-3 focus-visible:ring-ring/50 sm:h-7",
-                speakerApplyScope === "matching_speaker"
-                  ? "bg-muted text-foreground"
-                  : "text-muted-foreground hover:text-foreground",
-              )}
-              onClick={() => { setSpeakerApplyScope("matching_speaker"); setRememberName(true); }}
-              type="button"
-            >
-              Same speaker
-            </button>
-            <button
-              aria-pressed={speakerApplyScope === "segment"}
-              className={cn(
-                "h-11 rounded px-2 text-xs font-medium outline-none focus-visible:ring-3 focus-visible:ring-ring/50 sm:h-7",
-                speakerApplyScope === "segment"
-                  ? "bg-muted text-foreground"
-                  : "text-muted-foreground hover:text-foreground",
-              )}
-              onClick={() => { setSpeakerApplyScope("segment"); setRememberName(false); }}
-              type="button"
-            >
-              This line
-            </button>
-          </div>
-        ) : null}
-        {linkedPerson ? (
-          <div className="flex flex-wrap items-center gap-2 text-sm">
-            <span>Linked to {linkedPerson.name}{linkedPerson.email ? ` · ${linkedPerson.email}` : ""}</span>
-            <button type="button" onClick={() => setChoosingPerson(true)}>Change person</button>
-            <button type="button" onClick={() => { setLinkedPerson(null); setParticipantEmail(null); setLinkAction("unlink"); setChoosingPerson(true); }}>Unlink</button>
-          </div>
-        ) : (
-          <button className="w-fit text-sm underline" type="button" onClick={() => { setLinkedPerson({ name: draftSpeaker, email: "" }); setLinkAction("create"); setChoosingPerson(false); }}>Create contact without email</button>
-        )}
-        {linkedPerson?.id && meetingParticipants.length > 0 ? (
-          <label className="flex flex-wrap items-center gap-2 text-sm">
-            Associate meeting email
-            <select className="min-h-11 max-w-full rounded-md border bg-background px-2" value={participantEmail ?? ""} onChange={event => {
-              setParticipantEmail(event.target.value || null);
-              if (event.target.value) setLinkAction("link");
-            }}>
-              <option value="">No additional email</option>
-              {meetingParticipants.map(participant => <option key={participant.email} value={participant.email}>{participant.email}</option>)}
-            </select>
-          </label>
-        ) : null}
-        {linkedPerson ? (
-          <label className="flex min-h-11 items-center gap-2 text-sm">
-            <input type="checkbox" checked={rememberName} disabled={isSaving} onChange={event => setRememberName(event.target.checked)} />
-            Use edited name across this workspace
-          </label>
-        ) : <p className="text-xs text-muted-foreground">Save a name only, or choose a person to link.</p>}
-        {needsWorkspaceNameConsent && !hasError ? <p className="text-xs text-muted-foreground">{WORKSPACE_NAME_EDIT_HINT}</p> : null}
-        {hasError ? (
-          <p className="text-xs font-medium text-destructive" role="alert">
-            {speakerError ?? "Speaker name could not be saved. Try again."}
-          </p>
-        ) : null}
-      </form>
+      <SpeakerPersonEditor
+        canPreview={previewClips.length > 0 && canSeekTranscript}
+        initialName={editingName}
+        initialPerson={editingPerson}
+        isSaving={isSaving}
+        key={`${editingSpeaker?.speakerKey}:${editingSpeaker?.segmentId}:${editingSpeaker?.allowSegmentScope}`}
+        onCancel={() => setEditingSpeaker(null)}
+        onPreview={() => playSpeakerPreview(previewClips)}
+        onSubmit={decision => void saveSpeaker(decision)}
+        participants={editorParticipants}
+        people={editorPeople}
+        serverError={hasError ? speakerError ?? "Speaker name could not be saved. Try again." : null}
+        showScope={showScope}
+      />
     );
   }
 
@@ -1674,14 +1481,18 @@ export function TranscriptViewer({
                       // edge, whatever the speaker's name length.
                       <button
                         aria-label={`Play from ${formatTimestamp(segment.startMs)}`}
-                        className="h-7 justify-self-end rounded-sm text-right text-[0.6875rem] tabular-nums text-muted-foreground outline-none hover:text-foreground hover:underline focus-visible:ring-2 focus-visible:ring-ring/50"
+                        className={cn(
+                          "h-7 justify-self-end rounded-sm text-right text-[0.6875rem] tabular-nums text-muted-foreground outline-none hover:text-foreground hover:underline focus-visible:ring-2 focus-visible:ring-ring/50",
+                          // On phones the editor covers the gutter.
+                          isEditing && "max-sm:invisible",
+                        )}
                         onClick={() => seekTo(segment.startMs)}
                         type="button"
                       >
                         {formatTimestamp(segment.startMs)}
                       </button>
                     ) : (
-                      <span className="flex h-7 items-center justify-end text-[0.6875rem] tabular-nums text-muted-foreground">
+                      <span className={cn("flex h-7 items-center justify-end text-[0.6875rem] tabular-nums text-muted-foreground", isEditing && "max-sm:invisible")}>
                         {formatTimestamp(segment.startMs)}
                       </span>
                     )}
@@ -1694,7 +1505,7 @@ export function TranscriptViewer({
                       >
                         <span
                           aria-hidden="true"
-                          className="size-2 shrink-0 rounded-full"
+                          className={cn("size-2 shrink-0 rounded-full", isEditing && "hidden")}
                           style={{
                             backgroundColor: getWaveformSpeakerColor(
                               getSegmentSpeakerKey(segment),
@@ -1703,12 +1514,15 @@ export function TranscriptViewer({
                           }}
                         />
                         {isEditing ? (
-                          renderSpeakerEditor({
-                            hasError,
-                            isSaving,
-                            previewClips,
-                            showScope: true,
-                          })
+                          // On phones the editor spans the timestamp gutter too.
+                          <div className="-ml-16 w-[calc(100%+4rem)] sm:ml-0 sm:w-full">
+                            {renderSpeakerEditor({
+                              hasError,
+                              isSaving,
+                              previewClips,
+                              showScope: true,
+                            })}
+                          </div>
                         ) : canEditSpeakers ? (
                           <button
                             aria-label={`Edit speaker ${speakerLabel}`}

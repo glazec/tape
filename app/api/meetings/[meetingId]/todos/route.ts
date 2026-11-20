@@ -7,7 +7,7 @@ export const runtime = "nodejs";
 
 const todoStatusSchema = z.strictObject({
   todoKey: z.string().regex(/^[0-9a-f]{32}$/),
-  status: z.enum(["todo", "in_progress", "done"]),
+  status: z.enum(["todo", "done", "cancelled"]),
 });
 
 // Team-wide progress on a followup to do. Colleagues of the meeting's

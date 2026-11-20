@@ -1,3 +1,4 @@
+import { revalidateTag, unstable_cache } from "next/cache";
 import { and, eq } from "drizzle-orm";
 
 import { db } from "@/db/client";
@@ -9,7 +10,19 @@ import {
 } from "@/lib/meeting-library-view-options";
 import type { WorkspaceContext } from "@/lib/workspace";
 
-export async function getDefaultMeetingLibraryView(
+function defaultViewTag(workspace: WorkspaceContext) {
+  return `meeting-library-view:${workspace.teamId}:${workspace.userId}`;
+}
+
+export function getDefaultMeetingLibraryView(workspace: WorkspaceContext) {
+  const tag = defaultViewTag(workspace);
+  return unstable_cache(() => readDefaultMeetingLibraryView(workspace), [tag], {
+    revalidate: 3600,
+    tags: [tag],
+  })();
+}
+
+async function readDefaultMeetingLibraryView(
   workspace: WorkspaceContext,
 ): Promise<MeetingLibraryViewConfig | null> {
   const rows = await db
@@ -80,4 +93,5 @@ export async function saveDefaultMeetingLibraryView({
         updatedAt: new Date(),
       },
     });
+  revalidateTag(defaultViewTag(workspace), { expire: 0 });
 }

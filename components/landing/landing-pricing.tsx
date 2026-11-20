@@ -12,6 +12,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { ELEVENLABS_KEYTERM_PROMPTING_USD_MICROS_PER_HOUR } from "@/lib/elevenlabs-model";
 import {
   CALENDAR_LOOKBACK_DAYS,
   summarizeConnectedCalendar,
@@ -735,8 +736,9 @@ export function LandingPricing({
           </div>
           <p className="mt-4 max-w-[64ch] text-[0.8125rem] leading-5 text-ash">
             Estimates from public list prices, snapshot{" "}
-            {CALCULATOR_RATES_SNAPSHOT_DATE}. Neon is usage-based, so its line
-            is an approximation. Per-seat quotes are annual-billing list rates.
+            {CALCULATOR_RATES_SNAPSHOT_DATE}, with current Scribe v3 rates.
+            Neon is usage-based, so its line is an approximation. Per-seat
+            quotes are annual-billing list rates.
           </p>
 
           <div className="mt-10 max-w-[64ch]">
@@ -757,7 +759,9 @@ export function LandingPricing({
               <li>
                 Transcription:{" "}
                 {perHourLabel(TRANSCRIPTION.rateUsdMicrosPerHour)} per recorded
-                hour ({TRANSCRIPTION.label}).
+                hour ({TRANSCRIPTION.label}). Meetings that use vocabulary
+                keyterms cost an additional{" "}
+                {perHourLabel(ELEVENLABS_KEYTERM_PROMPTING_USD_MICROS_PER_HOUR)} per hour.
               </li>
               <li>
                 AI summaries and follow-ups: about{" "}

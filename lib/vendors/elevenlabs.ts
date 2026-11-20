@@ -1,5 +1,9 @@
 import { z } from "zod";
 
+import {
+  ELEVENLABS_BATCH_MODEL,
+  type ElevenLabsBatchModel,
+} from "@/lib/elevenlabs-model";
 import { buildTranscriptionKeyterms } from "@/lib/meeting-intelligence";
 
 const oldElevenLabsWebhookSchema = z.object({
@@ -54,7 +58,7 @@ const elevenLabsWebhookErrorSchema = z.object({
 const elevenLabsTranscriptInputSchema = z.object({
   audioUrl: z.url(),
   webhookUrl: z.url(),
-  keyterms: z.array(z.string().trim().min(1)).optional(),
+  keyterms: z.array(z.string()).optional(),
   metadata: z.record(z.string(), z.string()).optional(),
 });
 
@@ -138,23 +142,19 @@ export async function createElevenLabsTranscriptJob(input: {
 }) {
   const parsedInput = elevenLabsTranscriptInputSchema.parse(input);
   const env = elevenLabsApiEnvSchema.parse(process.env);
-  const body = new FormData();
+  const keyterms = buildTranscriptionKeyterms(parsedInput.keyterms ?? []);
+  const body = buildElevenLabsTranscriptForm(ELEVENLABS_BATCH_MODEL, keyterms);
 
-  body.append("model_id", "scribe_v2");
   body.append("source_url", parsedInput.audioUrl);
   body.append("webhook", "true");
-  body.append("diarize", "true");
-  body.append("entity_detection", "all");
-  body.append("timestamps_granularity", "word");
-  for (const keyterm of buildTranscriptionKeyterms(parsedInput.keyterms ?? [])) {
-    body.append("keyterms", keyterm);
-  }
   // ElevenLabs delivers webhooks to workspace configured endpoints. This metadata only correlates the request with our app URL.
   body.append(
     "webhook_metadata",
     JSON.stringify({
       requestedWebhookUrl: parsedInput.webhookUrl,
       ...parsedInput.metadata,
+      keytermsUsed: keyterms.length > 0,
+      transcriptionModel: ELEVENLABS_BATCH_MODEL,
     }),
   );
 
@@ -178,21 +178,19 @@ export async function transcribeElevenLabsAudioFile(input: {
   audio: Uint8Array;
   fileName: string;
   keyterms?: string[];
+  model?: ElevenLabsBatchModel;
 }) {
   const env = elevenLabsApiEnvSchema.parse(process.env);
-  const body = new FormData();
+  const keyterms = buildTranscriptionKeyterms(input.keyterms ?? []);
+  const body = buildElevenLabsTranscriptForm(
+    input.model ?? ELEVENLABS_BATCH_MODEL,
+    keyterms,
+  );
   const audioBytes = new ArrayBuffer(input.audio.byteLength);
   new Uint8Array(audioBytes).set(input.audio);
   const audio = new Blob([audioBytes], { type: "audio/mpeg" });
 
-  body.append("model_id", "scribe_v2");
   body.append("file", audio, input.fileName);
-  body.append("diarize", "true");
-  body.append("entity_detection", "all");
-  body.append("timestamps_granularity", "word");
-  for (const keyterm of buildTranscriptionKeyterms(input.keyterms ?? [])) {
-    body.append("keyterms", keyterm);
-  }
 
   const response = await fetch("https://api.elevenlabs.io/v1/speech-to-text", {
     method: "POST",
@@ -208,6 +206,28 @@ export async function transcribeElevenLabsAudioFile(input: {
   }
 
   return response.json();
+}
+
+function buildElevenLabsTranscriptForm(
+  model: ElevenLabsBatchModel,
+  keyterms: string[],
+) {
+  const body = new FormData();
+  body.append("model_id", model);
+  body.append("diarize", "true");
+  body.append("timestamps_granularity", "word");
+
+  const entityTypes = model === "scribe_v2"
+    ? ["all"]
+    : ["organization", "name", "money", "product_or_service"];
+  for (const type of entityTypes) {
+    body.append("entity_detection", type);
+  }
+  for (const keyterm of keyterms) {
+    body.append("keyterms", keyterm);
+  }
+
+  return body;
 }
 
 async function buildElevenLabsErrorMessage(response: Response) {

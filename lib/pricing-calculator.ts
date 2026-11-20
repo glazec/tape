@@ -1,7 +1,7 @@
-// Duplicated from lib/provider-usage.ts (snapshot 2026-07-23) so this module
-// stays import-free of the DB client for the public landing bundle.
+import { ELEVENLABS_SCRIBE_USD_MICROS_PER_HOUR } from "@/lib/elevenlabs-model";
+
+// Kept local so the public landing bundle does not import the DB client.
 const RECALL_RECORDING_USD_MICROS_PER_HOUR = 500_000; // $0.50 / hr
-const ELEVENLABS_SCRIBE_USD_MICROS_PER_HOUR = 220_000; // $0.22 / hr
 
 export const CALCULATOR_RATES_SNAPSHOT_DATE = "2026-07-28";
 
@@ -44,8 +44,8 @@ export const recordingProviders = [
 export const sttProviders = [
   {
     id: "elevenlabs",
-    label: "ElevenLabs Scribe",
-    rateUsdMicrosPerHour: ELEVENLABS_SCRIBE_USD_MICROS_PER_HOUR, // $0.22 / hr
+    label: "ElevenLabs Scribe v3",
+    rateUsdMicrosPerHour: ELEVENLABS_SCRIBE_USD_MICROS_PER_HOUR,
     source: "https://elevenlabs.io/pricing/api?price.section=speech_to_text",
   },
 ] as const;

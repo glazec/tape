@@ -10,20 +10,34 @@ import {
 import { LoaderCircle } from "lucide-react";
 import { useRouter } from "next/navigation";
 
+import { defaultMeetingLibraryViewConfig } from "@/lib/meeting-library-view-options";
 import { captureClientAction } from "@/lib/telemetry/client";
 import { startSearchTiming } from "@/lib/sentry/search-timing";
 
 export function MeetingLibrarySearch({
   children,
   controls,
+  hasSavedView = false,
+  hasQuery = false,
 }: {
   children: ReactNode;
   controls: ReactNode;
+  hasSavedView?: boolean;
+  hasQuery?: boolean;
 }) {
   const router = useRouter();
+  const formRef = useRef<HTMLFormElement>(null);
   const [isPending, startTransition] = useTransition();
   const typingTimerRef = useRef<number | null>(null);
   const finishSearchRef = useRef<ReturnType<typeof startSearchTiming> | null>(null);
+
+  useEffect(() => {
+    if (hasQuery && formRef.current) {
+      const data = new FormData(formRef.current);
+      data.delete("q");
+      router.prefetch(getSearchHref(data, hasSavedView));
+    }
+  }, [hasQuery, hasSavedView, controls, router]);
 
   useEffect(() => {
     if (!isPending) {
@@ -53,6 +67,12 @@ export function MeetingLibrarySearch({
       window.clearTimeout(typingTimerRef.current);
     }
 
+    if (!target.value.trim()) {
+      typingTimerRef.current = null;
+      form.requestSubmit();
+      return;
+    }
+
     typingTimerRef.current = window.setTimeout(() => {
       typingTimerRef.current = null;
       form.requestSubmit();
@@ -62,21 +82,17 @@ export function MeetingLibrarySearch({
   function searchMeetings(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
-    const params = new URLSearchParams();
-
-    for (const [name, value] of new FormData(event.currentTarget)) {
-      if (typeof value === "string" && value) {
-        params.append(name, value);
-      }
+    if (typingTimerRef.current !== null) {
+      window.clearTimeout(typingTimerRef.current);
+      typingTimerRef.current = null;
     }
-
-    const query = params.toString();
+    const href = getSearchHref(new FormData(event.currentTarget), hasSavedView);
     captureClientAction("meeting_library_search_applied");
     finishSearchRef.current?.("cancelled");
     finishSearchRef.current = startSearchTiming("meeting_library");
 
     startTransition(() => {
-      router.replace(query ? `/dashboard?${query}` : "/dashboard", {
+      router.replace(href, {
         scroll: false,
       });
     });
@@ -85,6 +101,7 @@ export function MeetingLibrarySearch({
   return (
     <>
       <form
+        ref={formRef}
         onInput={(event) => scheduleSearch(event.currentTarget, event.target)}
         onSubmit={searchMeetings}
       >
@@ -112,4 +129,22 @@ export function MeetingLibrarySearch({
       </div>
     </>
   );
+}
+
+function getSearchHref(data: FormData, hasSavedView: boolean) {
+  const params = new URLSearchParams();
+  for (const [name, value] of data) {
+    if (typeof value === "string" && value.trim()) {
+      params.set(name, value.trim());
+    }
+  }
+  const defaults = defaultMeetingLibraryViewConfig;
+  if (params.get("scope") === defaults.searchScope) params.delete("scope");
+  if (params.get("sort") === defaults.sort) params.delete("sort");
+  if (params.get("status") === defaults.status) params.delete("status");
+  if (hasSavedView && !["q", "scope", "sort", "status"].some((key) => params.has(key))) {
+    params.set("view", "all");
+  }
+  const query = params.toString();
+  return query ? `/dashboard?${query}` : "/dashboard";
 }

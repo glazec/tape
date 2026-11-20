@@ -146,6 +146,7 @@ vi.mock("@/components/transcript-viewer", () => ({
   ),
 }));
 
+import { findPeopleByEmail, isMeetingWorkspaceMember } from "@/lib/people";
 import MeetingPage from "@/app/meetings/[meetingId]/page";
 import { MeetingFollowup } from "@/components/meeting-followup";
 import { getFollowupSourceHash } from "@/lib/meeting-followup-source";
@@ -277,6 +278,25 @@ describe("meeting page", () => {
       expect(html).not.toContain("transcript lines");
     },
   );
+
+  it("links additional identified speakers and lists each person once", async () => {
+    vi.mocked(isMeetingWorkspaceMember).mockResolvedValueOnce(true);
+    vi.mocked(findPeopleByEmail).mockResolvedValueOnce(new Map([["a@example.com", "a"]]));
+    const segment = meeting().segments[0];
+    mocks.getMeeting.mockResolvedValue(meeting({
+      speakerSuggestions: ["a", "b", "c", "d"].map(name => ({ name, email: name + "@example.com" })),
+      segments: ["a", "e", "e", "f"].map((personId, i) => ({
+        ...segment, id: String(i), speaker: "Person " + personId, personId,
+      })),
+    }));
+    const html = renderToStaticMarkup(await MeetingPage({ params: Promise.resolve({ meetingId: "meeting_1" }) }));
+    const list = html.match(/<ul aria-label="Participants".*?<\/ul>/)?.[0] ?? "";
+    expect(list.match(/<li /g)).toHaveLength(6);
+    for (const id of ["a", "e", "f"]) {
+      expect(list).toContain(`href="/people/${id}"`);
+      expect(list).toContain(`Person ${id}</a>`);
+    }
+  });
 
   it("omits the participant row when no participants are available", async () => {
     const html = renderToStaticMarkup(

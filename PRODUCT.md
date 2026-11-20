@@ -114,7 +114,7 @@ Combined transcript sections remain useful while another source is processing. N
 
 Speaker correction supports email first or name first selection. A selected contact stays linked while its display name is edited. Intentional whole speaker name edits default to updating that contact's workspace preferred name; single line corrections require a separate choice to rename globally. Change person and Unlink retain the historical transcript label. Name only local corrections and contacts without email remain available.
 
-Workspace people have permanent IDs and may have several explicitly associated meeting emails. The same mailbox may belong to several contacts; selecting an email never silently merges them. Email association confirms a user's choice, not mailbox ownership or meeting access. Existing transcripts receive stable groups without automatic person assignments. Only a meeting owner or workspace administrator who is an actual workspace member can manage these identities. Shared readers see permitted speaker labels without the contact directory or email metadata.
+Workspace people have permanent IDs and may have several explicitly associated meeting emails. Each confirmed invitation email identifies one profile per workspace. Assigning its email to another profile merges that profile into the existing email owner and redirects the old profile link. Email association confirms a user's choice, not mailbox ownership or meeting access. Existing transcripts receive stable groups without automatic person assignments. Only a meeting owner or workspace administrator who is an actual workspace member can manage these identities. Shared readers see permitted speaker labels without the contact directory or email metadata.
 
 ## Recording reliability
 
@@ -136,7 +136,7 @@ Every named speaker and participant opens a person page at `/people/:personId` f
 
 A person page is shared team knowledge. It draws on every workspace meeting with the person, including meetings the viewer cannot open; those appear with a lock and no link, and their transcripts stay closed. It shows how often the team meets the person (meetings, cadence, time together, their share of the talking, last and next meeting), time together per month for the past year, which colleagues meet them (meetings, time, last met), their to-dos, offers and needs, connections they mentioned, and every team meeting with them, grouped by day with an All meetings or With me filter.
 
-To-dos are shared: one click marks a to-do In progress, the next marks it Done (struck through), a third reopens it. Each change shows who made it and when.
+Team members can click a status on the meeting or person page to cycle from To do to Done to Cancelled and back to To do. Both pages use the same saved status.
 
 An AI profile (background, current role, technical, operational, business and people expertise, achievements, recent focus) is written the first time anyone opens the page, from the team's first meeting with the person and every team meeting in the last three months, and again only when someone presses Refresh. Each line cites its transcript moment; uncited claims are dropped. The profile is shared by the team. Colleagues of the workspace get no AI profile.
 

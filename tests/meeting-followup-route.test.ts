@@ -74,6 +74,14 @@ beforeEach(() => {
 });
 
 describe("meeting followup API", () => {
+  it("generates and persists a followup above the former transcript limit", async () => {
+    const source = { ...meeting, segments: [{ ...meeting.segments[0], text: "x".repeat(400001) }] };
+    mocks.meeting.mockResolvedValue(source);
+    const response = await POST(request(getFollowupSourceHash(source)), context);
+    expect(response.status).toBe(200);
+    expect(mocks.set).toHaveBeenCalledOnce();
+  });
+
   it("saves connection anchors that remain readable after speaker correction and a reload", async () => {
     const source = { ...meeting, segments: [{ id: "one", speaker: "Alex", startMs: 0, text: "I work with the GPU debt team." }] };
     const result = { todos: [], dynamics: [], research: [], connections: [{

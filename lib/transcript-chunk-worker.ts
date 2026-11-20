@@ -5,6 +5,7 @@ import { db } from "@/db/client";
 import { meetings } from "@/db/schema";
 import { inngest } from "@/inngest/client";
 import { getActiveTranscriptText } from "@/lib/active-transcript-text";
+import type { ElevenLabsBatchModel } from "@/lib/elevenlabs-model";
 import { applyElevenLabsTranscriptEvent } from "@/lib/elevenlabs-transcripts";
 import {
   markMeetingTranslationCompleted,
@@ -178,6 +179,7 @@ export async function transcribePreparedTranscriptChunk(input: {
   chunk: PreparedTranscriptChunk;
   keyterms: string[];
   meetingId: string;
+  model: ElevenLabsBatchModel;
   transcriptJobId: string;
 }): Promise<CompletedTranscriptChunk> {
   const audio = await readObjectBytes(
@@ -188,6 +190,7 @@ export async function transcribePreparedTranscriptChunk(input: {
     audio,
     fileName: `meeting-${input.meetingId}-chunk-${input.chunk.plan.index + 1}.mp3`,
     keyterms: input.keyterms,
+    model: input.model,
   })) as ElevenLabsChunkTranscript;
   const transcriptObjectKey = input.chunk.audioObjectKey.replace(
     /\.mp3$/,
@@ -210,6 +213,7 @@ export async function transcribePreparedTranscriptChunk(input: {
 export async function persistCompletedTranscriptChunks(input: {
   chunks: CompletedTranscriptChunk[];
   meetingId: string;
+  model: ElevenLabsBatchModel;
   recordingId?: string;
   transcriptJobId: string;
 }) {
@@ -236,6 +240,7 @@ export async function persistCompletedTranscriptChunks(input: {
         meetingId: input.meetingId,
         ...(input.recordingId ? { recordingId: input.recordingId } : {}),
         transcriptJobId: input.transcriptJobId,
+        transcriptionModel: input.model,
       },
       transcription: {
         entities: merged.entities,

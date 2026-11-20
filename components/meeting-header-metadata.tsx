@@ -57,6 +57,7 @@ function getStatusDotClassName(status: string) {
     case "Failed":
       return "bg-destructive";
     case "In waiting room":
+    case "Wait speaker label":
     case "Processing":
     case "Queued":
     case "Transcribing":

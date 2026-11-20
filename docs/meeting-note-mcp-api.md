@@ -33,6 +33,7 @@ Visible tools:
 9. `get_meeting_images`
 10. `prepare_meeting_upload`
 11. `complete_meeting_upload`
+12. `list_meeting_todos`
 
 ## Access Model
 
@@ -122,6 +123,10 @@ Current categories:
 4. `meeting_search`
 5. `related`
 6. `transcript`
+
+### list_meeting_todos
+
+For “What do I need to follow up on from meetings three to four weeks ago?”, pass the inclusive UTC meeting dates as `start_date` and `end_date`, the recorded speaker name as `assignee`, and `status="todo"`. Omit the assignee for all commitments in meetings the caller can read as a team member. Each item includes the meeting, date, assignee, action, timing and shared status. Use `meeting_id` for a single meeting. Omit status to include done and cancelled items. Page with `limit` and `offset` while `has_more` is true.
 
 ### list_accessible_meetings
 

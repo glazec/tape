@@ -49,13 +49,13 @@ describe.skipIf(!url)("speaker identity PostgreSQL", () => {
     expect((await db.query("select attribution_revision from meetings where id=$1",[meeting])).rows[0].attribution_revision).toBe(before);
     await db.query("RESET ROLE");
   });
-  it("allows explicit people sharing a mailbox without merging and rejects unconfirmed participant email", async () => {
+  it("reuses a confirmed invitation email and rejects an unconfirmed email", async () => {
     await db.query("insert into meeting_attendees(meeting_id,email) values($1,'shared@example.test')",[meeting]);
     const rows=(await db.query("insert into transcript_segments(meeting_id,job_id,speaker,start_ms,text) values($1,$2,'A',10,'A'),($1,$2,'B',20,'B') returning *",[meeting,job])).rows;
     const people=[];
     for(const row of rows) people.push((await mutate(row.id,{linkAction:"create",speaker:"Alex",participantEmail:"shared@example.test",expectedRevision:0})).person.id);
-    expect(people[0]).not.toBe(people[1]);
-    expect((await db.query("select * from person_emails where email='shared@example.test'")).rows).toHaveLength(2);
+    expect(people[0]).toBe(people[1]);
+    expect((await db.query("select * from person_emails where email='shared@example.test'")).rows).toHaveLength(1);
     await db.query("SAVEPOINT invalid_email");
     await expect(mutate(rows[0].id,{linkAction:"link",personId:people[0],participantEmail:"outsider@example.test",expectedRevision:1})).rejects.toThrow(/participant email/i);
     await db.query("ROLLBACK TO SAVEPOINT invalid_email");

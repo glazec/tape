@@ -12,7 +12,7 @@ import { assertWorkspaceHasProviderCredit, providerCreditErrorResponse } from "@
 import { getOrCreateWorkspaceForSessionUser } from "@/lib/workspace";
 
 export const runtime = "nodejs";
-export const maxDuration = 150;
+export const maxDuration = 600;
 const requestSchema = z.strictObject({
   sourceHash: z.string().regex(/^[a-f0-9]{64}$/),
 });
@@ -79,11 +79,6 @@ export async function POST(
         return Response.json({ pending: true }, { status: 202 });
       case "not_found":
         return Response.json({ error: "Meeting not found" }, { status: 404 });
-      case "too_long":
-        return Response.json(
-          { error: "This transcript is too long to generate a followup." },
-          { status: 422 },
-        );
       case "meeting_changed":
         return Response.json(
           { error: "The meeting changed. Refresh the meeting and try again." },

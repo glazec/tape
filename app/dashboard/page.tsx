@@ -563,6 +563,8 @@ async function DashboardMeetingLibrary({
         ) : null}
       </header>
         <MeetingLibrarySearch
+          hasQuery={Boolean(activeViewConfig.query)}
+          hasSavedView={Boolean(savedViewConfig)}
           controls={
             <MeetingLibraryControls
               activeViewConfig={activeViewConfig}

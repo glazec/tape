@@ -113,8 +113,10 @@ describe("applyElevenLabsTranscriptEvent", () => {
         transcriptionText: "",
         transcriptionWords: [],
         metadata: {
+          keytermsUsed: true,
           meetingId: "11111111-1111-4111-8111-111111111111",
           transcriptJobId: "22222222-2222-4222-8222-222222222222",
+          transcriptionModel: "scribe_v3",
         },
       }),
     ).resolves.toEqual({
@@ -145,6 +147,8 @@ describe("applyElevenLabsTranscriptEvent", () => {
     });
     expect(databaseSql).not.toHaveBeenCalled();
     expect(recordElevenLabsTranscriptUsage).toHaveBeenCalledWith({
+      keytermsUsed: true,
+      model: "scribe_v3",
       transcriptJobId: "22222222-2222-4222-8222-222222222222",
     });
   });

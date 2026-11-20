@@ -45,23 +45,23 @@ Seat prices are annual-billing list rates as of July 2026. Blank cells mean we h
 
 ## What it costs
 
-Self-hosted Tape has no licence fee. You pay these providers at their list prices (snapshot July 2026):
+Self-hosted Tape has no licence fee. These estimates use published rates from July 2026 and Scribe v3 rates from November 2026.
 
 | Line                       | Provider             | Rate                                   |
 | -------------------------- | -------------------- | -------------------------------------- |
 | Recording, calendar bot    | Recall.ai            | $0.50 per recorded hour                |
 | Recording, Mac app         | none                 | $0                                     |
-| Transcription              | ElevenLabs Scribe    | $0.22 per recorded hour                |
+| Transcription              | ElevenLabs Scribe v3 | $0.20 per recorded hour, plus $0.05 with keyterms |
 | Summaries and follow-ups   | OpenRouter           | about $0.10 per recorded hour (model dependent) |
 | Database                   | Neon (or any Postgres) | about $5 per month                   |
 | App and workers            | any host             | about $5 per month                     |
 
-Recorded hours are team size × meeting hours per week × share recorded ÷ Tape users on each call. Example: 10 people, 7.5 meeting hours a week each, 2 Tape users per meeting, everything recorded, comes to about 163 recorded hours a month.
+Recorded hours are team size × meeting hours per week × share recorded ÷ Tape users on each call. Example: 10 people, 7.5 meeting hours a week each, 2 Tape users per meeting, everything recorded, comes to about 163 recorded hours a month at the base transcription rate.
 
 | How that team records         | Total per month | Per person |
 | ----------------------------- | --------------- | ---------- |
-| Calendar bot on every call    | about $144      | about $14.37 |
-| Mac app on every call         | about $62       | about $6.22  |
+| Calendar bot on every call    | about $140      | about $14.04 |
+| Mac app on every call         | about $59       | about $5.89  |
 
 The bot fee is the biggest line. A team that sends the bot to every meeting pays about what a per-seat tool costs. The saving comes from recording with the Mac app and from shared meetings being recorded once. Most teams mix the two, so their cost lands in between. These are estimates from list prices; your real usage shows up in Team settings (see [Review billing and credits](#review-billing-and-credits)). The [calculator](https://tape.inevitable.tech/#pricing) lets you change every assumption. It prices self-hosting, not the hosted version.
 
@@ -202,14 +202,16 @@ Recall recording recovery checks started bot meetings every five minutes, indepe
 | Tenant isolation | Forced PostgreSQL RLS for signed in web and MCP reads |
 | Media | Cloudflare R2 with authenticated application routes |
 | Cloud meeting capture | Recall.ai bots and Calendar V2 |
-| Transcription | ElevenLabs Speech to Text using `scribe_v2`, with Railway chunking for recordings over 60 minutes |
+| Transcription | ElevenLabs Speech to Text using `scribe_v3`, with Railway chunking for recordings over 60 minutes |
 | Translation and live answers | OpenRouter, with optional Exa web search for live answers |
 | Provider usage accounting | Idempotent per meeting cost events with personal and organization summaries |
 | Background work | Self hosted Inngest on Railway for transcription, scheduling, translation, reminders, and repair |
 | Heavy media processing | A Railway Node worker for screen share extraction and long recording transcription chunks |
 | Notifications | Optional OneSignal browser and mobile push |
-| Vocabulary enrichment | Optional Twenty CRM names and companies for the IOSG workspace only |
+| Vocabulary enrichment | Enabled team vocabulary, participant names, and meeting organizations. Optional Twenty CRM company matches for the IOSG workspace only |
 | Agent access | A separate FastMCP server with caller scoped reads and backend mediated local recording uploads |
+
+Tape requests organization, person, product or service, and monetary entities alongside the transcript.
 
 The database is the source of truth for meetings, access, jobs, and transcript records. Vendor payloads and media URLs do not replace local access checks. Recall cloud bots use the dedicated `RECALL_REALTIME_WEBHOOK_URL` so Zoom and Google Meet chat delivery remains on the hosted application when a local development tunnel starts or stops.
 

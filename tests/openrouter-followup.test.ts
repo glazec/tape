@@ -201,14 +201,37 @@ describe("followup provider", () => {
     await expect(generateMeetingFollowup(source)).rejects.toThrow("explicit names");
   });
 
-  it("never silently truncates long input", async () => {
-    const fetch = setup();
-    await expect(
-      generateMeetingFollowup({
-        ...source,
-        segments: [{ ...source.segments[0], text: "x".repeat(400001) }],
-      }),
-    ).rejects.toThrow("too long");
-    expect(fetch).not.toHaveBeenCalled();
+  it("rejects citations to unseen text in a later part of the same segment", async () => {
+    const fetch = setup().mockImplementation(() => completion(output));
+    const text = "x".repeat(400001) + source.segments[0].text;
+    await expect(generateMeetingFollowup({
+      ...source, segments: [{ ...source.segments[0], text }],
+    })).resolves.toEqual(output);
+    const inputs = fetch.mock.calls.map(([, init]) => JSON.parse(JSON.parse(init.body).messages[1].content));
+    const continuations = inputs.filter(input => input.previousFollowup);
+    expect(continuations.length).toBeGreaterThan(0);
+    expect(continuations.every(input => input.previousFollowup.todos.length === 0)).toBe(true);
+  });
+
+  it("reads every part of an oversized segment and carries earlier citations forward", async () => {
+    const text = source.segments[0].text + "📝".repeat(210000) + " I will call Sam.";
+    const updated = { ...output, todos: [...output.todos, {
+      person: "Alex", text: "Alex will call Sam.", timing: null,
+      evidence: [{ segmentId: "one", quote: "I will call Sam." }],
+    }] };
+    const fetch = setup().mockImplementation((_url, init) => {
+      const input = JSON.parse(JSON.parse(init.body).messages[1].content);
+      const last = input.transcript.segments[0].text.endsWith("I will call Sam.");
+      return completion(last ? updated : output);
+    });
+    const result = await generateMeetingFollowup({
+      ...source, segments: [{ ...source.segments[0], text }],
+    });
+    expect(result).toEqual(updated);
+    const inputs = fetch.mock.calls.map(([, init]) => JSON.parse(JSON.parse(init.body).messages[1].content));
+    expect(inputs.length).toBeGreaterThan(1);
+    expect(inputs.slice(1).every(input => input.previousFollowup.todos[0].evidence[0].segmentId === "one")).toBe(true);
+    expect(inputs.map(input => input.transcript.segments[0].text).join("")).toBe(text);
+    expect(inputs.every(input => JSON.stringify(input).length < 400000)).toBe(true);
   });
 });

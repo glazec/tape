@@ -1,3 +1,4 @@
+import { speakerEditDelayRemaining } from "@/lib/followup-speaker-delay";
 import { acquireFollowupLease, releaseFollowupLease } from "@/lib/meeting-followup-lease";
 import { getRecentMeetingCompanies } from "@/lib/recent-meeting-companies";
 import { and, eq, isNull, sql } from "drizzle-orm";
@@ -6,10 +7,7 @@ import { db } from "@/db/client";
 import { meetings, users } from "@/db/schema";
 import { normalizeEmailDomain } from "@/lib/access";
 import { getComposedMeetingForFollowup } from "@/lib/meeting-composition";
-import {
-  FOLLOWUP_SOURCE_LIMIT,
-  type MeetingFollowup,
-} from "@/lib/meeting-followup";
+import type { MeetingFollowup } from "@/lib/meeting-followup";
 import {
   getCurrentMeetingFollowup,
   getCurrentMeetingConnections,
@@ -36,7 +34,6 @@ export type MeetingFollowupGenerationOutcome =
   | { status: "in_progress" }
   | { status: "not_found" }
   | { status: "not_ready" }
-  | { status: "too_long" }
   | { status: "transcript_changed" }
   | { status: "meeting_changed" };
 
@@ -44,7 +41,7 @@ export type MeetingFollowupGenerationOutcome =
  * Generates the AI followup for a meeting the workspace can manage and saves
  * it against the transcript it was generated from. Shared by the on-demand
  * route and the job that runs when a transcript finishes, so both apply the
- * same readiness, size, credit, and concurrency checks.
+ * same readiness, credit, and concurrency checks.
  *
  * Provider and credit errors are thrown for the caller to report.
  */
@@ -71,10 +68,6 @@ async function generateLockedMeetingFollowup({
 
   if (expectedSourceHash && sourceHash !== expectedSourceHash) {
     return { status: "transcript_changed" };
-  }
-
-  if (JSON.stringify(source).length > FOLLOWUP_SOURCE_LIMIT) {
-    return { status: "too_long" };
   }
 
   const existing = getCurrentMeetingFollowup(meeting);
@@ -176,6 +169,8 @@ export async function autoGenerateMeetingFollowup(
   if (getCurrentMeetingFollowup(meeting)) {
     return { status: "already_current" };
   }
+
+  if (speakerEditDelayRemaining(meeting.lastSpeakerEditMs) > 0) return { status: "not_ready" };
 
   return generateAndSaveMeetingFollowup({ meeting, meetingId, workspace });
 }

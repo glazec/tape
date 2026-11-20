@@ -18,6 +18,7 @@ import {
   markLocationReminderDeliveryFailed,
   sendScheduledLocationReminder,
 } from "@/lib/location-reminders";
+import { ELEVENLABS_BATCH_MODEL } from "@/lib/elevenlabs-model";
 import { getMeetingVocabularyKeyterms } from "@/lib/team-vocabulary";
 import {
   shouldChunkTranscription,
@@ -209,6 +210,7 @@ export const transcribeAudio = inngest.createFunction(
           data: {
             ...data,
             keyterms,
+            model: ELEVENLABS_BATCH_MODEL,
           },
         });
       }

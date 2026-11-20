@@ -178,13 +178,13 @@ describe("computeMonthlyCost", () => {
       meetingHoursPerPersonPerDay: 1,
       avgAttendeesPerMeeting: 1,
       recordingProviderId: "recall", // $0.50/hr
-      sttProviderId: "elevenlabs", // $0.22/hr
+      sttProviderId: "elevenlabs", // $0.20/hr
       databaseProviderId: "neon",
     });
 
     const hours = WORKING_DAYS_PER_MONTH; // 1 person, 1 hr/day, 1 attendee
     expect(breakdown.recordingUsdMicros).toBe(Math.round(hours * 500_000));
-    expect(breakdown.sttUsdMicros).toBe(Math.round(hours * 220_000));
+    expect(breakdown.sttUsdMicros).toBe(Math.round(hours * 200_000));
   });
 
   it("falls back to defaults for unknown provider ids", () => {
@@ -222,7 +222,7 @@ describe("computeMonthlyCost", () => {
     const hours = WORKING_DAYS_PER_MONTH;
     expect(breakdown.recordingUsdMicros).toBe(0);
     // Transcription and summaries still run on every recorded hour.
-    expect(breakdown.sttUsdMicros).toBe(Math.round(hours * 220_000));
+    expect(breakdown.sttUsdMicros).toBe(Math.round(hours * 200_000));
     expect(breakdown.llmUsdMicros).toBe(Math.round(hours * 100_000));
     expect(breakdown.hostingUsdMicros).toBe(5_000_000);
   });
@@ -252,16 +252,16 @@ describe("published default estimate", () => {
       databaseProviderId: "neon",
     });
 
-  it("is about $14.37 per person with the bot on every call", () => {
+  it("is about $14.04 per person with the bot on every call", () => {
     expect(costFor("recall").perPersonUsdMicros / 1_000_000).toBeCloseTo(
-      14.37,
+      14.04,
       2,
     );
   });
 
-  it("is about $6.22 per person when the Mac app records", () => {
+  it("is about $5.89 per person when the Mac app records", () => {
     expect(costFor("mac-app").perPersonUsdMicros / 1_000_000).toBeCloseTo(
-      6.22,
+      5.89,
       2,
     );
   });

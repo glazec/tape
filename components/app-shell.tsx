@@ -46,6 +46,7 @@ export function AppShell({
         <div className={cn("mx-auto flex h-14 w-full items-center gap-4 px-4 sm:gap-8 sm:px-6", wide ? "max-w-6xl" : "max-w-4xl")}>
           <Link
             href="/dashboard"
+            prefetch={activeHref !== "/dashboard" ? true : null}
             aria-label="Tape home"
             className="inline-flex w-fit shrink-0 rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-4"
             data-telemetry-action="nav_home"

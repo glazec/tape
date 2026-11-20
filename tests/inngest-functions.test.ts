@@ -648,7 +648,7 @@ describe("Inngest functions", () => {
     expect(sendEvent).toHaveBeenCalledWith("queue-chunked-transcription", {
       id: `chunked-transcription:${data.transcriptJobId}`,
       name: "meeting/transcribe.audio-in-chunks",
-      data: { ...data, keyterms: ["IOSG"] },
+      data: { ...data, keyterms: ["IOSG"], model: "scribe_v3" },
     });
   });
 

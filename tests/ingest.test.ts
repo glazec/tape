@@ -1240,7 +1240,7 @@ describe("vendor job creation", () => {
     vi.unstubAllEnvs();
   });
 
-  it("sends ElevenLabs webhook metadata only as request correlation data", async () => {
+  it("sends request correlation and usage metadata with the ElevenLabs webhook", async () => {
     vi.stubEnv("ELEVENLABS_API_KEY", "elevenlabs-key\n");
     const fetchMock = vi.fn().mockResolvedValue(
       new Response(JSON.stringify({ request_id: "req_123" }), {
@@ -1262,7 +1262,9 @@ describe("vendor job creation", () => {
     expect(init.body.get("diarize")).toBe("true");
     expect(init.body.get("timestamps_granularity")).toBe("word");
     expect(JSON.parse(String(init.body.get("webhook_metadata")))).toEqual({
+      keytermsUsed: false,
       requestedWebhookUrl: "https://app.example.com/api/elevenlabs/webhook",
+      transcriptionModel: "scribe_v3",
     });
   });
 

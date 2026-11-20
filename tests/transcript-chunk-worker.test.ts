@@ -78,6 +78,7 @@ describe("transcript chunk worker", () => {
         plan: { index: 0, startMs: 0, endMs: 60_000, ownershipStartMs: 0, ownershipEndMs: 60_000 },
       }],
       meetingId: "meeting",
+      model: "scribe_v3",
       transcriptJobId: "job",
     });
 

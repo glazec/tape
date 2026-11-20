@@ -65,7 +65,7 @@ export function PersonPageView({ data, profile, now = new Date() }: { data: Pers
 
       {todos.length || dynamics.length ? (
         <section aria-labelledby="person-followup-heading">
-          {todos.length ? <PersonTodos items={todos} viewerName={data.viewerName} /> : <h2 className="text-base font-semibold" id="person-followup-heading">To do</h2>}
+          {todos.length ? <PersonTodos items={todos} /> : <h2 className="text-base font-semibold" id="person-followup-heading">To do</h2>}
           {dynamics.length ? <Dynamics items={dynamics} /> : null}
         </section>
       ) : null}

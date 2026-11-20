@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { PersonLink } from "@/components/person-link";
-import { findPeopleByEmail, isMeetingWorkspaceMember } from "@/lib/people";
+import { findPeopleByEmail, getMeetingTodoControls, isMeetingWorkspaceMember } from "@/lib/people";
 import { MeetingComposedTranscripts } from "@/components/meeting-composed-transcripts";
 import { getMeetingCompositionForWorkspace, composeMeetingForFollowup } from "@/lib/meeting-composition";
 import { listShareRecipientSuggestions } from "@/lib/share-recipient-suggestions";
@@ -81,7 +81,7 @@ export default async function MeetingPage({
   const latestPart = [...parts].sort((a,b) => Date.parse(b.lastRecordingEndedAt ?? "1970-01-01") - Date.parse(a.lastRecordingEndedAt ?? "1970-01-01"))[0];
   const hasActivePart = parts.some(part => ["scheduled", "recording"].includes(part.status));
   const canManage = meeting.canManage;
-  const participants = [...new Map(parts.flatMap(part => part.speakerSuggestions)
+  const invitees = [...new Map(parts.flatMap(part => part.speakerSuggestions)
     .map(person => [person.email.trim().toLowerCase(), person])).values()];
   const followupSource = getFollowupSource(followupMeeting);
   const followupResult = getCurrentMeetingFollowup(followupMeeting);
@@ -96,8 +96,23 @@ export default async function MeetingPage({
     isMeetingWorkspaceMember(meetingId),
   ]);
   const participantPeople = canOpenPeople
-    ? await findPeopleByEmail(workspace.teamId, participants.map(person => person.email))
+    ? await findPeopleByEmail(workspace.teamId, invitees.map(person => person.email.trim()))
     : new Map<string, string>();
+  const roster = new Map<string, MeetingParticipant>();
+  for (const invitee of invitees) {
+    const email = invitee.email.trim().toLowerCase();
+    const personId = participantPeople.get(email) ?? null;
+    roster.set(personId ?? email, { ...invitee, personId });
+  }
+  for (const part of parts) {
+    for (const { personId, speaker } of part.segments) {
+      if (!personId || !speaker) continue;
+      const existing = roster.get(personId);
+      if (existing?.name === speaker) continue;
+      roster.set(personId, { personId, name: speaker, email: existing?.email ?? null });
+    }
+  }
+  const participants = [...roster.values()];
   const [shareRecipients, activeShares, teamConfiguration] = canShare
     ? await Promise.all([
         listShareRecipientSuggestions(workspace),
@@ -107,11 +122,14 @@ export default async function MeetingPage({
     : [[], [], null];
   const preferredLanguage = await getUserLanguage(workspace.userId, teamConfiguration?.translationLanguage);
   const savedFollowup = storedFollowupSchema.safeParse(followupMeeting.aiFollowup);
+  const todoControls = followupResult && savedFollowup.success && canOpenPeople
+    ? await getMeetingTodoControls(meetingId, savedFollowup.data.result.todos) : [];
   const cachedFollowup = followupResult && savedFollowup.success ? savedFollowup.data.translations?.[preferredLanguage] : undefined;
   const translatedFollowup = cachedFollowup && followupResult ? resolveTranslatedFollowupSubjects(cachedFollowup, followupResult) : undefined;
   for (const part of parts) applyPreferredTranscriptLanguage(part, preferredLanguage);
   const primaryDisplayStatus = getMeetingDisplayStatus({
     botState: meeting.botState,
+    needsSpeakerLabel: meeting.needsSpeakerLabel,
     meetingStatus: meeting.status,
     transcriptJobStatus: meeting.transcriptJobStatus,
   });
@@ -119,7 +137,8 @@ export default async function MeetingPage({
     ? parts.some(part => part.status === "recording") ? "recording"
       : hasActivePart ? "scheduled"
       : parts.some(part => ["queued", "running"].includes(part.transcriptJobStatus ?? "") || part.status === "processing") ? "processing"
-      : parts.some(part => part.status === "failed") ? "failed" : primaryDisplayStatus
+      : parts.some(part => part.status === "failed") ? "failed"
+      : primaryDisplayStatus === "ready" && parts.some(part => part.needsSpeakerLabel) ? "wait_speaker_label" : primaryDisplayStatus
     : primaryDisplayStatus;
   const recordingParts = meeting.recordingParts ?? [];
   const continuousVisualAssets =
@@ -205,8 +224,10 @@ export default async function MeetingPage({
       {isFollowupReady(followupMeeting) ? (
         <MeetingFollowup
           autoGenerate
+          lastSpeakerEditMs={followupMeeting.lastSpeakerEditMs}
           waitForBackground={followupJobMayBeRunning}
           canGenerate={canManage}
+          todoControls={todoControls}
           initialResult={translatedFollowup ?? followupResult}
           needsTranslation={!!followupResult && preferredLanguage !== "en" && !translatedFollowup}
           preferredLanguage={preferredLanguage}
@@ -214,7 +235,7 @@ export default async function MeetingPage({
           initialConnectionsRevision={getConnectionsRevision(followupMeeting)}
           initialConnectionIds={getCurrentMeetingConnectionIds(followupMeeting)}
           organizationDomains={organizationDomains}
-          participants={participants}
+          participants={invitees}
           key={`${workspace.userId}:${meetingId}:${canManage}`}
           meetingId={meetingId}
           meetingTitle={followupMeeting.title}
@@ -340,7 +361,7 @@ export default async function MeetingPage({
                 <ParticipantList
                   canOpenPeople={canOpenPeople}
                   meetingId={canManage ? meetingId : undefined}
-                  participants={participants.map(participant => ({ ...participant, personId: participantPeople.get(participant.email.trim().toLowerCase()) ?? null }))}
+                  participants={participants}
                 />
               ) : null}
               {participants.length > 0 && relatedMeetings.length > 0 ? (
@@ -452,6 +473,8 @@ function formatPlatform(platform: string) {
 }
 
 function formatStatus(status: string) {
+  if (status === "wait_speaker_label") return "Wait speaker label";
+
   if (status === "missed") {
     return "No recording";
   }
@@ -462,6 +485,8 @@ function formatStatus(status: string) {
 
   return status.charAt(0).toUpperCase() + status.slice(1);
 }
+
+type MeetingParticipant = { email: string | null; name: string | null; personId: string | null };
 
 const VISIBLE_PARTICIPANT_COUNT = 6;
 
@@ -476,18 +501,18 @@ function ParticipantList({
 }: {
   canOpenPeople: boolean;
   meetingId?: string;
-  participants: Array<{ email: string; name: string | null; personId: string | null }>;
+  participants: MeetingParticipant[];
 }) {
   const visible = participants.slice(0, VISIBLE_PARTICIPANT_COUNT);
   const hidden = participants.slice(VISIBLE_PARTICIPANT_COUNT);
-  const label = (participant: { email: string; name: string | null; personId: string | null }) => {
+  const label = (participant: MeetingParticipant) => {
     const text = participant.name || participant.email;
     return canOpenPeople ? (
       <PersonLink
         meetingId={meetingId}
-        open={{ email: participant.email, name: participant.name }}
+        open={participant.email ? { email: participant.email, name: participant.name } : null}
         personId={participant.personId}
-        title={participant.email}
+        title={participant.email ?? undefined}
       >
         {text}
       </PersonLink>
@@ -498,7 +523,7 @@ function ParticipantList({
     <div className="text-sm text-muted-foreground">
       <ul aria-label="Participants" className="inline">
         {visible.map((participant, index) => (
-          <li className="inline" key={participant.email} title={participant.email}>
+          <li className="inline" key={participant.personId ?? participant.email} title={participant.email ?? undefined}>
             {label(participant)}
             {index < visible.length - 1 || hidden.length > 0 ? ", " : ""}
           </li>
@@ -513,8 +538,8 @@ function ParticipantList({
             {hidden.map((participant, index) => (
               <li
                 className="inline"
-                key={participant.email}
-                title={participant.email}
+                key={participant.personId ?? participant.email}
+                title={participant.email ?? undefined}
               >
                 {label(participant)}
                 {index < hidden.length - 1 ? ", " : ""}

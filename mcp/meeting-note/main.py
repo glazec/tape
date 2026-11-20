@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from decimal import Decimal
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 from urllib.parse import urlparse
 from uuid import UUID, uuid4
 import asyncio
@@ -1959,6 +1959,59 @@ async def list_accessible_meetings(
             "participant, entity, or transcript text."
         ),
     }
+
+
+@mcp.tool
+async def list_meeting_todos(
+    start_date: date | None = None,
+    end_date: date | None = None,
+    status: Literal["todo", "done", "cancelled"] | None = None,
+    assignee: str | None = None,
+    meeting_id: str | None = None,
+    limit: int = 100,
+    offset: int = 0,
+) -> dict[str, Any]:
+    """Find saved followups from accessible meetings by inclusive UTC meeting dates, status and exact speaker name (case insensitive). Use status=todo for outstanding work. Returns the recorded assignee, action, timing, shared status and meeting."""
+    if start_date and end_date and start_date > end_date:
+        raise ValueError("start_date must be on or before end_date")
+    workspace = await _workspace_for_current_user()
+    page_size = _limit(limit, 100, 500)
+    params = {
+        "start": start_date, "end": end_date, "status": status, "assignee": _clean(assignee),
+        "meeting": _uuid(meeting_id, "meeting_id") if meeting_id else None,
+        "limit": page_size + 1, "offset": _offset(offset),
+    }
+    access = _access_condition(workspace, params)
+    rows = await _fetch_all(f"""
+        select m.id as meeting_id, m.title as meeting_title, coalesce(m.started_at, m.created_at) as meeting_at,
+               item->>'person' as assignee, item->>'text' as action, item->>'timing' as timing,
+               coalesce(s.status, 'todo') as status
+        from meetings m
+        cross join lateral jsonb_array_elements(m.ai_followup #> '{{result,todos}}') with ordinality as tasks(item, position)
+        left join followup_todo_states s on s.meeting_id = m.id and s.todo_key =
+          left(encode(sha256(convert_to(concat(item #>> '{{evidence,0,segmentId}}', chr(10), btrim(item->>'text')), 'UTF8')), 'hex'), 32)
+        where m.status::text = 'ready' and {access} and app_private.is_internal_member(m.team_id)
+          and (%(meeting)s::uuid is null or m.id = %(meeting)s::uuid)
+          and (%(start)s::date is null or (coalesce(m.started_at,m.created_at) at time zone 'UTC')::date >= %(start)s::date)
+          and (%(end)s::date is null or (coalesce(m.started_at,m.created_at) at time zone 'UTC')::date <= %(end)s::date)
+          and (%(status)s::text is null or coalesce(s.status,'todo') = %(status)s)
+          and (%(assignee)s::text is null or lower(item->>'person') = lower(%(assignee)s))
+          and jsonb_array_length(item->'evidence') > 0
+          and not exists (
+            select 1 from jsonb_array_elements(item->'evidence') ev
+            where not exists (
+              select 1 from transcript_segments ts
+              where ts.id::text = ev->>'segmentId'
+                and (ts.meeting_id = m.id or exists (
+                  select 1 from meeting_parts part where part.meeting_id = m.id and part.source_meeting_id = ts.meeting_id))
+                and ts.job_id = ({_current_transcript_job_subquery("ts.meeting_id")})
+            )
+          )
+        order by meeting_at desc, m.id, tasks.position
+        limit %(limit)s offset %(offset)s
+    """, params)
+    return {"todos": _json_safe_rows(rows[:page_size]), "has_more": len(rows) > page_size,
+            "limit": page_size, "offset": params["offset"]}
 
 
 @mcp.tool

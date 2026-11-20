@@ -11,6 +11,7 @@ import {
   users,
 } from "@/db/schema";
 import { normalizeEmailDomain } from "@/lib/access";
+import { ELEVENLABS_BATCH_MODEL } from "@/lib/elevenlabs-model";
 import { recordingTimelineRebaseQuery } from "@/lib/recording-timeline";
 import { activeTranscriptJobIdsSubquery } from "@/lib/current-transcript-job";
 import {
@@ -238,6 +239,16 @@ export async function applyElevenLabsTranscriptEvent(
   }
 
   const now = new Date();
+  const metadata: Record<string, unknown> = event.metadata;
+  const usage: Parameters<typeof recordElevenLabsTranscriptUsage>[0] = {
+    transcriptJobId: persistence.transcriptJobId,
+    ...(metadata.transcriptionModel === ELEVENLABS_BATCH_MODEL
+      ? { model: ELEVENLABS_BATCH_MODEL }
+      : {}),
+    ...(typeof metadata.keytermsUsed === "boolean"
+      ? { keytermsUsed: metadata.keytermsUsed }
+      : {}),
+  };
 
   if (persistence.action === "fail") {
     if (
@@ -298,9 +309,7 @@ export async function applyElevenLabsTranscriptEvent(
           );
       }
 
-      await recordElevenLabsTranscriptUsage({
-        transcriptJobId: persistence.transcriptJobId,
-      });
+      await recordElevenLabsTranscriptUsage(usage);
 
       return {
         action: "recover" as const,
@@ -323,9 +332,7 @@ export async function applyElevenLabsTranscriptEvent(
       })
       .where(eq(transcriptJobs.id, persistence.transcriptJobId));
 
-    await recordElevenLabsTranscriptUsage({
-      transcriptJobId: persistence.transcriptJobId,
-    });
+    await recordElevenLabsTranscriptUsage(usage);
 
     if (meetingId) {
       return {
@@ -484,8 +491,8 @@ export async function applyElevenLabsTranscriptEvent(
   ]);
 
   await recordElevenLabsTranscriptUsage({
+    ...usage,
     fallbackDurationMs: transcriptDurationMs,
-    transcriptJobId: persistence.transcriptJobId,
   });
 
   return {

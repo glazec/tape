@@ -7,6 +7,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { MeetingLibrarySearch } from "@/components/meeting-library-search";
 
 const replace = vi.fn();
+const prefetch = vi.fn();
 const timing = vi.hoisted(() => ({ start: vi.fn(), finish: vi.fn() }));
 vi.mock("@/lib/sentry/search-timing", () => ({ startSearchTiming: timing.start }));
 const pendingNavigation = new Promise<never>(() => {});
@@ -14,6 +15,7 @@ let beginNavigation: (() => void) | null = null;
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({
+    prefetch,
     replace: (...args: Parameters<typeof replace>) => {
       replace(...args);
       beginNavigation?.();
@@ -25,6 +27,7 @@ describe("MeetingLibrarySearch", () => {
   beforeEach(() => {
     beginNavigation = null;
     replace.mockReset();
+    prefetch.mockReset();
     timing.start.mockReset().mockReturnValue(timing.finish);
     timing.finish.mockReset();
   });
@@ -60,13 +63,21 @@ describe("MeetingLibrarySearch", () => {
     );
   });
 
-  it("omits empty values and returns to the dashboard root", () => {
+  it.each([
+    [false, "all", "/dashboard"],
+    [true, "all", "/dashboard?view=all"],
+    [true, "ready", "/dashboard?status=ready"],
+  ] as const)("clears immediately to the prefetched view (saved=%s, status=%s)", (hasSavedView, status, href) => {
     render(
       <MeetingLibrarySearch
+        hasQuery
+        hasSavedView={hasSavedView}
         controls={
           <>
-            <input defaultValue="" name="q" />
-            <button type="submit">Search</button>
+            <input defaultValue="founder" name="q" type="search" />
+            <input defaultValue="all" name="scope" />
+            <input defaultValue="smart" name="sort" />
+            <input defaultValue={status} name="status" />
           </>
         }
       >
@@ -74,11 +85,9 @@ describe("MeetingLibrarySearch", () => {
       </MeetingLibrarySearch>,
     );
 
-    fireEvent.submit(
-      screen.getByRole("button", { name: "Search" }).closest("form")!,
-    );
-
-    expect(replace).toHaveBeenCalledWith("/dashboard", { scroll: false });
+    expect(prefetch).toHaveBeenCalledWith(href);
+    fireEvent.input(screen.getByRole("searchbox"), { target: { value: "" } });
+    expect(replace).toHaveBeenCalledWith(href, { scroll: false });
   });
 
   it("keeps the dashboard visible and makes only stale results inert while searching", () => {

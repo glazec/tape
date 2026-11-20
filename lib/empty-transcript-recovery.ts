@@ -2,6 +2,7 @@ import { and, eq, inArray, ne, sql } from "drizzle-orm";
 
 import { db } from "@/db/client";
 import { meetings, transcriptJobs } from "@/db/schema";
+import { ELEVENLABS_BATCH_MODEL } from "@/lib/elevenlabs-model";
 import { getMeetingVocabularyKeyterms } from "@/lib/team-vocabulary";
 import { markTranscriptJobFailedSafely } from "@/lib/transcript-job-failure";
 
@@ -74,6 +75,7 @@ export async function prepareEmptyTranscriptRecovery(
   await db
     .update(transcriptJobs)
     .set({
+      billingKeytermsUsed: keyterms.length > 0,
       errorMessage: EMPTY_TRANSCRIPT_RECOVERY_QUEUED,
       status: "running",
       updatedAt: now,
@@ -99,6 +101,7 @@ export async function prepareEmptyTranscriptRecovery(
     ...(objectKey ? { objectKey } : {}),
     keyterms,
     meetingId: input.meetingId,
+    model: ELEVENLABS_BATCH_MODEL,
     ...(recallBotId ? { recallBotId } : {}),
     ...(recallRecordingId ? { recallRecordingId } : {}),
     ...(recordingId ? { recordingId } : {}),

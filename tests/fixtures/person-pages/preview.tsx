@@ -31,7 +31,7 @@ const data: PersonPageData = {
   todos: [
     { kind: "todo", text: "Dana Whitfield will send the fleet utilization data room to Jordan.", timing: "by Friday", meetingId: "m1", meetingTitle: "Lumen Robotics seed follow up", meetingAt: daysAgo(4), segmentId: "s1", todoKey: "s1000000000000000000000000000000" },
     { kind: "todo", text: "Dana Whitfield will introduce Jordan to the warehouse pilot customer.", timing: null, meetingId: "m3", meetingTitle: "Lumen Robotics diligence call", meetingAt: daysAgo(41), segmentId: "s2", todoKey: "s2000000000000000000000000000000", state: { status: "done", updatedBy: "Riley Ng", updatedAt: daysAgo(30) } },
-    { kind: "todo", text: "Dana Whitfield will share pilot pricing for two warehouses.", timing: "next week", meetingId: "m6", meetingTitle: "Lumen Robotics pricing review", meetingAt: daysAgo(9), segmentId: "s6", todoKey: "s6000000000000000000000000000000", state: { status: "in_progress", updatedBy: "Jordan Park", updatedAt: daysAgo(3) } },
+    { kind: "todo", text: "Dana Whitfield will share pilot pricing for two warehouses.", timing: "next week", meetingId: "m6", meetingTitle: "Lumen Robotics pricing review", meetingAt: daysAgo(9), segmentId: "s6", todoKey: "s6000000000000000000000000000000", state: { status: "cancelled", updatedBy: "Jordan Park", updatedAt: daysAgo(3) } },
   ],
   dynamics: [
     { kind: "dynamic", text: "Dana Whitfield seeks investors with logistics customer networks.", timing: null, meetingId: "m1", meetingTitle: "Lumen Robotics seed follow up", meetingAt: daysAgo(4), segmentId: "s3", todoKey: "s3000000000000000000000000000000" },

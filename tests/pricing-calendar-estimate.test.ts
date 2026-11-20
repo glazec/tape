@@ -297,13 +297,13 @@ describe("computeCostFromHours with calendar-measured hours", () => {
       personMeetingHoursPerMonth: 90,
       recordedMeetingHoursPerMonth: 30,
       recordingProviderId: "recall", // $0.50/hr
-      sttProviderId: "elevenlabs", // $0.22/hr
+      sttProviderId: "elevenlabs", // $0.20/hr
       databaseProviderId: "neon",
     });
 
     // Billed on the 30 recorded hours, not the 90 person hours.
     expect(breakdown.recordingUsdMicros).toBe(30 * 500_000);
-    expect(breakdown.sttUsdMicros).toBe(30 * 220_000);
+    expect(breakdown.sttUsdMicros).toBe(30 * 200_000);
     expect(breakdown.personMeetingHoursPerMonth).toBe(90);
     expect(breakdown.perPersonUsdMicros).toBe(
       Math.round(breakdown.totalUsdMicros / 3),

@@ -28,6 +28,7 @@ export function MeetingComposedTranscripts({
         const status = getMeetingDisplayStatus({
           meetingStatus: meeting.status,
           transcriptJobStatus: meeting.transcriptJobStatus,
+          needsSpeakerLabel: meeting.needsSpeakerLabel,
         });
         const parts = meeting.recordingParts ?? [];
         const visualAssets =
@@ -153,6 +154,7 @@ function RecordingPartHeader({
   const status = getMeetingDisplayStatus({
     meetingStatus: meeting.status,
     transcriptJobStatus: meeting.transcriptJobStatus,
+    needsSpeakerLabel: meeting.needsSpeakerLabel,
   });
   const dateLabel = useSyncExternalStore(
     subscribe,
@@ -196,6 +198,7 @@ function subscribe() {
 }
 
 function emptyPartTitle(status: string) {
+  if (status === "wait_speaker_label") return "Wait speaker label";
   if (status === "recording") return "Recording in progress";
   if (status === "joining") return "Bot joining";
   if (["processing", "queued", "transcribing"].includes(status))

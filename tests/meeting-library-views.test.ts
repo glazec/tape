@@ -7,6 +7,13 @@ const { insert, limit, onConflictDoUpdate, values } = vi.hoisted(() => ({
   values: vi.fn(),
 }));
 
+const { cache, expire } = vi.hoisted(() => ({
+  cache: vi.fn((read: () => Promise<unknown>) => read),
+  expire: vi.fn(),
+}));
+
+vi.mock("next/cache", () => ({ unstable_cache: cache, revalidateTag: expire }));
+
 vi.mock("@/db/client", () => ({
   db: {
     insert,
@@ -34,6 +41,10 @@ describe("meeting library views", () => {
     );
 
     await expect(getDefaultMeetingLibraryView(workspace)).resolves.toBeNull();
+    expect(cache).toHaveBeenCalledWith(expect.any(Function), ["meeting-library-view:team_123:user_123"], {
+      revalidate: 3600,
+      tags: ["meeting-library-view:team_123:user_123"],
+    });
   });
 
   it("normalizes a saved default view", async () => {
@@ -75,6 +86,7 @@ describe("meeting library views", () => {
       workspace,
     });
 
+    expect(expire).toHaveBeenCalledWith("meeting-library-view:team_123:user_123", { expire: 0 });
     expect(values).toHaveBeenCalledWith(
       expect.objectContaining({
         isDefault: true,

@@ -519,6 +519,20 @@
       "when": 1794563473162,
       "tag": "0073_dashboard_segment_stats",
       "breakpoints": true
+    },
+    {
+      "idx": 74,
+      "version": "7",
+      "when": 1795134556701,
+      "tag": "0074_shared_todo_status",
+      "breakpoints": true
+    },
+    {
+      "idx": 75,
+      "version": "7",
+      "when": 1795139887063,
+      "tag": "0075_invitation_email_identity",
+      "breakpoints": true
     }
   ]
 }

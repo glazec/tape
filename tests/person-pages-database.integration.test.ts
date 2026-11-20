@@ -118,9 +118,27 @@ describe.skipIf(!url)("person pages PostgreSQL", () => {
     expect(people).toEqual([keep, keep, keep, null]);
   });
 
+  it("merges an existing speaker into the invitation email owner and preserves links", async () => {
+    const email = "jo@example.test";
+    const canonical = await newPerson("Jo Lee", [email]);
+    const duplicate = await newPerson("Jo", ["other@example.test"]);
+    const foreign = await newPerson("Another Jo", [email], otherTeam);
+    const call = await meetingWith(["Jo"], [{ name: "Jo", email }]);
+    const line = call.segments[0];
+    await db.query("update meeting_speakers set person_id=$1 where id=$2", [duplicate, line.meeting_speaker_id]);
+    const edit = { segmentId: line.id, expectedRevision: 0, speaker: "Jo", linkAction: "link",
+      personId: duplicate, participantEmail: email.toUpperCase() };
+    const result = await as(owner, async () => (await db.query("select app_private.mutate_speaker($1,$2) r", [call.meeting, edit])).rows[0].r);
+    expect(result.person.id).toBe(canonical);
+    expect(result.person.emails).toEqual([email, "other@example.test"]);
+    expect(await personOf(line.meeting_speaker_id)).toBe(canonical);
+    expect((await db.query("select merged_into_id from workspace_people where id=$1", [duplicate])).rows[0].merged_into_id).toBe(canonical);
+    expect((await db.query("select merged_into_id from workspace_people where id=$1", [foreign])).rows[0].merged_into_id).toBeNull();
+  });
+
   it("undoes the latest merge exactly", async () => {
     const keep = await newPerson("Lena Ortiz", ["lena@acme.test"]);
-    const first = await newPerson("L. Ortiz", ["lortiz@gmail.test", "lena@acme.test"]);
+    const first = await newPerson("L. Ortiz", ["lortiz@gmail.test"]);
     const second = await newPerson("lena");
     const meeting = await meetingWith(["L. Ortiz"]);
     await db.query("update meeting_speakers set person_id=$1 where id=$2", [first, meeting.segments[0].meeting_speaker_id]);
@@ -130,7 +148,7 @@ describe.skipIf(!url)("person pages PostgreSQL", () => {
     expect(await personOf(meeting.segments[0].meeting_speaker_id)).toBe(first);
     expect((await db.query("select preferred_name from workspace_people where id=$1", [keep])).rows[0].preferred_name).toBe("Lena Ortiz");
     expect((await db.query("select email from person_emails where person_id=$1 order by email", [keep])).rows.map(row => row.email)).toEqual(["lena@acme.test"]);
-    expect((await db.query("select email from person_emails where person_id=$1 order by email", [first])).rows.map(row => row.email)).toEqual(["lena@acme.test", "lortiz@gmail.test"]);
+    expect((await db.query("select email from person_emails where person_id=$1 order by email", [first])).rows.map(row => row.email)).toEqual(["lortiz@gmail.test"]);
     expect((await db.query("select count(*)::int n from person_names where person_id=$1", [keep])).rows[0].n).toBe(0);
     expect((await db.query("select count(*)::int n from workspace_people where id in ($1,$2) and merged_into_id is not null", [first, second])).rows[0].n).toBe(0);
     await expect(as(owner, () => db.query("select app_private.unmerge_people($1)", [keep]))).rejects.toThrow(/nothing to undo/i);
@@ -179,8 +197,8 @@ describe.skipIf(!url)("person pages PostgreSQL", () => {
     // A colleague who cannot open the meeting still moves its to do along.
     const { meeting } = await meetingWith(["Kai Moss"]);
     const key = "a".repeat(32);
-    const progress = await as(member, async () => (await db.query("select app_private.set_todo_status($1,$2,'in_progress') s", [meeting, key])).rows[0].s);
-    expect(progress).toMatchObject({ status: "in_progress", updatedBy: "member@team.test" });
+    const progress = await as(member, async () => (await db.query("select app_private.set_todo_status($1,$2,'cancelled') s", [meeting, key])).rows[0].s);
+    expect(progress).toMatchObject({ status: "cancelled", updatedBy: "member@team.test" });
     const done = await as(owner, async () => (await db.query("select app_private.set_todo_status($1,$2,'done') s", [meeting, key])).rows[0].s);
     expect(done).toMatchObject({ status: "done", updatedBy: "owner@team.test" });
     expect(await as(member, async () => (await db.query("select status from followup_todo_states where meeting_id=$1", [meeting])).rows)).toEqual([{ status: "done" }]);

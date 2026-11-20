@@ -233,6 +233,7 @@ export function composeMeetingForFollowup(
   );
   return {
     ...primary,
+    lastSpeakerEditMs: Math.max(...parts.map(part => part.lastSpeakerEditMs ?? 0)),
     status: complete ? ("ready" as const) : ("processing" as const),
     transcriptJobStatus: complete
       ? ("completed" as const)

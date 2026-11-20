@@ -62,6 +62,7 @@ type MeetingListBaseItem = {
   participantCount?: number;
   participantNames?: string[];
   status: MeetingRecordStatus;
+  needsSpeakerLabel?: boolean;
   botState?: string | null;
   transcriptJobStatus?: TranscriptJobStatus | null;
   hasRecallBot?: boolean;
@@ -106,6 +107,7 @@ const statusLabels: Record<MeetingDisplayStatus, string> = {
   queued: "In progress",
   transcribing: "In progress",
   processing: "In progress",
+  wait_speaker_label: "Wait speaker label",
   ready: "Ready",
   failed: "Failed",
   missed: "No recording",
@@ -302,6 +304,7 @@ function MeetingTableRow({
   const displayStatus = getMeetingDisplayStatus({
     botState: meeting.botState,
     meetingStatus: meeting.status,
+    needsSpeakerLabel: meeting.needsSpeakerLabel,
     transcriptJobStatus: meeting.transcriptJobStatus,
   });
   return (
@@ -523,6 +526,7 @@ function MeetingTitleCell({
   const displayStatus = getMeetingDisplayStatus({
     botState: meeting.botState,
     meetingStatus: meeting.status,
+    needsSpeakerLabel: meeting.needsSpeakerLabel,
     transcriptJobStatus: meeting.transcriptJobStatus,
   });
   const shouldDimMeetingCopy =
@@ -763,6 +767,7 @@ function MeetingMeta({
 }
 
 const statusDotClassNames: Partial<Record<MeetingDisplayStatus, string>> = {
+  wait_speaker_label: "bg-amber-500",
   queued: "bg-amber-500",
   transcribing: "bg-amber-500",
   processing: "bg-amber-500",

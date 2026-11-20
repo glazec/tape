@@ -739,6 +739,25 @@ class MeetingAccessConditionTests(unittest.TestCase):
         self.assertNotIn("access_team_id", params)
 
 
+class MeetingTodoTests(unittest.IsolatedAsyncioTestCase):
+    async def test_filters_open_work_by_meeting_dates_and_assignee_before_paging(self):
+        workspace = main.Workspace("alex@example.test", "user", "team", True, False)
+        rows = [{"status": "todo", "action": "Send the draft"}, {"status": "todo"}]
+        with (
+            patch.object(main, "_workspace_for_current_user", AsyncMock(return_value=workspace)),
+            patch.object(main, "_fetch_all", AsyncMock(return_value=rows)) as fetch,
+        ):
+            start, end = main.date(2026, 10, 22), main.date(2026, 10, 29)
+            result = await main.list_meeting_todos(start, end, "todo", " Alex ", limit=1)
+        self.assertEqual(result["todos"], rows[:1])
+        self.assertTrue(result["has_more"])
+        query, params = fetch.await_args.args
+        self.assertEqual((params["start"], params["end"], params["assignee"], params["status"]), (start, end, "Alex", "todo"))
+        self.assertEqual(params["access_user_id"], workspace.user_id)
+        self.assertIn("access_ma.revoked_at is null", query)
+        self.assertIn("app_private.is_internal_member(m.team_id)", query)
+
+
 class AccessibleMeetingInventoryTests(unittest.IsolatedAsyncioTestCase):
     async def test_lists_the_complete_authorized_inventory_without_topic_filters(self):
         workspace = main.Workspace(

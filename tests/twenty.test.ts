@@ -18,48 +18,12 @@ describe("Twenty CRM vendor", () => {
     vi.resetModules();
   });
 
-  it("loads recent company and people names from GraphQL as keyterms", async () => {
-    const fetchMock = vi.fn().mockResolvedValue(
-      Response.json({
-        data: {
-          companies: {
-            edges: [
-              { node: { name: " 1inch " } },
-              { node: { name: "Ledger" } },
-            ],
-          },
-          people: {
-            edges: [
-              { node: { name: { firstName: "Bowei", lastName: "Guang" } } },
-              { node: { name: { firstName: "Ledger", lastName: "" } } },
-            ],
-          },
-        },
-      }),
-    );
-    vi.stubGlobal("fetch", fetchMock);
-
-    const { getTwentyCrmKeyterms } = await import("@/lib/vendors/twenty");
-
-    await expect(
-      getTwentyCrmKeyterms(IOSG_TEAM_ID, {
-        TWENTY_API_BASE_URL: "https://crm.example.com/rest",
-        TWENTY_API_KEY: "twenty-key",
-      }),
-    ).resolves.toEqual(["1inch", "Ledger", "Bowei Guang"]);
-
-    const [url, init] = fetchMock.mock.calls[0];
-
-    expect(url).toBe("https://crm.example.com/graphql");
-    expect(init.headers.Authorization).toBe("Bearer twenty-key");
-  });
-
   it("does not contact Twenty for a non IOSG team", async () => {
     isTwentyCrmTeam.mockResolvedValue(false);
     const fetchMock = vi.fn();
     vi.stubGlobal("fetch", fetchMock);
 
-    const { getTwentyCrmCompanyDomains, getTwentyCrmKeyterms } = await import(
+    const { getTwentyCrmCompanyDomains } = await import(
       "@/lib/vendors/twenty"
     );
     const source = {
@@ -67,9 +31,6 @@ describe("Twenty CRM vendor", () => {
       TWENTY_API_KEY: "twenty-key",
     };
 
-    await expect(
-      getTwentyCrmKeyterms("22222222-2222-4222-8222-222222222222", source),
-    ).resolves.toEqual([]);
     await expect(
       getTwentyCrmCompanyDomains(
         "22222222-2222-4222-8222-222222222222",
@@ -79,14 +40,14 @@ describe("Twenty CRM vendor", () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it("keeps keyterms empty when CRM keyterm fetch fails", async () => {
+  it("returns no company domains when the CRM request fails", async () => {
     const fetchMock = vi.fn().mockRejectedValue(new Error("network down"));
     vi.stubGlobal("fetch", fetchMock);
 
-    const { getTwentyCrmKeyterms } = await import("@/lib/vendors/twenty");
+    const { getTwentyCrmCompanyDomains } = await import("@/lib/vendors/twenty");
 
     await expect(
-      getTwentyCrmKeyterms(IOSG_TEAM_ID, {
+      getTwentyCrmCompanyDomains(IOSG_TEAM_ID, {
         TWENTY_API_BASE_URL: "https://crm.example.com/rest",
         TWENTY_API_KEY: "twenty-key",
       }),
@@ -153,12 +114,11 @@ describe("Twenty CRM vendor", () => {
     );
   });
 
-  it("returns no keyterms when credentials are missing or CRM errors", async () => {
-    const { getTwentyCrmCompanyDomains, getTwentyCrmKeyterms } = await import(
+  it("returns no company domains when credentials are missing", async () => {
+    const { getTwentyCrmCompanyDomains } = await import(
       "@/lib/vendors/twenty"
     );
 
-    await expect(getTwentyCrmKeyterms(IOSG_TEAM_ID, {})).resolves.toEqual([]);
     await expect(
       getTwentyCrmCompanyDomains(IOSG_TEAM_ID, {}),
     ).resolves.toEqual([]);

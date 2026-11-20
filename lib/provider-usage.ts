@@ -7,12 +7,18 @@ import {
   recordings,
   transcriptJobs,
 } from "@/db/schema";
+import {
+  ELEVENLABS_BATCH_MODEL,
+  ELEVENLABS_KEYTERM_PROMPTING_USD_MICROS_PER_HOUR,
+  ELEVENLABS_PRICING_SNAPSHOT_DATE,
+  ELEVENLABS_SCRIBE_USD_MICROS_PER_HOUR,
+  type ElevenLabsBatchModel,
+} from "@/lib/elevenlabs-model";
 
 export const PROVIDER_PRICING_SNAPSHOT_DATE = "2026-07-23";
 export const RECALL_RECORDING_USD_MICROS_PER_HOUR = 500_000;
-export const ELEVENLABS_SCRIBE_USD_MICROS_PER_HOUR = 220_000;
-export const ELEVENLABS_ENTITY_DETECTION_USD_MICROS_PER_HOUR = 70_000;
-export const ELEVENLABS_KEYTERM_PROMPTING_USD_MICROS_PER_HOUR = 50_000;
+// Preserve the prior estimate for callbacks from jobs submitted before the model upgrade.
+const LEGACY_ELEVENLABS_RATE_WITH_ENTITY_DETECTION = 290_000;
 
 export const providerPricingSources = {
   recall: "https://www.recall.ai/pricing",
@@ -51,10 +57,14 @@ export function prorateHourlyCostUsdMicros(
   return Math.round((durationMs / 3_600_000) * rateUsdMicrosPerHour);
 }
 
-export function getElevenLabsRateUsdMicrosPerHour(keytermsUsed: boolean) {
+export function getElevenLabsRateUsdMicrosPerHour(
+  keytermsUsed: boolean,
+  model: ElevenLabsBatchModel = ELEVENLABS_BATCH_MODEL,
+) {
   return (
-    ELEVENLABS_SCRIBE_USD_MICROS_PER_HOUR +
-    ELEVENLABS_ENTITY_DETECTION_USD_MICROS_PER_HOUR +
+    (model === "scribe_v2"
+      ? LEGACY_ELEVENLABS_RATE_WITH_ENTITY_DETECTION
+      : ELEVENLABS_SCRIBE_USD_MICROS_PER_HOUR) +
     (keytermsUsed ? ELEVENLABS_KEYTERM_PROMPTING_USD_MICROS_PER_HOUR : 0)
   );
 }
@@ -102,6 +112,8 @@ export async function recordRecallRecordingUsage(input: {
 
 export async function recordElevenLabsTranscriptUsage(input: {
   fallbackDurationMs?: number;
+  keytermsUsed?: boolean;
+  model?: ElevenLabsBatchModel;
   transcriptJobId: string;
 }) {
   const [job] = await db
@@ -116,9 +128,9 @@ export async function recordElevenLabsTranscriptUsage(input: {
     .where(eq(transcriptJobs.id, input.transcriptJobId))
     .limit(1);
   const durationMs = job?.durationMs ?? input.fallbackDurationMs ?? 0;
-  const rateUsdMicrosPerHour = getElevenLabsRateUsdMicrosPerHour(
-    job?.billingKeytermsUsed ?? false,
-  );
+  const model = input.model ?? "scribe_v2";
+  const keytermsUsed = input.keytermsUsed ?? job?.billingKeytermsUsed ?? false;
+  const rateUsdMicrosPerHour = getElevenLabsRateUsdMicrosPerHour(keytermsUsed, model);
   const costUsdMicros = prorateHourlyCostUsdMicros(
     durationMs,
     rateUsdMicrosPerHour,
@@ -136,13 +148,15 @@ export async function recordElevenLabsTranscriptUsage(input: {
     meetingId: job.meetingId,
     metadata: {
       entityDetection: true,
-      keytermsUsed: job.billingKeytermsUsed,
-      pricingDate: PROVIDER_PRICING_SNAPSHOT_DATE,
+      keytermsUsed,
+      pricingDate: model === "scribe_v2"
+        ? PROVIDER_PRICING_SNAPSHOT_DATE
+        : ELEVENLABS_PRICING_SNAPSHOT_DATE,
       providerJobId: job.providerJobId,
       rateUsdMicrosPerHour,
       sourceUrl: providerPricingSources.elevenlabs,
     },
-    model: "scribe_v2",
+    model,
     operation: "speech_to_text",
     provider: "elevenlabs",
     quantity: Math.round(durationMs),

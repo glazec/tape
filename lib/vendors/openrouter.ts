@@ -5,6 +5,7 @@ import {
   FOLLOWUP_PROMPT,
   FOLLOWUP_SOURCE_LIMIT,
   type FollowupSource,
+  type MeetingFollowup,
   meetingFollowupSchema,
   parseMeetingFollowup,
 } from "@/lib/meeting-followup";
@@ -134,10 +135,68 @@ export async function generateMeetingFollowup(
   meetingId?: string,
   recentCompanies: string[] = [],
 ) {
-  const transcript = JSON.stringify(source);
-  if (transcript.length > FOLLOWUP_SOURCE_LIMIT) {
-    throw new Error("Transcript is too long for followup generation");
+  if (JSON.stringify(source).length <= FOLLOWUP_SOURCE_LIMIT) {
+    return generateFollowupPart(source, source, meetingId, recentCompanies);
   }
+
+  const processed: FollowupSource = { ...source, segments: [] };
+  let previous: MeetingFollowup | undefined;
+  for (const part of followupParts(source)) {
+    for (const segment of part.segments) {
+      const last = processed.segments.at(-1);
+      if (last?.id === segment.id) last.text += segment.text;
+      else processed.segments.push({ ...segment });
+    }
+    previous = await generateFollowupPart(part, processed, meetingId, recentCompanies, previous);
+  }
+  if (!previous) throw new Error("Missing followup transcript");
+  return previous;
+}
+
+function* followupParts(source: FollowupSource): Generator<FollowupSource> {
+  const header = { title: source.title, startedAt: source.startedAt, segments: [] };
+  // Reserve space for the previous structured result on continuation requests.
+  const budget = Math.floor(FOLLOWUP_SOURCE_LIMIT / 2) - JSON.stringify(header).length;
+  let segments: FollowupSource["segments"] = [];
+  let used = 0;
+  function* pieces(segment: FollowupSource["segments"][number]): Generator<FollowupSource["segments"][number]> {
+    if (JSON.stringify(segment).length + 1 <= budget) {
+      yield segment;
+      return;
+    }
+    if (segment.text.length < 2) throw new Error("Followup segment metadata exceeds the input budget");
+    let middle = Math.ceil(segment.text.length / 2);
+    const space = segment.text.lastIndexOf(" ", middle);
+    if (space > middle / 2) middle = space + 1;
+    if (/[\uDC00-\uDFFF]/.test(segment.text.charAt(middle))) middle--;
+    if (middle === 0 || middle === segment.text.length) {
+      throw new Error("Followup segment metadata exceeds the input budget");
+    }
+    yield* pieces({ ...segment, text: segment.text.slice(0, middle) });
+    yield* pieces({ ...segment, text: segment.text.slice(middle) });
+  }
+  for (const { id, speaker, startMs, text } of source.segments) {
+    for (const segment of pieces({ id, speaker, startMs, text })) {
+      const size = JSON.stringify(segment).length + 1;
+      if (used + size > budget || segments.at(-1)?.id === segment.id) {
+        yield { ...header, segments };
+        segments = [];
+        used = 0;
+      }
+      segments.push(segment);
+      used += size;
+    }
+  }
+  if (segments.length) yield { ...header, segments };
+}
+
+async function generateFollowupPart(
+  transcript: FollowupSource,
+  source: FollowupSource,
+  meetingId: string | undefined,
+  recentCompanies: string[],
+  previousFollowup?: MeetingFollowup,
+) {
   const schema = z.toJSONSchema(meetingFollowupSchema.required({ connections: true }));
   // Google's structured output rejects this large nested array bound. Keep
   // the 80 item limit in the prompt and local validator, not provider grammar.
@@ -158,11 +217,12 @@ export async function generateMeetingFollowup(
           role: "system",
           content:
             FOLLOWUP_PROMPT +
+            (previousFollowup ? "\nUpdate the previous followup with this next chronological transcript section. Return one complete meeting followup. Retain the strongest earlier items and their exact citations, deduplicate leads, and remove items superseded or resolved by later statements." : "") +
             (validationError
               ? `\nCorrect the previous validation failure: ${validationError}`
               : ""),
         },
-        { role: "user", content: JSON.stringify({ transcript: source, recentCompanyHints: recentCompanies }) },
+        { role: "user", content: JSON.stringify({ transcript, recentCompanyHints: recentCompanies, previousFollowup }) },
         ...(previousContent ? [
           { role: "assistant" as const, content: previousContent },
           { role: "user" as const, content: `Correct the validation errors throughout this result: ${validationError}. Preserve all supported entries and return the complete corrected JSON.` },

@@ -3,6 +3,12 @@ import { describe, expect, it } from "vitest";
 import { getMeetingDisplayStatus } from "@/lib/meeting-display-status";
 
 describe("getMeetingDisplayStatus", () => {
+  it("flags a ready transcript until the last speaker is labeled", () => {
+    expect(getMeetingDisplayStatus({ meetingStatus: "ready", needsSpeakerLabel: true })).toBe("wait_speaker_label");
+    expect(getMeetingDisplayStatus({ meetingStatus: "ready", needsSpeakerLabel: false })).toBe("ready");
+    expect(getMeetingDisplayStatus({ meetingStatus: "processing", needsSpeakerLabel: true })).toBe("processing");
+  });
+
   it("surfaces queued transcription jobs instead of generic processing", () => {
     expect(
       getMeetingDisplayStatus({

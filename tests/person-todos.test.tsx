@@ -16,37 +16,38 @@ const item = (text: string, extra: Partial<PersonFollowupItem> = {}): PersonFoll
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 
 describe("PersonTodos", () => {
-  it("cycles To do, In progress and Done, tagging who changed it and keeping the open count live", async () => {
+  it("cycles To do, Done and Cancelled, tagging who changed it and keeping the open count live", async () => {
     const fetch = vi.fn(async (_url: string, init: RequestInit) => Response.json({ ...JSON.parse(String(init.body)), updatedBy: "Yiping Lu", updatedAt: "2026-11-07T12:00:00.000Z" }));
     vi.stubGlobal("fetch", fetch);
-    render(<PersonTodos items={[item("Send the data room.")]} viewerName="Yiping Lu" />);
+    render(<PersonTodos items={[item("Send the data room.")]} />);
     expect(screen.getByText("1 open")).toBeTruthy();
 
-    fireEvent.click(screen.getByRole("button", { name: /Mark in progress/ }));
-    await waitFor(() => expect(screen.getByText(/In progress · Yiping Lu/)).toBeTruthy());
-    expect(screen.getByText(/by Friday/)).toBeTruthy();
-    expect(JSON.parse(String(fetch.mock.calls[0][1].body))).toMatchObject({ status: "in_progress" });
-
     fireEvent.click(screen.getByRole("button", { name: /Mark done/ }));
-    await waitFor(() => expect(screen.getByText("All done")).toBeTruthy());
+    await waitFor(() => expect(screen.getByText(/Done · Yiping Lu/)).toBeTruthy());
+    expect(screen.getByText("0 open")).toBeTruthy();
     expect(screen.getByText("Send the data room.").className).toContain("line-through");
     expect(screen.queryByText(/by Friday/)).toBeNull();
 
+    fireEvent.click(screen.getByRole("button", { name: /Cancel:/ }));
+    await waitFor(() => expect(screen.getByText(/Cancelled · Yiping Lu/)).toBeTruthy());
+    expect(screen.getByText("0 open")).toBeTruthy();
+
     fireEvent.click(screen.getByRole("button", { name: /Reopen/ }));
     await waitFor(() => expect(screen.getByText("1 open")).toBeTruthy());
+    expect(fetch.mock.calls.map(([, init]) => JSON.parse(String(init.body)).status)).toEqual(["done", "cancelled", "todo"]);
   });
 
   it("reverts and explains when saving fails", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => Response.json({ error: "Meeting not found" }, { status: 404 })));
-    render(<PersonTodos items={[item("Call the pilot customer.")]} viewerName="Yiping Lu" />);
-    fireEvent.click(screen.getByRole("button", { name: /Mark in progress/ }));
+    render(<PersonTodos items={[item("Call the pilot customer.")]} />);
+    fireEvent.click(screen.getByRole("button", { name: /Mark done/ }));
     await waitFor(() => expect(screen.getByRole("alert").textContent).toBe("Meeting not found"));
-    expect(screen.getByRole("button", { name: /Mark in progress/ })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /Mark done/ })).toBeTruthy();
   });
 
   it("lists open work first and folds two or more done items away", () => {
     const done = { status: "done" as const, updatedBy: "Riley Ng", updatedAt: "2026-10-01T00:00:00.000Z" };
-    render(<PersonTodos items={[item("Done one.", { state: done }), item("Open one."), item("Done two too.", { state: done })]} viewerName="Yiping Lu" />);
+    render(<PersonTodos items={[item("Done one.", { state: done }), item("Open one."), item("Done two too.", { state: done })]} />);
     expect(screen.getAllByRole("listitem").map(row => row.textContent)).toEqual([expect.stringContaining("Open one.")]);
     fireEvent.click(screen.getByRole("button", { name: "Show 2 done" }));
     expect(screen.getAllByRole("listitem")).toHaveLength(3);

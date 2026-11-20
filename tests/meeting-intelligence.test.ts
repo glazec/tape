@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 
 import {
   buildSmartMeetingTitle,
-  buildTeamVocabularyKeyterms,
   buildTranscriptionKeyterms,
   classifySegmentEmotion,
   extractMeetingEntities,
@@ -49,12 +48,7 @@ describe("meeting intelligence helpers", () => {
 
   it("deduplicates team vocabulary before transcription", () => {
     expect(
-      buildTeamVocabularyKeyterms([
-        { term: " IOSG " },
-        { term: "TCG platform", hint: "trading card game" },
-        { term: "iosg" },
-        { term: "" },
-      ]),
+      buildTranscriptionKeyterms([" IOSG ", "TCG platform", "iosg", "ＩＯＳＧ", ""]),
     ).toEqual(["IOSG", "TCG platform"]);
   });
 
@@ -146,7 +140,7 @@ describe("meeting intelligence helpers", () => {
         {
           transcriptEntities: [
             { source: "transcript", type: "organization", value: "Nascent" },
-            { source: "transcript", type: "product", value: "Solana" },
+            { source: "transcript", type: "product_or_service", value: "Solana" },
             { source: "transcript", type: "product", value: "TCG" },
           ],
         },
@@ -282,6 +276,7 @@ describe("meeting intelligence helpers", () => {
           },
         ],
         {
+          attendeeEmails: ["founder@babylonlabs.io"],
           organizationDomains: [
             {
               domain: "babylonlabs.io",
