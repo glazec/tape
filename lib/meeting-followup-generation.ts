@@ -1,3 +1,4 @@
+import { speakerEditDelayRemaining } from "@/lib/followup-speaker-delay";
 import { acquireFollowupLease, releaseFollowupLease } from "@/lib/meeting-followup-lease";
 import { getRecentMeetingCompanies } from "@/lib/recent-meeting-companies";
 import { and, eq, isNull, sql } from "drizzle-orm";
@@ -168,6 +169,8 @@ export async function autoGenerateMeetingFollowup(
   if (getCurrentMeetingFollowup(meeting)) {
     return { status: "already_current" };
   }
+
+  if (speakerEditDelayRemaining(meeting.lastSpeakerEditMs) > 0) return { status: "not_ready" };
 
   return generateAndSaveMeetingFollowup({ meeting, meetingId, workspace });
 }

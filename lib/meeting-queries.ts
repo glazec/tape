@@ -26,6 +26,7 @@ import {
   meetingAccessSources,
   meetingAttendees,
   meetingEntities,
+  meetingSpeakerChanges,
   meetingParticipantTimeline,
   meetings,
   recordings,
@@ -131,6 +132,7 @@ export type MeetingTranscript = {
   aiFollowup?: unknown;
   followupSource?: FollowupSource;
   speakerLabelCounts?: SpeakerLabelCounts;
+  lastSpeakerEditMs?: number;
   attributionRevision?: number;
   id: string;
   title: string;
@@ -1460,6 +1462,8 @@ export async function getMeetingTranscriptForWorkspace(
       )`,
       speakerLabelCounts: speakerLabelCounts(sql`${meetings.id}`),
       aiFollowup: meetings.aiFollowup,
+      lastSpeakerEditMs: sql<number>`(select extract(epoch from max(${meetingSpeakerChanges.createdAt})) * 1000
+        from ${meetingSpeakerChanges} where ${meetingSpeakerChanges.meetingId} = ${meetings.id})`.mapWith(Number),
       attributionRevision: meetings.attributionRevision,
       recordedDurationMs: latestRecordingDurationMsSubquery(meetings.id),
       recordedStartedAt: latestRecordingStartedAtSubquery(meetings.id),
@@ -1655,6 +1659,7 @@ export async function getMeetingTranscriptForWorkspace(
     : applySpeakerAliasesToSegments([segment], speakerAliases)[0]);
 
   return {
+    lastSpeakerEditMs: meeting.lastSpeakerEditMs ?? 0,
     lastRecordingEndedAt: meeting.recordedEndedAt?.toISOString() ?? null,
     aiFollowup: meeting.aiFollowup,
     attributionRevision: meeting.attributionRevision ?? 0,
