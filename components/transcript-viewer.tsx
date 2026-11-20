@@ -1481,14 +1481,18 @@ export function TranscriptViewer({
                       // edge, whatever the speaker's name length.
                       <button
                         aria-label={`Play from ${formatTimestamp(segment.startMs)}`}
-                        className="h-7 justify-self-end rounded-sm text-right text-[0.6875rem] tabular-nums text-muted-foreground outline-none hover:text-foreground hover:underline focus-visible:ring-2 focus-visible:ring-ring/50"
+                        className={cn(
+                          "h-7 justify-self-end rounded-sm text-right text-[0.6875rem] tabular-nums text-muted-foreground outline-none hover:text-foreground hover:underline focus-visible:ring-2 focus-visible:ring-ring/50",
+                          // On phones the editor covers the gutter.
+                          isEditing && "max-sm:invisible",
+                        )}
                         onClick={() => seekTo(segment.startMs)}
                         type="button"
                       >
                         {formatTimestamp(segment.startMs)}
                       </button>
                     ) : (
-                      <span className="flex h-7 items-center justify-end text-[0.6875rem] tabular-nums text-muted-foreground">
+                      <span className={cn("flex h-7 items-center justify-end text-[0.6875rem] tabular-nums text-muted-foreground", isEditing && "max-sm:invisible")}>
                         {formatTimestamp(segment.startMs)}
                       </span>
                     )}
@@ -1501,7 +1505,7 @@ export function TranscriptViewer({
                       >
                         <span
                           aria-hidden="true"
-                          className="size-2 shrink-0 rounded-full"
+                          className={cn("size-2 shrink-0 rounded-full", isEditing && "hidden")}
                           style={{
                             backgroundColor: getWaveformSpeakerColor(
                               getSegmentSpeakerKey(segment),
@@ -1510,12 +1514,15 @@ export function TranscriptViewer({
                           }}
                         />
                         {isEditing ? (
-                          renderSpeakerEditor({
-                            hasError,
-                            isSaving,
-                            previewClips,
-                            showScope: true,
-                          })
+                          // On phones the editor spans the timestamp gutter too.
+                          <div className="-ml-16 w-[calc(100%+4rem)] sm:ml-0 sm:w-full">
+                            {renderSpeakerEditor({
+                              hasError,
+                              isSaving,
+                              previewClips,
+                              showScope: true,
+                            })}
+                          </div>
                         ) : canEditSpeakers ? (
                           <button
                             aria-label={`Edit speaker ${speakerLabel}`}

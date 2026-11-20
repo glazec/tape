@@ -197,8 +197,9 @@ it("searches and selects an API participant whose name is null", async () => {
   await screen.findByRole("option", { name: /guest@example.test/ });
   fireEvent.change(screen.getByLabelText("Speaker name"), { target: { value: "guest@example.test" } });
   pick(screen.getByRole("option", { name: /^guest@example.test$/ }));
-  expect(screen.getByLabelText("Speaker name")).toHaveProperty("value", "guest@example.test");
-  expect(screen.getByRole("group", { name: "Linked to guest@example.test" })).toBeTruthy();
+  expect(screen.getByLabelText("Speaker name")).toHaveProperty("value", "");
+  expect(screen.getByLabelText("Speaker name")).toHaveProperty("placeholder", "Add a name");
+  expect(screen.getByRole("group", { name: "New person guest@example.test" })).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "Save speaker" }));
   await waitFor(() => expect(screen.queryByLabelText("Speaker name")).toBeNull());
   expect(patchBodies()[0]).toMatchObject({ linkAction: "create", participantEmail: "guest@example.test", speaker: "guest@example.test" });
@@ -349,4 +350,267 @@ it("keeps the keyboard highlight when the directory finishes loading", async () 
   expect(highlighted).toBeTruthy();
   await act(async () => resolveDirectory(Response.json({ people: [{ id: "amy", name: "Amy", emails: [], inMeeting: true }], participants: [{ name: "Zed", email: "zed@x.test" }] })));
   expect(input.getAttribute("aria-activedescendant")).toBe(highlighted);
+});
+
+const skimDirectory = { people: [{ id: "person-a", name: "Alex", emails: ["alex@example.test"], inMeeting: true }], participants: [{ name: "Taylor Reed", email: "taylor@example.test" }, { name: null, email: "guest@partner.test" }, { name: null, email: "skim@sk.com" }] };
+const unlinkedSpeaker = { ...segments[0], personId: null, participantEmail: null, speaker: "Speaker 2" };
+
+it("creates a typed name with an unclaimed bare meeting email that resembles it", async () => {
+  vi.stubGlobal("ResizeObserver", resizeObserver);
+  vi.stubGlobal("fetch", vi.fn(async (_url, init) => init?.method === "PATCH"
+    ? Response.json({ updated: true, segments: [{ ...unlinkedSpeaker, personId: "simon", speaker: "Simon" }] })
+    : Response.json(skimDirectory)));
+  render(<TranscriptViewer meetingId="meeting" segments={[unlinkedSpeaker]} />);
+  fireEvent.click(screen.getByRole("button", { name: "Edit speaker Speaker 2" }));
+  await screen.findByRole("option", { name: /skim@sk.com/ });
+  fireEvent.change(screen.getByLabelText("Speaker name"), { target: { value: "Simon" } });
+  const creates = screen.getAllByRole("option", { name: /^Create “Simon”/ });
+  // guest@partner.test does not resemble "Simon", so only skim@sk.com is offered.
+  expect(creates.map(option => option.textContent)).toEqual(["Create “Simon”skim@sk.com", "Create “Simon”No email"]);
+  pick(creates[0]!);
+  expect(screen.getByLabelText("Speaker name")).toHaveProperty("value", "Simon");
+  expect(screen.getByRole("group", { name: "New person Simon" }).textContent).toContain("skim@sk.com");
+  fireEvent.click(screen.getByRole("button", { name: "Save speaker" }));
+  await waitFor(() => expect(patchBodies()).toHaveLength(1));
+  expect(patchBodies()[0]).toMatchObject({ linkAction: "create", speaker: "Simon", participantEmail: "skim@sk.com" });
+});
+
+it("asks for a name after choosing a bare email, without searching again", async () => {
+  vi.stubGlobal("ResizeObserver", resizeObserver);
+  vi.stubGlobal("fetch", vi.fn(async (_url, init) => init?.method === "PATCH"
+    ? Response.json({ updated: true, segments: [{ ...unlinkedSpeaker, personId: "simon", speaker: "Simon" }] })
+    : Response.json(skimDirectory)));
+  render(<TranscriptViewer meetingId="meeting" segments={[unlinkedSpeaker]} />);
+  fireEvent.click(screen.getByRole("button", { name: "Edit speaker Speaker 2" }));
+  await screen.findByRole("option", { name: /skim@sk.com/ });
+  const input = screen.getByLabelText("Speaker name");
+  fireEvent.change(input, { target: { value: "skim" } });
+  fireEvent.keyDown(input, { key: "Enter" });
+  expect(input).toHaveProperty("value", "");
+  expect(input).toHaveProperty("placeholder", "Add a name");
+  fireEvent.change(input, { target: { value: "Simon" } });
+  expect(screen.queryByRole("listbox")).toBeNull();
+  expect(screen.getByRole("group", { name: "New person Simon" })).toBeTruthy();
+  fireEvent.keyDown(input, { key: "Enter" });
+  await waitFor(() => expect(patchBodies()).toHaveLength(1));
+  expect(patchBodies()[0]).toMatchObject({ linkAction: "create", speaker: "Simon", participantEmail: "skim@sk.com" });
+});
+
+it("clears a diarization placeholder when a bare email is picked from the full list", async () => {
+  vi.stubGlobal("ResizeObserver", resizeObserver);
+  vi.stubGlobal("fetch", vi.fn(async () => Response.json(skimDirectory)));
+  render(<TranscriptViewer meetingId="meeting" segments={[unlinkedSpeaker]} />);
+  fireEvent.click(screen.getByRole("button", { name: "Edit speaker Speaker 2" }));
+  pick(await screen.findByRole("option", { name: /skim@sk.com/ }));
+  expect(screen.getByLabelText("Speaker name")).toHaveProperty("value", "");
+  fireEvent.click(screen.getByRole("button", { name: "Change person" }));
+  expect(screen.getByRole("listbox")).toBeTruthy();
+});
+
+function renderUnlinked(directory: unknown = skimDirectory) {
+  vi.stubGlobal("ResizeObserver", resizeObserver);
+  vi.stubGlobal("fetch", vi.fn(async (_url, init) => init?.method === "PATCH"
+    ? Response.json({ updated: true, segments: [{ ...unlinkedSpeaker, personId: "simon", speaker: "Simon" }] })
+    : Response.json(directory)));
+  render(<TranscriptViewer meetingId="meeting" segments={[unlinkedSpeaker]} />);
+  fireEvent.click(screen.getByRole("button", { name: "Edit speaker Speaker 2" }));
+  return screen.getByLabelText("Speaker name");
+}
+
+async function nameSkimAsSimon(input: HTMLElement) {
+  await screen.findByRole("option", { name: /skim@sk.com/ });
+  fireEvent.change(input, { target: { value: "Simon" } });
+  pick(screen.getAllByRole("option", { name: /^Create “Simon”\s*skim@sk.com/ })[0]!);
+}
+
+it("hides create with email rows when the typed text already matches a participant", async () => {
+  const input = renderUnlinked();
+  await screen.findByRole("option", { name: /skim@sk.com/ });
+  fireEvent.change(input, { target: { value: "skim" } });
+  expect(screen.getAllByRole("option", { name: /^Create “skim”/ }).map(option => option.textContent)).toEqual(["Create “skim”"]);
+  expect(screen.queryByRole("option", { name: /taylor@example.test/ })).toBeNull();
+});
+
+it("keeps naming when arrows are pressed and steps back to search with Escape", async () => {
+  const input = renderUnlinked();
+  await nameSkimAsSimon(input);
+  fireEvent.keyDown(input, { key: "ArrowDown" });
+  expect(screen.queryByRole("listbox")).toBeNull();
+  fireEvent.keyDown(input, { key: "Escape" });
+  expect(input).toHaveProperty("value", "Simon");
+  expect(screen.getByRole("option", { name: /^Create “Simon”\s*skim@sk.com/ })).toBeTruthy();
+  expect(screen.queryByRole("group", { name: /New person/ })).toBeNull();
+  expect(screen.getByLabelText("Speaker name")).toBeTruthy();
+});
+
+it("undoes a chosen email back to the typed name without unlinking anyone", async () => {
+  const input = renderUnlinked();
+  await nameSkimAsSimon(input);
+  fireEvent.click(screen.getByRole("button", { name: "Undo" }));
+  expect(input).toHaveProperty("value", "Simon");
+  fireEvent.keyDown(input, { key: "Escape" });
+  fireEvent.click(screen.getByRole("button", { name: "Save speaker" }));
+  await waitFor(() => expect(patchBodies()).toHaveLength(1));
+  const body = patchBodies()[0];
+  expect(body).toMatchObject({ linkAction: "preserve", speaker: "Simon" });
+  expect(body.participantEmail).toBeUndefined();
+});
+
+it("restores the name when Change closes without a choice", async () => {
+  const input = renderUnlinked();
+  await nameSkimAsSimon(input);
+  fireEvent.click(screen.getByRole("button", { name: "Change person" }));
+  expect(screen.getByRole("option", { name: /Momir|Alex/ })).toBeTruthy();
+  fireEvent.change(input, { target: { value: "Tay" } });
+  fireEvent.keyDown(input, { key: "Escape" });
+  expect(input).toHaveProperty("value", "Simon");
+  expect(screen.getByRole("group", { name: "New person Simon" })).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Save speaker" }));
+  await waitFor(() => expect(patchBodies()).toHaveLength(1));
+  expect(patchBodies()[0]).toMatchObject({ linkAction: "create", speaker: "Simon", participantEmail: "skim@sk.com" });
+});
+
+it("does not give a linked person's name to a new person from a bare email", async () => {
+  vi.stubGlobal("ResizeObserver", resizeObserver);
+  vi.stubGlobal("fetch", vi.fn(async () => Response.json(skimDirectory)));
+  render(<TranscriptViewer meetingId="meeting" segments={[segments[0]]} />);
+  fireEvent.click(screen.getByRole("button", { name: "Rename Alex everywhere" }));
+  await screen.findByRole("group", { name: "Linked to Alex" });
+  fireEvent.click(screen.getByRole("button", { name: "Change person" }));
+  pick(screen.getByRole("option", { name: /skim@sk.com/ }));
+  expect(screen.getByLabelText("Speaker name")).toHaveProperty("value", "");
+  expect(screen.getByLabelText("Speaker name")).toHaveProperty("placeholder", "Add a name");
+});
+
+it("adopts the record name when a picked fallback email turns out to be a person", async () => {
+  vi.stubGlobal("ResizeObserver", resizeObserver);
+  let resolveDirectory!: (response: Response) => void;
+  vi.stubGlobal("fetch", vi.fn((_url, init) => init?.method === "PATCH"
+    ? Promise.resolve(Response.json({ updated: true, segments: [{ ...unlinkedSpeaker, personId: "simon", speaker: "Simon" }] }))
+    : new Promise<Response>(resolve => { resolveDirectory = resolve; })));
+  render(<TranscriptViewer meetingId="meeting" segments={[unlinkedSpeaker]} speakerSuggestions={[{ name: "skim@sk.com", email: "skim@sk.com" }]} />);
+  fireEvent.click(screen.getByRole("button", { name: "Edit speaker Speaker 2" }));
+  pick(screen.getByRole("option", { name: /skim@sk.com/ }));
+  await act(async () => resolveDirectory(Response.json({ people: [{ id: "simon", name: "Simon", emails: ["skim@sk.com"], inMeeting: true }], participants: [] })));
+  expect(screen.getByLabelText("Speaker name")).toHaveProperty("value", "Simon");
+  fireEvent.click(screen.getByRole("button", { name: "Save speaker" }));
+  await waitFor(() => expect(patchBodies()).toHaveLength(1));
+  const body = patchBodies()[0];
+  expect(body).toMatchObject({ linkAction: "link", personId: "simon", speaker: "Simon" });
+  expect(body.participantEmail).toBeUndefined();
+});
+
+it("asks instead of reverting when Save is clicked after typing into a Change search", async () => {
+  const input = renderUnlinked();
+  await nameSkimAsSimon(input);
+  fireEvent.click(screen.getByRole("button", { name: "Change person" }));
+  fireEvent.change(input, { target: { value: "Dong Zhen" } });
+  fireEvent.blur(input);
+  expect(input).toHaveProperty("value", "Dong Zhen");
+  expect(screen.getByText("Still Simon, skim@sk.com?")).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Save speaker" }));
+  expect(await screen.findByText("Who is “Dong Zhen”?")).toBeTruthy();
+  expect(patchBodies()).toHaveLength(0);
+  fireEvent.keyDown(input, { key: "Escape" });
+  expect(input).toHaveProperty("value", "Simon");
+  expect(screen.getByRole("group", { name: "New person Simon" })).toBeTruthy();
+});
+
+it("restores an untouched name when the field loses focus after Change", async () => {
+  const input = renderUnlinked();
+  await nameSkimAsSimon(input);
+  fireEvent.click(screen.getByRole("button", { name: "Change person" }));
+  fireEvent.blur(input);
+  expect(input).toHaveProperty("value", "Simon");
+  expect(screen.getByRole("group", { name: "New person Simon" })).toBeTruthy();
+});
+
+it("does not copy a chosen person's name onto a new person from a bare email", async () => {
+  const input = renderUnlinked();
+  pick(await screen.findByRole("option", { name: /Taylor Reed/ }));
+  fireEvent.click(screen.getByRole("button", { name: "Change person" }));
+  pick(screen.getByRole("option", { name: /skim@sk.com/ }));
+  expect(input).toHaveProperty("value", "");
+});
+
+it("carries a name typed for one address over to another address", async () => {
+  const input = renderUnlinked();
+  await nameSkimAsSimon(input);
+  fireEvent.click(screen.getByRole("button", { name: "Change person" }));
+  fireEvent.change(input, { target: { value: "guest" } });
+  fireEvent.keyDown(input, { key: "Enter" });
+  expect(input).toHaveProperty("value", "Simon");
+  expect(screen.getByRole("group", { name: "New person Simon" }).textContent).toContain("guest@partner.test");
+});
+
+it("restores the kept name with Escape after a pending Change search", async () => {
+  const input = renderUnlinked();
+  await nameSkimAsSimon(input);
+  fireEvent.click(screen.getByRole("button", { name: "Change person" }));
+  fireEvent.change(input, { target: { value: "Dong Zhen" } });
+  fireEvent.blur(input);
+  fireEvent.keyDown(input, { key: "Escape" });
+  expect(input).toHaveProperty("value", "Simon");
+  expect(screen.getByRole("group", { name: "New person Simon" }).textContent).toContain("skim@sk.com");
+  fireEvent.change(input, { target: { value: "Sam" } });
+  expect(input).toHaveProperty("value", "Sam");
+  expect(screen.queryByRole("listbox")).toBeNull();
+});
+
+it("keeps searching from a pending Change and offers the chosen address with the new name", async () => {
+  const input = renderUnlinked();
+  await nameSkimAsSimon(input);
+  fireEvent.click(screen.getByRole("button", { name: "Change person" }));
+  fireEvent.change(input, { target: { value: "Dong" } });
+  fireEvent.blur(input);
+  fireEvent.change(input, { target: { value: "Dong Zhen" } });
+  pick(screen.getByRole("option", { name: /^Create “Dong Zhen”\s*skim@sk.com/ }));
+  fireEvent.click(screen.getByRole("button", { name: "Save speaker" }));
+  await waitFor(() => expect(patchBodies()).toHaveLength(1));
+  expect(patchBodies()[0]).toMatchObject({ linkAction: "create", speaker: "Dong Zhen", participantEmail: "skim@sk.com" });
+});
+
+it("asks before saving a Change search typed over a new person without email", async () => {
+  const input = renderUnlinked();
+  await screen.findByRole("option", { name: /skim@sk.com/ });
+  fireEvent.change(input, { target: { value: "Simon" } });
+  pick(screen.getByRole("option", { name: /^Create “Simon”\s*No email/ }));
+  fireEvent.click(screen.getByRole("button", { name: "Change person" }));
+  fireEvent.change(input, { target: { value: "Tay" } });
+  fireEvent.blur(input);
+  expect(screen.getByText("Still Simon, new person?")).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Save speaker" }));
+  expect(await screen.findByText("Who is “Tay”?")).toBeTruthy();
+  expect(patchBodies()).toHaveLength(0);
+});
+
+it("still offers a bare address when a named participant merely contains the typed name", async () => {
+  renderUnlinked({ people: [], participants: [{ name: "Simone Li", email: "simone@x.test" }, { name: null, email: "skim@sk.com" }] });
+  await screen.findByRole("option", { name: /skim@sk.com/ });
+  fireEvent.change(screen.getByLabelText("Speaker name"), { target: { value: "Simon" } });
+  expect(screen.getByRole("option", { name: /Simone Li/ })).toBeTruthy();
+  expect(screen.getByRole("option", { name: /^Create “Simon”\s*skim@sk.com/ })).toBeTruthy();
+});
+
+it("never pins a named participant's address to a different name", async () => {
+  const input = renderUnlinked();
+  pick(await screen.findByRole("option", { name: /Taylor Reed/ }));
+  fireEvent.click(screen.getByRole("button", { name: "Change person" }));
+  fireEvent.change(input, { target: { value: "Dong Zhen" } });
+  expect(screen.queryByRole("option", { name: /taylor@example.test/ })).toBeNull();
+});
+
+it("restores a linked name with Escape after a Change search was left open", async () => {
+  vi.stubGlobal("ResizeObserver", resizeObserver);
+  vi.stubGlobal("fetch", vi.fn(async () => Response.json({ people: [], participants: [] })));
+  render(<TranscriptViewer meetingId="meeting" segments={[segments[0]]} />);
+  fireEvent.click(screen.getByRole("button", { name: "Rename Alex everywhere" }));
+  const input = screen.getByLabelText("Speaker name");
+  fireEvent.click(screen.getByRole("button", { name: "Change person" }));
+  fireEvent.change(input, { target: { value: "Dong Zhen" } });
+  fireEvent.blur(input);
+  expect(screen.getByText("Still Alex?")).toBeTruthy();
+  fireEvent.keyDown(input, { key: "Escape" });
+  expect(input).toHaveProperty("value", "Alex");
+  expect(screen.getByLabelText("Speaker name")).toBeTruthy();
 });

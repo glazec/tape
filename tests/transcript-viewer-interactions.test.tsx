@@ -266,7 +266,7 @@ describe("TranscriptViewer interactions", () => {
     fireEvent.click(choice);
     fireEvent.change(screen.getByLabelText("Speaker name"), { target: { value: "Yiping Chen" } });
     fireEvent.keyDown(screen.getByLabelText("Speaker name"), { key: "Escape" });
-    expect(screen.getByRole("group", { name: "Linked to Yiping Chen" })).toBeTruthy();
+    expect(screen.getByRole("group", { name: "New person Yiping Chen" })).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Save speaker" }));
     await waitFor(() => expect(fetch).toHaveBeenCalledTimes(1));
     expect(JSON.parse(String(vi.mocked(fetch).mock.calls[0]?.[1]?.body))).toMatchObject({ speaker: "Yiping Chen", participantEmail: "yiping@iosf.vc", linkAction: "create" });
