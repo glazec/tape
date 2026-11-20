@@ -222,6 +222,7 @@ function groqAudioEndpoint(scope: string) {
   const secret = process.env.TAPE_AUDIO_SIGNING_SECRET;
   if (!origin || !secret) return [];
   const url = new URL(origin);
+  if (!url.pathname.endsWith("/")) url.pathname += "/";
   const nonce = randomUUID();
   url.searchParams.set("scope", scope);
   url.searchParams.set("nonce", nonce);

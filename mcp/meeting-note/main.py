@@ -2206,7 +2206,8 @@ if __name__ == "__main__":
     from starlette.routing import WebSocketRoute
 
     app = mcp.http_app(stateless_http=True)
-    app.router.routes.insert(0, WebSocketRoute("/audio/recall", ongoing_audio.receive_audio))
+    for path in ("/audio/recall/", "/audio/recall"):
+        app.router.routes.insert(0, WebSocketRoute(path, ongoing_audio.receive_audio))
     original_lifespan = app.router.lifespan_context
 
     async def cleanup():

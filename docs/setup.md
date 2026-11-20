@@ -636,4 +636,4 @@ Preferred name changes preserve canonical generated source hashes. Changing a pe
 
 ### On demand meeting transcription
 
-Set `GROQ_API_KEY` on the MCP service and a shared random `TAPE_AUDIO_SIGNING_SECRET` on web and MCP. Set `TAPE_AUDIO_WEBSOCKET_URL` on web to the MCP service's public `wss://` origin with path `/audio/recall`. New Recall recording configurations then include mixed audio delivery. The single MCP replica uses its mounted volume for temporary audio and transcript caching. A cleanup task removes idle buffers after two hours, checking every ten minutes.
+Set `GROQ_API_KEY` on the MCP service and a shared random `TAPE_AUDIO_SIGNING_SECRET` on web and MCP. Set `TAPE_AUDIO_WEBSOCKET_URL` on web to the MCP service's public `wss://` origin with path `/audio/recall/`. New Recall recording configurations then include mixed audio delivery. The single MCP replica uses its mounted volume for temporary audio and transcript caching. A cleanup task removes idle buffers after two hours, checking every ten minutes.
