@@ -93,7 +93,7 @@ describe("collectPersonFollowup", () => {
 
 describe("relationship summary", () => {
   const now = new Date("2026-11-07T12:00:00.000Z");
-  const at = (iso: string, spoke = true, colleagues = ["Yiping"]) => ({ id: iso, title: "x", at: iso, ownerName: colleagues[0], colleagues, canOpen: true, spoke, talkMs: spoke ? 300 : 0, totalMs: 1000, durationMs: 1_800_000 });
+  const at = (iso: string, spoke = true, colleagues = ["Yiping"]) => ({ id: iso, title: "x", at: iso, ownerName: colleagues[0], colleagues, canOpen: true, status: "ready" as const, hasRecording: true, spoke, talkMs: spoke ? 300 : 0, totalMs: 1000, durationMs: 1_800_000 });
 
   it("counts past meetings, cadence, recency and talk share", () => {
     const summary = summarizeRelationship([at("2026-09-01T00:00:00.000Z"), at("2026-10-01T00:00:00.000Z"), at("2026-10-31T00:00:00.000Z", false), at("2026-12-01T00:00:00.000Z")], now);

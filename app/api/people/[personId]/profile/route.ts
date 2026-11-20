@@ -10,7 +10,6 @@ import { ProviderCreditExhaustedError } from "@/lib/provider-credit";
 export const runtime = "nodejs";
 export const maxDuration = 150;
 
-// Handles the person page's manual Generate and Refresh actions.
 export async function POST(_request: Request, context: { params: Promise<{ personId: string }> }) {
   const user = await getCurrentUser();
   if (!user) return Response.json({ error: "Unauthorized" }, { status: 401 });

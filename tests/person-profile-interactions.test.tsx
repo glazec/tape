@@ -10,14 +10,35 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-it("opens a person with no saved AI profile without generating one", async () => {
+it("automatically requests a missing profile and allows retry after speaker attribution", async () => {
   const fetch = vi.fn(async () => Response.json({ status: "no_meetings" }));
   vi.stubGlobal("fetch", fetch);
   render(<PersonProfile initialProfile={null} personId="person-id" personName="Tara" />);
 
-  expect(screen.getByText("No profile yet.")).toBeTruthy();
-  expect(fetch).not.toHaveBeenCalled();
+  await screen.findByText(/link Tara to their speaker label/);
+  expect(fetch).toHaveBeenCalledTimes(1);
   fireEvent.click(screen.getByRole("button", { name: "Generate" }));
   expect(fetch).toHaveBeenCalledWith("/api/people/person-id/profile", { method: "POST" });
-  await waitFor(() => expect(screen.getByRole("button", { name: "Generate" })).toBeTruthy());
+  await waitFor(() => expect(fetch).toHaveBeenCalledTimes(2));
+});
+
+it("shows the generated profile on the page and reuses a saved profile on the next visit", async () => {
+  const unknown = { level: "unclear" as const, summary: "", sources: [] };
+  const profile = {
+    profile: { version: 1 as const, headline: "Builds laboratory software.", role: [], background: [], achievements: [],
+      recentFocus: [], sources: {}, expertise: { technical: unknown, operational: unknown, business: unknown, social: unknown } },
+    generatedAt: "2026-11-01T12:00:00Z", sourceMeetings: [],
+  };
+  const fetch = vi.fn(async () => Response.json({ status: "ready", profile }));
+  vi.stubGlobal("fetch", fetch);
+  const view = render(<PersonProfile initialProfile={null} personId="one" personName="Simon" />);
+  expect(await screen.findByText(profile.profile.headline)).toBeTruthy();
+  view.unmount();
+  render(<PersonProfile initialProfile={profile} personId="one" personName="Simon" />);
+  expect(screen.getByText(profile.profile.headline)).toBeTruthy();
+  expect(fetch).toHaveBeenCalledTimes(1);
+  fetch.mockResolvedValueOnce(Response.json({ status: "no_meetings" }));
+  fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
+  expect(await screen.findByText(/Could not refresh this profile/)).toBeTruthy();
+  expect(screen.getByText(profile.profile.headline)).toBeTruthy();
 });
