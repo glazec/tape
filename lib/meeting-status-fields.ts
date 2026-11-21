@@ -4,20 +4,21 @@ import { activeTranscriptJobIdsSubquery } from "@/lib/current-transcript-job";
 import type { SpeakerLabelCounts, TranscriptJobStatus } from "@/lib/meeting-display-status";
 
 export function speakerLabelCounts(meetingIds: SQL) {
+  // Match the speaking time percentages displayed in the transcript viewer.
+  const duration = sql`greatest(1, s.end_ms - s.start_ms)`;
   return sql<SpeakerLabelCounts>`(
-    select json_build_object('total', count(*), 'unlabeled', count(*) filter (
+    select json_build_object('total', coalesce(sum(${duration}), 0), 'unlabeled', coalesce(sum(${duration}) filter (
       where g.person_id is null and btrim(coalesce(g.display_name, g.source_label, ''))
         ~* '^(|unknown( speaker)?|guest|participant|(.+ · )?speaker[ _-]*[0-9]+|pc sound( [0-9]+)?)$'
-    ))
+    ), 0))
     from meeting_speakers g
+    join transcript_segments s on s.meeting_id = g.meeting_id and s.meeting_speaker_id = g.id
     where g.meeting_id = any(array(${meetingIds}))
       and g.job_id = any(array(
         select j.id from (${meetingIds}) source(id)
         join transcript_jobs j on j.meeting_id = source.id and j.status = 'completed'
         where j.id = any(array(select active.id from ${activeTranscriptJobIdsSubquery(sql`source.id`)} active(id)))
       ))
-      and exists (select 1 from transcript_segments s
-        where s.meeting_id = g.meeting_id and s.meeting_speaker_id = g.id)
   )`;
 }
 

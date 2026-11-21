@@ -1,4 +1,8 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { sql } from "drizzle-orm";
+import { PgDialect } from "drizzle-orm/pg-core";
+import { needsMoreSpeakerLabels } from "@/lib/meeting-display-status";
+import { speakerLabelCounts } from "@/lib/meeting-status-fields";
 import { Client } from "pg";
 import { randomUUID } from "node:crypto";
 const url = process.env.SPEAKER_TEST_DATABASE_URL;
@@ -137,6 +141,19 @@ describe.skipIf(!url)("speaker identity PostgreSQL", () => {
       await db.query("RESET ROLE");
     }
     await db.query("select set_config('request.jwt.claims',$1,true)",[JSON.stringify({sub:user})]);
+  });
+
+  it("uses labeled speaking time even when only one of two speakers is named", async () => {
+    const meetingId = randomUUID();
+    const jobId = randomUUID();
+    await db.query("insert into meetings(id,team_id,owner_user_id,title,platform) values($1,$2,$3,'Coverage','upload')", [meetingId, team, user]);
+    await db.query("insert into transcript_jobs(id,meeting_id,status) values($1,$2,'completed')", [jobId, meetingId]);
+    await db.query(`insert into transcript_segments(meeting_id,job_id,speaker,start_ms,end_ms,text)
+      values ($1,$2,'Alice',0,8100,'One'), ($1,$2,'Speaker 2',8100,10000,'Two')`, [meetingId, jobId]);
+    const query = new PgDialect().sqlToQuery(sql`select ${speakerLabelCounts(sql`select ${meetingId}::uuid`)} as coverage`);
+    const { coverage } = (await db.query(query.sql, query.params)).rows[0];
+    expect(coverage).toEqual({ total: 10000, unlabeled: 1900 });
+    expect(needsMoreSpeakerLabels([coverage])).toBe(false);
   });
 
 });

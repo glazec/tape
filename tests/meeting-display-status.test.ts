@@ -68,11 +68,11 @@ describe("needsMoreSpeakerLabels", () => {
     [5, 1, true],
     [6, 1, false],
     [1, 0, false],
-  ] as const)("checks %i speaker groups with %i unlabeled", (total, unlabeled, expected) => {
+  ] as const)("checks %i milliseconds with %i unlabeled", (total, unlabeled, expected) => {
     expect(needsMoreSpeakerLabels([{ total, unlabeled }])).toBe(expected);
   });
 
-  it("counts speaker groups across recordings before applying the threshold", () => {
+  it("combines speaking time across recordings before applying the threshold", () => {
     expect(needsMoreSpeakerLabels([{ total: 5, unlabeled: 0 }, { total: 1, unlabeled: 1 }])).toBe(false);
   });
 });
