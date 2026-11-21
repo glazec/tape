@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 
 import {
   and,
@@ -64,6 +64,7 @@ type CalendarConnection = {
   id: string;
   teamId: string;
   userId: string;
+  accountEmail?: string | null;
   autoJoinEnabled: boolean;
   creditLimitUsdMicros?: number | null;
   workspaceDomain?: string | null;
@@ -346,18 +347,15 @@ async function autoJoinCalendarEventInternal(input: AutoJoinInput) {
             location,
           })
         : hasParticipantMeetingDetails && !input.event.isDeleted && !autoJoinSuppressed
-        ? `team:${input.connection.teamId}:start:${startsAt.toISOString()}:event:${input.event.externalEventId}`
+        ? buildParticipantMeetingKey(input, startsAt, canonicalAttendeeEmails)
         : null;
-  const teamMeetingKeyUpdate = ignoredImportedEvent
-    ? null
-    : teamMeetingKey ??
-      sql`coalesce(${calendarEvents.teamMeetingKey}, excluded.team_meeting_key)`;
+  // A removed guest-matched copy must stop claiming the shared occurrence.
+  const retainedKey = sql`case when ${calendarEvents.teamMeetingKey} like '%:guests:%'
+    then null else ${calendarEvents.teamMeetingKey} end`;
+  const teamMeetingKeyUpdate = ignoredImportedEvent ? null : teamMeetingKey ?? retainedKey;
   const teamMeetingKeyComparison = ignoredImportedEvent
     ? sql`excluded.team_meeting_key`
-    : sql`coalesce(
-        excluded.team_meeting_key,
-        ${calendarEvents.teamMeetingKey}
-      )`;
+    : sql`coalesce(excluded.team_meeting_key, ${retainedKey})`;
   const [persistedCalendarEvent] = await db
     .insert(calendarEvents)
     .values({
@@ -441,6 +439,23 @@ async function autoJoinCalendarEventInternal(input: AutoJoinInput) {
     externalEventId: input.event.externalEventId,
     teamMeetingKey: activeTeamMeetingKey,
   });
+  if (
+    existingMeeting?.calendarEventId === calendarEvent.id &&
+    existingMeeting.teamMeetingKey?.includes(":guests:") &&
+    existingMeeting.teamMeetingKey !== activeTeamMeetingKey
+  ) {
+    const [sibling] = await db.select({ id: calendarEvents.id }).from(calendarEvents)
+      .where(and(
+        eq(calendarEvents.teamId, input.connection.teamId),
+        eq(calendarEvents.teamMeetingKey, existingMeeting.teamMeetingKey),
+        ne(calendarEvents.id, calendarEvent.id),
+      )).limit(1);
+    if (sibling) {
+      await db.update(meetings).set({ calendarEventId: sibling.id, updatedAt: new Date() })
+        .where(and(eq(meetings.id, existingMeeting.id), eq(meetings.calendarEventId, calendarEvent.id)));
+      existingMeeting = null;
+    }
+  }
   // Historical repair only restores the library record; it never schedules capture.
   if (input.historicalRepair) {
     if (
@@ -2362,6 +2377,18 @@ function buildTeamMeetingKey(input: {
   ].join(":");
 }
 
+function buildParticipantMeetingKey(input: AutoJoinInput, startsAt: Date, attendees: string[]) {
+  const prefix = `team:${input.connection.teamId}:start:${startsAt.toISOString()}`;
+  const account = normalizeEmail(input.connection.accountEmail ?? "");
+  const title = input.event.title.trim().toLowerCase().replace(/\s+/g, " ");
+  if (!title || !account || !attendees.includes(account)) {
+    return `${prefix}:event:${input.event.externalEventId}`;
+  }
+  const guests = attendees.filter((email) => email !== account);
+  const identity = JSON.stringify([input.connection.userId, title, guests]);
+  return `${prefix}:guests:${createHash("sha256").update(identity).digest("hex")}`;
+}
+
 function buildLocationMeetingKey(input: {
   teamId: string;
   startsAt: Date;
@@ -2480,7 +2507,7 @@ function isMeetingOwnedByActiveSiblingCalendarEvent(input: {
       input.meeting.calendarEventId !== input.currentCalendarEventId &&
       input.meeting.linkedCalendarEventTeamMeetingKey ===
         input.teamMeetingKey &&
-      isSupportedMeetingUrl(input.meeting.linkedCalendarEventMeetingUrl),
+      (input.teamMeetingKey.includes(":guests:") || isSupportedMeetingUrl(input.meeting.linkedCalendarEventMeetingUrl)),
   );
 }
 

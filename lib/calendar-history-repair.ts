@@ -95,6 +95,7 @@ export async function repairCalendarHistoryEvent(
     connection: {
       id: input.connectionId, teamId: input.teamId, userId: input.userId,
       autoJoinEnabled: false,
+      accountEmail: connection.email,
       workspaceDomain: normalizeEmailDomain(String(connection.email)),
       workspaceName: String(connection.name),
     },

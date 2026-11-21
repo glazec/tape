@@ -37,6 +37,7 @@ type RecallCalendarConnection = {
   id: string;
   teamId: string;
   userId: string;
+  accountEmail?: string | null;
   autoJoinEnabled: boolean;
   creditLimitUsdMicros?: number | null;
   recallCalendarId?: string | null;
@@ -209,6 +210,7 @@ export async function ensureRecallManagedCalendarConnectionForWorkspace(
       autoJoinEnabled: true,
       recallCalendarId: calendar.id,
       recallCalendarStatus: calendar.status,
+      accountEmail: calendar.platformEmail,
     })
     .returning({
       id: calendarConnections.id,
@@ -223,6 +225,7 @@ export async function ensureRecallManagedCalendarConnectionForWorkspace(
 
   return {
     ...connection,
+    accountEmail: calendar.platformEmail,
     creditLimitUsdMicros: workspace.creditLimitUsdMicros,
     workspaceDomain: workspace.domain,
     workspaceName: workspace.teamName,
@@ -299,6 +302,7 @@ export async function syncRecallCalendarEventsForWorkspace(input: {
     id: connection.id,
     teamId: connection.teamId,
     userId: connection.userId,
+    accountEmail: connection.accountEmail,
     autoJoinEnabled: input.autoJoinEnabled,
     creditLimitUsdMicros: input.workspace.creditLimitUsdMicros,
     workspaceDomain: connection.workspaceDomain ?? input.workspace.domain,
@@ -647,6 +651,7 @@ async function findConnectionByRecallCalendarId(calendarId: string) {
         recallCalendarId: connection.recallCalendarId,
         recallCalendarLastSyncedAt: connection.recallCalendarLastSyncedAt,
         recallCalendarStatus: connection.recallCalendarStatus,
+        accountEmail: connection.userEmail,
         workspaceDomain: normalizeEmailDomain(connection.userEmail),
         workspaceName: connection.teamName,
       }

@@ -49,7 +49,8 @@ const {
   updateScheduledRecallBot: vi.fn(),
 }));
 
-vi.mock("node:crypto", () => ({
+vi.mock("node:crypto", async (importOriginal) => ({
+  ...await importOriginal<typeof import("node:crypto")>(),
   randomUUID,
 }));
 
@@ -1289,6 +1290,28 @@ describe("calendar auto join", () => {
     expect(scheduleLocationReminder).not.toHaveBeenCalled();
     expect(scheduleRecallBot).not.toHaveBeenCalled();
     expect(scheduleRecallCalendarEventBot).not.toHaveBeenCalled();
+  });
+
+  it("matches venue-free invitations across an owner's calendar aliases by title, time and exact guests", async () => {
+    const values = vi.fn().mockReturnValue({ onConflictDoUpdate: () => ({
+      returning: async () => [{ id: "calendar_event" }],
+    }) });
+    insert.mockReturnValue({ values });
+    const { autoJoinCalendarEvent } = await import("@/lib/calendar-auto-join");
+    async function key(accountEmail: string, guest: string, title: string, startsAt: string) {
+      await autoJoinCalendarEvent({
+        connection: { id: accountEmail, accountEmail, teamId: "team", userId: "owner", autoJoinEnabled: false },
+        event: { externalEventId: accountEmail, title, startsAt, attendeeEmails: [guest, accountEmail] },
+      });
+      return values.mock.lastCall?.[0].teamMeetingKey;
+    }
+    const start = "2099-06-30T12:00:00Z";
+    const first = await key("owner@primary.com", "qian@example.com", "Qian <> YP", start);
+    expect(first).toContain(":guests:");
+    expect(await key("owner@alias.com", "QIAN@example.com", " qian  <> YP ", start)).toBe(first);
+    expect(await key("owner@alias.com", "another@example.com", "Qian <> YP", start)).not.toBe(first);
+    expect(await key("owner@alias.com", "qian@example.com", "Different title", start)).not.toBe(first);
+    expect(await key("owner@alias.com", "qian@example.com", "Qian <> YP", "2099-07-01T12:00:00Z")).not.toBe(first);
   });
 
   it.each([

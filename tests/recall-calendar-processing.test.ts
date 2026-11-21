@@ -184,6 +184,7 @@ describe("processRecallCalendarWebhook", () => {
     expect(autoJoinCalendarEvent).toHaveBeenCalledWith({
       repairMode: true,
       connection: {
+        accountEmail: "test@iosg.vc",
         id: "33333333-3333-4333-8333-333333333333",
         teamId: "22222222-2222-4222-8222-222222222222",
         userId: "11111111-1111-4111-8111-111111111111",
