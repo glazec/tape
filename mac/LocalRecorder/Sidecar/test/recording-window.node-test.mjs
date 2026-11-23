@@ -90,3 +90,29 @@ test("removes closed meetings and merges URL updates without losing identity", a
   emit("meeting-updated", { id: "active", title: "Updated title" });
   assert.equal((await selector.select({ timeoutMs: 0, expectedMeetingUrl: "https://meet.google.com/abc-defg-hij" })).windowId, "active");
 });
+
+test("starts window selection promptly when the scheduled call becomes identifiable", async () => {
+  const { selector, emit } = fixture();
+  const result = selector.select({ timeoutMs: 5_000, expectedMeetingUrl: "https://meet.google.com/abc-defg-hij" });
+  emit("meeting-detected", { id: "wrong", url: "https://meet.google.com/xyz-abcd-efg" });
+  emit("meeting-detected", { id: "scheduled" });
+  emit("meeting-updated", { id: "scheduled", url: "https://meet.google.com/abc-defg-hij" });
+  let deadline;
+  try {
+    const selected = await Promise.race([result, new Promise((_, reject) => {
+      deadline = setTimeout(() => reject(new Error("Waited for the full discovery window")), 1_500);
+    })]);
+    assert.equal(selected.windowId, "scheduled");
+  } finally {
+    clearTimeout(deadline);
+  }
+});
+
+test("keeps manual selection when an additional exact match arrives during discovery", async () => {
+  const { selector, emit } = fixture();
+  const url = "https://meet.google.com/abc-defg-hij";
+  const result = selector.select({ timeoutMs: 25, expectedMeetingUrl: url });
+  emit("meeting-detected", { id: "first", url });
+  emit("meeting-detected", { id: "second", url });
+  await assert.rejects(result, /Multiple matching/);
+});

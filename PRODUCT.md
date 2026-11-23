@@ -118,7 +118,7 @@ Workspace people have permanent IDs and may have several explicitly associated m
 
 ## Recording reliability
 
-Started meetings remain visible while recording or processing is unresolved, including when provider notifications are delayed. A background check reconciles Recall bot state every five minutes for the past 30 days and repairs missing transcription dispatches. Already running, completed, or failed transcription jobs are not automatically submitted again.
+Started meetings remain visible while recording or processing is unresolved, including when provider notifications are delayed. A background check reconciles Recall bot state every five minutes for the past 30 days and repairs missing transcription dispatches. Already running, completed, or failed transcription jobs are not automatically submitted again. If a current transcription job runs out of provider credits, the meeting detail asks the reader to have an admin top up transcription credits.
 
 ## Intel
 

@@ -196,6 +196,37 @@ describe("Recall Calendar V2 adapter", () => {
     );
   });
 
+  it.each([new TypeError("fetch failed"), 409, 503])("retries calendar scheduling with the same request after %s", async (failure) => {
+    vi.stubEnv("RECALL_API_KEY", "recall-key");
+    vi.stubEnv("NEXT_PUBLIC_APP_URL", "https://tape.example.com");
+    const fetchMock = vi.fn();
+    if (typeof failure === "number") fetchMock.mockResolvedValueOnce(new Response(null, { status: failure }));
+    else fetchMock.mockRejectedValueOnce(failure);
+    fetchMock.mockResolvedValueOnce(Response.json({ bots: [{ bot_id: "bot-1" }] }));
+    vi.stubGlobal("fetch", fetchMock);
+    const { scheduleRecallCalendarEventBot } = await import("@/lib/vendors/recall");
+
+    await expect(scheduleRecallCalendarEventBot({
+      calendarEventId: "55555555-5555-4555-8555-555555555555",
+      deduplicationKey: "same-meeting",
+    })).resolves.toEqual({ bots: [{ bot_id: "bot-1" }] });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock.mock.calls[1][1].body).toEqual(fetchMock.mock.calls[0][1].body);
+  });
+
+  it("does not retry an invalid calendar scheduling request", async () => {
+    vi.stubEnv("RECALL_API_KEY", "recall-key");
+    vi.stubEnv("NEXT_PUBLIC_APP_URL", "https://tape.example.com");
+    const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 400 }));
+    vi.stubGlobal("fetch", fetchMock);
+    const { scheduleRecallCalendarEventBot } = await import("@/lib/vendors/recall");
+    await expect(scheduleRecallCalendarEventBot({
+      calendarEventId: "55555555-5555-4555-8555-555555555555",
+      deduplicationKey: "same-meeting",
+    })).rejects.toThrow("400");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
   it("schedules a Recall bot for a Calendar V2 event", async () => {
     vi.stubEnv("RECALL_API_KEY", "recall-key\n");
     vi.stubEnv(

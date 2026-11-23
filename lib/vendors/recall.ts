@@ -720,43 +720,55 @@ export async function scheduleRecallCalendarEventBot(input: {
   const parsedInput = recallCalendarEventBotInputSchema.parse(input);
   const env = recallApiEnvSchema.parse(process.env);
 
-  const response = await fetch(
-    buildRecallApiUrl(
-      env,
-      `/api/v2/calendar-events/${encodeURIComponent(
-        parsedInput.calendarEventId,
-      )}/bot/`,
-    ),
-    {
-      method: "POST",
-      headers: buildRecallJsonHeaders(env),
-      body: JSON.stringify({
-        deduplication_key: parsedInput.deduplicationKey,
-        bot_config: {
-          bot_name: parsedInput.botName,
-          ...(parsedInput.joinAt ? { join_at: parsedInput.joinAt } : {}),
-          automatic_leave: {
-            waiting_room_timeout: DEFAULT_RECALL_WAITING_ROOM_TIMEOUT_SECONDS,
-          },
-          automatic_video_output: getRecallBotVideoOutput(
-            parsedInput.avatarJpegBase64,
-          ),
-          recording_config: buildRecallRealtimeRecordingConfig(
-            buildRecallRealtimeWebhookUrl(),
-          ),
-          metadata: parsedInput.metadata,
-        },
-      }),
-    },
+  const url = buildRecallApiUrl(
+    env,
+    `/api/v2/calendar-events/${encodeURIComponent(parsedInput.calendarEventId)}/bot/`,
   );
-
-  if (!response.ok) {
-    throw new Error(
-      `Recall calendar bot scheduling failed with ${response.status} ${response.statusText}`,
-    );
+  const body = JSON.stringify({
+    deduplication_key: parsedInput.deduplicationKey,
+    bot_config: {
+      bot_name: parsedInput.botName,
+      ...(parsedInput.joinAt ? { join_at: parsedInput.joinAt } : {}),
+      automatic_leave: {
+        waiting_room_timeout: DEFAULT_RECALL_WAITING_ROOM_TIMEOUT_SECONDS,
+      },
+      automatic_video_output: getRecallBotVideoOutput(
+        parsedInput.avatarJpegBase64,
+      ),
+      recording_config: buildRecallRealtimeRecordingConfig(
+        buildRecallRealtimeWebhookUrl(),
+      ),
+      metadata: parsedInput.metadata,
+    },
+  });
+  // Recall applies repeated schedules with the same event and deduplication key
+  // to the same bot. Retry only this idempotent scheduling path.
+  const retryDelays = [200, 600];
+  for (let attempt = 0; ; attempt++) {
+    let response: Response | undefined;
+    try {
+      response = await fetch(url, {
+        method: "POST",
+        headers: buildRecallJsonHeaders(env),
+        body,
+        signal: AbortSignal.timeout(5_000),
+      });
+    } catch (error) {
+      if (attempt >= retryDelays.length ||
+          !(error instanceof TypeError || (error instanceof Error && error.name === "TimeoutError"))) {
+        throw error;
+      }
+    }
+    if (response?.ok) return response.json();
+    if (response && (attempt >= retryDelays.length ||
+        !(response.status === 409 || (response.status >= 500 && response.status < 600)))) {
+      throw new Error(
+        `Recall calendar bot scheduling failed with ${response.status} ${response.statusText}`,
+      );
+    }
+    await response?.body?.cancel().catch(() => undefined);
+    await new Promise(resolve => setTimeout(resolve, retryDelays[attempt]));
   }
-
-  return response.json();
 }
 
 export async function deleteRecallCalendarEventBot(input: {

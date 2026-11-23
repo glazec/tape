@@ -185,6 +185,14 @@ describe("meeting page", () => {
     },
   );
 
+  it.each([true, false])("shows top up guidance only for a quota failure (%s)", async (quotaExhausted) => {
+    mocks.getMeeting.mockResolvedValue(meeting({ transcriptQuotaExhausted: quotaExhausted }));
+    const html = renderToStaticMarkup(await MeetingPage({
+      params: Promise.resolve({ meetingId: "meeting_1" }),
+    }));
+    expect(html.includes("Ask an admin to top up transcription credits.")).toBe(quotaExhausted);
+  });
+
   it("renders management, sharing, and failed meeting recovery", async () => {
     const html = renderToStaticMarkup(
       await MeetingPage({

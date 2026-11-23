@@ -355,6 +355,11 @@ export default async function MeetingPage({
             status={displayStatus === "scheduled" && composition.sources.some(source => source.kind === "continuation" && source.status === "scheduled") ? "Waiting to join" : formatStatus(displayStatus)}
           />
           </div>
+          {parts.some(part => part.transcriptQuotaExhausted) ? (
+            <p className="order-3 mt-2 basis-full text-sm text-muted-foreground">
+              Ask an admin to top up transcription credits.
+            </p>
+          ) : null}
           {participants.length > 0 || relatedMeetings.length > 0 ? (
             <div className="order-3 mt-1 flex basis-full flex-wrap items-baseline gap-x-3 gap-y-1">
               {participants.length > 0 ? (

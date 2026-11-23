@@ -144,6 +144,7 @@ export type MeetingTranscript = {
   endedAt: string | null;
   updatedAt: string;
   durationMs: number | null;
+  transcriptQuotaExhausted?: boolean;
   transcriptJobStatus: TranscriptJobStatus | null;
   translationLanguage: TranslationLanguage;
   translationSummary: MeetingTranslationSummary;
@@ -1456,6 +1457,13 @@ export async function getMeetingTranscriptForWorkspace(
         order by ${transcriptJobs.createdAt} desc
         limit 1
       )`,
+      transcriptQuotaExhausted: sql<boolean>`exists (
+        select 1 from ${transcriptJobs}
+        where ${transcriptJobs.id} in ${activeTranscriptJobIdsSubquery(meetings.id)}
+          and ${transcriptJobs.status} = 'failed'
+          and ${transcriptJobs.provider} = 'elevenlabs'
+          and ${transcriptJobs.errorMessage} ~* '(^|[^a-z0-9_])quota_exceeded([^a-z0-9_]|$)'
+      )`,
       audioObjectKey: mediaAssets.objectKey,
       calendarAttendeeEmails: getMeetingAttendeeEmailsSnapshot(),
       recallRecordingId: meetings.recallRecordingId,
@@ -1695,6 +1703,7 @@ export async function getMeetingTranscriptForWorkspace(
         : getTranscriptDurationMs(meeting.recordedDurationMs) ??
           getTranscriptDurationMs(meeting.transcriptDurationMs) ??
           null,
+    transcriptQuotaExhausted: meeting.transcriptQuotaExhausted,
     transcriptJobStatus: meeting.transcriptJobStatus,
     speakerLabelCounts: meeting.speakerLabelCounts,
     translationLanguage: normalizeTranslationLanguage(

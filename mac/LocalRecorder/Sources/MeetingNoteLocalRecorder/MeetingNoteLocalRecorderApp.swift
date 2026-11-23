@@ -1143,6 +1143,7 @@ final class RecorderAppModel: NSObject, ObservableObject, UNUserNotificationCent
         clientRecordingId: String,
         fallbackIntentId: String
     ) async throws {
+        statusText = "Connecting recorder"
         let upload = try await client.createRecallSDKUpload(fallbackIntentId: fallbackIntentId, clientRecordingId: clientRecordingId)
         if let target = activeTarget {
             recoveryState.sdkDrains.append(.init(recordingID: clientRecordingId, target: target, captureStarted: false))
@@ -1157,6 +1158,7 @@ final class RecorderAppModel: NSObject, ObservableObject, UNUserNotificationCent
                 try? persistCaptureRecovery()
             }
         }
+        statusText = "Finding meeting window"
         try await recallSDKController.start(upload: upload, clientRecordingId: clientRecordingId, expectedMeetingURL: activeTarget?.meetingUrl)
     }
 
@@ -1344,7 +1346,7 @@ final class RecorderAppModel: NSObject, ObservableObject, UNUserNotificationCent
             await session.stop()
             microphoneLevel = 0
             systemAudioLevel = 0
-            if canMonitor, !isRecording {
+            if canMonitor, !isRecording, !isStartingRecording {
                 statusText = "Watching your calendar"
             }
         }

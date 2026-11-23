@@ -104,7 +104,9 @@ final class RecallDesktopSDKRecordingController {
             Task { @MainActor in self?.terminated(id: clientRecordingId, status: process.terminationStatus) }
         }
         do {
-            try process.run()
+            // Launching the SDK sidecar can block in Foundation. Keep AppKit
+            // responsive while it starts and let the controller own the session.
+            try await Task.detached { try process.run() }.value
             // Exactly one reader owns stdout for the entire process lifetime.
             session.reader = Task { [weak self] in
                 do {

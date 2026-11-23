@@ -18,26 +18,46 @@ export function meetingIdentity(value) {
 
 export function createRecordingWindowSelector(sdk) {
   const windows = new Map();
+  let onWindowsChanged;
   const update = (event) => {
     const window = event?.window;
     if (typeof window?.id === "string" && window.id) {
       windows.set(window.id, { ...windows.get(window.id), ...window });
+      onWindowsChanged?.();
     }
   };
-  const closed = (event) => windows.delete(event?.window?.id);
+  const closed = (event) => {
+    if (windows.delete(event?.window?.id)) onWindowsChanged?.();
+  };
   const listeners = [["meeting-detected", update], ["meeting-updated", update], ["meeting-closed", closed]];
   for (const [name, listener] of listeners) sdk.addEventListener(name, listener);
 
   return {
     async select({ timeoutMs = 5_000, expectedMeetingUrl } = {}) {
+      const expected = meetingIdentity(expectedMeetingUrl);
+      const matchingWindows = () => [...windows.values()].filter((window) =>
+        expectedMeetingUrl ? expected && meetingIdentity(window.url) === expected : true,
+      );
+      let timeout;
+      let settle;
       try {
-        // Allow discovery to report all calls and enrich their URLs. Picking the
-        // first event can record the wrong meeting when two calls are open.
-        await new Promise((resolve) => setTimeout(resolve, timeoutMs));
-        const expected = meetingIdentity(expectedMeetingUrl);
-        const candidates = [...windows.values()].filter((window) =>
-          expectedMeetingUrl ? expected && meetingIdentity(window.url) === expected : true,
-        );
+        await new Promise((resolve) => {
+          timeout = setTimeout(resolve, timeoutMs);
+          if (!expected) return;
+          // A unique exact URL match can settle early. Give concurrent discovery
+          // events time to report a second matching window before selecting it.
+          let uniqueWindowId;
+          onWindowsChanged = () => {
+            const matches = matchingWindows();
+            const nextId = matches.length === 1 ? matches[0].id : undefined;
+            if (nextId === uniqueWindowId) return;
+            uniqueWindowId = nextId;
+            clearTimeout(settle);
+            if (nextId) settle = setTimeout(resolve, 500);
+          };
+          onWindowsChanged();
+        });
+        const candidates = matchingWindows();
         if (candidates.length === 1) {
           return { captureMode: "meeting", windowId: candidates[0].id };
         }
@@ -45,6 +65,9 @@ export function createRecordingWindowSelector(sdk) {
           ? "Multiple matching meetings are open. Choose a meeting window for local capture."
           : "No matching meeting window detected. Choose a meeting window for local capture.");
       } finally {
+        clearTimeout(timeout);
+        clearTimeout(settle);
+        onWindowsChanged = undefined;
         for (const [name, listener] of listeners) sdk.removeEventListener(name, listener);
       }
     },

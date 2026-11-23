@@ -4,6 +4,8 @@ import { INTEL_VERIFIER_MODEL, verifyIntelClaims } from "@/lib/intel/verificatio
 const fetchDecision = vi.fn();
 const usage = vi.hoisted(() => vi.fn());
 vi.mock("@/lib/provider-usage", () => ({ recordOpenRouterCompletionUsage: usage }));
+const chat = vi.hoisted(() => vi.fn());
+vi.mock("@/lib/vendors/openrouter", () => ({ createOpenRouterChatCompletion: chat }));
 function respond(answers: unknown) {
   fetchDecision.mockResolvedValue(Response.json({ id: "gen-1", model: INTEL_VERIFIER_MODEL,
     usage: { cost: 0.000042, input_tokens: 1000, output_tokens: 30 }, answers }));
@@ -48,4 +50,30 @@ it("checks a recommendation as supported relevance, without requiring the recipi
  expect(body.questions.claim_0.instructions).toContain("as a recommendation");
  expect(body.questions.claim_0.instructions).toContain("do not require the recipient to repeat");
  expect(body.questions.claim_0.instructions).toContain("later contradictions");
+});
+
+
+it("verifies against the complete evidence with a larger context when Jev rejects the token count", async () => {
+  fetchDecision.mockResolvedValue(Response.json({
+    error: { message: 'HTTP 400: {"detail":{"error_type":"max_tokens_exceeded"}}' },
+  }, { status: 400 }));
+  chat.mockResolvedValue(JSON.stringify({ decisions: [{ index: 0, supported: true }, { index: 1, supported: false }] }));
+  const evidence = [{ text: "A stated a plan." }, { text: "A later retracted it." }];
+  expect(await verifyIntelClaims(["Plan was discussed", "Plan is current"], evidence, "meeting")).toEqual(["Plan was discussed"]);
+  const request = chat.mock.calls[0][0];
+  expect(JSON.parse(request.messages[1].content).state.evidence).toEqual(evidence);
+  expect(request.usageContext).toMatchObject({ meetingId: "meeting" });
+  expect(fetchDecision).toHaveBeenCalledTimes(1);
+});
+
+it("fails closed when the fallback omits a decision", async () => {
+  fetchDecision.mockResolvedValue(Response.json({ error: { message: "max_tokens_exceeded" } }, { status: 400 }));
+  chat.mockResolvedValue(JSON.stringify({ decisions: [{ index: 0, supported: true }] }));
+  await expect(verifyIntelClaims(["one", "two"], [], "meeting")).rejects.toThrow("incomplete");
+});
+
+it("does not use the fallback for an unrelated provider rejection", async () => {
+  fetchDecision.mockResolvedValue(Response.json({ error: { message: "invalid request" } }, { status: 400 }));
+  await expect(verifyIntelClaims(["one"], [], "meeting")).rejects.toThrow("HTTP 400");
+  expect(chat).not.toHaveBeenCalled();
 });
