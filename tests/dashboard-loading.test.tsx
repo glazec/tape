@@ -10,7 +10,7 @@ describe("Dashboard loading state", () => {
     expect(html).toContain('aria-label="Loading dashboard"');
     expect(html).toContain('aria-label="Loading dashboard overview"');
     expect(html).toContain('aria-label="Loading meetings"');
-    expect(html).toContain("motion-reduce:animate-none");
+    expect(html).toContain("tape-shimmer");
     expect(html).not.toContain("<a ");
   });
 });

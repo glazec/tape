@@ -227,3 +227,209 @@ body {
     @apply font-sans;
   }
 }
+
+/* ------------------------------------------------------------------
+   Motion. Every animation here explains a state change: something
+   arrived, opened, became active, or is live. Durations stay under
+   300ms for UI, enter with a strong ease-out, and nothing scales up
+   from zero. Reduced motion removes movement and keeps the state.
+   Fill mode is "backwards", never "both": a finished transform animation
+   that stays in effect would turn <main> into the containing block for
+   fixed children such as the audio player bar.
+   ------------------------------------------------------------------ */
+:root {
+  /* Prefixed so Tailwind's own ease-out utility keeps its meaning. */
+  --tape-ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --tape-ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
+  --tape-ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+@keyframes tape-rise {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+
+@keyframes tape-fade {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes tape-pop {
+  from {
+    opacity: 0;
+    transform: scale(0.96) translateY(-4px);
+  }
+}
+
+@keyframes tape-pop-in {
+  from {
+    opacity: 0;
+    transform: scale(0.85);
+  }
+}
+
+@keyframes tape-toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(12px) scale(0.97);
+  }
+}
+
+@keyframes tape-toast-out {
+  to {
+    opacity: 0;
+    transform: translateY(8px) scale(0.98);
+  }
+}
+
+@keyframes tape-live-ring {
+  0% {
+    box-shadow: 0 0 0 0 color-mix(in oklch, currentColor 55%, transparent);
+  }
+  70%,
+  100% {
+    box-shadow: 0 0 0 5px color-mix(in oklch, currentColor 0%, transparent);
+  }
+}
+
+@keyframes tape-breathe {
+  50% {
+    opacity: 0.4;
+  }
+}
+
+@keyframes tape-shimmer {
+  from {
+    background-position: 150% 0;
+  }
+  to {
+    background-position: -50% 0;
+  }
+}
+
+html {
+  -webkit-tap-highlight-color: transparent;
+  /* Height of the on-screen keyboard, set from visualViewport, so bottom
+     sheets lift their inputs above it on iOS. */
+  --tape-keyboard-inset: 0px;
+}
+
+/* Installed app: no rubber band sideways, no long press callouts on chrome. */
+@media (display-mode: standalone) {
+  html,
+  body {
+    overscroll-behavior-x: none;
+  }
+
+  header a,
+  header button,
+  header summary,
+  nav a {
+    -webkit-touch-callout: none;
+    -webkit-user-select: none;
+    user-select: none;
+  }
+}
+
+/* A new page settles in rather than snapping. Opacity only: a transform on
+   <main>, even mid animation, would capture the fixed audio player bar.
+   Refreshes keep the same element mounted, so live updates never replay. */
+.tape-page-enter {
+  animation: tape-fade 220ms var(--tape-ease-out) backwards;
+}
+
+/* The persistent player rises in once, after the page has settled. */
+[data-persistent-player] {
+  animation: tape-rise 320ms var(--tape-ease-out) 120ms backwards;
+}
+
+/* Rows answer a tap on touch screens, where there is no hover tone. */
+.meeting-row:active:not(:has(button:active, a:active, [role="menuitem"]:active)) {
+  background-color: color-mix(in oklch, var(--muted) 85%, transparent);
+  transition-duration: 60ms;
+}
+
+/* Header account menu: opens from its trigger corner. */
+details[open] > .tape-popover {
+  animation: tape-pop 160ms var(--tape-ease-out) backwards;
+}
+
+/* Library rows arrive in a short cascade, capped so long lists never wait. */
+.tape-row-enter {
+  animation: tape-rise 320ms var(--tape-ease-out) backwards;
+  animation-delay: calc(min(var(--tape-row-index, 0), 10) * 22ms);
+}
+
+/* Panel switches (notes and transcript) crossfade instead of cutting. */
+.tape-panel-enter {
+  animation: tape-fade 200ms var(--tape-ease-out) backwards;
+}
+
+.tape-toast {
+  animation: tape-toast-in 240ms var(--tape-ease-out) backwards;
+}
+
+.tape-toast[data-phase="leaving"] {
+  animation: tape-toast-out 180ms ease-in forwards;
+}
+
+/* Confirmation ticks pop in, so "Copied" reads as a result of the click
+   rather than a label swap. Opt in with data-confirm on the result icon. */
+[data-confirm] {
+  animation: tape-pop-in 200ms var(--tape-ease-out) backwards;
+}
+
+/* Keep connection notices clear of the audio scrubber on meeting pages. */
+body:has([data-persistent-player]) .tape-toast-anchor {
+  bottom: calc(5.5rem + env(safe-area-inset-bottom));
+}
+
+/* Live states: recording pulses outward, work in progress breathes. */
+.tape-live-dot {
+  animation: tape-live-ring 1.6s var(--tape-ease-out) infinite;
+}
+
+.tape-working-dot {
+  animation: tape-breathe 1.8s ease-in-out infinite;
+}
+
+/* Skeletons sweep a soft highlight instead of blinking. */
+.tape-shimmer {
+  background-image: linear-gradient(
+    100deg,
+    transparent 30%,
+    color-mix(in oklch, var(--background) 70%, transparent) 50%,
+    transparent 70%
+  );
+  background-size: 200% 100%;
+  background-repeat: no-repeat;
+  animation: tape-shimmer 1.6s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tape-page-enter,
+  .tape-row-enter,
+  .tape-panel-enter,
+  .tape-toast,
+  .tape-toast[data-phase="leaving"],
+  [data-persistent-player],
+  details[open] > .tape-popover,
+  [data-confirm] {
+    animation-name: tape-fade;
+    animation-duration: 120ms;
+    animation-delay: 0ms;
+  }
+
+  .tape-toast[data-phase="leaving"] {
+    animation-direction: reverse;
+  }
+
+  .tape-live-dot,
+  .tape-working-dot,
+  .tape-shimmer {
+    animation: none;
+  }
+}

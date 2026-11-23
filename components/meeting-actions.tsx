@@ -283,7 +283,7 @@ export function MeetingActions({
           variant="ghost"
         >
           {copyStatus === "copied" ? (
-            <Check data-icon="inline-start" />
+            <Check data-confirm="" data-icon="inline-start" />
           ) : (
             <Copy data-icon="inline-start" />
           )}

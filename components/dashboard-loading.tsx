@@ -5,7 +5,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 export function DashboardPageLoading() {
   return (
     <div className="min-h-screen bg-background text-foreground">
-      <header className="border-b border-border/70 bg-background/90">
+      <header className="border-b border-border/70 bg-background/90 pt-[env(safe-area-inset-top)]">
         <div className="mx-auto flex h-14 w-full max-w-4xl items-center gap-8 px-4 sm:px-6">
           <ProductLogo />
           <div aria-hidden="true" className="flex items-center gap-6">

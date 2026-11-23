@@ -31,7 +31,7 @@ export function CopyMcpAddressButton({
         type="button"
         variant={variant}
       >
-        {status === "copied" ? <Check /> : <Copy />}
+        {status === "copied" ? <Check data-confirm="" /> : <Copy />}
         {status === "copied"
           ? "Copied"
           : status === "failed"

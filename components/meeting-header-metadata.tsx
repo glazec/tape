@@ -53,7 +53,7 @@ function getStatusDotClassName(status: string) {
     case "Completed":
       return "bg-emerald-500";
     case "Recording":
-      return "bg-rose-500";
+      return "bg-rose-500 text-rose-500 tape-live-dot";
     case "Failed":
       return "bg-destructive";
     case "In waiting room":
@@ -61,7 +61,7 @@ function getStatusDotClassName(status: string) {
     case "Processing":
     case "Queued":
     case "Transcribing":
-      return "bg-amber-500";
+      return "bg-amber-500 tape-working-dot";
     default:
       return "bg-muted-foreground/50";
   }

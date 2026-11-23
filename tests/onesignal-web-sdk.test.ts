@@ -88,10 +88,13 @@ describe("OneSignal Web SDK setup", () => {
     });
   });
 
-  it("serves the OneSignal v16 service worker from public assets", () => {
-    expect(readFileSync("public/OneSignalSDKWorker.js", "utf8").trim()).toBe(
+  it("serves one worker that loads OneSignal v16 and Tape offline support", () => {
+    const worker = readFileSync("public/OneSignalSDKWorker.js", "utf8");
+
+    expect(worker).toContain(
       'importScripts("https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.sw.js");',
     );
+    expect(worker).toContain('importScripts("/tape-sw.js");');
   });
 });
 

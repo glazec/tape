@@ -23,7 +23,7 @@ export function EmptyState({
   return (
     <div
       className={cn(
-        "flex flex-col items-center gap-2 px-4 py-10 text-center",
+        "tape-panel-enter flex flex-col items-center gap-2 px-4 py-10 text-center",
         className,
       )}
     >

@@ -8,6 +8,7 @@ import {
   useRef,
   useState,
   useSyncExternalStore,
+  type CSSProperties,
   type ReactNode,
 } from "react";
 import {
@@ -236,15 +237,17 @@ export function MeetingList({
                     onToggle={() => toggleMeeting(meeting.id)}
                     relatedCount={relatedMeetings.length || (meeting.hasMoreRelatedMeetings ? 1 : 0)}
                     renderedAtMs={renderedAtMs}
+                    rowIndex={index}
                   />
                   {isExpanded
                     ? [
-                        ...relatedMeetings.slice(0, visibleCount).map((relatedMeeting) => (
+                        ...relatedMeetings.slice(0, visibleCount).map((relatedMeeting, relatedIndex) => (
                           <MeetingTableRow
                             isChild
                             key={relatedMeeting.id}
                             meeting={relatedMeeting}
                             renderedAtMs={renderedAtMs}
+                            rowIndex={relatedIndex}
                           />
                         )),
                       ]
@@ -291,6 +294,7 @@ function MeetingTableRow({
   onToggle,
   relatedCount = 0,
   renderedAtMs,
+  rowIndex = 0,
 }: {
   grouped?: boolean;
   isChild?: boolean;
@@ -300,6 +304,7 @@ function MeetingTableRow({
   onToggle?: () => void;
   relatedCount?: number;
   renderedAtMs?: number;
+  rowIndex?: number;
 }) {
   const displayStatus = getMeetingDisplayStatus({
     botState: meeting.botState,
@@ -312,8 +317,9 @@ function MeetingTableRow({
       aria-expanded={relatedCount > 0 ? isExpanded : undefined}
       className={cn(
         // Rows separate by spacing and a hover tone, never a resting rule.
-        "group/meeting-row meeting-row border-0",
+        "group/meeting-row meeting-row tape-row-enter border-0",
       )}
+      style={{ "--tape-row-index": rowIndex } as CSSProperties}
     >
       <TableCell
         className={cn(
@@ -564,7 +570,7 @@ function MeetingTitleCell({
                 <button
                   aria-expanded={isExpanded}
                   aria-label={`${isExpanded ? "Collapse" : "Expand"} ${meeting.title}`}
-                  className="rounded-sm tabular-nums underline decoration-border underline-offset-4 hover:text-foreground hover:decoration-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  className="rounded-sm tabular-nums underline decoration-border underline-offset-4 transition-colors duration-150 hover:text-foreground hover:decoration-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                   onClick={onToggle}
                   type="button"
                 >
@@ -768,11 +774,11 @@ function MeetingMeta({
 
 const statusDotClassNames: Partial<Record<MeetingDisplayStatus, string>> = {
   wait_speaker_label: "bg-amber-500",
-  queued: "bg-amber-500",
-  transcribing: "bg-amber-500",
-  processing: "bg-amber-500",
-  waiting_room: "bg-amber-500",
-  recording: "bg-rose-500",
+  queued: "bg-amber-500 tape-working-dot",
+  transcribing: "bg-amber-500 tape-working-dot",
+  processing: "bg-amber-500 tape-working-dot",
+  waiting_room: "bg-amber-500 tape-working-dot",
+  recording: "bg-rose-500 text-rose-500 tape-live-dot",
 };
 
 /**

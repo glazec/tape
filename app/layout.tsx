@@ -2,11 +2,13 @@ import type { Metadata, Viewport } from "next";
 import { Geist, Fraunces, Space_Grotesk, IBM_Plex_Mono } from "next/font/google";
 import Script from "next/script";
 
+import { PwaRegistrar } from "@/components/pwa/pwa-registrar";
 import {
   buildOneSignalInitScript,
   getOneSignalAllowedOrigins,
   getOneSignalAppId,
 } from "@/lib/onesignal-web-sdk";
+import { EARLY_INSTALL_PROMPT_SCRIPT, PWA_THEME_COLOR } from "@/lib/pwa";
 import { SITE_NAME, siteOrigin } from "@/lib/site";
 import { cn } from "@/lib/utils";
 
@@ -36,6 +38,10 @@ const oneSignalInitScript = oneSignalAppId
 export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
+  // Lets the installed app draw under the notch; the shell pads for safe areas.
+  viewportFit: "cover",
+  // The workspace is light only, so the status bar matches it in either OS theme.
+  themeColor: PWA_THEME_COLOR,
 };
 
 export const metadata: Metadata = {
@@ -47,6 +53,12 @@ export const metadata: Metadata = {
   description:
     "Tape is an AI meeting note taker for bilingual teams, turning Chinese and English conversations into accurate notes and searchable team memory.",
   applicationName: SITE_NAME,
+  appleWebApp: {
+    capable: true,
+    title: SITE_NAME,
+    statusBarStyle: "default",
+  },
+  formatDetection: { telephone: false },
   keywords: [
     "bilingual meeting notes",
     "Chinese English meeting transcription",
@@ -86,6 +98,10 @@ export default function RootLayout({
     >
       <body>
         {children}
+        <Script id="tape-install-prompt" strategy="beforeInteractive">
+          {EARLY_INSTALL_PROMPT_SCRIPT}
+        </Script>
+        <PwaRegistrar />
         {oneSignalInitScript ? (
           <>
             <Script id="onesignal-init" strategy="beforeInteractive">

@@ -3,6 +3,7 @@
 import { useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { flushSync } from "react-dom";
 import { AudioLines, Sparkles } from "lucide-react";
+import { LayoutGroup, MotionConfig, motion } from "framer-motion";
 
 import { NOTE_MOMENT_NAVIGATE } from "@/lib/note-moments";
 import { cn } from "@/lib/utils";
@@ -92,6 +93,8 @@ export function MeetingViewTabs({
   // hidden one would still hold open a gap above the transcript.
   return (
     <div className="[&:has(audio)_[data-view-panel=notes][data-state=active]]:pb-40">
+      <MotionConfig reducedMotion="user">
+      <LayoutGroup id={id}>
       <div
         aria-label="Meeting view"
         className="mb-8 inline-flex items-center gap-0.5 rounded-full bg-muted/60 p-1"
@@ -104,9 +107,9 @@ export function MeetingViewTabs({
               aria-controls={`${id}-${viewId}`}
               aria-selected={selected}
               className={cn(
-                "inline-flex h-11 items-center gap-1.5 rounded-full px-4 text-sm font-medium outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring sm:h-8",
+                "relative inline-flex h-11 items-center gap-1.5 rounded-full px-4 text-sm font-medium outline-none transition-[color,scale] duration-150 ease-out focus-visible:ring-2 focus-visible:ring-ring active:scale-[0.97] motion-reduce:active:scale-100 sm:h-8",
                 selected
-                  ? "bg-background text-foreground shadow-sm"
+                  ? "text-foreground"
                   : "text-muted-foreground hover:text-foreground",
               )}
               id={`${id}-${viewId}-tab`}
@@ -121,15 +124,27 @@ export function MeetingViewTabs({
               tabIndex={selected ? 0 : -1}
               type="button"
             >
-              <Icon aria-hidden="true" className="size-4" />
-              {label}
+              {selected ? (
+                // One pill slides between tabs, so the switch reads as motion
+                // of the same surface rather than two buttons swapping styles.
+                <motion.span
+                  aria-hidden="true"
+                  className="absolute inset-0 rounded-full bg-background shadow-sm"
+                  layoutId="meeting-view-pill"
+                  transition={{ type: "spring", duration: 0.32, bounce: 0.12 }}
+                />
+              ) : null}
+              <Icon aria-hidden="true" className="relative size-4" />
+              <span className="relative">{label}</span>
             </button>
           );
         })}
       </div>
+      </LayoutGroup>
+      </MotionConfig>
       <div
         aria-labelledby={`${id}-notes-tab`}
-        className={view === "notes" ? undefined : INACTIVE_PANEL}
+        className={view === "notes" ? "tape-panel-enter" : INACTIVE_PANEL}
         data-state={view === "notes" ? "active" : "inactive"}
         data-view-panel="notes"
         id={`${id}-notes`}
@@ -139,7 +154,7 @@ export function MeetingViewTabs({
       </div>
       <div
         aria-labelledby={`${id}-transcript-tab`}
-        className={view === "transcript" ? undefined : INACTIVE_PANEL}
+        className={view === "transcript" ? "tape-panel-enter" : INACTIVE_PANEL}
         data-state={view === "transcript" ? "active" : "inactive"}
         data-view-panel="transcript"
         id={`${id}-transcript`}

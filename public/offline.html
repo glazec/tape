@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#fdfcfb" />
+    <title>Offline · Tape</title>
+    <link rel="icon" href="/icons/icon-192.png" />
+    <style>
+      :root {
+        --paper: oklch(0.994 0.002 30);
+        --ink: oklch(0.19 0.007 30);
+        --graphite: oklch(0.44 0.024 30);
+        --line: oklch(0.918 0.005 30);
+        --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+      }
+      * { box-sizing: border-box; }
+      html, body { height: 100%; margin: 0; }
+      body {
+        display: grid;
+        place-items: center;
+        padding: max(24px, env(safe-area-inset-top)) 24px max(24px, env(safe-area-inset-bottom));
+        background: var(--paper);
+        color: var(--ink);
+        font: 16px/1.5 -apple-system, BlinkMacSystemFont, "Geist", "Segoe UI", sans-serif;
+        -webkit-font-smoothing: antialiased;
+        -webkit-tap-highlight-color: transparent;
+      }
+      main {
+        max-width: 22rem;
+        text-align: center;
+        animation: rise 420ms var(--ease-out) both;
+      }
+      img {
+        width: 72px;
+        height: 72px;
+        border-radius: 18px;
+        box-shadow: 0 1px 0 var(--line), 0 8px 24px -12px oklch(0.19 0.007 30 / 35%);
+      }
+      h1 {
+        margin: 24px 0 8px;
+        font-size: 1.25rem;
+        font-weight: 600;
+        letter-spacing: -0.01em;
+      }
+      p { margin: 0; color: var(--graphite); font-size: 0.9375rem; }
+      button {
+        margin-top: 24px;
+        height: 40px;
+        padding: 0 18px;
+        border: 0;
+        border-radius: 999px;
+        background: var(--ink);
+        color: var(--paper);
+        font: inherit;
+        font-size: 0.875rem;
+        font-weight: 500;
+        cursor: pointer;
+        transition: transform 150ms var(--ease-out), opacity 150ms var(--ease-out);
+      }
+      button:active { transform: scale(0.97); }
+      button:focus-visible { outline: 2px solid #ec4f44; outline-offset: 3px; }
+      .status {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        margin-top: 16px;
+        font-size: 0.8125rem;
+        color: var(--graphite);
+      }
+      .dot {
+        width: 6px;
+        height: 6px;
+        border-radius: 999px;
+        background: #d97706;
+        animation: breathe 1.6s ease-in-out infinite;
+      }
+      @keyframes rise {
+        from { opacity: 0; transform: translateY(8px); }
+      }
+      @keyframes breathe {
+        50% { opacity: 0.35; }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        main, .dot { animation: none; }
+        button { transition: none; }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <img src="/icons/icon-192.png" alt="" />
+      <h1>You're offline</h1>
+      <p>Tape needs a connection to open your meetings. This page reloads on its own when you're back online.</p>
+      <button type="button" onclick="location.reload()">Try again</button>
+      <div class="status" role="status" aria-live="polite">
+        <span class="dot" aria-hidden="true"></span>
+        <span id="status-text">Waiting for a connection</span>
+      </div>
+    </main>
+    <script>
+      window.addEventListener("online", function () {
+        document.getElementById("status-text").textContent = "Reconnecting";
+        location.reload();
+      });
+    </script>
+  </body>
+</html>
