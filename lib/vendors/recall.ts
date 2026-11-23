@@ -753,13 +753,14 @@ export async function scheduleRecallCalendarEventBot(input: {
         body,
         signal: AbortSignal.timeout(5_000),
       });
+      if (response.ok) return await response.json();
     } catch (error) {
       if (attempt >= retryDelays.length ||
           !(error instanceof TypeError || (error instanceof Error && error.name === "TimeoutError"))) {
         throw error;
       }
+      response = undefined;
     }
-    if (response?.ok) return response.json();
     if (response && (attempt >= retryDelays.length ||
         !(response.status === 409 || (response.status >= 500 && response.status < 600)))) {
       throw new Error(

@@ -214,6 +214,27 @@ describe("Recall Calendar V2 adapter", () => {
     expect(fetchMock.mock.calls[1][1].body).toEqual(fetchMock.mock.calls[0][1].body);
   });
 
+  it("retries when the bot may have been scheduled but the response body was interrupted", async () => {
+    vi.stubEnv("RECALL_API_KEY", "recall-key");
+    vi.stubEnv("NEXT_PUBLIC_APP_URL", "https://tape.example.com");
+    const interrupted = new ReadableStream({
+      start(controller) {
+        controller.error(new TypeError("terminated"));
+      },
+    });
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(interrupted))
+      .mockResolvedValueOnce(Response.json({ bots: [{ bot_id: "bot-1" }] }));
+    vi.stubGlobal("fetch", fetchMock);
+    const { scheduleRecallCalendarEventBot } = await import("@/lib/vendors/recall");
+
+    await expect(scheduleRecallCalendarEventBot({
+      calendarEventId: "55555555-5555-4555-8555-555555555555",
+      deduplicationKey: "same-meeting",
+    })).resolves.toEqual({ bots: [{ bot_id: "bot-1" }] });
+    expect(fetchMock.mock.calls[1][1].body).toEqual(fetchMock.mock.calls[0][1].body);
+  });
+
   it("does not retry an invalid calendar scheduling request", async () => {
     vi.stubEnv("RECALL_API_KEY", "recall-key");
     vi.stubEnv("NEXT_PUBLIC_APP_URL", "https://tape.example.com");
