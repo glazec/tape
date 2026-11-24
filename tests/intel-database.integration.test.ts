@@ -16,6 +16,7 @@ import { loadIntelMeetings, loadIntelHistory } from "@/lib/intel/store";
 vi.mock("@/inngest/client", () => ({ inngest: { send: vi.fn() } }));
 import { enqueueIntelSearch, executeIntelSearch, intelJobState, IntelStepStopped, previewIntelSearch, readIntelJob, runIntelJob } from "@/lib/intel/jobs";
 import { searchIntel } from "@/lib/intel/search";
+import { recordOpenRouterCompletionUsage } from "@/lib/provider-usage";
 import { buildCatalog, intelSourceHash, currentIntel } from "@/lib/intel/provenance";
 const team = "11111111-1111-4111-8111-111111111111";
 const a = "22222222-2222-4222-8222-222222222222";
@@ -238,4 +239,18 @@ describe.skipIf(!enabled)("Intel with real PostgreSQL and caller RLS", () => {
     } finally { await client.query("ROLLBACK TO SAVEPOINT large_intel_archive"); }
   }, 15000);
 
+
+  it("records note only scoring usage against the workspace without a meeting", async () => {
+    await asUser(a);
+    const generationId = "note-only-scoring";
+    await recordOpenRouterCompletionUsage({
+      category: "assistant", operation: "decisions", generationId, workspace,
+      usage: { costUsd: 0.002, totalTokens: 150 },
+    });
+    const { rows } = await state.client!.query(
+      "SELECT team_id, user_id, meeting_id, cost_usd_micros::int FROM provider_usage_events WHERE idempotency_key=$1",
+      [`openrouter:generation:${generationId}`],
+    );
+    expect(rows).toEqual([{ team_id: team, user_id: a, meeting_id: null, cost_usd_micros: 2000 }]);
+  });
 });

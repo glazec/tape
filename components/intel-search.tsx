@@ -6,15 +6,34 @@ import type { ReactNode } from "react";
 import { ArrowUpRight, Check, Clock3, Plus, Users, X, LoaderCircle, ChevronDown } from "lucide-react";
 import { connectionRelationshipLabels } from "@/lib/meeting-connections";
 import { Button } from "@/components/ui/button";
+import { NoteDate, notePermalink } from "@/components/person-notes";
 import { Dialog, DialogContent, DialogDescription, DialogTitle, DialogClose } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 import { INTEL_SEARCH_PARALLEL_BATCHES } from "@/lib/intel/limits";
-import { kindLabels, relevanceLabels, type Evidence, type HistoryEntry, type IntelBrowserCatalog as IntelCatalog, type IntelBrowserPerson as Person, type Match, type SearchInput, type SearchResult } from "@/lib/intel/types";
+import { kindLabels, relevanceLabels, type Evidence, type HistoryEntry, type IntelBrowserCatalog as IntelCatalog, type IntelBrowserPerson as Person, type Match, type PersonNoteSource, type SearchInput, type SearchResult } from "@/lib/intel/types";
 
 function dateLabel(date: string) { return new Date(date).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" }); }
 function timestamp(ms: number) { const s = Math.floor(ms / 1000); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`; }
+// Person notes are a teammate's dated note about someone, not words spoken in a meeting.
+// They link and date exactly as the person page does, in the viewer's timezone;
+// transcript evidence keeps its meeting date and timestamp.
+function personNoteHref(note: PersonNoteSource) { return notePermalink(note.personId, note.noteId); }
+function PersonNoteLabel({ note, date }: { note: PersonNoteSource; date: string }) { return <>Person note by {note.authorName} · <NoteDate value={date} /></>; }
+const PERSON_NOTE_SOURCE = "person-note:";
+function sourceCountLabel(person: Person) {
+  const meetings = person.meetingIds.filter(id => !id.startsWith(PERSON_NOTE_SOURCE)).length;
+  const notes = person.noteCount ?? person.meetingIds.length - meetings;
+  const parts = meetings || !notes ? [`${meetings} ${meetings === 1 ? "meeting" : "meetings"}`] : [];
+  if (notes) parts.push(`${notes} ${notes === 1 ? "note" : "notes"}`);
+  return parts.join(" · ");
+}
 function EvidenceList({ evidence }: { evidence: Evidence[] }) {
-  return <div className="space-y-4">{evidence.map(e => <blockquote key={e.id} className="border-l-2 border-border pl-4">
+  return <div className="space-y-4">{evidence.map(e => e.personNote ? <figure key={e.id} className="border-l-2 border-dashed border-border pl-4">
+    <blockquote className="whitespace-pre-wrap break-words text-sm leading-6">{e.text}</blockquote>
+    <figcaption><a className="mt-1 inline-flex min-h-11 items-center gap-1 text-xs text-muted-foreground underline underline-offset-4 hover:text-foreground" href={personNoteHref(e.personNote)}>
+      <PersonNoteLabel date={e.date} note={e.personNote} /> <ArrowUpRight aria-hidden="true" className="size-3" />
+    </a></figcaption>
+  </figure> : <blockquote key={e.id} className="border-l-2 border-border pl-4">
     <p className="text-sm leading-6">“{e.text}”</p>
     <a className="mt-1 inline-flex min-h-11 items-center gap-1 text-xs text-muted-foreground underline underline-offset-4 hover:text-foreground" href={`/meetings/${e.meetingId}#${e.id}`}>
       {e.speaker ?? "Unknown speaker"} · {e.meetingTitle} · {dateLabel(e.date)} · {timestamp(e.startMs)} <ArrowUpRight aria-hidden="true" className="size-3" />
@@ -41,8 +60,9 @@ function clock(ms: number) { const s = Math.max(0, Math.floor(ms / 1000)); retur
 type Job = { estimate?: Estimate; id: string; status: string; input: SearchInput; completed: number; total: number; result?: SearchResult & { actualUsd?: number }; error?: string; createdAt: string;
   startedAt?: string; batchesDone?: number; stage?: string; partial?: Match[]; actualUsd?: number };
 function MatchCard({ match, onOpen, fresh }: { match: Match; onOpen: (match: Match) => void; fresh?: boolean }) {
+  const latest = match.evidence.reduce((source, evidence) => evidence.date > source.date ? evidence : source, match.evidence[0]);
   return <article className={cn("py-6 first:pt-0", fresh && "animate-in fade-in duration-150 motion-reduce:animate-none")}>
-    <div className="mb-2 flex items-center gap-2 text-xs text-muted-foreground"><span>{match.score === 0 ? "No clear connection" : match.score !== undefined && match.score < 25 ? "Limited relevance" : relevanceLabels[match.relevance]}</span>{match.score !== undefined && <span title="Relevance score, not a probability">Relevance {match.score}/100</span>}<span aria-hidden="true">·</span><span>{dateLabel(match.evidence.reduce((date,e) => e.date > date ? e.date : date, match.evidence[0].date))}</span></div>
+    <div className="mb-2 flex items-center gap-2 text-xs text-muted-foreground"><span>{match.score === 0 ? "No clear connection" : match.score !== undefined && match.score < 25 ? "Limited relevance" : relevanceLabels[match.relevance]}</span>{match.score !== undefined && <span title="Relevance score, not a probability">Relevance {match.score}/100</span>}<span aria-hidden="true">·</span><span>{latest.personNote ? <NoteDate value={latest.date} /> : dateLabel(latest.date)}</span></div>
     <h3 className="text-lg font-medium leading-7"><button type="button" className="text-left underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" onClick={() => onOpen(match)}>{match.title} <ArrowUpRight aria-hidden="true" className="inline size-4" /></button></h3><p className="mt-1 text-xs leading-5 text-muted-foreground">{match.detail}</p>
     <p className="mt-3 text-sm leading-6">{match.reason}</p>
     {match.caveat && <p className="mt-2 text-sm leading-6 text-muted-foreground">{match.caveat}</p>}
@@ -384,7 +404,7 @@ export function IntelSearch({ historyCacheKey }: { historyCacheKey?: string } = 
           {filteredIntel.length > 30 && <p className="py-3 text-xs text-muted-foreground">Showing 30 of {filteredIntel.length}. Type above to narrow the list.</p>}</div>
           : <div className="space-y-1">{filteredPeople.slice(0,30).map(candidate => <button type="button" key={candidate.id} onClick={() => choosePerson(candidate)} className="flex w-full items-start gap-3 rounded py-4 text-left outline-none hover:bg-muted/50 focus-visible:ring-2 focus-visible:ring-ring">
             <span className="mt-1 flex size-9 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-medium">{candidate.kind === "mentioned" ? <Users className="size-4" aria-hidden="true" /> : candidate.name.slice(0,2).toUpperCase()}</span>
-            <span className="min-w-0 flex-1"><span className="block text-sm font-medium">{candidate.name}</span><span className="mt-1 line-clamp-2 block text-xs leading-5 text-muted-foreground">{candidate.detail}</span><span className="mt-1 block text-xs text-muted-foreground">{candidate.kind === "mentioned" ? "Mentioned contact" : `${candidate.meetingIds.length} ${candidate.meetingIds.length === 1 ? "meeting" : "meetings"}`}</span></span><ArrowUpRight aria-hidden="true" className="mt-2 size-4 text-muted-foreground" />
+            <span className="min-w-0 flex-1"><span className="block text-sm font-medium">{candidate.name}</span><span className="mt-1 line-clamp-2 block text-xs leading-5 text-muted-foreground">{candidate.detail}</span><span className="mt-1 block text-xs text-muted-foreground">{candidate.kind === "mentioned" ? "Mentioned contact" : sourceCountLabel(candidate)}</span></span><ArrowUpRight aria-hidden="true" className="mt-2 size-4 text-muted-foreground" />
           </button>)}{!filteredPeople.length && <p className="py-10 text-sm text-muted-foreground">No matching people. Try a name or meeting topic.</p>}{filteredPeople.length > 30 && <p className="py-3 text-xs text-muted-foreground">Showing 30 of {filteredPeople.length}. Type above to narrow the list.</p>}</div>}
         </div>
       </div>}
@@ -394,7 +414,9 @@ export function IntelSearch({ historyCacheKey }: { historyCacheKey?: string } = 
         {person?.kind === "participant" && <label className="mt-4 block text-xs text-muted-foreground">Find another meeting identity<input value={identityQuery} onChange={e => setIdentityQuery(e.target.value)} placeholder="Name or meeting topic" className="mt-2 w-full rounded-lg border bg-background px-3 py-2 text-sm text-foreground" /></label>}
         <div className="my-4 max-h-64 space-y-2 overflow-auto">{(person?.kind === "mentioned" ? [person] : sameName).map(candidate => <label key={candidate.id} className="flex cursor-pointer items-start gap-3 rounded-lg border p-3 text-sm">
           <input type="checkbox" checked={identityIds.includes(candidate.id)} onChange={event => setIdentityIds(ids => event.target.checked ? [...ids, candidate.id] : ids.filter(id => id !== candidate.id))} className="mt-1 accent-[var(--primary)]" />
-          <span><span className="font-medium">{candidate.name}</span><span className="mt-1 block text-xs leading-5 text-muted-foreground">{candidate.detail}</span><span className="mt-1 block text-xs text-muted-foreground">{dateLabel(candidate.sourceDate)}</span><a href={`/meetings/${candidate.sourceMeetingId}#${candidate.sourceSegmentId}`} target="_blank" rel="noreferrer" className="mt-2 inline-block text-xs underline underline-offset-4">Open source passage</a></span>
+          <span><span className="font-medium">{candidate.name}</span><span className="mt-1 block text-xs leading-5 text-muted-foreground">{candidate.detail}</span><span className="mt-1 block text-xs text-muted-foreground">{candidate.sourcePersonNote ? <PersonNoteLabel date={candidate.sourceDate} note={candidate.sourcePersonNote} /> : dateLabel(candidate.sourceDate)}{candidate.kind === "participant" ? ` · ${sourceCountLabel(candidate)}` : ""}</span>{candidate.sourcePersonNote
+            ? <a href={personNoteHref(candidate.sourcePersonNote)} target="_blank" rel="noreferrer" className="mt-2 inline-block text-xs underline underline-offset-4">Open person note</a>
+            : <a href={`/meetings/${candidate.sourceMeetingId}#${candidate.sourceSegmentId}`} target="_blank" rel="noreferrer" className="mt-2 inline-block text-xs underline underline-offset-4">Open source passage</a>}</span>
         </label>)}</div>
         <div className="flex justify-end gap-2"><DialogClose className="rounded-lg px-3 py-2 text-sm hover:bg-muted">Cancel</DialogClose><Button disabled={!identityIds.length || identityIds.length > 20} onClick={() => { const input: SearchInput = { kind: "person", ids: identityIds }; setPerson(null); void run(input); }}>Find matches</Button></div>
       </DialogContent>

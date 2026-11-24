@@ -7,10 +7,12 @@ import { LocalDateTime } from "@/components/local-date-time";
 import { PersonActivity } from "@/components/person-activity";
 import { PersonMeetingList } from "@/components/person-meeting-list";
 import { PersonMergeDialog } from "@/components/person-merge-dialog";
+import { PersonNotes } from "@/components/person-notes";
 import { PersonProfile } from "@/components/person-profile";
 import { PersonTodos } from "@/components/person-todos";
 import { formatDuration, initials, workDomain } from "@/lib/person-format";
 import type { PersonColleague, PersonConnection, PersonFollowupItem, PersonPageData } from "@/lib/people";
+import type { PersonNote } from "@/lib/person-notes";
 import type { StoredPersonProfile } from "@/lib/person-profile";
 import { summarizeRelationship } from "@/lib/person-relationship";
 
@@ -18,7 +20,7 @@ import { summarizeRelationship } from "@/lib/person-relationship";
  * A person page is shared team knowledge: every colleague sees the same
  * meetings, to dos and profile. Data loading lives in app/people/[personId].
  */
-export function PersonPageView({ data, profile, now = new Date() }: { data: PersonPageData; profile: StoredPersonProfile | null; now?: Date }) {
+export function PersonPageView({ data, profile, notes = [], now = new Date() }: { data: PersonPageData; profile: StoredPersonProfile | null; notes?: PersonNote[]; now?: Date }) {
   const { person, meetings, todos, dynamics, connections, colleagues } = data;
   const relationship = summarizeRelationship(meetings, now);
   const next = meetings.filter(meeting => new Date(meeting.at).getTime() > now.getTime()).at(-1);
@@ -60,6 +62,8 @@ export function PersonPageView({ data, profile, now = new Date() }: { data: Pers
           </div>
         ) : null}
       </header>
+
+      <PersonNotes initialNotes={notes} key={`notes:${person.id}`} personId={person.id} personName={person.name} />
 
       {colleagues.length ? <Colleagues colleagues={colleagues} /> : null}
 

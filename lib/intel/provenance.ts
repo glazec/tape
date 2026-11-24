@@ -53,11 +53,16 @@ export function buildCatalog(meetings: IntelMeeting[], now = new Date()) {
       let person = people.get(id);
       if (!person) {
         person = { id, name: segment.speaker, detail: meeting.title, kind: "participant", meetingIds: [], segmentIds: [], sourceDate: meeting.date, sourceMeetingId: meeting.id, sourceSegmentId: segment.id };
+        if (meeting.personNote) person.sourcePersonNote = meeting.personNote;
         people.set(id, person);
       }
-      if (!person.meetingIds.includes(meeting.id)) person.meetingIds.push(meeting.id);
+      if (!person.meetingIds.includes(meeting.id)) {
+        person.meetingIds.push(meeting.id);
+        if (meeting.personNote) person.noteCount = (person.noteCount ?? 0) + 1;
+      }
       person.segmentIds.push(segment.id);
     }
+    if (meeting.personNote) continue;
     const connectionIds = getCurrentMeetingConnectionIds(meeting);
     for (const [index, connection] of getCurrentMeetingConnections(meeting).entries()) {
       if (connection.kind !== "person") continue;
@@ -77,13 +82,13 @@ export function buildCatalog(meetings: IntelMeeting[], now = new Date()) {
     }
   }
   return { intel: intel.sort((a,b) => b.date.localeCompare(a.date)), people: [...people.values()],
-    pending: meetings.filter(m => new Date(m.date) >= since && !currentIntel(m)).length,
-    coverage: `${meetings.length} accessible meetings. Intel from the past six months; searches rank participants from the past three months. Only confirmed person links combine speaker histories across meetings.` };
+    pending: meetings.filter(m => !m.personNote && new Date(m.date) >= since && !currentIntel(m)).length,
+    coverage: `${meetings.filter(m => !m.personNote).length} accessible meetings. Intel from the past six months; searches rank participants from the past three months. Only confirmed person links combine speaker histories across meetings.` };
 }
 
 export function buildMatchingContext(meetings: IntelMeeting[], people: Person[], now = new Date()) {
   const since = new Date(now); since.setMonth(since.getMonth() - 6);
-  const included = new Set(meetings.filter(m => new Date(m.date) >= since).map(m => m.id));
+  const included = new Set(meetings.filter(m => m.personNote || new Date(m.date) >= since).map(m => m.id));
   for (const person of people) {
     const chronological = meetings.filter(m => person.meetingIds.includes(m.id)).sort((a,b) => a.date.localeCompare(b.date));
     if (chronological[0]) included.add(chronological[0].id);

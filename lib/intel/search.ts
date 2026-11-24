@@ -45,7 +45,7 @@ function viewerIdentities(corpus: IntelMeeting[], viewer?: IntelViewer | null) {
     const label = segment.speaker?.trim().replace(/\s+/g, " ").toLowerCase();
     const linked = email && segment.participantEmail?.trim().toLowerCase() === email;
     const named = !segment.personId && label && ((name && name.includes(" ") && label === name) || (handle && label === handle));
-    if (linked || named) ids.add(segmentPersonId(meeting.id, segment));
+    if (linked || named || meeting.viewerIsNoteSubject) ids.add(segmentPersonId(meeting.id, segment));
   }
   return ids;
 }
@@ -60,7 +60,7 @@ export async function prepareIntelSearch(input: SearchInput, corpus: IntelMeetin
   since.setUTCDate(1); since.setUTCMonth(since.getUTCMonth() - 3);
   const lastDay = new Date(Date.UTC(since.getUTCFullYear(), since.getUTCMonth() + 1, 0)).getUTCDate();
   since.setUTCDate(Math.min(day, lastDay)); since.setUTCHours(0, 0, 0, 0);
-  const recent = corpus.filter(m => new Date(m.date) >= since && new Date(m.date) <= new Date());
+  const recent = corpus.filter(m => m.personNote || (new Date(m.date) >= since && new Date(m.date) <= new Date()));
   const recentCatalog = buildCatalog(recent);
   // Keep selected older source material as input, never as an extra candidate.
   const required = input.kind === "person" ? catalog.people.filter(p => input.ids.includes(p.id)).flatMap(p => p.meetingIds)
@@ -70,7 +70,7 @@ export async function prepareIntelSearch(input: SearchInput, corpus: IntelMeetin
   const self = viewerIdentities(corpus, viewer);
   // Only people who said something substantive can show interest; recording bots
   // are not people. Neither is offered to the model.
-  const substantive = new Set(recent.flatMap(m => m.segments.filter(s => isSubstantive(s.text)).map(s => s.id)));
+  const substantive = new Set(recent.flatMap(m => m.segments.filter(s => s.personNote || isSubstantive(s.text)).map(s => s.id)));
   let bots = 0, brief = 0;
   const eligible = (p: (typeof recentCatalog.people)[number]) => {
     if (selected.has(p.id)) return true;
@@ -92,11 +92,11 @@ export async function prepareIntelSearch(input: SearchInput, corpus: IntelMeetin
     brief ? `${people(brief)} with only brief replies such as "OK" were not ranked.` : "",
     bots ? `${bots} recording ${bots === 1 ? "bot was" : "bots were"} excluded.` : "",
   ].filter(Boolean).join(" ");
-  const coverage = `Ranked ${count} participant identities from ${recent.length} accessible meetings in the past three months. Full meeting notes and transcript background; no keyword filtering or acceptance cutoff. Unconfirmed same-name identities remain separate.${limits ? ` ${limits}` : ""}`;
+  const coverage = `Ranked ${count} participant identities from ${recent.filter(m => !m.personNote).length} accessible meetings in the past three months${recent.some(m => m.personNote) ? " and shared person notes" : ""}. Full meeting notes and transcript background; no keyword filtering or acceptance cutoff. Unconfirmed same-name identities remain separate.${limits ? ` ${limits}` : ""}`;
   return { catalog, coverage, batches, source };
 }
 
-type UsageScope = { meetingId: string; searchId?: string };
+type UsageScope = { meetingId: string; searchId?: string; workspace?: WorkspaceContext };
 type Batch = Awaited<ReturnType<typeof prepareIntelSearch>>["batches"][number];
 
 // Fingerprint of the people and transcript evidence a search reads. Intel ids
@@ -170,7 +170,7 @@ export async function finalizeIntelSearch(workspace: WorkspaceContext, input: Se
   const referenced = ranked.filter(match => match.type === "intel").map(match => match.id);
   if (corpusSnapshot(fresh) !== snapshot || (input.kind === "intel" && !freshCatalog.intel.some(i => i.id === input.id))
     || referenced.some(id => !freshCatalog.intel.some(i => i.id === id))) {
-    throw new IntelInputError("Meeting access or content changed during this search. Please try again.");
+    throw new IntelInputError("Meeting or person note access or content changed during this search. Please try again.");
   }
   return { matches: validateMatches(parsed, input, fresh), catalog: freshCatalog };
 }
@@ -179,7 +179,8 @@ export async function searchIntel(workspace: WorkspaceContext, input: SearchInpu
   const { catalog, coverage, batches, source } = plan ?? await prepareIntelSearch(input, corpus);
   if (!batches.length) return { matches: [], source, coverage, catalog };
   const snapshot = corpusSnapshot(corpus);
-  const scope = { meetingId: corpus[0].id, searchId };
+  const anchor = corpus.find(meeting => !meeting.personNote);
+  const scope = anchor ? { meetingId: anchor.id, searchId } : { meetingId: "", searchId, workspace };
   await assertWorkspaceHasProviderCredit(workspace);
   const candidates: Match[][] = new Array(batches.length);
   let completed = 0;

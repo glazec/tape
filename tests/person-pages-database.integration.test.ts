@@ -22,6 +22,7 @@ vi.mock("@/lib/vendors/openrouter", () => ({ createOpenRouterChatCompletion: vi.
 import { generatePersonProfileOnTranscript, queuePersonProfilesOnTranscript } from "@/inngest/person-profile";
 import { createOpenRouterChatCompletion } from "@/lib/vendors/openrouter";
 import { getStoredPersonProfile } from "@/lib/person-profile";
+import { createPersonNote, deletePersonNote, listIntelPersonNotes, listPersonNotes, updatePersonNote } from "@/lib/person-notes";
 
 // Opt in with a migrated, disposable localhost database. Fixtures roll back.
 const url = process.env.PERSON_TEST_DATABASE_URL;
@@ -78,6 +79,31 @@ describe.skipIf(!url)("person pages PostgreSQL", () => {
     await db.query("insert into team_memberships(team_id,user_id,role) values($1,$2,'owner'),($1,$3,'member'),($4,$5,'member'),($1,$6,'external')", [team, owner, member, otherTeam, outsider, guest]);
   });
   afterAll(async () => { if (db) { await db.query("ROLLBACK"); await db.end(); } });
+
+  it("shares notes with Person page readers, limits editing to the author, and follows merges", async () => {
+    const lucky = await newPerson("Lucky");
+    const canonical = await newPerson("Lucky Verified");
+    const ownWorkspace = { teamId: team, userId: owner, domain: "team.test" };
+    const peerWorkspace = { ...ownWorkspace, userId: member };
+    const note = await as(owner, () => createPersonNote(ownWorkspace, lucky, "Interested in models that run on a phone."));
+    expect(note).toMatchObject({ body: "Interested in models that run on a phone.", canEdit: true });
+    const noteId = note!.id;
+
+    expect(await as(member, () => listPersonNotes(peerWorkspace, lucky))).toMatchObject([{ id: noteId, canEdit: false }]);
+    expect(await as(guest, () => listPersonNotes({ ...ownWorkspace, userId: guest }, lucky))).toEqual([]);
+    expect(await as(outsider, () => listIntelPersonNotes({ ...ownWorkspace, userId: outsider }))).toEqual([]);
+    expect(await as(member, () => updatePersonNote(peerWorkspace, lucky, noteId, "Someone else's edit"))).toBeNull();
+    expect(await as(member, () => deletePersonNote(peerWorkspace, lucky, noteId))).toBe(false);
+
+    await db.query("update workspace_people set merged_into_id=$2 where id=$1", [lucky, canonical]);
+    expect(await as(owner, () => updatePersonNote(ownWorkspace, canonical, noteId, "Interested in on-device mobile AI.")))
+      .toMatchObject({ id: noteId, body: "Interested in on-device mobile AI." });
+    expect(await as(member, () => listIntelPersonNotes(peerWorkspace))).toContainEqual(expect.objectContaining({
+      id: noteId, personId: canonical, personName: "Lucky Verified", body: "Interested in on-device mobile AI.",
+    }));
+    expect(await as(owner, () => deletePersonNote(ownWorkspace, canonical, noteId))).toBe(true);
+    expect(await as(member, () => listPersonNotes(peerWorkspace, canonical))).toEqual([]);
+  });
 
   it("opens an unlinked speaker as a person without changing meeting attribution", async () => {
     const { meeting, segments } = await meetingWith(["Dana Wu", "Speaker 2"], [{ name: "Dana Wu", email: "dana@acme.test" }]);

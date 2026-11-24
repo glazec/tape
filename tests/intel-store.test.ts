@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-const mocks = vi.hoisted(() => ({ select: vi.fn(), getComposedMeetingForFollowup: vi.fn() }));
-vi.mock("@/db/client", () => ({ db: { select: mocks.select } }));
+const mocks = vi.hoisted(() => ({ select: vi.fn(), execute: vi.fn(), getComposedMeetingForFollowup: vi.fn() }));
+vi.mock("@/db/client", () => ({ db: { select: mocks.select, execute: mocks.execute } }));
 vi.mock("@/lib/meeting-composition", () => mocks);
 import { loadIntelMeetings } from "@/lib/intel/store";
 import { buildCatalog } from "@/lib/intel/provenance";
@@ -17,8 +17,21 @@ function row(id: string, aiFollowup: unknown = null) { return { id, title: id, s
 const segments = [{ id: "s1", meetingId: "m1", speaker: "Alex", text: "We build infrastructure", startMs: 0 }, { id: "s2", meetingId: "m2", speaker: "Alex", text: "I know Ben, an inference expert.", startMs: 10 }];
 const connection = { kind: "person", name: "Ben", company: null, title: null, relationship: "knows", context: "A friend who works on inference.", speakerSegmentId: "s2", evidence: [{ segmentId: "s2" }] };
 function saved(source: { title: string; startedAt: string; segments: typeof segments }) { return { sourceHash: getFollowupSourceHash(source), connectionsSourceHash: getConnectionsSourceHash(source), result: { todos: [], dynamics: [], research: [], connections: [connection] } }; }
-beforeEach(() => vi.clearAllMocks());
+beforeEach(() => { vi.clearAllMocks(); mocks.execute.mockResolvedValue({ rows: [] }); });
 describe("authorized Intel corpus", () => {
+ it("loads workspace person notes without any meeting transcripts", async () => {
+  mocks.select.mockReturnValueOnce(query([]));
+  mocks.execute.mockResolvedValueOnce({ rows: [{
+    id: "note-1", personId: "lucky", personName: "Lucky", body: "Interested in mobile AI.",
+    authorName: "Yiping", updatedAt: new Date("2024-01-01T00:00:00Z"),
+  }] });
+  const corpus = await loadIntelMeetings(workspace);
+  expect(corpus).toMatchObject([{ personNote: { noteId: "note-1", personId: "lucky" } }]);
+  expect(buildCatalog(corpus)).toMatchObject({ pending: 0, intel: [], people: [{ id: "person:lucky", name: "Lucky" }] });
+  mocks.select.mockReturnValueOnce(query([]));
+  expect(await loadIntelMeetings(workspace, "meeting-id")).toEqual([]);
+  expect(mocks.execute).toHaveBeenCalledTimes(1);
+ });
  it("uses created time for undated followup sources and current transcript generations only", async () => {
   const q1 = query([row("m1")]), q2 = query([segments[0]]), q3 = query([]);
   mocks.select.mockReturnValueOnce(q1).mockReturnValueOnce(q2).mockReturnValueOnce(q3);

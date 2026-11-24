@@ -230,7 +230,8 @@ export async function runIntelJob(w: WorkspaceContext, id: string, options: { ta
     if (!still) throw new IntelStepStopped();
     if (plan.batches.length) await assertWorkspaceHasProviderCredit(w);
     at = mark("startMs", at);
-    const scoreScope = { meetingId: corpus[0]?.id ?? "", searchId: id };
+    const anchor = corpus.find(meeting => !meeting.personNote);
+    const scoreScope = anchor ? { meetingId: anchor.id, searchId: id } : { meetingId: "", searchId: id, workspace: w };
     const candidates: Match[][] = new Array(plan.batches.length);
     let nextBatch = 0;
     let stopped = false;
@@ -239,10 +240,12 @@ export async function runIntelJob(w: WorkspaceContext, id: string, options: { ta
         const index = nextBatch++;
         const matched = await matchBatch(input, plan.batches[index], corpus, scoreScope);
         candidates[index] = matched;
+        // Note-informed scores wait for final access and content revalidation.
+        const partial = plan.batches[index].meetings.some(meeting => meeting.segments.some(segment => segment.personNote)) ? [] : matched;
         // Publish scored candidates as each batch finishes. No acceptance threshold.
         const [running] = await db.update(jobs).set({
           completed: sql`least(${jobs.completed} + 1, ${jobs.total})`,
-          result: sql`jsonb_set(jsonb_set(jsonb_set(coalesce(${jobs.result}, '{}'::jsonb), '{partial}', coalesce(${jobs.result}->'partial', '[]'::jsonb) || ${JSON.stringify(matched)}::jsonb), '{batchesDone}', to_jsonb(coalesce((${jobs.result}->>'batchesDone')::int, 0) + 1)), '{heartbeatAt}', to_jsonb(now()))`,
+          result: sql`jsonb_set(jsonb_set(jsonb_set(coalesce(${jobs.result}, '{}'::jsonb), '{partial}', coalesce(${jobs.result}->'partial', '[]'::jsonb) || ${JSON.stringify(partial)}::jsonb), '{batchesDone}', to_jsonb(coalesce((${jobs.result}->>'batchesDone')::int, 0) + 1)), '{heartbeatAt}', to_jsonb(now()))`,
         }).where(and(scope, eq(jobs.status, "running"))).returning({ id: jobs.id });
         // Stopped or failed elsewhere: make no further provider calls.
         if (!running) stopped = true;

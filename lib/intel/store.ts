@@ -5,10 +5,23 @@ import { getComposedMeetingForFollowup } from "@/lib/meeting-composition";
 import { attachSpeakerIdentitiesForMeetings } from "@/lib/speaker-identity";
 import { currentTranscriptJobIdsSubquery } from "@/lib/current-transcript-job";
 import { getPersonalReadableMeetingsCondition } from "@/lib/meeting-access-policy";
+import { listIntelPersonNotes, type IntelPersonNote } from "@/lib/person-notes";
 import type { WorkspaceContext } from "@/lib/workspace";
 import { IntelCapacityError } from "./content";
 import { buildCatalog } from "./provenance";
 import { searchInputSchema, type Segment, type IntelMeeting, type SearchInput, type HistoryEntry } from "./types";
+
+// Person notes use the ranking pipeline's existing evidence containers. They
+// carry distinct provenance and never appear as meetings or extracted intel.
+export function intelPersonNoteSource(note: IntelPersonNote): IntelMeeting {
+  const id = `person-note:${note.id}`;
+  const personNote = { noteId: note.id, personId: note.personId, authorName: note.authorName };
+  return {
+    id, title: "Person note", date: note.createdAt ?? note.updatedAt, startedAt: note.updatedAt, status: "ready",
+    transcriptJobStatus: null, aiIntel: null, aiFollowup: null, personNote, ...(note.viewerIsSubject ? { viewerIsNoteSubject: true } : {}),
+    segments: [{ id, speaker: note.personName, personId: note.personId, text: note.body, startMs: 0, personNote }],
+  };
+}
 
 export async function loadIntelMeetings(workspace: WorkspaceContext, meetingId?: string): Promise<IntelMeeting[]> {
   const rows = await db.select({ id: meetings.id, title: meetings.title, startedAt: meetings.startedAt,
@@ -19,7 +32,7 @@ export async function loadIntelMeetings(workspace: WorkspaceContext, meetingId?:
     eq(meetings.status, "ready"), meetingId ? eq(meetings.id, meetingId) : undefined,
   )).orderBy(desc(meetings.startedAt), desc(meetings.createdAt), asc(meetings.id)).limit(1001);
   if (rows.length > 1000) throw new IntelCapacityError("Intel currently supports up to 1,000 accessible meetings. This workspace exceeds that limit.");
-  if (!rows.length) return [];
+  if (!rows.length) return meetingId ? [] : (await listIntelPersonNotes(workspace)).map(intelPersonNoteSource);
   // Page the transcript rows so large archives do not hit a response-size limit.
   // Keep the existing chronological order: stored extraction hashes depend on it.
   const segments: (Segment & { meetingId: string })[] = [];
@@ -74,7 +87,7 @@ export async function loadIntelMeetings(workspace: WorkspaceContext, meetingId?:
       meeting.aiFollowup = null;
     }
   }
-  return corpus;
+  return meetingId ? corpus : [...corpus, ...(await listIntelPersonNotes(workspace)).map(intelPersonNoteSource)];
 }
 export function resolveInputLabel(input: SearchInput, corpus: IntelMeeting[], catalog = buildCatalog(corpus)) {
   if (input.kind === "content") return input.text.slice(0, 100);

@@ -81,6 +81,27 @@ it("offers at most sixty newest substantive passages so Jev's option and token l
  expect(Object.keys(body.questions.p0_counter.criteria)).toHaveLength(61);
  expect(body.questions.p0_evidence.criteria.s298).toBe("Alex, 2026-11-06");
 });
+it("keeps a direct reversal available when dozens of old notes fill the evidence menu", async () => {
+ const oldNotes = Array.from({ length: 65 }, (_, i) => ({
+  id: `note-${i}`, title: "Person note", date: "2026-09-01", notes: null, followup: null,
+  segments: [{ id: `note-${i}`, speaker: "Alex", text: "Alex is interested in GPU capacity.", startMs: 0,
+   personNote: { noteId: `note-${i}`, personId: "alex", authorName: "Riley" } }],
+ }));
+ const manyNotes = {
+  ...batch,
+  people: [{ ...batch.people[0], meetingIds: ["m", ...oldNotes.map(note => note.id)], segmentIds: ["s", ...oldNotes.map(note => note.id)] }],
+  meetings: [{ ...batch.meetings[0], segments: [{ id: "s", speaker: "Alex", text: "We no longer need GPU capacity.", startMs: 0 }] }, ...oldNotes],
+ };
+ const value = response(0);
+ value.answers.p0_evidence.choice = "note-0";
+ value.answers.p0_counter.choice = "s";
+ fetchDecision.mockResolvedValue(Response.json(value));
+ const result = await scoreIntelBatch(manyNotes, { meetingId: "m" });
+ const body = JSON.parse(fetchDecision.mock.calls[0][1].body);
+ expect(Object.keys(body.questions.p0_counter.criteria)).toContain("s");
+ expect(result.matches[0]).toMatchObject({ score: 0, counterEvidenceIds: ["s"] });
+ expect(result.matches[0].reason).toContain("Person note by Riley");
+});
 it("types Jev size refusals so the caller can split the batch", async () => {
  const { JevRequestTooLargeError } = await import("@/lib/intel/tokens");
  fetchDecision.mockResolvedValue(new Response(JSON.stringify({ detail: { error_type: "max_tokens_exceeded" } }), { status: 400 }));
