@@ -504,6 +504,8 @@ async function autoJoinCalendarEventInternal(input: AutoJoinInput) {
     });
     if (input.connection.workspaceDomain) {
       await applyMeetingShareRules({
+        connectionId: input.connection.id,
+        externalEventId: input.event.externalEventId,
         attendeeEmails,
         meetingId: existingMeeting.id,
         ownerUserId: existingMeeting.ownerUserId,
@@ -602,6 +604,8 @@ async function autoJoinCalendarEventInternal(input: AutoJoinInput) {
     input.connection.workspaceDomain
   ) {
     await applyMeetingShareRules({
+      connectionId: input.connection.id,
+      externalEventId: input.event.externalEventId,
       attendeeEmails,
       meetingId: existingMeeting.id,
       ownerUserId: existingMeeting.ownerUserId,
@@ -1053,6 +1057,8 @@ async function autoJoinCalendarEventInternal(input: AutoJoinInput) {
 
   if (input.connection.workspaceDomain && !shareRulesApplied) {
     await applyMeetingShareRules({
+      connectionId: input.connection.id,
+      externalEventId: input.event.externalEventId,
       attendeeEmails,
       meetingId: meeting.id,
       ownerUserId: meeting.ownerUserId,
@@ -1314,6 +1320,8 @@ async function syncLocalRecorderCalendarMeeting(input: {
 
   if (input.connection.workspaceDomain) {
     await applyMeetingShareRules({
+      connectionId: input.connection.id,
+      externalEventId: input.event.externalEventId,
       attendeeEmails: input.attendeeEmails,
       meetingId: meetingIdentity.id,
       ownerUserId: meetingIdentity.ownerUserId,
@@ -1515,6 +1523,8 @@ async function syncLocationCalendarMeeting(input: {
 
   if (input.connection.workspaceDomain) {
     await applyMeetingShareRules({
+      connectionId: input.connection.id,
+      externalEventId: input.externalEventId,
       attendeeEmails: input.attendeeEmails,
       meetingId: meeting.id,
       ownerUserId: meeting.ownerUserId,

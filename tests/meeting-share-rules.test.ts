@@ -106,6 +106,8 @@ describe("meeting share rules", () => {
     expect(revokeSql).toContain(
       "source.recipient_email = policy.recipient_email",
     );
+    expect(materializeSql).toContain("series:%");
+    expect(revokeSql).toContain("series:%");
     expect(materializeSql).toContain("participant:email:%");
     expect(materializeSql).toContain("title:%");
     expect(materializeSql).toContain("participant:domain:%");

@@ -7,6 +7,8 @@ import { getMeetingShareMatchKeys } from "@/lib/meeting-sharing";
 
 export async function applyMeetingShareRules(input: {
   attendeeEmails: unknown;
+  connectionId?: string | null;
+  externalEventId?: string | null;
   meetingId: string;
   ownerUserId: string;
   teamId: string;
@@ -39,10 +41,10 @@ export async function applyMeetingShareRules(input: {
             and (
               exists (
                 select 1
-                from meeting_share_policy_keys as email_key
-                where email_key.policy_id = policy.id
-                  and email_key.match_key like 'participant:email:%'
-                  and email_key.match_key = any(${matchKeys}::text[])
+                from meeting_share_policy_keys as identity_key
+                where identity_key.policy_id = policy.id
+                  and (identity_key.match_key like 'participant:email:%' or identity_key.match_key like 'series:%')
+                  and identity_key.match_key = any(${matchKeys}::text[])
               )
               or (
                 exists (
@@ -93,10 +95,10 @@ export async function applyMeetingShareRules(input: {
         and (
           exists (
             select 1
-            from meeting_share_policy_keys as email_key
-            where email_key.policy_id = policy.id
-              and email_key.match_key like 'participant:email:%'
-              and email_key.match_key = any(${matchKeys}::text[])
+            from meeting_share_policy_keys as identity_key
+            where identity_key.policy_id = policy.id
+              and (identity_key.match_key like 'participant:email:%' or identity_key.match_key like 'series:%')
+              and identity_key.match_key = any(${matchKeys}::text[])
           )
           or (
             exists (
@@ -269,6 +271,8 @@ export async function reconcileMeetingSharingForMeeting(meetingId: string) {
   const [meeting] = await db
     .select({
       attendeeEmails: calendarEvents.attendeeEmails,
+      connectionId: calendarEvents.connectionId,
+      externalEventId: calendarEvents.externalEventId,
       id: meetings.id,
       ownerEmail: users.email,
       ownerUserId: meetings.ownerUserId,
@@ -293,6 +297,8 @@ export async function reconcileMeetingSharingForMeeting(meetingId: string) {
 
   return applyMeetingShareRules({
     attendeeEmails: meeting.attendeeEmails,
+    connectionId: meeting.connectionId,
+    externalEventId: meeting.externalEventId,
     meetingId: meeting.id,
     ownerUserId: meeting.ownerUserId,
     teamId: meeting.teamId,

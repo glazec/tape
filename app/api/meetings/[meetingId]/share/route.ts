@@ -1,4 +1,4 @@
-import { and, eq, ne, sql } from "drizzle-orm";
+import { and, between, eq, ne, sql } from "drizzle-orm";
 import { z } from "zod";
 
 import { db } from "@/db/client";
@@ -15,6 +15,7 @@ import {
 } from "@/lib/meeting-share-service";
 import { listWorkspaceShareRecipients } from "@/lib/meeting-queries";
 import {
+  getCalendarSeriesKey,
   getMeetingShareMatchKeys,
   hasReliableMeetingShareMatchKeys,
   meetingsShareReliableMatch,
@@ -50,6 +51,8 @@ const shareRequestSchema = z
 
 type MeetingMatchCandidate = {
   attendeeEmails: unknown;
+  connectionId: string | null;
+  externalEventId: string | null;
   id: string;
   title: string;
 };
@@ -158,21 +161,63 @@ export async function POST(
   }
 
   const matchKeys = getMeetingShareMatchKeys({
+    connectionId: access.meeting.connectionId,
+    externalEventId: access.meeting.externalEventId,
     attendeeEmails: access.meeting.attendeeEmails,
     title: access.meeting.title,
     workspaceDomain: access.workspace.domain,
   });
 
   if (!hasReliableMeetingShareMatchKeys(matchKeys)) {
+    // A manual recording can sit beside the actual calendar occurrence. Let
+    // the manager review that separate meeting before creating a series grant.
+    const startedAt = access.meeting.startedAt;
+    if (!access.meeting.externalEventId && startedAt && matchKeys.some(key => key.startsWith("title:"))) {
+      const windowMs = 15 * 60_000;
+      const calendarMatches = await db.select({ id: meetings.id })
+        .from(meetings)
+        .innerJoin(calendarEvents, eq(calendarEvents.id, meetings.calendarEventId))
+        .where(and(
+          eq(meetings.teamId, access.meeting.teamId),
+          getMeetingManagerCondition(access.workspace),
+          eq(meetings.title, access.meeting.title),
+          ne(meetings.status, "cancelled"),
+          between(meetings.startedAt, new Date(startedAt.getTime() - windowMs), new Date(startedAt.getTime() + windowMs)),
+          sql`${calendarEvents.externalEventId} ~ '^[a-zA-Z0-9]+_[0-9]{8}(T[0-9]{6}Z)?$'`,
+        )).limit(2);
+      if (calendarMatches.length === 1) {
+        return Response.json({
+          error: "This recording is separate from the calendar series. Open the calendar meeting to review sharing for the series.",
+          calendarMeetingId: calendarMatches[0].id,
+        }, { status: 409 });
+      }
+    }
     return Response.json(
       { error: "This meeting has no reliable related meeting pattern" },
       { status: 400 },
     );
   }
 
+  // Team calendar sync can choose a different attendee’s calendar on each
+  // occurrence. Include copies confirmed to be this exact team event.
+  if (access.meeting.externalEventId && access.meeting.teamMeetingKey && matchKeys.some(key => key.startsWith("series:"))) {
+    const copies = await db.select({ connectionId: calendarEvents.connectionId })
+      .from(calendarEvents).where(and(
+        eq(calendarEvents.teamId, access.meeting.teamId),
+        eq(calendarEvents.teamMeetingKey, access.meeting.teamMeetingKey),
+        eq(calendarEvents.externalEventId, access.meeting.externalEventId),
+      ));
+    for (const copy of copies) {
+      const key = getCalendarSeriesKey(copy.connectionId, access.meeting.externalEventId);
+      if (key && !matchKeys.includes(key)) matchKeys.push(key);
+    }
+  }
+
   const candidates = await db
     .select({
       attendeeEmails: calendarEvents.attendeeEmails,
+      connectionId: calendarEvents.connectionId,
+      externalEventId: calendarEvents.externalEventId,
       id: meetings.id,
       title: meetings.title,
     })
@@ -300,6 +345,8 @@ function getCandidateMatchKeys(
   workspaceDomain: string,
 ) {
   return getMeetingShareMatchKeys({
+    connectionId: candidate.connectionId,
+    externalEventId: candidate.externalEventId,
     attendeeEmails: candidate.attendeeEmails,
     title: candidate.title,
     workspaceDomain,
@@ -326,7 +373,11 @@ async function getAccessibleMeeting(context: {
   const [meeting] = await db
     .select({
       attendeeEmails: calendarEvents.attendeeEmails,
+      connectionId: calendarEvents.connectionId,
+      externalEventId: calendarEvents.externalEventId,
       canManage: getMeetingManagerCondition(workspace),
+      startedAt: meetings.startedAt,
+      teamMeetingKey: calendarEvents.teamMeetingKey,
       id: meetings.id,
       ownerEmail: sql<string>`(
         select lower(${users.email})

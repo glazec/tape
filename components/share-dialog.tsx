@@ -113,7 +113,7 @@ export function MeetingShareButton({
       <Dialog onOpenChange={setOpen} open={open}>
         <DialogContent
           aria-labelledby={`${props.instanceId}-share-title`}
-          className="max-w-md border-0 bg-transparent p-0 shadow-xl"
+          className="max-w-md border-0 bg-transparent p-0 shadow-xl max-sm:max-h-[calc(var(--tape-visible-height,100dvh)-0.5rem)] max-sm:overscroll-contain"
         >
           <ShareDialog {...props} />
           {note ? (
@@ -141,6 +141,7 @@ export function ShareDialog({
   const [email, setEmail] = useState("");
   const [scope, setScope] = useState<MeetingShareScope>("single");
   const [state, setState] = useState<ShareState>("idle");
+  const [calendarMeetingId, setCalendarMeetingId] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [preview, setPreview] = useState<SharePreview | null>(null);
   const [shares, setShares] = useState<ActiveMeetingShare[]>(initialShares);
@@ -186,6 +187,7 @@ export function ShareDialog({
   }
 
   async function requestShare(previewOnly: boolean, recipientEmail = email) {
+    setCalendarMeetingId(null);
     setState("loading");
     setMessage(null);
 
@@ -202,6 +204,7 @@ export function ShareDialog({
       const body = (await response.json().catch(() => null)) as {
         email?: string;
         error?: string;
+        calendarMeetingId?: string;
         futureMeetings?: boolean;
         meetingCount?: number;
         meetings?: Array<{ id: string; title: string }>;
@@ -211,6 +214,7 @@ export function ShareDialog({
       if (!response.ok || !body?.email) {
         captureClientAction("meeting_share_failed");
         setState("error");
+        setCalendarMeetingId(body?.calendarMeetingId ?? null);
         setMessage(body?.error ?? "Could not share this meeting.");
         return;
       }
@@ -249,6 +253,7 @@ export function ShareDialog({
   }
 
   async function removeRecipient(recipientEmail: string) {
+    setCalendarMeetingId(null);
     setState("loading");
     setMessage(null);
 
@@ -312,6 +317,7 @@ export function ShareDialog({
   }
 
   async function requestAudience(audience: "organization" | "team_group") {
+    setCalendarMeetingId(null);
     setState("loading");
     setMessage(null);
 
@@ -437,7 +443,7 @@ export function ShareDialog({
                     No matching colleague or group. You can still share with
                     this email.
                   </ComboboxEmpty>
-                  <ComboboxList>
+                  <ComboboxList className="max-sm:max-h-[min(9rem,var(--available-height),calc(var(--tape-visible-height,100dvh)*0.35))]">
                     {(option: ShareRecipientOption) => (
                       <ComboboxItem key={option.value} value={option}>
                         <RecipientOptionIcon kind={option.kind} />
@@ -493,7 +499,14 @@ export function ShareDialog({
           state === "success" ? (
             <ShareToast message={message} />
           ) : (
-            <ShareMessage message={message} state={state} />
+            <div>
+              <ShareMessage message={message} state={state} />
+              {calendarMeetingId && (
+                <a className="mt-2 inline-block text-sm underline" href={`/meetings/${encodeURIComponent(calendarMeetingId)}`}>
+                  Open calendar meeting
+                </a>
+              )}
+            </div>
           )
         ) : null}
 
