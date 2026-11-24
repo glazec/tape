@@ -121,11 +121,11 @@ export async function POST(
     (share) => share.email === recipientEmail && share.scope === scope,
   );
 
-  if (existingShare && !shareRequest.preview) {
+  if (existingShare && !shareRequest.includeRelated && !shareRequest.preview) {
     return Response.json({
       alreadyShared: true,
       email: recipientEmail,
-      futureMeetings: scope === "related",
+      futureMeetings: false,
       meetingCount: 1,
       pending: existingShare.pending,
       shared: true,
@@ -185,15 +185,16 @@ export async function POST(
           between(meetings.startedAt, new Date(startedAt.getTime() - windowMs), new Date(startedAt.getTime() + windowMs)),
           sql`${calendarEvents.externalEventId} ~ '^[a-zA-Z0-9]+_[0-9]{8}(T[0-9]{6}Z)?$'`,
         )).limit(2);
-      if (calendarMatches.length === 1) {
+      if (calendarMatches.length === 1 && shareRequest.preview) {
         return Response.json({
-          error: "This recording is separate from the calendar series. Open the calendar meeting to review sharing for the series.",
+          preview: true,
+          shared: false,
           calendarMeetingId: calendarMatches[0].id,
-        }, { status: 409 });
+        });
       }
     }
     return Response.json(
-      { error: "This meeting has no reliable related meeting pattern" },
+      { error: "Could not identify one calendar series. Clear the related meetings option to share this meeting alone." },
       { status: 400 },
     );
   }

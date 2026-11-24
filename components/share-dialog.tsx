@@ -54,6 +54,7 @@ type ShareDialogProps = {
 type ShareState = "idle" | "loading" | "success" | "error";
 
 type SharePreview = {
+  meetingId: string;
   email: string;
   meetingCount: number;
   meetings: Array<{ id: string; title: string }>;
@@ -141,7 +142,6 @@ export function ShareDialog({
   const [email, setEmail] = useState("");
   const [scope, setScope] = useState<MeetingShareScope>("single");
   const [state, setState] = useState<ShareState>("idle");
-  const [calendarMeetingId, setCalendarMeetingId] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [preview, setPreview] = useState<SharePreview | null>(null);
   const [shares, setShares] = useState<ActiveMeetingShare[]>(initialShares);
@@ -186,13 +186,12 @@ export function ShareDialog({
     await requestShare(scope === "related", submittedRecipient);
   }
 
-  async function requestShare(previewOnly: boolean, recipientEmail = email) {
-    setCalendarMeetingId(null);
+  async function requestShare(previewOnly: boolean, recipientEmail = email, targetId = meetingId): Promise<void> {
     setState("loading");
     setMessage(null);
 
     try {
-      const response = await fetch(`/api/meetings/${encodedMeetingId}/share`, {
+      const response = await fetch(`/api/meetings/${encodeURIComponent(targetId)}/share`, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
@@ -211,10 +210,13 @@ export function ShareDialog({
         pending?: boolean;
       } | null;
 
+      if (response.ok && previewOnly && targetId === meetingId && body?.calendarMeetingId && body.calendarMeetingId !== meetingId) {
+        return requestShare(true, recipientEmail, body.calendarMeetingId);
+      }
+
       if (!response.ok || !body?.email) {
         captureClientAction("meeting_share_failed");
         setState("error");
-        setCalendarMeetingId(body?.calendarMeetingId ?? null);
         setMessage(body?.error ?? "Could not share this meeting.");
         return;
       }
@@ -222,6 +224,7 @@ export function ShareDialog({
       if (previewOnly) {
         captureClientAction("meeting_share_previewed");
         setPreview({
+          meetingId: targetId,
           email: body.email,
           meetingCount: body.meetingCount ?? 1,
           meetings: body.meetings ?? [],
@@ -230,7 +233,7 @@ export function ShareDialog({
         return;
       }
 
-      const copied = await copyMeetingLink(meetingId);
+      const copied = await copyMeetingLink(targetId);
       setPreview(null);
       captureClientAction("meeting_share_completed");
       setState("success");
@@ -253,7 +256,6 @@ export function ShareDialog({
   }
 
   async function removeRecipient(recipientEmail: string) {
-    setCalendarMeetingId(null);
     setState("loading");
     setMessage(null);
 
@@ -317,7 +319,6 @@ export function ShareDialog({
   }
 
   async function requestAudience(audience: "organization" | "team_group") {
-    setCalendarMeetingId(null);
     setState("loading");
     setMessage(null);
 
@@ -379,7 +380,8 @@ export function ShareDialog({
           <SharePreviewPanel
             busy={state === "loading"}
             onBack={() => setPreview(null)}
-            onConfirm={() => void requestShare(false, preview.email)}
+            calendarSeriesOnly={preview.meetingId !== meetingId}
+            onConfirm={() => void requestShare(false, preview.email, preview.meetingId)}
             preview={preview}
           />
         ) : (
@@ -499,14 +501,7 @@ export function ShareDialog({
           state === "success" ? (
             <ShareToast message={message} />
           ) : (
-            <div>
-              <ShareMessage message={message} state={state} />
-              {calendarMeetingId && (
-                <a className="mt-2 inline-block text-sm underline" href={`/meetings/${encodeURIComponent(calendarMeetingId)}`}>
-                  Open calendar meeting
-                </a>
-              )}
-            </div>
+            <ShareMessage message={message} state={state} />
           )
         ) : null}
 
@@ -718,11 +713,13 @@ function RecipientOptionIcon({
 
 function SharePreviewPanel({
   busy,
+  calendarSeriesOnly,
   onBack,
   onConfirm,
   preview,
 }: {
   busy: boolean;
+  calendarSeriesOnly: boolean;
   onBack: () => void;
   onConfirm: () => void;
   preview: SharePreview;
@@ -734,6 +731,7 @@ function SharePreviewPanel({
           Share {preview.meetingCount} meeting{preview.meetingCount === 1 ? "" : "s"}?
         </p>
         <p className="mt-1 text-xs leading-5 text-muted-foreground">
+          {calendarSeriesOnly && "You are sharing the calendar series. This manual recording has separate access. "}
           Future related meetings will also be shared with {preview.email}.
         </p>
       </div>

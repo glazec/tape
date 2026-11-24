@@ -23,6 +23,11 @@ export async function applyMeetingShareRules(input: {
       where source.meeting_id = ${input.meetingId}::uuid
         and source.source = 'share_policy'
         and source.revoked_at is null
+        and exists (
+          select 1 from meeting_share_policies as series_policy
+          where series_policy.id::text = source.source_id
+            and series_policy.scope = 'related'
+        )
         and not exists (
           select 1
           from meeting_share_policies as policy

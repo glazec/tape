@@ -716,8 +716,8 @@ describe("POST /api/meetings/[meetingId]/share", () => {
       where: () => ({ limit: async () => [{ id: calendarMeetingId }] }),
     }) }) });
     const response = await shareMeetingRequest({ email: "colleague@example.com", includeRelated: true, preview: true });
-    expect(response.status).toBe(409);
-    expect(await response.json()).toMatchObject({ calendarMeetingId });
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ calendarMeetingId, preview: true, shared: false });
     expect(createMeetingSharePolicy).not.toHaveBeenCalled();
   });
 

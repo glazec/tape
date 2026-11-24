@@ -16,7 +16,7 @@ export const FAQ_ITEMS: readonly { question: string; answer: string }[] = [
   {
     question: "What does Tape write after a meeting?",
     answer:
-      "A follow-up in four parts: a to-do list with a name on every action, the dynamic of the call (who offered what and who needs what), potential connections grouped by the person who mentioned them, and up to five open research questions. Every item links to the line of transcript it came from, and any research question copies out as a ready prompt for your own research tool.",
+      "A follow-up in four parts: a to-do list with a name on every action, the dynamic of the call (who offered what and who needs what), potential connections grouped by the person who mentioned them, and open research questions. Every item links to the line of transcript it came from, and any research question copies out as a ready prompt for your own research tool.",
   },
   {
     question: "Can my own AI assistant read my meetings?",
