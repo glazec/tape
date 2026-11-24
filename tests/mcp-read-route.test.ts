@@ -50,6 +50,7 @@ function readRows(rows: unknown[]) {
   const builder = {
     from: vi.fn().mockReturnThis(),
     innerJoin: vi.fn().mockReturnThis(),
+    leftJoin: vi.fn().mockReturnThis(),
     where: vi.fn().mockReturnThis(),
     orderBy: vi.fn().mockReturnThis(),
     limit: vi.fn().mockReturnThis(),
@@ -116,6 +117,10 @@ describe("signed MCP reads", () => {
       next_offset: 6,
     });
     expect(response.headers.get("cache-control")).toBe("private, no-store");
+    expect(transcript.leftJoin).toHaveBeenCalledTimes(1);
+    const speakerJoin = dialect.sqlToQuery(transcript.leftJoin.mock.calls[0][1]).sql;
+    expect(speakerJoin).toContain('"meeting_speakers"."meeting_id" = "transcript_segments"."meeting_id"');
+    expect(speakerJoin).toContain('"meeting_speakers"."job_id" = "transcript_segments"."job_id"');
     const condition = dialect.sqlToQuery(transcript.where.mock.calls[0][0]).sql;
     expect(condition).toContain("latest_replace");
     expect(condition).toContain("current_jobs.mode = 'append'");
@@ -160,6 +165,36 @@ describe("signed MCP reads", () => {
     readRows([{ id: userId }]);
     readRows([candidate]);
     expect(await (await POST(request({ ...input, status: "todo" }))).json()).toEqual({ todos: [], next_offset: null });
+  });
+
+  it("loads candidate meeting followups concurrently while preserving meeting order", async () => {
+    readRows([{ id: userId }]);
+    const secondId = "66666666-6666-4666-8666-666666666666";
+    const first = { id: meetingId, teamId, title: "First", at: "2026-10-26T12:00:00Z" };
+    const second = { id: secondId, teamId, title: "Second", at: "2026-10-25T12:00:00Z" };
+    readRows([first, second]);
+
+    let releaseFirst!: () => void;
+    const firstGate = new Promise<void>((resolve) => { releaseFirst = resolve; });
+    mocks.getComposedMeetingForFollowup.mockImplementation(async (_ws, id: string) => {
+      if (id === meetingId) await firstGate;
+      return { status: "ready", aiFollowup: { result: { todos: [{ person: "Alex", text: `Task for ${id}` }] } } };
+    });
+    mocks.getCurrentMeetingFollowup.mockImplementation((composed: { aiFollowup: { result: { todos: Array<{ person: string; text: string }> } } }) => ({
+      todos: composed.aiFollowup.result.todos,
+    }));
+    mocks.getMeetingTodoControls.mockResolvedValue([{ status: "todo" }]);
+
+    const responsePromise = POST(request({
+      operation: "todos", start: null, end: null, meetingId: null, assignee: null, status: "todo", limit: 2, offset: 0,
+    }));
+    await vi.waitFor(() => {
+      expect(mocks.getComposedMeetingForFollowup).toHaveBeenCalledTimes(2);
+    });
+    releaseFirst();
+    const payload = await (await responsePromise).json();
+    expect(payload.todos.map((item: { meeting_id: string }) => item.meeting_id)).toEqual([meetingId, secondId]);
+    expect(payload.next_offset).toBeNull();
   });
 
   it("lists only active people scoped to explicit internal workspace membership", async () => {

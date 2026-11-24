@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 from pathlib import Path
 from typing import Any, Literal
@@ -62,21 +62,23 @@ DATABASE_URL = os.environ.get("DATABASE_URL", "").strip()
 APIKEY_DATABASE_URL = os.environ.get("APIKEY_DATABASE_URL", "").strip()
 _apikey_pool = None
 _recorded_mcp_onboarding_emails: set[str] = set()
+_shared_only_mcp_onboarding_until: dict[tuple[str, str], float] = {}
 APP_BASE_URL = os.environ.get("APP_BASE_URL", "").strip().rstrip("/")
 MCP_BACKEND_SHARED_SECRET = os.environ.get(
     "MCP_BACKEND_SHARED_SECRET",
     "",
 ).strip()
 MCP_BACKEND_TIMEOUT_SECONDS = float(
-    os.environ.get("MCP_BACKEND_TIMEOUT_SECONDS", "30"),
+    os.environ.get("MCP_BACKEND_TIMEOUT_SECONDS", "60"),
 )
 DEFAULT_MCP_HOST = "0.0.0.0" if os.environ.get("PORT") else "127.0.0.1"
 MCP_HOST = os.environ.get("MCP_HOST", DEFAULT_MCP_HOST).strip() or DEFAULT_MCP_HOST
 MCP_PORT = int(os.environ.get("PORT") or os.environ.get("MCP_PORT", "8000"))
 SQL_TOOL_STATEMENT_TIMEOUT_MS = int(
-    os.environ.get("SQL_TOOL_STATEMENT_TIMEOUT_MS", "10000"),
+    os.environ.get("SQL_TOOL_STATEMENT_TIMEOUT_MS", "60000"),
 )
 MCP_ONBOARDING_USAGE_TIMEOUT_SECONDS = 2.0
+MCP_SHARED_ONLY_CACHE_SECONDS = 300
 NEON_AUTH_ISSUER = os.environ.get("NEON_AUTH_ISSUER", "").strip()
 NEON_AUTH_AUDIENCE = os.environ.get("NEON_AUTH_AUDIENCE", "").strip() or None
 GOOGLE_CLIENT_ID = os.environ.get("GOOGLE_CLIENT_ID", "").strip()
@@ -91,6 +93,7 @@ ALLOWED_CLIENT_REDIRECT_URIS = [
     "https://www.cursor.com/agents/mcp/oauth/callback",
     "http://localhost:*",
     "http://127.0.0.1:*",
+    "http://[::1]:*",
 ]
 NEON_AUTH_ALLOWED_ALGORITHMS = {
     "RS256",
@@ -243,25 +246,37 @@ order by meeting_started_at asc, start_ms asc
         "title": "Search meetings by title, participant, entity, or transcript text",
         "params": {"query": "%Solana%"},
         "sql": """
-select distinct
+select
   m.id,
   m.title,
   m.platform,
   m.status,
   m.started_at
 from readable_meetings m
-left join readable_meeting_participants p on p.meeting_id = m.id
-left join readable_meeting_entities e on e.meeting_id = m.id
-left join readable_transcript_segments t on t.meeting_id = m.id
 where
   m.title ilike %(query)s
-  or p.email ilike %(query)s
-  or p.name ilike %(query)s
-  or e.value ilike %(query)s
-  or e.normalized_value ilike %(query)s
-  or t.text ilike %(query)s
-  or t.polished_text ilike %(query)s
-  or t.translated_text ilike %(query)s
+  or exists (
+    select 1
+    from readable_meeting_participants p
+    where p.meeting_id = m.id
+      and (p.email ilike %(query)s or p.name ilike %(query)s)
+  )
+  or exists (
+    select 1
+    from readable_meeting_entities e
+    where e.meeting_id = m.id
+      and (e.value ilike %(query)s or e.normalized_value ilike %(query)s)
+  )
+  or exists (
+    select 1
+    from readable_transcript_segments t
+    where t.meeting_id = m.id
+      and (
+        t.text ilike %(query)s
+        or t.polished_text ilike %(query)s
+        or t.translated_text ilike %(query)s
+      )
+  )
 order by m.started_at desc nulls last
 """.strip(),
     },
@@ -337,6 +352,9 @@ FORBIDDEN_SQL_TABLES = {
     "audit_events",
     "calendar_connections",
     "calendar_events",
+    "followup_todo_states",
+    "intel_searches",
+    "current_completed_transcript_jobs",
     "local_recorder_device_sessions",
     "local_recorder_devices",
     "local_recording_attempts",
@@ -346,11 +364,19 @@ FORBIDDEN_SQL_TABLES = {
     "meeting_attendees",
     "meeting_entities",
     "meeting_library_views",
+    "meeting_notes",
     "meeting_participant_timeline",
+    "meeting_parts",
     "meeting_reminders",
     "meeting_share_invites",
+    "meeting_speaker_changes",
+    "meeting_speakers",
     "meetings",
     "oauth_accounts",
+    "person_emails",
+    "person_merges",
+    "person_names",
+    "person_profiles",
     "information_schema",
     "pg_catalog",
     "pg_class",
@@ -366,8 +392,10 @@ FORBIDDEN_SQL_TABLES = {
     "teams",
     "transcript_jobs",
     "transcript_segments",
+    "transcript_speaker_names",
     "users",
     "vendor_webhook_events",
+    "workspace_people",
 }
 SQL_CALL_SYNTAX_KEYWORDS = {
     "and",
@@ -391,10 +419,12 @@ SQL_CALL_SYNTAX_KEYWORDS = {
 ALLOWED_SQL_FUNCTIONS = {
     "abs",
     "array_agg",
+    "array_length",
     "avg",
     "bool_and",
     "bool_or",
     "btrim",
+    "cardinality",
     "ceil",
     "ceiling",
     "char_length",
@@ -402,6 +432,7 @@ ALLOWED_SQL_FUNCTIONS = {
     "concat",
     "concat_ws",
     "count",
+    "date_part",
     "date_trunc",
     "dense_rank",
     "extract",
@@ -410,6 +441,9 @@ ALLOWED_SQL_FUNCTIONS = {
     "greatest",
     "json_agg",
     "json_build_object",
+    "jsonb_agg",
+    "jsonb_array_length",
+    "jsonb_build_object",
     "lag",
     "last_value",
     "lead",
@@ -417,15 +451,20 @@ ALLOWED_SQL_FUNCTIONS = {
     "left",
     "length",
     "lower",
+    "ltrim",
     "max",
     "min",
+    "now",
     "nullif",
     "position",
     "rank",
     "regexp_replace",
+    "replace",
     "right",
     "round",
     "row_number",
+    "rtrim",
+    "split_part",
     "string_agg",
     "substring",
     "strpos",
@@ -868,10 +907,12 @@ def _post_tape_backend_sync(
         except (json.JSONDecodeError, UnicodeDecodeError, AttributeError):
             message = "Tape backend rejected request"
         raise MeetingBackendError(message) from exc
-    except urllib.error.URLError as exc:
-        raise MeetingBackendError("Tape backend is unavailable") from exc
-    except TimeoutError as exc:
-        raise MeetingBackendError("Tape backend is unavailable") from exc
+    except (urllib.error.URLError, TimeoutError) as exc:
+        if isinstance(exc, urllib.error.URLError) and not isinstance(exc.reason, TimeoutError):
+            raise MeetingBackendError("Tape backend is unavailable") from exc
+        raise MeetingBackendError(
+            "Tape backend request timed out; retry with a smaller page limit or narrower filters",
+        ) from exc
     except (json.JSONDecodeError, UnicodeDecodeError) as exc:
         raise MeetingBackendError("Tape backend returned an invalid response") from exc
 
@@ -1000,8 +1041,15 @@ async def _record_current_mcp_onboarding_use() -> None:
         if normalized_email in _recorded_mcp_onboarding_emails:
             return
 
+        identity = (auth_user_id, normalized_email)
+        if _shared_only_mcp_onboarding_until.get(identity, 0) > time.monotonic():
+            return
+
+        _shared_only_mcp_onboarding_until.pop(identity, None)
         workspace = await _workspace_for_auth_user(auth_user_id, token_email)
-        if await _record_mcp_onboarding_use(workspace):
+        if not workspace.team_id:
+            _shared_only_mcp_onboarding_until[identity] = time.monotonic() + MCP_SHARED_ONLY_CACHE_SECONDS
+        elif await _record_mcp_onboarding_use(workspace):
             _recorded_mcp_onboarding_emails.add(normalized_email)
     except Exception as exc:
         logger.warning("Current MCP onboarding usage recording failed: %s", exc)
@@ -1013,8 +1061,32 @@ class McpOnboardingUsageMiddleware(Middleware):
         context: MiddlewareContext,
         call_next: CallNext,
     ) -> Any:
-        result = await call_next(context)
-        if not result.is_error:
+        tool_name = getattr(getattr(context, "message", None), "name", "unknown")
+        started_at = time.perf_counter()
+        try:
+            result = await call_next(context)
+        except Exception as exc:
+            duration_ms = round((time.perf_counter() - started_at) * 1000)
+            logger.warning(
+                "mcp_tool_call tool=%s status=error duration_ms=%d error_type=%s",
+                tool_name,
+                duration_ms,
+                type(exc).__name__,
+            )
+            raise
+        duration_ms = round((time.perf_counter() - started_at) * 1000)
+        if getattr(result, "is_error", False):
+            logger.warning(
+                "mcp_tool_call tool=%s status=tool_error duration_ms=%d",
+                tool_name,
+                duration_ms,
+            )
+        else:
+            logger.info(
+                "mcp_tool_call tool=%s status=ok duration_ms=%d",
+                tool_name,
+                duration_ms,
+            )
             try:
                 async with asyncio.timeout(MCP_ONBOARDING_USAGE_TIMEOUT_SECONDS):
                     await _record_current_mcp_onboarding_use()
@@ -1228,6 +1300,10 @@ def _iso(value: Any) -> str | None:
 def _json_safe(value: Any) -> Any:
     if isinstance(value, datetime):
         return _iso(value)
+    if isinstance(value, date):
+        return value.isoformat()
+    if isinstance(value, timedelta):
+        return value.total_seconds()
     if isinstance(value, UUID):
         return str(value)
     if isinstance(value, Decimal):
@@ -1403,14 +1479,32 @@ def _normalize_sql_params(params: dict[str, Any] | None) -> dict[str, Any]:
     return normalized
 
 
-def _current_transcript_job_subquery(meeting_id_sql: str) -> str:
+def _current_transcript_jobs_query(meeting_scope_sql: str) -> str:
+    # Match the active recording generation used by the Tape transcript route.
     return f"""
-        select tj.id
-        from transcript_jobs tj
-        where tj.meeting_id = {meeting_id_sql}
-          and tj.status::text = 'completed'
-        order by tj.updated_at desc, tj.created_at desc
-        limit 1
+        select scope.id as meeting_id, tj.id as job_id
+        from ({meeting_scope_sql}) scope
+        left join lateral (
+            select replacement.id, replacement.created_at, replacement.generation_id
+            from transcript_jobs replacement
+            where replacement.meeting_id = scope.id and replacement.mode = 'replace'
+            order by replacement.created_at desc, replacement.id desc
+            limit 1
+        ) lr on true
+        inner join transcript_jobs tj on tj.meeting_id = scope.id
+        where tj.status = 'completed' and (
+            tj.id = lr.id
+            or (
+                tj.mode = 'append' and (
+                    tj.generation_id = lr.generation_id
+                    or (
+                        tj.generation_id is null and (
+                            lr.id is null or (tj.created_at, tj.id) > (lr.created_at, lr.id)
+                        )
+                    )
+                )
+            )
+        )
     """
 
 
@@ -1464,13 +1558,21 @@ def _build_sql_tool_query(user_sql: str, access_sql: str, access_scope_sql: str)
         where m.status::text <> 'cancelled'
           and {access_sql}
     ),
+    current_completed_transcript_jobs as (
+        {_current_transcript_jobs_query("select id from readable_meetings")}
+    ),
     transcript_speaker_names as materialized (
         select
             ms.id,
             ms.meeting_id,
-            app_private.speaker_name(ms.id) as speaker
-        from readable_meetings rm
-        inner join meeting_speakers ms on ms.meeting_id = rm.id
+            ms.job_id,
+            case
+                when ms.person_id is not null then app_private.speaker_name(ms.id)
+                else coalesce(ms.display_name, ms.source_label)
+            end as speaker
+        from current_completed_transcript_jobs cj
+        inner join meeting_speakers ms
+            on ms.meeting_id = cj.meeting_id and ms.job_id = cj.job_id
     ),
     readable_transcript_segments as (
         select
@@ -1489,12 +1591,12 @@ def _build_sql_tool_query(user_sql: str, access_sql: str, access_scope_sql: str)
             ts.emotion_label,
             ts.emotion_reason
         from readable_meetings rm
-        inner join transcript_segments ts on ts.meeting_id = rm.id
+        inner join current_completed_transcript_jobs cj on cj.meeting_id = rm.id
+        inner join transcript_segments ts
+            on ts.meeting_id = rm.id and ts.job_id = cj.job_id
         left join transcript_speaker_names sn
-            on sn.id = ts.meeting_speaker_id and sn.meeting_id = rm.id
-        where ts.job_id = (
-            {_current_transcript_job_subquery("rm.id")}
-        )
+            on sn.id = ts.meeting_speaker_id
+            and sn.meeting_id = ts.meeting_id and sn.job_id = ts.job_id
     ),
     readable_meeting_entities as (
         select
@@ -1605,7 +1707,7 @@ async def _get_accessible_meeting(
     meeting_id: str,
     workspace: Workspace,
 ) -> dict[str, Any]:
-    params: dict[str, Any] = {"meeting_id": _uuid(meeting_id, "meeting_id")}
+    params: dict[str, Any] = {"meeting_id": _meeting_reference(meeting_id)}
     access_sql = _access_condition(workspace, params)
     meeting = await _fetch_one(
         f"""
@@ -1624,23 +1726,8 @@ async def _get_accessible_meeting(
             m.created_at,
             m.translation_status::text as translation_status,
             m.translation_error_message,
-            (
-                select count(*)::int
-                from transcript_segments ts
-                where ts.meeting_id = m.id
-                  and ts.job_id = (
-                    {_current_transcript_job_subquery("m.id")}
-                  )
-            ) as transcript_segment_count,
-            (
-                select count(*)::int
-                from transcript_segments ts
-                where ts.meeting_id = m.id
-                  and ts.job_id = (
-                    {_current_transcript_job_subquery("m.id")}
-                  )
-                  and nullif(btrim(ts.translated_text), '') is not null
-            ) as translated_segment_count,
+            transcript_counts.segment_count as transcript_segment_count,
+            transcript_counts.translated_count as translated_segment_count,
             exists (
                 select 1
                 from media_assets ma
@@ -1648,6 +1735,13 @@ async def _get_accessible_meeting(
                   and ma.type::text in ('audio', 'synthesized_audio')
             ) or m.recall_recording_id is not null as has_audio
         from meetings m
+        cross join lateral (
+            select
+                count(*)::int as segment_count,
+                count(*) filter (where nullif(btrim(ts.translated_text), '') is not null)::int as translated_count
+            from ({_current_transcript_jobs_query("select m.id")}) cj
+            inner join transcript_segments ts on ts.meeting_id = cj.meeting_id and ts.job_id = cj.job_id
+        ) transcript_counts
         where m.id = %(meeting_id)s::uuid
           and m.status::text <> 'cancelled'
           and {access_sql}
@@ -1723,7 +1817,7 @@ def _meeting_upload_title(value: str | None) -> str | None:
     return title
 
 
-@mcp.tool
+@mcp.tool(annotations={"readOnlyHint": True})
 async def get_user_info() -> dict[str, Any]:
     """Return the authenticated MCP user."""
     claims = _current_user_claims()
@@ -1738,7 +1832,7 @@ async def get_user_info() -> dict[str, Any]:
     }
 
 
-@mcp.tool
+@mcp.tool(annotations={"readOnlyHint": True})
 def get_version() -> str:
     """Return the MCP server version."""
     return "0.2.0"
@@ -1846,7 +1940,7 @@ async def complete_meeting_upload(completion_token: str) -> dict[str, Any]:
     }
 
 
-@mcp.tool
+@mcp.tool(annotations={"readOnlyHint": True})
 def list_meeting_sql_schema() -> dict[str, Any]:
     """List the safe SQL tables available to execute_meeting_sql."""
     return {
@@ -1862,11 +1956,12 @@ def list_meeting_sql_schema() -> dict[str, Any]:
             "All tables are caller scoped and exclude cancelled meetings.",
             "Use describe_meeting_sql_table for columns.",
             "Use list_common_meeting_queries for copy ready query templates.",
+            "Filter readable_transcript_segments by meeting_id or meeting_started_at whenever possible, and prefer get_meeting_transcript when reading a single meeting.",
         ],
     }
 
 
-@mcp.tool
+@mcp.tool(annotations={"readOnlyHint": True})
 def describe_meeting_sql_table(table_name: str) -> dict[str, Any]:
     """Describe one safe SQL table for execute_meeting_sql."""
     normalized_name = table_name.strip().lower()
@@ -1884,7 +1979,7 @@ def describe_meeting_sql_table(table_name: str) -> dict[str, Any]:
     }
 
 
-@mcp.tool
+@mcp.tool(annotations={"readOnlyHint": True})
 def list_common_meeting_queries(category: str | None = None) -> dict[str, Any]:
     """Return common execute_meeting_sql query templates and their params."""
     normalized_category = category.strip().lower() if category else None
@@ -1899,7 +1994,7 @@ def list_common_meeting_queries(category: str | None = None) -> dict[str, Any]:
     }
 
 
-@mcp.tool
+@mcp.tool(annotations={"readOnlyHint": True})
 async def list_accessible_meetings(
     limit: int = 100,
     offset: int = 0,
@@ -2010,7 +2105,7 @@ async def get_meeting_transcript(
     )
 
 
-@mcp.tool
+@mcp.tool(annotations={"readOnlyHint": True})
 async def get_ongoing_meeting_transcript(meeting_id: str) -> dict[str, Any]:
     """Transcribe captured audio so far for an ongoing Tape meeting UUID or link. Reuses earlier results. For the saved final transcript use get_meeting_transcript."""
     meeting_id = _meeting_reference(meeting_id)
@@ -2081,9 +2176,9 @@ async def get_person_profile(person_id: str) -> dict[str, Any]:
     )
 
 
-@mcp.tool
+@mcp.tool(annotations={"readOnlyHint": True})
 async def get_meeting_audio(meeting_id: str) -> dict[str, Any]:
-    """Return the protected app audio route for one readable meeting. The tool returns a URL, not audio bytes."""
+    """Return the protected app audio route for one readable meeting UUID or link. The tool returns a URL, not audio bytes."""
     workspace = await _workspace_for_current_user()
     meeting = await _get_accessible_meeting(meeting_id, workspace)
 
@@ -2139,9 +2234,9 @@ def _meeting_images_payload(
     }
 
 
-@mcp.tool
+@mcp.tool(annotations={"readOnlyHint": True})
 async def get_meeting_images(meeting_id: str) -> dict[str, Any]:
-    """List captured meeting images (screenshots and video frames) for one readable meeting with transcript timestamps. The tool returns protected app route URLs, not image bytes."""
+    """List captured meeting images (screenshots and video frames) for one readable meeting UUID or link with transcript timestamps. The tool returns protected app route URLs, not image bytes."""
     workspace = await _workspace_for_current_user()
     meeting = await _get_accessible_meeting(meeting_id, workspace)
     rows = await _fetch_all(
@@ -2162,13 +2257,13 @@ async def get_meeting_images(meeting_id: str) -> dict[str, Any]:
     }
 
 
-@mcp.tool
+@mcp.tool(annotations={"readOnlyHint": True})
 async def execute_meeting_sql(
     sql: str,
     params: dict[str, Any] | None = None,
     limit: int = 100,
 ) -> dict[str, Any]:
-    """Execute read only SQL over caller scoped CTEs: readable_meetings, readable_transcript_segments, readable_meeting_entities, readable_meeting_participants."""
+    """Execute read only SQL over caller scoped CTEs: readable_meetings, readable_transcript_segments, readable_meeting_entities, readable_meeting_participants. Filter by meeting_id or meeting_started_at on large transcript scans, and prefer list_accessible_meetings or get_meeting_transcript for single-meeting reads."""
     user_sql = _validate_agent_sql(sql)
     workspace = await _workspace_for_current_user()
     query_params = _normalize_sql_params(params)
@@ -2184,10 +2279,19 @@ async def execute_meeting_sql(
         meeting_alias="m",
         param_prefix="sql_access",
     )
-    rows = await _fetch_all(
-        _build_sql_tool_query(user_sql, access_sql, access_scope_sql),
-        query_params,
-    )
+    try:
+        rows = await _fetch_all(
+            _build_sql_tool_query(user_sql, access_sql, access_scope_sql),
+            query_params,
+        )
+    except psycopg.errors.QueryCanceled as exc:
+        raise TimeoutError(
+            f"SQL query timed out after {SQL_TOOL_STATEMENT_TIMEOUT_MS}ms. "
+            "Do not retry the identical query: narrow it by filtering on meeting_id "
+            "or meeting_started_at, use EXISTS instead of multi-table joins across "
+            "transcripts/entities/participants, or use list_accessible_meetings and "
+            "get_meeting_transcript.",
+        ) from exc
 
     return {
         "rows": _json_safe_rows(rows),

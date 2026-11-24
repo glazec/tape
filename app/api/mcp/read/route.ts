@@ -3,7 +3,7 @@ import { z } from "zod";
 
 import { db } from "@/db/client";
 import { withDatabaseWorkspace } from "@/db/rls-context";
-import { meetings, transcriptSegments, users, workspacePeople } from "@/db/schema";
+import { meetings, meetingSpeakers, transcriptSegments, users, workspacePeople } from "@/db/schema";
 import { normalizeEmailDomain } from "@/lib/access";
 import { currentTranscriptJobIdsSubquery } from "@/lib/current-transcript-job";
 import { mcpBackendAuthErrorResponse, verifyMcpBackendRequest } from "@/lib/mcp-backend-auth";
@@ -126,9 +126,20 @@ export async function POST(request: Request) {
         read.start ? sql`${meetingAt} >= (${read.start}::date::timestamp at time zone 'UTC')` : undefined,
         read.end ? sql`${meetingAt} < ((${read.end}::date + 1)::timestamp at time zone 'UTC')` : undefined,
       )).orderBy(desc(meetingAt), meetings.id).limit(read.limit + 1).offset(read.offset);
+      const pageMeetings = candidates.slice(0, read.limit);
+      const followups: Array<Awaited<ReturnType<typeof readFollowup>>> = new Array(pageMeetings.length);
+      const BATCH_SIZE = 5;
+      for (let start = 0; start < pageMeetings.length; start += BATCH_SIZE) {
+        const batch = pageMeetings.slice(start, start + BATCH_SIZE);
+        const batchResults = await Promise.all(batch.map((meeting) => readFollowup(meeting)));
+        batchResults.forEach((result, idx) => {
+          followups[start + idx] = result;
+        });
+      }
       const todos = [];
-      for (const meeting of candidates.slice(0, read.limit)) {
-        const current = await readFollowup(meeting);
+      for (let index = 0; index < pageMeetings.length; index += 1) {
+        const meeting = pageMeetings[index];
+        const current = followups[index];
         for (const item of current?.followup?.todos ?? []) {
           if (!item.status || (read.status && item.status !== read.status)) continue;
           if (read.assignee && item.person.toLowerCase() !== read.assignee.toLowerCase()) continue;
@@ -172,13 +183,26 @@ export async function POST(request: Request) {
 
     const rows = await db.select({
       id: transcriptSegments.id,
-      speaker: sql<string | null>`coalesce(app_private.speaker_name(${transcriptSegments.meetingSpeakerId}), ${transcriptSegments.speaker})`,
+      speaker: sql<string | null>`coalesce(
+        case
+          when ${meetingSpeakers.personId} is not null
+            then app_private.speaker_name(${meetingSpeakers.id})
+          else coalesce(${meetingSpeakers.displayName}, ${meetingSpeakers.sourceLabel})
+        end,
+        ${transcriptSegments.speaker}
+      )`,
       start_ms: transcriptSegments.startMs,
       end_ms: transcriptSegments.endMs,
       text: transcriptSegments.text,
       polished_text: transcriptSegments.polishedText,
       translated_text: transcriptSegments.translatedText,
-    }).from(transcriptSegments).innerJoin(meetings, eq(transcriptSegments.meetingId, meetings.id))
+    }).from(transcriptSegments)
+      .innerJoin(meetings, eq(transcriptSegments.meetingId, meetings.id))
+      .leftJoin(meetingSpeakers, and(
+        eq(meetingSpeakers.id, transcriptSegments.meetingSpeakerId),
+        eq(meetingSpeakers.meetingId, transcriptSegments.meetingId),
+        eq(meetingSpeakers.jobId, transcriptSegments.jobId),
+      ))
       .where(and(meetingCondition, inArray(transcriptSegments.jobId, currentTranscriptJobIdsSubquery(meeting.id))))
       .orderBy(asc(transcriptSegments.startMs), asc(transcriptSegments.endMs), asc(transcriptSegments.id))
       .limit(read.limit + 1).offset(read.offset);

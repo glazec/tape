@@ -31,7 +31,8 @@ def source_file(kind, identifier):
 
 
 def connect(path):
-    db = sqlite3.connect(path)
+    db = sqlite3.connect(path, timeout=10.0)
+    db.execute("pragma busy_timeout=10000")
     db.execute("pragma journal_mode=wal")
     db.execute("pragma synchronous=normal")
     return db
@@ -174,7 +175,7 @@ async def snapshot(path):
                     for (recording, start, stop, last, _), text in zip(pending, results):
                         if isinstance(text, BaseException):
                             continue
-                        db.execute("insert into excerpts values(?,?,?,?)", (recording,start,stop,text))
+                        db.execute("insert or replace into excerpts values(?,?,?,?)", (recording,start,stop,text))
                         db.execute("""update frames set audio=null where recording=? and
                             sample between ? and ? and rowid<=?""", (recording,start,last,cutoff))
                 for result in results:
@@ -191,7 +192,15 @@ async def snapshot(path):
 def expire_buffers():
     for path in directory().glob("*.sqlite"):
         wal = Path(str(path) + "-wal")
-        newest = max(p.stat().st_mtime for p in (path, wal) if p.exists())
+        mtimes = []
+        for candidate in (path, wal):
+            try:
+                mtimes.append(candidate.stat().st_mtime)
+            except FileNotFoundError:
+                continue
+        if not mtimes:
+            continue
+        newest = max(mtimes)
         if time.time() - newest > 7200 and path not in LOCKS and path not in OPEN_SOURCES:
             for suffix in ("-shm", "-wal", ""):
                 Path(str(path) + suffix).unlink(missing_ok=True)

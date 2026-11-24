@@ -540,6 +540,13 @@
       "when": 1795139887063,
       "tag": "0076_invitation_email_identity",
       "breakpoints": true
+    },
+    {
+      "idx": 77,
+      "version": "7",
+      "when": 1795400000000,
+      "tag": "0077_mcp_read_performance",
+      "breakpoints": true
     }
   ]
 }

@@ -1,4 +1,5 @@
 import { and, asc, eq, ilike, ne, sql } from "drizzle-orm";
+import { z } from "zod";
 import { db } from "@/db/client";
 import { meetingParts, meetings } from "@/db/schema";
 import { getReadableMeetingsCondition } from "@/lib/meeting-access-policy";
@@ -10,6 +11,8 @@ import type { WorkspaceContext } from "@/lib/workspace";
 
 import { MeetingCompositionError } from "@/lib/meeting-composition-error";
 export { MeetingCompositionError } from "@/lib/meeting-composition-error";
+
+const uuidSchema = z.uuid();
 
 export async function requireManageableComposition(
   workspace: WorkspaceContext,
@@ -219,11 +222,45 @@ export async function getMeetingCompositionForWorkspace(
 }
 
 // Followups cover every readable part and are invalidated when any source changes.
-export function composeMeetingForFollowup(
-  composition: NonNullable<
-    Awaited<ReturnType<typeof getMeetingCompositionForWorkspace>>
-  >,
-) {
+type ComposableFollowupPart = {
+  id: string;
+  title: string;
+  status: string;
+  startedAt: string | null;
+  transcriptJobStatus: string | null;
+  lastSpeakerEditMs?: number;
+  attributionRevision?: number;
+  segments: Array<{
+    id: string;
+    speaker: string | null;
+    startMs: number;
+    text: string;
+    sourceSpeaker?: string | null;
+    meetingSpeakerId?: string | null;
+    personId?: string | null;
+    speakerRevision?: number;
+  }>;
+  followupSource?: {
+    title: string;
+    startedAt: string | null;
+    attributionRevision?: number;
+    attributionRevisions?: Array<{ meetingId: string; revision: number }>;
+    segments: Array<{
+      id: string;
+      speaker: string | null;
+      startMs: number;
+      text: string;
+      sourceSpeaker?: string | null;
+      meetingSpeakerId?: string | null;
+      personId?: string | null;
+      speakerRevision?: number;
+    }>;
+  };
+};
+
+export function composeMeetingForFollowup<T extends ComposableFollowupPart>(
+  composition: { primary: T; parts: T[] },
+): T {
   const { primary, parts } = composition;
   if (parts.length === 1) return primary;
   const complete = parts.every(
@@ -254,9 +291,25 @@ export async function getComposedMeetingForFollowup(
   workspace: WorkspaceContext,
   meetingId: string,
 ) {
-  const composition = await getMeetingCompositionForWorkspace(
-    workspace,
-    meetingId,
+  if (!uuidSchema.safeParse(meetingId).success) return null;
+
+  const { getMeetingFollowupSourceForWorkspace } =
+    await import("@/lib/meeting-queries");
+  const [primary, sources] = await Promise.all([
+    getMeetingFollowupSourceForWorkspace(workspace, meetingId),
+    listReadableMeetingSources(workspace, meetingId),
+  ]);
+  if (!primary) return null;
+  if (sources.length === 0) return primary;
+  const sourceParts = await Promise.all(
+    sources.map((source) =>
+      getMeetingFollowupSourceForWorkspace(workspace, source.id),
+    ),
   );
-  return composition ? composeMeetingForFollowup(composition) : null;
+  const parts = [primary, ...sourceParts.filter((part) => part !== null)].sort(
+    (a, b) =>
+      Date.parse(a.startedAt ?? "1970-01-01") -
+        Date.parse(b.startedAt ?? "1970-01-01") || a.id.localeCompare(b.id),
+  );
+  return composeMeetingForFollowup({ primary, parts });
 }

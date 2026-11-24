@@ -686,4 +686,21 @@ describe("database migrations", () => {
       "grant execute on function app_private.record_mcp_onboarding_use(uuid) to tape_mcp",
     );
   });
+
+  it("materializes readable meetings once for speaker RLS policies", () => {
+    const sql = readFileSync(
+      "db/migrations/0077_mcp_read_performance.sql",
+      "utf8",
+    ).replace(/\s+/g, " ");
+
+    for (const [policy, table] of [
+      ["speaker_read", "meeting_speakers"],
+      ["speaker_changes_read", "meeting_speaker_changes"],
+    ]) {
+      expect(sql).toContain(`drop policy if exists ${policy} on public.${table};`);
+      expect(sql).toContain(
+        `create policy ${policy} on public.${table} for select to tape_authenticated, tape_mcp using (meeting_id in (select readable.meeting_id from app_private.readable_meeting_ids() as readable));`,
+      );
+    }
+  });
 });

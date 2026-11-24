@@ -164,6 +164,31 @@ export type MeetingTranscript = {
   entities: MeetingTranscriptEntity[];
 };
 
+export type MeetingFollowupRecord = {
+  aiFollowup?: unknown;
+  followupSource: FollowupSource;
+  lastSpeakerEditMs?: number;
+  lastRecordingEndedAt?: string | null;
+  attributionRevision?: number;
+  id: string;
+  title: string;
+  status: MeetingListItem["status"];
+  startedAt: string | null;
+  updatedAt: string;
+  transcriptJobStatus: TranscriptJobStatus | null;
+  segments: Array<{
+    id: string;
+    speaker: string | null;
+    sourceSpeaker: string | null;
+    meetingSpeakerId: string | null;
+    personId: string | null;
+    speakerRevision: number;
+    startMs: number;
+    text: string;
+  }>;
+  canManage: boolean;
+};
+
 export type MeetingRecordingPart = {
   audioUrl: string;
   durationMs: number | null;
@@ -1409,6 +1434,74 @@ export async function getWorkspaceMeetingTranscript(
   return getMeetingTranscriptForWorkspace(workspace, meetingId);
 }
 
+function listCurrentTranscriptRecordings(meetingId: string) {
+  return db
+    .select({
+      durationMs: recordings.durationMs,
+      endedAt: recordings.endedAt,
+      externalId: recordings.externalId,
+      id: recordings.id,
+      startedAt: recordings.startedAt,
+    })
+    .from(recordings)
+    .where(
+      and(
+        eq(recordings.meetingId, meetingId),
+        sql`exists (
+          select 1
+          from ${transcriptJobs} recording_job
+          where recording_job.recording_id = ${recordings.id}
+            and recording_job.id in ${activeTranscriptJobIdsSubquery(
+              meetingId,
+            )}
+        )`,
+      ),
+    )
+    .orderBy(
+      sql`coalesce(${recordings.startedAt}, (
+        select recording_job.created_at
+        from ${transcriptJobs} recording_job
+        where recording_job.recording_id = ${recordings.id}
+          and recording_job.id in ${activeTranscriptJobIdsSubquery(meetingId)}
+        order by recording_job.created_at, recording_job.id
+        limit 1
+      ))`,
+      sql`(
+        select recording_job.created_at
+        from ${transcriptJobs} recording_job
+        where recording_job.recording_id = ${recordings.id}
+          and recording_job.id in ${activeTranscriptJobIdsSubquery(
+            meetingId,
+          )}
+        order by recording_job.created_at, recording_job.id
+        limit 1
+      )`,
+      sql`(
+        select recording_job.id
+        from ${transcriptJobs} recording_job
+        where recording_job.recording_id = ${recordings.id}
+          and recording_job.id in ${activeTranscriptJobIdsSubquery(
+            meetingId,
+          )}
+        order by recording_job.created_at, recording_job.id
+        limit 1
+      )`,
+    );
+}
+
+function getTranscriptStartedAt(
+  meeting: { recordedStartedAt: Date | null; startedAt: Date | null; createdAt: Date | null },
+  recordingParts: Array<{ startedAt: Date | null }>,
+) {
+  return (
+    (recordingParts.length > 1
+      ? recordingParts[0]?.startedAt
+      : meeting.recordedStartedAt) ??
+    meeting.startedAt ??
+    meeting.createdAt
+  )?.toISOString() ?? null;
+}
+
 export async function getMeetingTranscriptForWorkspace(
   workspace: WorkspaceContext,
   meetingId: string,
@@ -1590,58 +1683,7 @@ export async function getMeetingTranscriptForWorkspace(
     accessScope === "workspace"
       ? listMeetingSpeakerAliases(meeting.teamId, meeting.id)
       : Promise.resolve([]),
-    db
-      .select({
-        durationMs: recordings.durationMs,
-        endedAt: recordings.endedAt,
-        externalId: recordings.externalId,
-        id: recordings.id,
-        startedAt: recordings.startedAt,
-      })
-      .from(recordings)
-      .where(
-        and(
-          eq(recordings.meetingId, meeting.id),
-          sql`exists (
-            select 1
-            from ${transcriptJobs} recording_job
-            where recording_job.recording_id = ${recordings.id}
-              and recording_job.id in ${activeTranscriptJobIdsSubquery(
-                meeting.id,
-              )}
-          )`,
-        ),
-      )
-      .orderBy(
-        sql`coalesce(${recordings.startedAt}, (
-          select recording_job.created_at
-          from ${transcriptJobs} recording_job
-          where recording_job.recording_id = ${recordings.id}
-            and recording_job.id in ${activeTranscriptJobIdsSubquery(meeting.id)}
-          order by recording_job.created_at, recording_job.id
-          limit 1
-        ))`,
-        sql`(
-          select recording_job.created_at
-          from ${transcriptJobs} recording_job
-          where recording_job.recording_id = ${recordings.id}
-            and recording_job.id in ${activeTranscriptJobIdsSubquery(
-              meeting.id,
-            )}
-          order by recording_job.created_at, recording_job.id
-          limit 1
-        )`,
-        sql`(
-          select recording_job.id
-          from ${transcriptJobs} recording_job
-          where recording_job.recording_id = ${recordings.id}
-            and recording_job.id in ${activeTranscriptJobIdsSubquery(
-              meeting.id,
-            )}
-          order by recording_job.created_at, recording_job.id
-          limit 1
-        )`,
-      ),
+    listCurrentTranscriptRecordings(meeting.id),
   ]);
   const identitySegments = await attachSpeakerIdentities(meeting.id, segments, { includeEmails: canManage, workspace });
   const displaySegments = identitySegments.map(segment => segment.meetingSpeakerId ? segment
@@ -1673,14 +1715,7 @@ export async function getMeetingTranscriptForWorkspace(
     botState: meeting.botState,
     scheduledStartedAt: meeting.startedAt?.toISOString() ?? null,
     scheduledEndedAt: meeting.endedAt?.toISOString() ?? null,
-    startedAt:
-      (
-        (recordingParts.length > 1
-          ? recordingParts[0]?.startedAt
-          : meeting.recordedStartedAt) ??
-        meeting.startedAt ??
-        meeting.createdAt
-      )?.toISOString() ?? null,
+    startedAt: getTranscriptStartedAt(meeting, recordingParts),
     endedAt:
       (recordingParts.length > 1
         ? recordingParts.at(-1)?.endedAt?.toISOString()
@@ -1749,6 +1784,144 @@ export async function getMeetingTranscriptForWorkspace(
     canManage: Boolean(meeting.canManage),
     accessPeople,
     entities: normalizeMeetingTranscriptEntities(entities),
+  };
+}
+
+export async function getMeetingFollowupSourceForWorkspace(
+  workspace: WorkspaceContext,
+  meetingId: string,
+): Promise<MeetingFollowupRecord | null> {
+  const parsedMeetingId = uuidSchema.safeParse(meetingId);
+
+  if (!parsedMeetingId.success) {
+    return null;
+  }
+
+  const [meeting] = await db
+    .select({
+      id: meetings.id,
+      teamId: meetings.teamId,
+      title: meetings.title,
+      status: meetings.status,
+      startedAt: meetings.startedAt,
+      createdAt: meetings.createdAt,
+      updatedAt: meetings.updatedAt,
+      aiFollowup: meetings.aiFollowup,
+      lastSpeakerEditMs: sql<number>`(select extract(epoch from max(${meetingSpeakerChanges.createdAt})) * 1000
+        from ${meetingSpeakerChanges} where ${meetingSpeakerChanges.meetingId} = ${meetings.id})`.mapWith(Number),
+      attributionRevision: meetings.attributionRevision,
+      recordedStartedAt: latestRecordingStartedAtSubquery(meetings.id),
+      recordedEndedAt: latestRecordingEndedAtSubquery(meetings.id),
+      transcriptJobStatus: sql<TranscriptJobStatus | null>`(
+        select ${transcriptJobs.status}
+        from ${transcriptJobs}
+        where ${transcriptJobs.meetingId} = ${meetings.id}
+        order by ${transcriptJobs.createdAt} desc
+        limit 1
+      )`,
+      calendarAttendeeEmails: getMeetingAttendeeEmailsSnapshot(),
+      canManage: getMeetingManagerCondition(workspace),
+    })
+    .from(meetings)
+    .leftJoin(calendarEvents, eq(calendarEvents.id, meetings.calendarEventId))
+    .where(
+      and(
+        eq(meetings.id, parsedMeetingId.data),
+        getReadableMeetingsCondition(workspace),
+      ),
+    )
+    .limit(1);
+  if (!meeting) {
+    return null;
+  }
+
+  const [rawSegments, recordingParts] = await Promise.all([
+    db
+      .select({
+        id: transcriptSegments.id,
+        speaker: transcriptSegments.speaker,
+        meetingSpeakerId: transcriptSegments.meetingSpeakerId,
+        startMs: transcriptSegments.startMs,
+        text: transcriptSegments.text,
+      })
+      .from(transcriptSegments)
+      .where(
+        and(
+          eq(transcriptSegments.meetingId, meeting.id),
+          inArray(
+            transcriptSegments.jobId,
+            currentTranscriptJobIdsSubquery(meeting.id),
+          ),
+        ),
+      )
+      .orderBy(
+        asc(transcriptSegments.startMs),
+        asc(transcriptSegments.endMs),
+        asc(transcriptSegments.id),
+      ),
+    listCurrentTranscriptRecordings(meeting.id),
+  ]);
+
+  const canManage = Boolean(meeting.canManage);
+  const [identitySegments, speakerAliases] = await Promise.all([
+    attachSpeakerIdentities(meeting.id, rawSegments, { includeEmails: false, workspace }),
+    canManage && rawSegments.some((segment) => !segment.meetingSpeakerId)
+      ? listMeetingSpeakerAliases(meeting.teamId, meeting.id)
+      : [],
+  ]);
+  const sourceSegments = identitySegments.map(
+    ({
+      id,
+      speaker,
+      sourceSpeaker,
+      meetingSpeakerId,
+      personId,
+      speakerRevision,
+      startMs,
+      text,
+    }) => ({
+      id,
+      speaker,
+      sourceSpeaker,
+      meetingSpeakerId: meetingSpeakerId ?? null,
+      personId,
+      speakerRevision,
+      startMs,
+      text,
+    }),
+  );
+
+  return {
+    id: meeting.id,
+    title: getMeetingDisplayTitle({
+      title: meeting.title,
+      attendeeEmails: meeting.calendarAttendeeEmails,
+      workspaceDomain: workspace.domain,
+      workspaceName: workspace.teamName,
+    }),
+    status: meeting.status,
+    startedAt: getTranscriptStartedAt(meeting, recordingParts),
+    updatedAt: (
+      meeting.updatedAt ??
+      meeting.createdAt ??
+      meeting.startedAt ??
+      new Date(0)
+    ).toISOString(),
+    transcriptJobStatus: meeting.transcriptJobStatus,
+    aiFollowup: meeting.aiFollowup,
+    lastSpeakerEditMs: meeting.lastSpeakerEditMs ?? 0,
+    lastRecordingEndedAt: meeting.recordedEndedAt?.toISOString() ?? null,
+    attributionRevision: meeting.attributionRevision ?? 0,
+    canManage,
+    segments: sourceSegments.map((segment) => segment.meetingSpeakerId
+      ? segment
+      : applySpeakerAliasesToSegments([segment], speakerAliases)[0]),
+    followupSource: {
+      title: meeting.title,
+      startedAt: (meeting.startedAt ?? meeting.createdAt)?.toISOString() ?? null,
+      attributionRevision: meeting.attributionRevision ?? 0,
+      segments: sourceSegments,
+    },
   };
 }
 

@@ -51,3 +51,22 @@ class AudioTest(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(len(call.await_args.args[0]), 6400)
                 self.assertEqual(call.await_count, 3)
             self.assertTrue(path.is_relative_to(Path(root)))
+
+    async def test_expire_buffers_ignores_vanished_wal_files(self):
+        with tempfile.TemporaryDirectory() as root, patch.dict("os.environ", {
+            "RAILWAY_VOLUME_MOUNT_PATH": root,
+        }):
+            audio_dir = audio.directory()
+            audio_dir.mkdir(parents=True, exist_ok=True)
+            db_path = audio_dir / f"meeting_{uuid4()}.sqlite"
+            db_path.write_bytes(b"")
+            original_stat = Path.stat
+
+            def flaky_stat(self, *args, **kwargs):
+                if str(self).endswith("-wal"):
+                    raise FileNotFoundError(str(self))
+                return original_stat(self, *args, **kwargs)
+
+            with patch.object(Path, "stat", flaky_stat):
+                audio.expire_buffers()
+            self.assertTrue(db_path.exists())

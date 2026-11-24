@@ -1,5 +1,8 @@
 import asyncio
 import json
+import os
+import subprocess
+import sys
 import unittest
 from datetime import datetime, timezone
 from types import SimpleNamespace
@@ -14,16 +17,30 @@ class SpeakerDisplayProjectionTests(unittest.TestCase):
             "select speaker from readable_transcript_segments", "authorized_meeting", "'shared'"
         )
         self.assertIn("and authorized_meeting", query)
+        self.assertIn("current_completed_transcript_jobs as (", query)
         self.assertIn("transcript_speaker_names as materialized", query)
-        self.assertIn("app_private.speaker_name(ms.id) as speaker", query)
-        self.assertIn("inner join meeting_speakers ms on ms.meeting_id = rm.id", query)
+        self.assertIn("when ms.person_id is not null then app_private.speaker_name(ms.id)", query)
+        self.assertIn("else coalesce(ms.display_name, ms.source_label)", query)
+        self.assertIn("on ms.meeting_id = cj.meeting_id and ms.job_id = cj.job_id", query)
+        self.assertIn("and sn.meeting_id = ts.meeting_id and sn.job_id = ts.job_id", query)
         self.assertIn("coalesce(sn.speaker, ts.speaker) as speaker", query)
         self.assertNotIn("speaker_name(ts.meeting_speaker_id)", query)
         with self.assertRaises(ValueError):
             main._validate_agent_sql("select * from transcript_speaker_names")
+        with self.assertRaises(ValueError):
+            main._validate_agent_sql("select * from current_completed_transcript_jobs")
         self.assertNotIn("participantEmail", query)
         self.assertNotIn("person_emails", query)
         self.assertNotIn("workspace_people", query)
+
+    def test_transcripts_include_completed_jobs_from_the_active_generation(self):
+        query = main._current_transcript_jobs_query("select id from readable_meetings")
+        self.assertIn("replacement.mode = 'replace'", query)
+        self.assertIn("order by replacement.created_at desc, replacement.id desc", query)
+        self.assertIn("tj.status = 'completed'", query)
+        self.assertIn("tj.mode = 'append'", query)
+        self.assertIn("tj.generation_id = lr.generation_id", query)
+        self.assertIn("(tj.created_at, tj.id) > (lr.created_at, lr.id)", query)
 
 
 class ApiKeyAuthenticationTests(unittest.IsolatedAsyncioTestCase):
@@ -121,6 +138,12 @@ class OAuthConfigurationTests(unittest.TestCase):
             main.ALLOWED_CLIENT_REDIRECT_URIS,
         )
 
+    def test_allows_ipv6_loopback_callback(self):
+        from fastmcp.server.auth.redirect_validation import validate_redirect_uri
+
+        self.assertTrue(validate_redirect_uri("http://[::1]:43127/callback", main.ALLOWED_CLIENT_REDIRECT_URIS))
+        self.assertFalse(validate_redirect_uri("http://[::2]:43127/callback", main.ALLOWED_CLIENT_REDIRECT_URIS))
+
 
 class SqlSafetyTests(unittest.TestCase):
     def test_accepts_read_only_queries_against_public_ctes(self):
@@ -151,11 +174,29 @@ class SqlSafetyTests(unittest.TestCase):
 select
   strpos(title, 'Marvin') as strpos_match,
   position('Marvin' in title) as position_match,
-  json_build_object('id', id, 'title', title) as meeting
+  json_build_object('id', id, 'title', title) as meeting,
+  replace(split_part(title, ' ', 1), '-', '') as first_word,
+  date_part('year', started_at) as year,
+  rtrim(ltrim(title)) as trimmed_title,
+  jsonb_array_length(jsonb_agg(jsonb_build_object('id', id)) over ()) as meeting_count,
+  array_length(array[id], 1) as array_length,
+  cardinality(array[id]) as cardinality
 from readable_meetings
+where started_at >= now()
 """.strip()
 
         self.assertEqual(main._validate_agent_sql(sql), sql)
+
+    def test_meeting_search_template_avoids_cartesian_left_joins(self):
+        template = next(q for q in main.COMMON_SQL_QUERIES if q["id"] == "meeting_search")
+        self.assertEqual(main._validate_agent_sql(template["sql"]), template["sql"])
+        self.assertIn("exists (", template["sql"].lower())
+        self.assertNotIn("left join", template["sql"].lower())
+
+    def test_json_safe_handles_dates_and_timedeltas(self):
+        from datetime import date, timedelta
+        self.assertEqual(main._json_safe(date(2026, 11, 23)), "2026-11-23")
+        self.assertEqual(main._json_safe(timedelta(seconds=90)), 90.0)
 
     def test_escapes_literal_percents_but_preserves_named_params(self):
         query = (
@@ -243,6 +284,18 @@ class IdentityResolutionTests(unittest.IsolatedAsyncioTestCase):
         fetch_one.assert_awaited_once()
 
 
+class TimeoutConfigurationTests(unittest.TestCase):
+    def test_sql_and_backend_timeout_defaults_are_sixty_seconds(self):
+        env = os.environ.copy()
+        env.pop("SQL_TOOL_STATEMENT_TIMEOUT_MS", None)
+        env.pop("MCP_BACKEND_TIMEOUT_SECONDS", None)
+        result = subprocess.run(
+            [sys.executable, "-c", "import main; print(main.SQL_TOOL_STATEMENT_TIMEOUT_MS, main.MCP_BACKEND_TIMEOUT_SECONDS)"],
+            env=env, check=True, capture_output=True, text=True,
+        )
+        self.assertEqual(result.stdout.strip(), "60000 60.0")
+
+
 class MeetingBackendRequestTests(unittest.TestCase):
     class Response:
         def __init__(self, payload):
@@ -311,6 +364,25 @@ class MeetingBackendRequestTests(unittest.TestCase):
             request.full_url,
             "https://app.example.com/api/mcp/uploads/prepare",
         )
+
+    def test_reports_wrapped_connect_timeouts_with_actionable_guidance(self):
+        user = main.TapeUser(
+            id="11111111-1111-4111-8111-111111111111",
+            auth_user_id="auth-user-123",
+            email="member@example.com",
+            name=None,
+        )
+        with (
+            patch.object(main, "APP_BASE_URL", "https://app.example.com"),
+            patch.object(main, "MCP_BACKEND_SHARED_SECRET", "s" * 32),
+            patch.object(
+                main.urllib.request,
+                "urlopen",
+                side_effect=main.urllib.error.URLError(TimeoutError()),
+            ),
+            self.assertRaisesRegex(main.MeetingBackendError, "retry with a smaller page limit"),
+        ):
+            main._post_tape_backend_sync("api/mcp/read", user, {})
 
     def test_requires_https_for_non_local_backends(self):
         with patch.object(main, "APP_BASE_URL", "http://app.example.com"):
@@ -649,6 +721,64 @@ class McpOnboardingUsageMiddlewareTests(unittest.IsolatedAsyncioTestCase):
             "Member@Example.com",
         )
         record_usage.assert_awaited_once_with(workspace)
+
+    async def test_caches_shared_only_user_without_repeated_workspace_lookups(self):
+        workspace = main.Workspace(
+            email="guest@example.com",
+            user_id="11111111-1111-4111-8111-111111111111",
+            team_id=None,
+            can_create_meetings=False,
+            can_manage_team_meetings=False,
+        )
+        claims = {"sub": "auth-guest", "email": "guest@example.com"}
+
+        with (
+            patch.object(main, "_current_user_claims", return_value=claims),
+            patch.object(main, "_workspace_for_auth_user", AsyncMock(return_value=workspace)) as get_workspace,
+            patch.object(main, "_record_mcp_onboarding_use", AsyncMock()) as record_usage,
+        ):
+            await main._record_current_mcp_onboarding_use()
+            await main._record_current_mcp_onboarding_use()
+
+        get_workspace.assert_awaited_once()
+        record_usage.assert_not_awaited()
+
+    async def test_shared_only_cache_rechecks_for_workspace_membership(self):
+        guest = main.Workspace("promoted@example.com", "guest-id", None, False, False)
+        member = main.Workspace("promoted@example.com", "guest-id", "team-id", True, False)
+        claims = {"sub": "auth-promoted", "email": guest.email}
+        with (
+            patch.object(main, "_current_user_claims", return_value=claims),
+            patch.object(main, "_recorded_mcp_onboarding_emails", set()),
+            patch.object(main, "MCP_SHARED_ONLY_CACHE_SECONDS", 0),
+            patch.object(main, "_workspace_for_auth_user", AsyncMock(side_effect=[guest, member])),
+            patch.object(main, "_record_mcp_onboarding_use", AsyncMock(return_value=True)) as record_usage,
+        ):
+            await main._record_current_mcp_onboarding_use()
+            await main._record_current_mcp_onboarding_use()
+
+        record_usage.assert_awaited_once_with(member)
+
+
+class ExecuteMeetingSqlTimeoutTests(unittest.IsolatedAsyncioTestCase):
+    async def test_returns_actionable_guidance_on_statement_timeout(self):
+        workspace = main.Workspace(
+            email="member@example.com",
+            user_id="11111111-1111-4111-8111-111111111111",
+            team_id="22222222-2222-4222-8222-222222222222",
+            can_create_meetings=True,
+            can_manage_team_meetings=False,
+        )
+        with (
+            patch.object(main, "_workspace_for_current_user", AsyncMock(return_value=workspace)),
+            patch.object(
+                main,
+                "_fetch_all",
+                AsyncMock(side_effect=main.psycopg.errors.QueryCanceled("canceling statement due to statement timeout")),
+            ),
+        ):
+            with self.assertRaisesRegex(TimeoutError, "Do not retry the identical query"):
+                await main.execute_meeting_sql("select id from readable_meetings")
 
 
 class MeetingImagesPayloadTests(unittest.TestCase):

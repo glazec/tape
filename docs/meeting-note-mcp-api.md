@@ -249,6 +249,8 @@ Completion is idempotent for the same uploaded object. The response includes the
 10. `created_at`
 11. `team_meeting_key`
 
+Transcript rows come from completed jobs in the active recording generation, including completed appended recordings.
+
 `readable_transcript_segments`:
 
 1. `meeting_id`
@@ -404,7 +406,7 @@ Recommended:
 2. `MCP_PORT`
 3. `NEON_AUTH_AUDIENCE` when the Neon Auth JWTs include a known audience claim
 
-Every MCP database query opens a read only transaction and applies `SQL_TOOL_STATEMENT_TIMEOUT_MS`. Production should still use a dedicated read only database role so a future code path cannot write by accident. `MCP_BACKEND_SHARED_SECRET` must contain at least 32 characters and must not be reused as `FASTMCP_JWT_SIGNING_KEY`.
+Every MCP database query opens a read only transaction and applies `SQL_TOOL_STATEMENT_TIMEOUT_MS`, which defaults to 60,000 milliseconds. Signed requests to the Tape backend use `MCP_BACKEND_TIMEOUT_SECONDS`, which defaults to 60 seconds. Production should still use a dedicated read only database role so a future code path cannot write by accident. `MCP_BACKEND_SHARED_SECRET` must contain at least 32 characters and must not be reused as `FASTMCP_JWT_SIGNING_KEY`.
 
 Local development can use `DISABLE_AUTH=true`, `MCP_ALLOW_DEV_AUTH=true`, `MCP_HOST=127.0.0.1`, `MCP_DEV_USER_EMAIL`, and `MCP_DEV_AUTH_USER_ID` to test with a known app user. Dev auth bypass is rejected in production runtimes or when configured with a non localhost host or base URL. Production should not use the app owner database URL for the SQL tool.
 
