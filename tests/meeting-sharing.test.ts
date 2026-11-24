@@ -102,6 +102,23 @@ describe("meeting sharing", () => {
     ).toBe(false);
   });
 
+  it("matches internal occurrences only within the same calendar series", () => {
+    const occurrence = (connectionId: string, externalEventId: string) =>
+      getMeetingShareMatchKeys({
+        attendeeEmails: ["owner@iosg.vc"],
+        title: "Investment strategy",
+        workspaceDomain: "iosg.vc",
+        connectionId,
+        externalEventId,
+      });
+    const seed = occurrence("calendar1", "abc123_20261124T020000Z");
+    expect(hasReliableMeetingShareMatchKeys(seed)).toBe(true);
+    expect(meetingsShareReliableMatch(seed, occurrence("calendar1", "abc123_20261208T020000Z"))).toBe(true);
+    expect(meetingsShareReliableMatch(seed, occurrence("calendar2", "abc123_20261208T020000Z"))).toBe(false);
+    expect(meetingsShareReliableMatch(seed, occurrence("calendar1", "def456_20261208T020000Z"))).toBe(false);
+    expect(hasReliableMeetingShareMatchKeys(occurrence("calendar1", "abc123"))).toBe(false);
+  });
+
   it("does not create broad title rules for generic meeting names", () => {
     expect(
       getMeetingShareMatchKeys({

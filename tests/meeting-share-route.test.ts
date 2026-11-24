@@ -686,6 +686,41 @@ describe("POST /api/meetings/[meetingId]/share", () => {
     );
   });
 
+  it("previews recurring internal meetings across confirmed calendar copies", async () => {
+    getCurrentUser.mockResolvedValue({ email: "owner@example.com" });
+    getWorkspace.mockResolvedValue({ domain: "example.com", teamId: "team_123", userId: "owner" });
+    const seed = {
+      attendeeEmails: [], connectionId: "calendar-a", externalEventId: "series123_20261124T020000Z",
+      id: meetingId, ownerUserId: "owner", teamMeetingKey: "same-occurrence", title: "Strategy",
+    };
+    mockMeetingRows([seed]);
+    select.mockReturnValueOnce({ from: () => ({ where: async () => [{ connectionId: "calendar-b" }] }) });
+    mockCandidateRows([
+      seed,
+      { ...seed, id: "future", connectionId: "calendar-b", externalEventId: "series123_20261208T020000Z" },
+      { ...seed, id: "other", connectionId: "unrelated-calendar" },
+    ]);
+
+    const response = await shareMeetingRequest({ email: "colleague@example.com", includeRelated: true, preview: true });
+    expect(await response.json()).toMatchObject({ shared: false, meetingCount: 2, meetings: [{ id: meetingId }, { id: "future" }] });
+    expect(createMeetingSharePolicy).not.toHaveBeenCalled();
+  });
+
+  it("offers the matching calendar meeting for a separate manual recording without granting access", async () => {
+    getCurrentUser.mockResolvedValue({ email: "manager@example.com" });
+    getWorkspace.mockResolvedValue({ domain: "example.com", teamId: "team_123", userId: "manager" });
+    mockMeetingRows([{ id: meetingId, ownerUserId: "other", attendeeEmails: [],
+      title: "Internal investment strategy", startedAt: new Date("2026-11-24T02:03:00Z") }]);
+    const calendarMeetingId = "22222222-2222-4222-8222-222222222222";
+    select.mockReturnValueOnce({ from: () => ({ innerJoin: () => ({
+      where: () => ({ limit: async () => [{ id: calendarMeetingId }] }),
+    }) }) });
+    const response = await shareMeetingRequest({ email: "colleague@example.com", includeRelated: true, preview: true });
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ calendarMeetingId, preview: true, shared: false });
+    expect(createMeetingSharePolicy).not.toHaveBeenCalled();
+  });
+
   it("rejects related sharing when the meeting has no stable match", async () => {
     getCurrentUser.mockResolvedValue({
       email: "owner@example.com",

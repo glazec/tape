@@ -71,6 +71,20 @@ describe("followup provider", () => {
     expect(recordUsage).not.toHaveBeenCalled();
   });
 
+  it("keeps the long meeting research pass when the other followup sections need a retry", async () => {
+    const segments = Array.from({ length: 20 }, (_, i) => ({ ...source.segments[0], id: `s${i}` }));
+    segments[15].text = "Which operator has the lowest failure rate?";
+    const item = { question: segments[15].text, context: "Alex needs failure data.",
+      evidenceToCollect: "Compare failure rates." };
+    const fetch = setup()
+      .mockResolvedValueOnce(completion({ research: [{...item, refs: ["P16"]}] }))
+      .mockResolvedValueOnce(completion(output))
+      .mockResolvedValueOnce(completion({ todos: [], dynamics: [], research: [] }));
+    const result = await generateMeetingFollowup({ ...source, segments });
+    expect(fetch).toHaveBeenCalledTimes(3);
+    expect(result.research).toEqual([{ ...item, evidence: [{ segmentId: "s15", quote: segments[15].text }] }]);
+  });
+
   it("logs the gateway status without including the provider response", async () => {
     setup()
       .mockResolvedValueOnce(new Response("private provider response", { status: 503 }))
@@ -137,7 +151,7 @@ describe("followup provider", () => {
     expect(request.messages[0].content).toContain(
       "Replace ALL personal and possessive pronouns",
     );
-    expect(JSON.parse(request.messages[1].content)).toEqual({ transcript: source, recentCompanyHints: [] });
+    expect(JSON.parse(request.messages[1].content)).toEqual({ transcript: { ...source, segments: source.segments.map((segment, index) => ({ ...segment, researchRef: `R${index + 1}` })) }, recentCompanyHints: [] });
     expect(recordUsage).toHaveBeenCalledWith(
       expect.objectContaining({
         meetingId: "meeting-id",

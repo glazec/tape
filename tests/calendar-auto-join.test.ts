@@ -609,6 +609,8 @@ describe("calendar auto join", () => {
       teamId: "22222222-2222-4222-8222-222222222222",
     });
     expect(applyMeetingShareRules).toHaveBeenCalledWith({
+      connectionId: expect.any(String),
+      externalEventId: expect.any(String),
       attendeeEmails: ["founder@nascent.xyz", "alice@iosg.vc"],
       meetingId: "44444444-4444-4444-8444-444444444444",
       ownerUserId: "55555555-5555-4555-8555-555555555555",
@@ -4136,6 +4138,8 @@ describe("calendar auto join", () => {
       }),
     );
     expect(applyMeetingShareRules).toHaveBeenCalledWith({
+      connectionId: expect.any(String),
+      externalEventId: expect.any(String),
       attendeeEmails: ["guest.test@gmail.com", "test@iosg.vc"],
       meetingId: "44444444-4444-4444-8444-444444444444",
       ownerUserId: "55555555-5555-4555-8555-555555555555",

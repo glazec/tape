@@ -32,9 +32,11 @@ export function PwaRegistrar() {
     const visualViewport = window.visualViewport;
     const syncKeyboardInset = () => {
       if (!visualViewport) return;
+      document.documentElement.style.setProperty("--tape-visible-height", `${visualViewport.height}px`);
       const inset = Math.max(0, window.innerHeight - visualViewport.height - visualViewport.offsetTop);
       document.documentElement.style.setProperty("--tape-keyboard-inset", `${Math.round(inset)}px`);
     };
+    syncKeyboardInset();
     visualViewport?.addEventListener("resize", syncKeyboardInset);
     visualViewport?.addEventListener("scroll", syncKeyboardInset);
 

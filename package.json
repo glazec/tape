@@ -9,6 +9,7 @@
     "url": "git+https://github.com/glazec/tape.git"
   },
   "scripts": {
+    "eval:research": "node --env-file-if-exists=.env.local --import=tsx scripts/eval-research-coverage.ts",
     "dev": "next dev",
     "setup:check": "node --env-file-if-exists=.env.local scripts/check-deployment-env.mjs",
     "db:migrate": "drizzle-kit migrate --config=drizzle.config.ts",

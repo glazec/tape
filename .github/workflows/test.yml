@@ -74,7 +74,7 @@ jobs:
       - name: Check email sharing and organization suggestions
         env:
           TAPE_SHARING_TEST_DATABASE: postgresql://ci:ci@127.0.0.1:5432/meeting_note
-        run: npx vitest run tests/meeting-share-service.test.ts tests/share-recipient-suggestions.test.ts
+        run: npx vitest run tests/meeting-share-service.test.ts tests/share-recipient-suggestions.test.ts tests/meeting-series-sharing.integration.test.ts
       - name: Check desktop session lifetime migration
         run: psql "$DATABASE_URL" --set ON_ERROR_STOP=1 --file tests/local-recorder-session-lifetime.sql
       - name: Check company calendar consolidation

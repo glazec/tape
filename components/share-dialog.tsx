@@ -54,6 +54,7 @@ type ShareDialogProps = {
 type ShareState = "idle" | "loading" | "success" | "error";
 
 type SharePreview = {
+  meetingId: string;
   email: string;
   meetingCount: number;
   meetings: Array<{ id: string; title: string }>;
@@ -113,7 +114,7 @@ export function MeetingShareButton({
       <Dialog onOpenChange={setOpen} open={open}>
         <DialogContent
           aria-labelledby={`${props.instanceId}-share-title`}
-          className="max-w-md border-0 bg-transparent p-0 shadow-xl"
+          className="max-w-md border-0 bg-transparent p-0 shadow-xl max-sm:max-h-[calc(var(--tape-visible-height,100dvh)-0.5rem)] max-sm:overscroll-contain"
         >
           <ShareDialog {...props} />
           {note ? (
@@ -185,12 +186,12 @@ export function ShareDialog({
     await requestShare(scope === "related", submittedRecipient);
   }
 
-  async function requestShare(previewOnly: boolean, recipientEmail = email) {
+  async function requestShare(previewOnly: boolean, recipientEmail = email, targetId = meetingId): Promise<void> {
     setState("loading");
     setMessage(null);
 
     try {
-      const response = await fetch(`/api/meetings/${encodedMeetingId}/share`, {
+      const response = await fetch(`/api/meetings/${encodeURIComponent(targetId)}/share`, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
@@ -202,11 +203,16 @@ export function ShareDialog({
       const body = (await response.json().catch(() => null)) as {
         email?: string;
         error?: string;
+        calendarMeetingId?: string;
         futureMeetings?: boolean;
         meetingCount?: number;
         meetings?: Array<{ id: string; title: string }>;
         pending?: boolean;
       } | null;
+
+      if (response.ok && previewOnly && targetId === meetingId && body?.calendarMeetingId && body.calendarMeetingId !== meetingId) {
+        return requestShare(true, recipientEmail, body.calendarMeetingId);
+      }
 
       if (!response.ok || !body?.email) {
         captureClientAction("meeting_share_failed");
@@ -218,6 +224,7 @@ export function ShareDialog({
       if (previewOnly) {
         captureClientAction("meeting_share_previewed");
         setPreview({
+          meetingId: targetId,
           email: body.email,
           meetingCount: body.meetingCount ?? 1,
           meetings: body.meetings ?? [],
@@ -226,7 +233,7 @@ export function ShareDialog({
         return;
       }
 
-      const copied = await copyMeetingLink(meetingId);
+      const copied = await copyMeetingLink(targetId);
       setPreview(null);
       captureClientAction("meeting_share_completed");
       setState("success");
@@ -373,7 +380,8 @@ export function ShareDialog({
           <SharePreviewPanel
             busy={state === "loading"}
             onBack={() => setPreview(null)}
-            onConfirm={() => void requestShare(false, preview.email)}
+            calendarSeriesOnly={preview.meetingId !== meetingId}
+            onConfirm={() => void requestShare(false, preview.email, preview.meetingId)}
             preview={preview}
           />
         ) : (
@@ -437,7 +445,7 @@ export function ShareDialog({
                     No matching colleague or group. You can still share with
                     this email.
                   </ComboboxEmpty>
-                  <ComboboxList>
+                  <ComboboxList className="max-sm:max-h-[min(9rem,var(--available-height),calc(var(--tape-visible-height,100dvh)*0.35))]">
                     {(option: ShareRecipientOption) => (
                       <ComboboxItem key={option.value} value={option}>
                         <RecipientOptionIcon kind={option.kind} />
@@ -705,11 +713,13 @@ function RecipientOptionIcon({
 
 function SharePreviewPanel({
   busy,
+  calendarSeriesOnly,
   onBack,
   onConfirm,
   preview,
 }: {
   busy: boolean;
+  calendarSeriesOnly: boolean;
   onBack: () => void;
   onConfirm: () => void;
   preview: SharePreview;
@@ -721,6 +731,7 @@ function SharePreviewPanel({
           Share {preview.meetingCount} meeting{preview.meetingCount === 1 ? "" : "s"}?
         </p>
         <p className="mt-1 text-xs leading-5 text-muted-foreground">
+          {calendarSeriesOnly && "You are sharing the calendar series. This manual recording has separate access. "}
           Future related meetings will also be shared with {preview.email}.
         </p>
       </div>

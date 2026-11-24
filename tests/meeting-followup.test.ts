@@ -63,10 +63,23 @@ describe("compact followup grounding", () => {
     expect(parseMeetingFollowup(JSON.stringify(output), researchSource, { lenient: true })).toEqual({ ...result, research: [research] });
   });
 
-  it("rejects missing research context and too many research questions", () => {
-    for (const items of [[{ ...research, context: "" }], Array(6).fill(research)]) {
-      expect(() => parseMeetingFollowup(JSON.stringify({ ...result, research: items }), researchSource)).toThrow();
-    }
+  it("requires context for every research question", () => {
+    expect(() => parseMeetingFollowup(JSON.stringify({ ...result, research: [{ ...research, context: "" }] }), researchSource)).toThrow();
+  });
+
+  it("keeps more than five grounded research items and resolves exact passage references", () => {
+    const segments = Array.from({length: 7}, (_, i) => ({
+      id: `segment-${i}`, speaker: "Momir", startMs: i, text: `What explains the outcome for cohort ${i}?`,
+    }));
+    const passages = new Map(segments.map((segment, i) =>
+      [`R${i + 1}`, { segmentId: segment.id, quote: segment.text }]));
+    const researchItems = segments.map((segment, i) => ({
+      ...research, question: segment.text, evidence: [{segmentId: `R${i + 1}`, quote: "@source"}],
+    }));
+    const content = JSON.stringify({ todos: [], dynamics: [], research: researchItems });
+    const parsed = parseMeetingFollowup(content, {...source, segments}, {researchPassages: passages});
+    expect(parsed.research.map(item => item.evidence[0])).toEqual([...passages.values()]);
+    expect(() => parseMeetingFollowup(content, {...source, segments})).toThrow();
   });
 
   it("preserves legacy summaries without fabricating research and still invalidates changed sources", () => {

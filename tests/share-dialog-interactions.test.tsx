@@ -131,6 +131,28 @@ describe("ShareDialog interactions", () => {
     expect(navigator.clipboard.writeText).toHaveBeenCalledTimes(1);
   });
 
+  it("previews the matching calendar series in place and confirms only after review", async () => {
+    const email = "guest@example.com";
+    vi.mocked(fetch)
+      .mockResolvedValueOnce(response({ calendarMeetingId: "calendar", shared: false, preview: true }))
+      .mockResolvedValueOnce(response({ email, meetings: [], meetingCount: 3, shared: false, preview: true }))
+      .mockResolvedValueOnce(response({ email, meetingCount: 3, futureMeetings: true }))
+      .mockResolvedValueOnce(response({ shares: [] }));
+    render(<ShareDialog {...props} />);
+    changeRecipient(email);
+    fireEvent.click(screen.getByLabelText("Include past and future related meetings"));
+    fireEvent.click(screen.getByRole("button", { name: "Review share" }));
+    await screen.findByText(/This manual recording has separate access/);
+    expect(vi.mocked(fetch).mock.calls.map(([url, init]) => [url, JSON.parse(String(init?.body)).preview]))
+      .toEqual([["/api/meetings/meeting%2Fone/share", true], ["/api/meetings/calendar/share", true]]);
+    fireEvent.click(screen.getByRole("button", { name: "Confirm" }));
+    await screen.findByRole("status");
+    const [url, init] = vi.mocked(fetch).mock.calls[2];
+    expect(url).toBe("/api/meetings/calendar/share");
+    expect(JSON.parse(String(init?.body))).toEqual({ email, includeRelated: true, preview: false });
+    expect(navigator.clipboard.writeText).toHaveBeenCalledWith(`${window.location.origin}/meetings/calendar`);
+  });
+
   it("allows a recipient draft to be cleared by typing", () => {
     render(<ShareDialog {...props} />);
 
