@@ -14,6 +14,7 @@ struct RecorderMeetingPicker: View {
 
     private static let rowHeight: CGFloat = 34
     private static let headerHeight: CGFloat = 26
+    private static let listHeight: CGFloat = 248
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -63,7 +64,7 @@ struct RecorderMeetingPicker: View {
                 ScrollView {
                     list.padding(.horizontal, 8).padding(.bottom, 6)
                 }
-                .frame(height: listHeight)
+                .frame(height: Self.listHeight)
                 .onChange(of: focus) { _, value in
                     if case .meeting(let id) = value { scroll.scrollTo(id) }
                 }
@@ -312,13 +313,6 @@ struct RecorderMeetingPicker: View {
             Section(kind: .upcoming, title: "Upcoming", meetings: upcoming),
             Section(kind: .earlier, title: "Earlier", meetings: earlier),
         ].filter { !$0.meetings.isEmpty }
-    }
-
-    private var listHeight: CGFloat {
-        if model.meetingChoices.isEmpty { return model.meetingPickerLoadFailed ? Self.rowHeight + 12 : 108 }
-        let rows = CGFloat(model.meetingChoices.count + (model.meetingChoicesHaveMore || model.meetingPickerLoadFailed ? 1 : 0))
-        let content = rows * Self.rowHeight + CGFloat(sections.count) * (Self.headerHeight + 2) + 6
-        return min(max(content, 120), 248)
     }
 
     private var trimmedSearch: String {

@@ -10,11 +10,13 @@ for (const sampleRate of [48_000, 44_100]) test(`AAC preserves duration through 
   try {
     const source = readFileSync(new URL("../Sources/MeetingNoteLocalRecorder/LocalAudioCapture.swift", import.meta.url), "utf8");
     const definitions = source.slice(source.indexOf("enum LocalTrackAudioFormat"), source.indexOf("final class MicrophoneTrackRecorder"))
-      + source.slice(source.indexOf("final class CompressedAudioWriter"), source.indexOf("enum LocalAudioLevelMeter"));
+      + source.slice(source.indexOf("final class SystemAudioTrackRecorder"), source.indexOf("final class CompressedAudioWriter"))
+      + source.slice(source.indexOf("final class CompressedAudioWriter"));
     const probe = `
 import AVFoundation
 import Foundation
-enum LocalRecordingCaptureError: Error { case audioBufferUnavailable, audioFormatUnavailable, writerFailed(String) }
+import ScreenCaptureKit
+enum LocalRecordingCaptureError: Error { case audioBufferUnavailable, audioFormatUnavailable, noDisplayAvailable, writerFailed(String) }
 enum LocalRecorderTelemetry {
     enum Operation { case audioWrite, audioStream }
     static func capture(_ error: Error, operation: Operation) {}
@@ -36,6 +38,12 @@ for url in [computer, microphone] {
     for _ in 0..<100 { writer.write(buffer) }
     try writer.finish()
 }
+let interrupted = directory.appendingPathComponent("interrupted.m4a")
+let recorder = try SystemAudioTrackRecorder(outputURL: interrupted, onAudioLevel: { _ in })
+let stream = SCStream(filter: SCContentFilter(), configuration: SCStreamConfiguration(), delegate: nil)
+recorder.stream(stream, didStopWithError: SCStreamError(.noCaptureSource))
+try recorder.finish()
+
 try LocalTrackSynthesizer.synthesize(computerAudioURL: computer, microphoneAudioURL: microphone, outputURL: mixed)
 for url in [computer, microphone, mixed] {
     let file = try AVAudioFile(forReading: url)

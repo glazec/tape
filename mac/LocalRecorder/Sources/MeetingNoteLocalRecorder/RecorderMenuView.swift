@@ -125,15 +125,6 @@ struct RecorderMenuView: View {
     /// The setup window shares its titlebar row with the settings control;
     /// the menu bar panel has no titlebar and keeps the control beside the status line.
     var showsWindowChrome = false
-    /// The picker and the summary share the panel's top edge, so a crossfade would
-    /// double-expose two layouts. The old page leaves at once; the new one fades in.
-    /// An identity removal would keep the old page on screen for the whole animation,
-    /// so the removal runs its own near-instant fade.
-    private static let pageTransition = AnyTransition.asymmetric(
-        insertion: .opacity,
-        removal: AnyTransition.opacity.animation(.linear(duration: 0.01))
-    )
-
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             if showsWindowChrome {
@@ -150,40 +141,28 @@ struct RecorderMenuView: View {
                 // A start waiting on a window owns the panel until it is chosen or cancelled.
                 RecorderWindowChooser(model: model)
                     .padding(.top, showsWindowChrome ? 0 : 8)
-                    .transition(Self.pageTransition)
             } else if showsMeetingPicker {
                 // A page inside the panel, not a popover: clicking into a popover
                 // makes the menu bar panel resign key and close both.
                 RecorderMeetingPicker(model: model)
                     .padding(.top, showsWindowChrome ? 0 : 8)
-                    .transition(Self.pageTransition)
             } else {
                 summary
                     .padding(.horizontal, 20)
                     .padding(.top, showsWindowChrome ? 8 : 18)
                     .padding(.bottom, 18)
-                    .transition(Self.pageTransition)
             }
 
             if model.isAdvancedExpanded && !showsMeetingPicker && !model.isChoosingWindow {
                 RecorderSettingsView(model: model, isSignedIn: isSignedIn)
-                    .transition(.opacity)
             }
         }
-        // Page swaps fade on the same curve PanelWindowFitter uses for the panel edge,
-        // so the content and the window move together instead of the content snapping
-        // and the edge catching up. Every path that opens or closes them is covered.
-        .animation(PanelWindowFitter.animation, value: showsMeetingPicker)
-        .animation(PanelWindowFitter.animation, value: model.isChoosingWindow)
-        .animation(PanelWindowFitter.animation, value: model.isAdvancedExpanded)
         .frame(width: 340)
         .fixedSize(horizontal: false, vertical: true)
         .onGeometryChange(for: CGFloat.self, of: { $0.size.height }) { height in
             if !showsWindowChrome { panelWindow.fit(contentHeight: height) }
         }
-        // While the panel and the content resize together, keep the content against the
-        // top edge so sections open downward instead of the whole panel shifting. The
-        // setup window sizes itself to the content, so it keeps the fixed height.
+        // Keep the menu bar panel against the top edge as its content changes height.
         .frame(maxHeight: showsWindowChrome ? nil : .infinity, alignment: .top)
         .background(HostingWindowReader { panelWindow.window = $0 })
         .background(TapePalette.paper.ignoresSafeArea())
@@ -787,8 +766,6 @@ final class PanelWindowFitter {
         didSet { if let pendingHeight { fit(contentHeight: pendingHeight) } }
     }
     private var pendingHeight: CGFloat?
-    static let duration: TimeInterval = 0.15
-    static let animation = Animation.easeOut(duration: duration)
 
     func fit(contentHeight: CGFloat) {
         guard let window else { pendingHeight = contentHeight; return }
@@ -799,16 +776,7 @@ final class PanelWindowFitter {
         var frame = window.frame
         frame.origin.y += frame.height - height
         frame.size.height = height
-        guard window.isVisible else {
-            window.setFrame(frame, display: true)
-            return
-        }
-        // Match TapeDisclosureStyle's timing so the panel edge moves with the content.
-        NSAnimationContext.runAnimationGroup { context in
-            context.duration = Self.duration
-            context.timingFunction = CAMediaTimingFunction(name: .easeOut)
-            window.animator().setFrame(frame, display: true)
-        }
+        window.setFrame(frame, display: true)
     }
 }
 
@@ -847,12 +815,12 @@ private struct RecorderSummaryState {
 
 /// The system disclosure only toggles from its small arrow; here the whole label row does.
 struct TapeDisclosureStyle: DisclosureGroupStyle {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
     func makeBody(configuration: Configuration) -> some View {
         VStack(alignment: .leading, spacing: 0) {
             Button {
-                withAnimation(.easeOut(duration: 0.15)) {
-                    configuration.isExpanded.toggle()
-                }
+                configuration.isExpanded.toggle()
             } label: {
                 HStack(spacing: 6) {
                     configuration.label
@@ -861,6 +829,7 @@ struct TapeDisclosureStyle: DisclosureGroupStyle {
                         .font(TapeType.sans(10, .semibold))
                         .foregroundStyle(TapePalette.muted)
                         .rotationEffect(.degrees(configuration.isExpanded ? 90 : 0))
+                        .animation(reduceMotion ? nil : .easeOut(duration: 0.15), value: configuration.isExpanded)
                 }
                 .padding(.vertical, 4)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -871,7 +840,6 @@ struct TapeDisclosureStyle: DisclosureGroupStyle {
 
             if configuration.isExpanded {
                 configuration.content
-                    .transition(.opacity)
             }
         }
     }
@@ -982,6 +950,7 @@ struct DestinationCard: View {
                         .lineLimit(2)
                         .fixedSize(horizontal: false, vertical: true)
                         .contentTransition(.opacity)
+                        .animation(.easeOut(duration: 0.15), value: title)
                     Spacer(minLength: 0)
                     if isInteractive {
                         Image(systemName: "chevron.up.chevron.down")
@@ -1016,7 +985,6 @@ struct DestinationCard: View {
         .allowsHitTesting(isInteractive)
         .accessibilityRemoveTraits(isInteractive ? [] : .isButton)
         .onHover { isHovering = $0 }
-        .animation(.easeOut(duration: 0.15), value: title)
         .help(help)
         .accessibilityLabel("\(caption) \(title)")
         .accessibilityHint(isInteractive ? help : "")
@@ -1067,14 +1035,14 @@ struct RecordingLevelsView: View {
             SourceLevel(title: "Mac sound", level: systemAudioLevel)
             Spacer(minLength: 0)
             TimelineView(.periodic(from: .now, by: 1)) { context in
-                if context.date.timeIntervalSince(lastHeard) > 10 {
-                    Text("No sound yet")
-                        .font(TapeType.sans(11))
-                        .foregroundStyle(TapePalette.ash)
-                        .lineLimit(1)
-                        .fixedSize()
-                        .transition(.opacity)
-                }
+                let isSilent = context.date.timeIntervalSince(lastHeard) > 10
+                Text("No sound yet")
+                    .font(TapeType.sans(11))
+                    .foregroundStyle(TapePalette.ash)
+                    .lineLimit(1)
+                    .fixedSize()
+                    .opacity(isSilent ? 1 : 0)
+                    .accessibilityHidden(!isSilent)
             }
         }
         .onChange(of: max(microphoneLevel, systemAudioLevel)) { _, level in
@@ -1291,7 +1259,6 @@ struct RecorderSettingsView: View {
         .padding(.horizontal, 20)
         .padding(.bottom, 16)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .transition(.opacity)
     }
 
     private var permissionList: some View {

@@ -774,7 +774,9 @@ final class SystemAudioTrackRecorder: NSObject, @unchecked Sendable, SCStreamOut
     func finish() throws { try writer?.finish() }
 
     nonisolated func stream(_ stream: SCStream, didStopWithError error: Error) {
-        writer?.record(error)
+        // ScreenCaptureKit can end the stream when the selected window closes.
+        // Keep the captured audio available for finalization and upload.
+        LocalRecorderTelemetry.capture(error, operation: .audioStream)
     }
 }
 
