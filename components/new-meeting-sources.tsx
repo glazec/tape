@@ -58,7 +58,11 @@ export function NewMeetingSources({
 
   const centerInput = useCallback(() => {
     const input = formRef.current?.querySelector<HTMLElement>(
-      source === "transcript" ? "textarea" : "input:not([type=hidden])",
+      source === "recording"
+        ? "#meeting-audio-browse"
+        : source === "transcript"
+          ? "textarea"
+          : "input:not([type=hidden])",
     );
     input?.scrollIntoView({
       behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches

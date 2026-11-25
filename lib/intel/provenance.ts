@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { getCurrentMeetingFollowup, getCurrentMeetingConnections, getCurrentMeetingConnectionIds } from "@/lib/meeting-followup-source";
-import { intelExtractionSchema, rankingSchema, type IntelMeeting, type IntelCard, type Person, type Evidence, type SearchInput, type Match, type Segment } from "./types";
+import { intelExtractionSchema, rankingSchema, type IntelBrowserCatalog, type IntelMeeting, type IntelCard, type Person, type Evidence, type SearchInput, type Match, type Segment } from "./types";
 
 export function intelSourceHash(meeting: IntelMeeting) {
   // Preserve the original store projection and property order for existing hashes.
@@ -132,10 +132,15 @@ export function validateMatches(value: unknown, input: SearchInput, meetings: In
 }
 
 // Evidence membership is needed only on the server, not by the browsing UI.
-export function browserCatalog(catalog: ReturnType<typeof buildCatalog>) {
+export function browserCatalog(catalog: ReturnType<typeof buildCatalog>, corpus: IntelMeeting[]): IntelBrowserCatalog {
+  const sourceTimes = new Map<string, number | undefined>(catalog.people.map(person => [person.sourceSegmentId, undefined]));
+  for (const meeting of corpus) for (const segment of meeting.segments) {
+    if (sourceTimes.has(segment.id)) sourceTimes.set(segment.id, segment.startMs);
+  }
   return { ...catalog, people: catalog.people.map(person => {
     const { segmentIds, ...visible } = person;
     void segmentIds;
-    return visible;
+    const sourceStartMs = sourceTimes.get(person.sourceSegmentId);
+    return sourceStartMs === undefined ? visible : { ...visible, sourceStartMs };
   }) };
 }

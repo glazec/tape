@@ -1,10 +1,11 @@
 "use client";
 
-import { ChangeEvent, DragEvent, FormEvent, useRef, useState } from "react";
+import { DragEvent, FormEvent, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { AlertCircle, CheckCircle2, UploadCloud } from "lucide-react";
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { RecordingFilePicker } from "@/components/recording-file-picker";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -45,7 +46,6 @@ export function UploadDropzone({ teamId }: { teamId?: string }) {
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [isDragging, setIsDragging] = useState(false);
   const dragDepthRef = useRef(0);
-  const fileInputRef = useRef<HTMLInputElement>(null);
   const selectedDurationPromisesRef = useRef<Promise<number | undefined>[]>([]);
   const [startTime, setStartTime] = useState("");
   const [selection, setSelection] = useState<RecordingImportSelection | null>(
@@ -65,12 +65,8 @@ export function UploadDropzone({ teamId }: { teamId?: string }) {
       ? selectedFiles[0]
       : null;
 
-  function handleFileChange(event: ChangeEvent<HTMLInputElement>) {
-    selectFiles(Array.from(event.currentTarget.files ?? []));
-  }
-
   function selectFiles(files: File[]) {
-    if (state === "uploading") return;
+    if (state === "uploading" || state === "complete") return;
 
     setSelectedFiles(files);
     setSelection(null);
@@ -103,7 +99,6 @@ export function UploadDropzone({ teamId }: { teamId?: string }) {
     dragDepthRef.current = 0;
     setIsDragging(false);
     if (state === "uploading" || event.dataTransfer.files.length === 0) return;
-    if (fileInputRef.current) fileInputRef.current.value = "";
     selectFiles(Array.from(event.dataTransfer.files));
   }
 
@@ -329,48 +324,32 @@ export function UploadDropzone({ teamId }: { teamId?: string }) {
           onDrop={handleDrop}
           className={
             reviewFile && !isDragging
-              ? "flex justify-end"
+              ? "flex flex-col items-end gap-2"
               : `flex flex-col gap-2 rounded-lg border-2 border-dashed p-4 ${isDragging ? "border-primary bg-primary/5" : "border-border"}`
           }
         >
-          <Label
-            htmlFor="meeting-audio"
-            className={reviewFile ? "sr-only" : undefined}
-          >
-            Recording files
-          </Label>
           <p
-            className={reviewFile && !isDragging ? "sr-only" : "text-sm"}
+            className={
+              isDragging ? "text-sm" : "hidden text-sm [@media(hover:hover)]:block"
+            }
             aria-live="polite"
           >
             {isDragging
               ? "Drop recording files here"
-              : "Drag and drop files here, or choose files below."}
+              : reviewFile
+                ? null
+                : "Drag and drop files here, or choose files below."}
           </p>
-          <Input
-            ref={fileInputRef}
-            id="meeting-audio"
-            name="meeting-audio"
-            type="file"
-            multiple
+          <RecordingFilePicker
             accept={uploadMediaAccept}
-            onChange={handleFileChange}
-            disabled={state === "uploading"}
-            className={reviewFile ? "sr-only" : "min-h-11 bg-background"}
-            tabIndex={reviewFile ? -1 : undefined}
-            aria-invalid={state === "error" && !startTimeInvalid}
+            disabled={state === "uploading" || state === "complete"}
+            hasSelection={Boolean(reviewFile)}
+            id="meeting-audio"
+            invalid={state === "error" && !startTimeInvalid}
+            label="Recording files"
+            name="meeting-audio"
+            onSelect={selectFiles}
           />
-          {reviewFile ? (
-            <Button
-              type="button"
-              variant="link"
-              className="min-h-11 px-0"
-              disabled={state === "uploading" || state === "complete"}
-              onClick={() => fileInputRef.current?.click()}
-            >
-              Choose a different file
-            </Button>
-          ) : null}
           <p
             className={reviewFile ? "sr-only" : "text-xs text-muted-foreground"}
           >

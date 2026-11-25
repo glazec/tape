@@ -8,13 +8,15 @@ test("new meeting source choices center their inputs on mobile", async ({ page }
 
   for (const [option, label] of [
     [/Meeting link/, "Meeting link"],
-    [/Recording file/, "Recording files"],
+    [/Recording file/, "Browse recording files"],
     [/Transcript/, "Transcript text"],
     [/Record on phone/, "Meeting title"],
   ] as const) {
     const button = page.getByRole("group", { name: "Meeting source" })
       .getByRole("button", { name: option });
-    const input = page.getByLabel(label, { exact: true });
+    const input = label === "Browse recording files"
+      ? page.getByRole("button", { name: label, exact: true })
+      : page.getByLabel(label, { exact: true });
     // Selecting the active option again should bring its input back into view.
     for (let click = 0; click < 2; click += 1) {
       await button.click();

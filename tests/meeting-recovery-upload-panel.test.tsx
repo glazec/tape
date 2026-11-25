@@ -29,7 +29,10 @@ describe("MeetingRecoveryUploadPanel", () => {
     vi.stubGlobal("fetch", vi.fn());
   });
 
-  afterEach(() => vi.unstubAllGlobals());
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+  });
 
   it("offers a dedicated replacement form without starting upload on file selection", () => {
     render(
@@ -104,7 +107,7 @@ describe("MeetingRecoveryUploadPanel", () => {
     ).toBeTruthy();
   });
 
-  it.each(["picker", "drop"])(
+  it.each(["picker", "drop", "Android Files"])(
     "uploads audio directly via %s and follows the server redirect",
     async (method) => {
       readMediaFileDurationMs.mockResolvedValueOnce(45 * 60 * 1_000);
@@ -120,8 +123,18 @@ describe("MeetingRecoveryUploadPanel", () => {
       render(<MeetingRecoveryUploadPanel meetingId="meeting_123" />);
       fireEvent.click(screen.getByRole("button", { name: "Audio recording" }));
       const file = new File(["audio"], "meeting.mp3", { type: "audio/mpeg" });
-      if (method === "drop") dropFiles("Audio files", [file]);
-      else chooseFile("meeting-recovery-audio", file);
+      if (method === "drop") {
+        dropFiles("Audio files", [file]);
+      } else if (method === "Android Files") {
+        vi.spyOn(window.navigator, "userAgent", "get").mockReturnValue("Android");
+        const showOpenFilePicker = vi.fn().mockResolvedValue([{ getFile: async () => file }]);
+        vi.stubGlobal("showOpenFilePicker", showOpenFilePicker);
+        fireEvent.click(screen.getByRole("button", { name: "Browse recording files" }));
+        expect(await screen.findByText("meeting.mp3")).toBeTruthy();
+        expect(showOpenFilePicker).toHaveBeenCalledWith({ multiple: true });
+      } else {
+        chooseFile("meeting-recovery-audio", file);
+      }
       fireEvent.click(screen.getByRole("button", { name: "Upload audio" }));
 
       expect(

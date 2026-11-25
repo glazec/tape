@@ -14,7 +14,7 @@ export async function GET() {
     const corpus = await loadIntelMeetings(workspace);
     const catalog = buildCatalog(corpus);
     const history = await loadIntelHistory(workspace, corpus, catalog);
-    return Response.json({ catalog: browserCatalog(catalog), history }, { headers: { "Cache-Control": "private, no-store" } });
+    return Response.json({ catalog: browserCatalog(catalog, corpus), history }, { headers: { "Cache-Control": "private, no-store" } });
   } catch (error) {
     if (!(error instanceof IntelCapacityError)) throw error;
     return Response.json({ error: error.message }, { status: 422 });

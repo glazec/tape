@@ -54,6 +54,19 @@ describe("upload media support", () => {
     });
   });
 
+  it("recognizes M4A exported with a generic MIME type while rejecting conflicts", () => {
+    expect(
+      getUploadMediaFromFile(
+        new File(["audio"], "recording.m4a", { type: "application/octet-stream" }),
+      ),
+    ).toEqual({ extension: "m4a", contentType: "audio/mp4", kind: "audio" });
+    expect(
+      getUploadMediaFromFile(
+        new File(["text"], "recording.m4a", { type: "text/plain" }),
+      ),
+    ).toBeNull();
+  });
+
   it("includes M4A in the browser file chooser accept list", () => {
     expect(uploadMediaAccept).toContain("audio/mp4");
     expect(uploadMediaAccept).toContain("audio/x-m4a");
