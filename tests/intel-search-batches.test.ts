@@ -35,10 +35,13 @@ it("refuses to split one identity into misleading partial evidence", () => {
   expect(() => buildSearchBatches(corpus, buildCatalog(corpus), input, source, 1000)).toThrow("history is too large");
 });
 it("keeps evidence membership on the server while preserving browsing metadata", () => {
-  const catalog = buildCatalog([meeting("m")]);
+  const corpus = [meeting("m")];
+  const catalog = buildCatalog(corpus);
   expect(catalog.people[0].segmentIds).toEqual(["m-s"]);
-  expect(browserCatalog(catalog).people[0]).not.toHaveProperty("segmentIds");
-  expect(browserCatalog(catalog).people[0].sourceSegmentId).toBe("m-s");
+  const [person] = browserCatalog(catalog, corpus).people;
+  expect(person).not.toHaveProperty("segmentIds");
+  expect(person.sourceSegmentId).toBe("m-s");
+  expect(person.sourceStartMs).toBe(0);
 });
 it("focuses verification on candidates while retaining their reversals and source context", async () => {
  const { buildVerificationContext } = await import("@/lib/intel/search-batches");

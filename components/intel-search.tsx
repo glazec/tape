@@ -8,6 +8,7 @@ import { connectionRelationshipLabels } from "@/lib/meeting-connections";
 import { Button } from "@/components/ui/button";
 import { NoteDate, notePermalink } from "@/components/person-notes";
 import { Dialog, DialogContent, DialogDescription, DialogTitle, DialogClose } from "@/components/ui/dialog";
+import { personNameKey } from "@/lib/person-names";
 import { cn } from "@/lib/utils";
 import { INTEL_SEARCH_PARALLEL_BATCHES } from "@/lib/intel/limits";
 import { kindLabels, relevanceLabels, type Evidence, type HistoryEntry, type IntelBrowserCatalog as IntelCatalog, type IntelBrowserPerson as Person, type Match, type PersonNoteSource, type SearchInput, type SearchResult } from "@/lib/intel/types";
@@ -26,6 +27,13 @@ function sourceCountLabel(person: Person) {
   const parts = meetings || !notes ? [`${meetings} ${meetings === 1 ? "meeting" : "meetings"}`] : [];
   if (notes) parts.push(`${notes} ${notes === 1 ? "note" : "notes"}`);
   return parts.join(" · ");
+}
+function personGroupKey(person: Person) {
+  const name = personNameKey(person.name) ?? person.name.trim().toLowerCase();
+  return person.kind === "mentioned" && name === "unnamed contact" ? person.id : `${person.kind}:${name}`;
+}
+function personMatchesText(person: Person, query: string) {
+  return `${person.name} ${person.detail}`.toLowerCase().replace(/\s+/g, " ").includes(query);
 }
 function EvidenceList({ evidence }: { evidence: Evidence[] }) {
   return <div className="space-y-4">{evidence.map(e => e.personNote ? <figure key={e.id} className="border-l-2 border-dashed border-border pl-4">
@@ -59,11 +67,11 @@ function estimateLabel(estimate: Estimate) {
 function clock(ms: number) { const s = Math.max(0, Math.floor(ms / 1000)); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`; }
 type Job = { estimate?: Estimate; id: string; status: string; input: SearchInput; completed: number; total: number; result?: SearchResult & { actualUsd?: number }; error?: string; createdAt: string;
   startedAt?: string; batchesDone?: number; stage?: string; partial?: Match[]; actualUsd?: number };
-function MatchCard({ match, onOpen, fresh }: { match: Match; onOpen: (match: Match) => void; fresh?: boolean }) {
+function MatchCard({ match, onOpen, fresh, identity }: { match: Match; onOpen: (match: Match) => void; fresh?: boolean; identity?: Person }) {
   const latest = match.evidence.reduce((source, evidence) => evidence.date > source.date ? evidence : source, match.evidence[0]);
   return <article className={cn("py-6 first:pt-0", fresh && "animate-in fade-in duration-150 motion-reduce:animate-none")}>
     <div className="mb-2 flex items-center gap-2 text-xs text-muted-foreground"><span>{match.score === 0 ? "No clear connection" : match.score !== undefined && match.score < 25 ? "Limited relevance" : relevanceLabels[match.relevance]}</span>{match.score !== undefined && <span title="Relevance score, not a probability">Relevance {match.score}/100</span>}<span aria-hidden="true">·</span><span>{latest.personNote ? <NoteDate value={latest.date} /> : dateLabel(latest.date)}</span></div>
-    <h3 className="text-lg font-medium leading-7"><button type="button" className="text-left underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" onClick={() => onOpen(match)}>{match.title} <ArrowUpRight aria-hidden="true" className="inline size-4" /></button></h3><p className="mt-1 text-xs leading-5 text-muted-foreground">{match.detail}</p>
+    <h3 className="text-lg font-medium leading-7"><button type="button" className="text-left underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" onClick={() => onOpen(match)}>{match.title} <ArrowUpRight aria-hidden="true" className="inline size-4" /></button></h3><p className="mt-1 text-xs leading-5 text-muted-foreground">{identity ? <>{identity.detail} · {identity.sourcePersonNote ? <PersonNoteLabel date={identity.sourceDate} note={identity.sourcePersonNote} /> : <>{dateLabel(identity.sourceDate)}{identity.sourceStartMs !== undefined && ` · ${timestamp(identity.sourceStartMs)}`}</>}</> : match.detail}</p>
     <p className="mt-3 text-sm leading-6">{match.reason}</p>
     {match.caveat && <p className="mt-2 text-sm leading-6 text-muted-foreground">{match.caveat}</p>}
     <details className="mt-4"><summary className="flex min-h-11 w-fit cursor-pointer items-center text-xs font-medium underline underline-offset-4">View evidence · {match.evidence.length} {match.evidence.length === 1 ? "passage" : "passages"}</summary><div className="mt-4"><EvidenceList evidence={match.evidence} />{match.counterEvidence.length > 0 && <div className="mt-5"><p className="mb-3 text-xs font-medium">Changed or conflicting evidence</p><EvidenceList evidence={match.counterEvidence} /></div>}</div></details>
@@ -277,14 +285,37 @@ export function IntelSearch({ historyCacheKey }: { historyCacheKey?: string } = 
     }
   }
   function openMatch(match: Match) {
-    if (match.type === "person") { const candidate = catalog.people.find(p => p.id === match.id); if (candidate) choosePerson(candidate); }
+    if (match.type === "person") { const candidate = peopleById.get(match.id); if (candidate) choosePerson(candidate); }
     else void run({ kind: "intel", id: match.id }, undefined, true);
   }
-  function choosePerson(candidate: Person) { setPerson(candidate); setIdentityIds([candidate.id]); setIdentityQuery(""); }
+  function choosePerson(candidate: Person, preselect = true) { setPerson(candidate); setIdentityIds(preselect ? [candidate.id] : []); setIdentityQuery(""); }
   const filterText = useDeferredValue(text.toLowerCase());
-  const filteredPeople = useMemo(() => catalog.people.filter(p => `${p.name} ${p.detail}`.toLowerCase().includes(filterText)), [catalog.people, filterText]);
+  const { peopleByName, peopleById } = useMemo(() => {
+    const groups = new Map<string, Person[]>();
+    const ids = new Map<string, Person>();
+    for (const candidate of catalog.people) {
+      ids.set(candidate.id, candidate);
+      const key = personGroupKey(candidate);
+      const group = groups.get(key);
+      if (group) group.push(candidate);
+      else groups.set(key, [candidate]);
+    }
+    return { peopleByName: groups, peopleById: ids };
+  }, [catalog.people]);
+  const filteredPeople = useMemo(() => {
+    const query = filterText.trim().replace(/\s+/g, " ");
+    return [...peopleByName.entries()].filter(([, group]) => group.some(candidate => personMatchesText(candidate, query)));
+  }, [peopleByName, filterText]);
   const filteredIntel = useMemo(() => catalog.intel.filter(i => `${i.text} ${i.speaker}`.toLowerCase().includes(filterText)).sort((a,b) => sort === "important" ? Number(b.importance === "high") - Number(a.importance === "high") || b.date.localeCompare(a.date) : b.date.localeCompare(a.date)), [catalog.intel, filterText, sort]);
-  const sameName = person ? catalog.people.filter(p => p.kind === "participant" && (p.name.toLowerCase() === person.name.toLowerCase() || (identityQuery.trim() && `${p.name} ${p.detail}`.toLowerCase().includes(identityQuery.toLowerCase())))) : [];
+  const identityKey = person ? personGroupKey(person) : "";
+  const identityFilter = identityQuery.trim().toLowerCase().replace(/\s+/g, " ");
+  const identityOptions = person ? catalog.people.filter(candidate => personGroupKey(candidate) === identityKey ||
+    (person.kind === "participant" && candidate.kind === "participant" && identityFilter && personMatchesText(candidate, identityFilter))) : [];
+  function ambiguousMatchIdentity(match: Match) {
+    if (match.type !== "person") return;
+    const candidate = peopleById.get(match.id);
+    if (candidate && (peopleByName.get(personGroupKey(candidate))?.length ?? 0) > 1) return candidate;
+  }
   return <div className="flex min-h-[calc(100dvh-9rem)] flex-col md:flex-row md:gap-10 lg:gap-14">
     <aside aria-label="Search history" className="shrink-0 border-b border-border pb-2 md:w-52 md:border-0 md:pb-0 md:pr-6">
       <div className="flex items-center gap-1 md:mb-5">
@@ -371,7 +402,7 @@ export function IntelSearch({ historyCacheKey }: { historyCacheKey?: string } = 
       {!result && job && (running || job.partial?.length) ? <div className="mt-8 max-w-3xl">
         <p className="mb-4 text-xs font-medium tracking-wide text-muted-foreground">{running ? `PRELIMINARY MATCHES · ${job.batchesDone ?? 0} OF ${(job.total || 0) || "?"} BATCHES SCORED` : `MATCHES FOUND BEFORE THE SEARCH STOPPED`}</p>
         <div className="space-y-2">
-          {[...new Map((job.partial ?? []).map(m => [m.id, m])).values()].sort((a, b) => (b.score ?? 0) - (a.score ?? 0)).map(match => <MatchCard key={match.id} match={match} fresh onOpen={openMatch} />)}
+          {[...new Map((job.partial ?? []).map(m => [m.id, m])).values()].sort((a, b) => (b.score ?? 0) - (a.score ?? 0)).map(match => <MatchCard key={match.id} match={match} fresh onOpen={openMatch} identity={ambiguousMatchIdentity(match)} />)}
           {running && !job.partial?.length && <><SkeletonCard /><SkeletonCard /></>}
         </div>
         {running && (job.batchesDone ?? 0) > 0 && !job.partial?.length && <p className="text-sm text-muted-foreground">No scores yet. Still processing the remaining batches.</p>}
@@ -382,7 +413,7 @@ export function IntelSearch({ historyCacheKey }: { historyCacheKey?: string } = 
         {result.historyWarning && <p role="status" className="mb-5 text-sm text-muted-foreground">{result.historyWarning}</p>}
         {result.source.url && <details className="mb-6 text-sm"><summary className="cursor-pointer text-muted-foreground">Content read from the link</summary><a href={result.source.url} target="_blank" rel="noreferrer" className="mt-2 block break-all underline">{result.source.url}</a><p className="mt-2 max-h-48 overflow-auto whitespace-pre-wrap leading-6">{result.source.text}</p></details>}
         {!result.matches.length && <p className="text-sm leading-6 text-muted-foreground">No eligible participants were found in accessible meetings from the past three months.</p>}
-        <div className="space-y-2">{result.matches.map(match => <MatchCard key={match.id} match={match} onOpen={openMatch} />)}</div>
+        <div className="space-y-2">{result.matches.map(match => <MatchCard key={match.id} match={match} onOpen={openMatch} identity={ambiguousMatchIdentity(match)} />)}</div>
       </div>}
       {!result && !busy && catalogState !== "ready" && <div className="mt-9 text-sm text-muted-foreground" role="status">{catalogState === "loading" ? "Loading intel and people…" : <>{catalogState} <button className="underline" onClick={() => { setCatalogState("loading"); setCatalogAttempt(n => n + 1); }}>Reload</button></>}</div>}
       {!result && !busy && catalogState === "ready" && <div className="mt-9">
@@ -402,22 +433,38 @@ export function IntelSearch({ historyCacheKey }: { historyCacheKey?: string } = 
             <details className="mt-3"><summary className="flex min-h-11 w-fit cursor-pointer items-center text-xs text-muted-foreground underline underline-offset-4">View source</summary><div className="mt-3"><EvidenceList evidence={item.evidence} /></div></details>
           </div>)}{!filteredIntel.length && <div className="py-10 text-sm leading-6 text-muted-foreground">{text ? "No intel matches this text. Submit it to find interested people." : catalog.pending ? "Intel will appear as your meetings are processed. You can already search with a person, content, or a link." : "Intel will appear here when meeting transcripts are ready."}</div>}
           {filteredIntel.length > 30 && <p className="py-3 text-xs text-muted-foreground">Showing 30 of {filteredIntel.length}. Type above to narrow the list.</p>}</div>
-          : <div className="space-y-1">{filteredPeople.slice(0,30).map(candidate => <button type="button" key={candidate.id} onClick={() => choosePerson(candidate)} className="flex w-full items-start gap-3 rounded py-4 text-left outline-none hover:bg-muted/50 focus-visible:ring-2 focus-visible:ring-ring">
-            <span className="mt-1 flex size-9 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-medium">{candidate.kind === "mentioned" ? <Users className="size-4" aria-hidden="true" /> : candidate.name.slice(0,2).toUpperCase()}</span>
-            <span className="min-w-0 flex-1"><span className="block text-sm font-medium">{candidate.name}</span><span className="mt-1 line-clamp-2 block text-xs leading-5 text-muted-foreground">{candidate.detail}</span><span className="mt-1 block text-xs text-muted-foreground">{candidate.kind === "mentioned" ? "Mentioned contact" : sourceCountLabel(candidate)}</span></span><ArrowUpRight aria-hidden="true" className="mt-2 size-4 text-muted-foreground" />
-          </button>)}{!filteredPeople.length && <p className="py-10 text-sm text-muted-foreground">No matching people. Try a name or meeting topic.</p>}{filteredPeople.length > 30 && <p className="py-3 text-xs text-muted-foreground">Showing 30 of {filteredPeople.length}. Type above to narrow the list.</p>}</div>}
+          : <div className="space-y-1">{filteredPeople.slice(0,30).map(([key, group]) => {
+            const [candidate] = group;
+            const multiple = group.length > 1;
+            const mentioned = candidate.kind === "mentioned";
+            const context = multiple ? `${group.length} ${mentioned ? "mentions" : "speaker records"}`
+              : mentioned ? "Mentioned contact" : sourceCountLabel(candidate);
+            return <button type="button" key={key} onClick={() => choosePerson(candidate, !multiple)} className="flex w-full items-start gap-3 rounded py-4 text-left outline-none hover:bg-muted/50 focus-visible:ring-2 focus-visible:ring-ring">
+              <span className="mt-1 flex size-9 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-medium">{mentioned ? <Users className="size-4" aria-hidden="true" /> : candidate.name.slice(0,2).toUpperCase()}</span>
+              <span className="min-w-0 flex-1">
+                <span className="block text-sm font-medium">{candidate.name}</span>
+                {!multiple && <span className="mt-1 line-clamp-2 block text-xs leading-5 text-muted-foreground">{candidate.detail}</span>}
+                <span className="mt-1 block text-xs text-muted-foreground">{context}</span>
+              </span>
+              <ArrowUpRight aria-hidden="true" className="mt-2 size-4 text-muted-foreground" />
+            </button>;
+          })}{!filteredPeople.length && <p className="py-10 text-sm text-muted-foreground">No matching people. Try a name or meeting topic.</p>}{filteredPeople.length > 30 && <p className="py-3 text-xs text-muted-foreground">Showing 30 of {filteredPeople.length}. Type above to narrow the list.</p>}</div>}
         </div>
       </div>}
     </section>
     <Dialog open={!!person} onOpenChange={open => { if (!open) setPerson(null); }}>
-      <DialogContent><DialogTitle>Choose the right person</DialogTitle><DialogDescription className="mt-2">{person?.kind === "mentioned" ? `This contact was mentioned in a meeting. Reported relationship: ${connectionRelationshipLabels[person.relationship as keyof typeof connectionRelationshipLabels] ?? "Mentioned only"}.` : "Only combine meeting identities you know belong to this person."}</DialogDescription>
+      <DialogContent><DialogTitle>Choose the right person</DialogTitle><DialogDescription className="mt-2">{person?.kind === "mentioned" ? "Choose the mention you want to search from." : "Only combine speaker records you know belong to the same person."}</DialogDescription>
         {person?.kind === "participant" && <label className="mt-4 block text-xs text-muted-foreground">Find another meeting identity<input value={identityQuery} onChange={e => setIdentityQuery(e.target.value)} placeholder="Name or meeting topic" className="mt-2 w-full rounded-lg border bg-background px-3 py-2 text-sm text-foreground" /></label>}
-        <div className="my-4 max-h-64 space-y-2 overflow-auto">{(person?.kind === "mentioned" ? [person] : sameName).map(candidate => <label key={candidate.id} className="flex cursor-pointer items-start gap-3 rounded-lg border p-3 text-sm">
-          <input type="checkbox" checked={identityIds.includes(candidate.id)} onChange={event => setIdentityIds(ids => event.target.checked ? [...ids, candidate.id] : ids.filter(id => id !== candidate.id))} className="mt-1 accent-[var(--primary)]" />
-          <span><span className="font-medium">{candidate.name}</span><span className="mt-1 block text-xs leading-5 text-muted-foreground">{candidate.detail}</span><span className="mt-1 block text-xs text-muted-foreground">{candidate.sourcePersonNote ? <PersonNoteLabel date={candidate.sourceDate} note={candidate.sourcePersonNote} /> : dateLabel(candidate.sourceDate)}{candidate.kind === "participant" ? ` · ${sourceCountLabel(candidate)}` : ""}</span>{candidate.sourcePersonNote
-            ? <a href={personNoteHref(candidate.sourcePersonNote)} target="_blank" rel="noreferrer" className="mt-2 inline-block text-xs underline underline-offset-4">Open person note</a>
-            : <a href={`/meetings/${candidate.sourceMeetingId}#${candidate.sourceSegmentId}`} target="_blank" rel="noreferrer" className="mt-2 inline-block text-xs underline underline-offset-4">Open source passage</a>}</span>
-        </label>)}</div>
+        <div className="my-4 max-h-64 space-y-2 overflow-auto">{identityOptions.map(candidate => <div key={candidate.id} className="rounded-lg border p-3 text-sm">
+          <label className="flex cursor-pointer items-start gap-3">
+            <input type={candidate.kind === "mentioned" ? "radio" : "checkbox"} name={candidate.kind === "mentioned" ? "intel-mention" : undefined} checked={identityIds.includes(candidate.id)} onChange={event => {
+              const checked = event.target.checked;
+              setIdentityIds(ids => candidate.kind === "mentioned" ? [candidate.id] : checked ? [...ids, candidate.id] : ids.filter(id => id !== candidate.id));
+            }} className="mt-1 accent-[var(--primary)]" />
+            <span><span className="font-medium">{candidate.name}</span><span className="mt-1 block text-xs leading-5 text-muted-foreground">{candidate.detail}</span><span className="mt-1 block text-xs text-muted-foreground">{candidate.sourcePersonNote ? <PersonNoteLabel date={candidate.sourceDate} note={candidate.sourcePersonNote} /> : dateLabel(candidate.sourceDate)}{candidate.kind === "participant" && ` · ${sourceCountLabel(candidate)}`}{candidate.kind === "mentioned" && ` · ${connectionRelationshipLabels[candidate.relationship as keyof typeof connectionRelationshipLabels] ?? "Mentioned contact"}`}</span></span>
+          </label>
+          {candidate.sourcePersonNote ? <a href={personNoteHref(candidate.sourcePersonNote)} target="_blank" rel="noreferrer" className="mt-2 ml-7 inline-block text-xs underline underline-offset-4">Open person note</a> : <a href={`/meetings/${candidate.sourceMeetingId}#${candidate.sourceSegmentId}`} target="_blank" rel="noreferrer" className="mt-2 ml-7 inline-block text-xs underline underline-offset-4">Open source passage{candidate.sourceStartMs !== undefined && ` · ${timestamp(candidate.sourceStartMs)}`}</a>}
+        </div>)}</div>
         <div className="flex justify-end gap-2"><DialogClose className="rounded-lg px-3 py-2 text-sm hover:bg-muted">Cancel</DialogClose><Button disabled={!identityIds.length || identityIds.length > 20} onClick={() => { const input: SearchInput = { kind: "person", ids: identityIds }; setPerson(null); void run(input); }}>Find matches</Button></div>
       </DialogContent>
     </Dialog>

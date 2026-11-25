@@ -55,5 +55,5 @@ export type IntelCatalog = { intel: IntelCard[]; people: Person[]; coverage: str
 export const relevanceLabels = { expressed_interest: "Expressed interest", related_focus: "Related focus", possible_synergy: "Possible synergy" };
 export const kindLabels = { reported_fact: "Reported fact", anecdote: "Anecdote", plan: "Plan", opinion: "Opinion", insight: "AI insight", number: "Number" };
 
-export type IntelBrowserPerson = Omit<Person, "segmentIds">;
+export type IntelBrowserPerson = Omit<Person, "segmentIds"> & { sourceStartMs?: number };
 export type IntelBrowserCatalog = Omit<IntelCatalog, "people"> & { people: IntelBrowserPerson[] };

@@ -151,7 +151,7 @@ export async function readIntelJob(w: WorkspaceContext, id?: string) {
   if (digest !== fingerprint(corpus, catalog, searchInputSchema.parse(row.input), result)) {
     return { ...job, status: "failed", error: "Meeting access or content changed. Run this search again for current matches." };
   }
-  return { ...job, result: { ...result, catalog: browserCatalog(catalog) } };
+  return { ...job, result: { ...result, catalog: browserCatalog(catalog, corpus) } };
 }
 
 export async function markIntelJobInterrupted(w: WorkspaceContext, id: string, error = "Your search was interrupted. Please try again.") {
