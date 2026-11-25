@@ -35,14 +35,30 @@ export const noteMomentSchema = z
   );
 export type NoteMoment = z.infer<typeof noteMomentSchema>;
 
+export const noteImageMaxBytes = 4 * 1024 * 1024;
+export const noteImageSchema = z.strictObject({
+  id: z.uuid(),
+  width: z.number().int().min(25).max(100),
+  aspectRatio: z.number().positive().finite().optional(),
+});
+export type NoteImage = z.infer<typeof noteImageSchema>;
+
 export const noteBlockSchema = z
   .strictObject({
     id: z.string().min(1).max(100),
     text: z.string().max(20_000),
     answer: noteAnswerSchema.optional(),
     moments: z.array(noteMomentSchema).max(500).optional(),
+    image: noteImageSchema.optional(),
   })
   .superRefine((block, context) => {
+    if (block.image && (block.text || block.answer || block.moments?.length)) {
+      context.addIssue({
+        code: "custom",
+        message: "An image must be in its own note block",
+        path: ["image"],
+      });
+    }
     const positions = new Set<number>();
     for (const moment of block.moments ?? []) {
       if (

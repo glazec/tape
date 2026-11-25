@@ -35,12 +35,141 @@ afterEach(() => {
 });
 
 describe("meeting notes editor", () => {
+  it("pastes an image between text, enlarges it, and saves its resized width", async () => {
+    const id = "11111111-1111-4111-8111-111111111111";
+    const fetchMock = vi.mocked(fetch);
+    fetchMock.mockResolvedValueOnce(response("BeforeAfter", 1));
+    const view = await open();
+    let finishUpload!: (response: Response) => void;
+    const image = new File(["image"], "screenshot.png", { type: "image/png" });
+    act(() => editor().focus());
+    editor().setSelectionRange(6, 6);
+    let saved: object;
+    fetchMock.mockImplementation(async (_url, init) => {
+      if (init?.method === "POST") {
+        return new Promise((resolve) => { finishUpload = resolve; });
+      }
+      saved = JSON.parse(init?.body as string);
+      return Response.json({ ...saved, version: 2 });
+    });
+    fireEvent.paste(editor(), {
+      clipboardData: {
+        files: [image],
+        getData: (type: string) => type === "text/html"
+          ? '<img src="https://example.test/screenshot.png" alt="Screenshot">'
+          : "Screenshot",
+      },
+    });
+
+    const thumbnail = await screen.findByRole("button", { name: "Enlarge note image" });
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/meetings/meeting-one/notes/images",
+      expect.objectContaining({ method: "POST", body: image }),
+    );
+    expect(editor().value).toBe("Before");
+    const trailing = screen.getByRole("textbox", { name: "Note 3" }) as HTMLTextAreaElement;
+    expect(document.activeElement).toBe(trailing);
+    expect(trailing.value).toBe("After");
+    expect(within(thumbnail).getByRole("img").getAttribute("src")).toMatch(/^blob:/);
+    fireEvent.change(trailing, { target: { value: "More After" } });
+
+    const handle = screen.getByRole("slider", { name: "Image width" });
+    vi.spyOn(thumbnail.closest("figure")!, "getBoundingClientRect").mockReturnValue({ width: 400 } as DOMRect);
+    Object.defineProperty(handle, "setPointerCapture", { value: vi.fn() });
+    const releasePointer = vi.fn(() => fireEvent.lostPointerCapture(handle, { pointerId: 1 }));
+    Object.defineProperty(handle, "releasePointerCapture", { value: releasePointer });
+    fireEvent.pointerDown(handle, { pointerId: 1, button: 0, clientX: 300 });
+    fireEvent.pointerMove(handle, { pointerId: 1, clientX: 200 });
+    fireEvent.keyDown(handle, { key: "Escape" });
+    expect(releasePointer).toHaveBeenCalledWith(1);
+    expect(thumbnail.parentElement!.style.width).toBe("75%");
+    fireEvent.pointerDown(handle, { pointerId: 1, button: 0, clientX: 300 });
+    fireEvent.pointerMove(handle, { pointerId: 1, clientX: 200 });
+    expect(thumbnail.parentElement!.style.width).toBe("50%");
+    expect(handle.getAttribute("aria-valuenow")).toBe("75");
+    fireEvent.pointerUp(handle, { pointerId: 1, clientX: 200 });
+    expect(handle.getAttribute("aria-valuenow")).toBe("50");
+    fireEvent.keyDown(handle, { key: "ArrowRight" });
+    expect(handle.getAttribute("aria-valuenow")).toBe("55");
+    await act(async () => finishUpload(Response.json({ id }, { status: 201 })));
+
+    fireEvent.click(thumbnail);
+    const dialog = await screen.findByRole("dialog", { name: "Note image" });
+    expect(within(dialog).getByRole("img").getAttribute("src")).toMatch(/^blob:/);
+    fireEvent.click(within(dialog).getByRole("button", { name: "Actual size" }));
+    expect(within(dialog).getByRole("button", { name: "Fit to view" })).toBeTruthy();
+    fireEvent.click(within(dialog).getByRole("button", { name: "Close" }));
+
+    await waitFor(() => expect(saved).toMatchObject({
+      blocks: [
+        { text: "Before" },
+        { text: "", image: { id, width: 55 } },
+        { text: "More After" },
+      ],
+    }));
+    await screen.findByText("Saved");
+    view.unmount();
+    fetchMock.mockResolvedValueOnce(Response.json({ ...saved!, version: 2 }));
+    await open();
+    const loadedImage = screen.getByRole("button", { name: "Enlarge note image" });
+    expect(loadedImage.parentElement!.style.width).toBe("55%");
+    expect(within(loadedImage).getByRole("img").getAttribute("src")).toContain(id);
+    fireEvent.click(screen.getByRole("button", { name: "Remove image" }));
+    expect(screen.queryByRole("button", { name: "Enlarge note image" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Undo" }));
+    expect(screen.getByRole("button", { name: "Enlarge note image" })).toBeTruthy();
+  });
+
+  it("keeps a failed picture visible and can retry without pasting again", async () => {
+    await open();
+    const fetchMock = vi.mocked(fetch);
+    fetchMock.mockRejectedValueOnce(new Error("Network error"));
+    const image = new File(["image"], "screenshot.png", { type: "image/png" });
+    fireEvent.paste(editor(), {
+      clipboardData: {
+        files: [image],
+        getData: (type: string) => type === "text/plain" ? image.name : "",
+      },
+    });
+    expect(screen.getByRole("button", { name: "Enlarge note image" })).toBeTruthy();
+    const retry = await screen.findByRole("button", { name: "Retry upload" });
+    expect(sessionStorage.getItem(key)).toBeNull();
+
+    fetchMock.mockResolvedValueOnce(Response.json({ id: "11111111-1111-4111-8111-111111111111" }, { status: 201 }));
+    fireEvent.click(retry);
+    await waitFor(() => expect(sessionStorage.getItem(key)).toContain("11111111-1111-4111-8111-111111111111"));
+    expect(screen.queryByRole("button", { name: "Retry upload" })).toBeNull();
+  });
+
+  it("resumes autosave when a retry succeeds after sign in", async () => {
+    await open();
+    const fetchMock = vi.mocked(fetch);
+    fetchMock.mockResolvedValueOnce(Response.json({}, { status: 401 }));
+    const image = new File(["image"], "screenshot.png", { type: "image/png" });
+    fireEvent.paste(editor(), { clipboardData: { files: [image] } });
+    await screen.findByText("Sign in again to upload.");
+    expect(screen.getByRole("link", { name: "Sign in" })).toBeTruthy();
+
+    const id = "11111111-1111-4111-8111-111111111111";
+    fetchMock.mockImplementation(async (_url, init) => {
+      if (init?.method === "POST") return Response.json({ id }, { status: 201 });
+      return Response.json({ ...JSON.parse(init?.body as string), version: 1 });
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Retry upload" }));
+    await screen.findByText("Saved");
+    expect(screen.queryByRole("link", { name: "Sign in" })).toBeNull();
+    expect(fetchMock.mock.calls.at(-1)?.[1]).toMatchObject({
+      method: "PUT",
+      body: expect.stringContaining(id),
+    });
+  });
+
   it("pastes a table over a selection, previews it, saves and reloads Markdown", async () => {
     vi.mocked(fetch).mockResolvedValueOnce(response("Replace me", 4));
     const view = await open();
     editor().setSelectionRange(0, 10);
     fireEvent.paste(editor(), {
-      clipboardData: { getData: (type: string) => type === "text/html"
+      clipboardData: { files: [new File(["image"], "table.png", { type: "image/png" })], getData: (type: string) => type === "text/html"
         ? "<table><tr><td>Task</td><td>Owner</td></tr><tr><td>Review</td><td>Alice</td></tr></table>" : "Task\tOwner\nReview\tAlice" },
     });
     const markdown = editor().value;

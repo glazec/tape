@@ -4,6 +4,7 @@ import {
   DeleteObjectCommand,
   PutObjectCommand,
   S3Client,
+  paginateListObjectsV2,
 } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { z } from "zod";
@@ -101,6 +102,11 @@ export function buildMeetingObjectKey(input: MeetingObjectKeyInput) {
   return `teams/${input.teamId}/meetings/${input.meetingId}/assets/${input.assetId}.${input.extension}`;
 }
 
+export function meetingNoteImagesPrefix(meetingId: string) {
+  assertSafeObjectKeySegment(meetingId, "meetingId");
+  return `meetings/${meetingId}/notes/`;
+}
+
 export function buildPendingUploadObjectKey(
   input: PendingUploadObjectKeyInput,
 ) {
@@ -168,6 +174,21 @@ export async function deleteObject(input: DeleteObjectInput) {
       Key: input.key,
     }),
   );
+}
+
+export async function deleteObjectsUnderPrefix(prefix: string) {
+  const client = createR2Client();
+  const { R2_BUCKET: bucket } = parseR2Env(process.env);
+  let count = 0;
+  for await (const page of paginateListObjectsV2(
+    { client, pageSize: 100 },
+    { Bucket: bucket, Prefix: prefix },
+  )) {
+    const keys = (page.Contents ?? []).flatMap(({ Key }) => Key ? [Key] : []);
+    await Promise.all(keys.map((Key) => client.send(new DeleteObjectCommand({ Bucket: bucket, Key }))));
+    count += keys.length;
+  }
+  return count;
 }
 
 export async function putObject(input: PutObjectInput) {

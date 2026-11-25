@@ -2,7 +2,7 @@ import { and, eq } from "drizzle-orm";
 
 import { db } from "@/db/client";
 import { mediaAssets } from "@/db/schema";
-import { deleteObject, parseR2Env } from "@/lib/r2";
+import { deleteObject, deleteObjectsUnderPrefix, meetingNoteImagesPrefix, parseR2Env } from "@/lib/r2";
 
 export async function deleteMeetingMediaObjects(meetingId: string) {
   const env = parseR2Env(process.env);
@@ -16,9 +16,10 @@ export async function deleteMeetingMediaObjects(meetingId: string) {
       ),
     );
 
+  const noteImageCount = await deleteObjectsUnderPrefix(meetingNoteImagesPrefix(meetingId));
   await Promise.all(
     assets.map(({ objectKey }) => deleteObject({ key: objectKey })),
   );
 
-  return { deletedObjectCount: assets.length };
+  return { deletedObjectCount: assets.length + noteImageCount };
 }

@@ -1,7 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-const { deleteObject, select, where } = vi.hoisted(() => ({
+const { deleteObject, deleteObjectsUnderPrefix, select, where } = vi.hoisted(() => ({
   deleteObject: vi.fn(),
+  deleteObjectsUnderPrefix: vi.fn(),
   select: vi.fn(),
   where: vi.fn(),
 }));
@@ -12,8 +13,10 @@ vi.mock("@/db/client", () => ({
   },
 }));
 
-vi.mock("@/lib/r2", () => ({
+vi.mock("@/lib/r2", async (importOriginal) => ({
+  ...await importOriginal<typeof import("@/lib/r2")>(),
   deleteObject,
+  deleteObjectsUnderPrefix,
   parseR2Env: vi.fn(() => ({ R2_BUCKET: "meeting-audio" })),
 }));
 
@@ -32,14 +35,16 @@ describe("meeting media cleanup", () => {
       { objectKey: "meetings/one/frame.jpg" },
     ]);
     deleteObject.mockResolvedValue(undefined);
+    deleteObjectsUnderPrefix.mockResolvedValue(3);
     const { deleteMeetingMediaObjects } = await import(
       "@/lib/meeting-media-cleanup"
     );
 
     await expect(deleteMeetingMediaObjects("meeting_123")).resolves.toEqual({
-      deletedObjectCount: 2,
+      deletedObjectCount: 5,
     });
     expect(deleteObject).toHaveBeenCalledTimes(2);
+    expect(deleteObjectsUnderPrefix).toHaveBeenCalledWith("meetings/meeting_123/notes/");
     expect(deleteObject).toHaveBeenCalledWith({
       key: "meetings/one/audio.mp3",
     });

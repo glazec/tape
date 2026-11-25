@@ -9,6 +9,8 @@ import {
 } from "@/lib/meeting-note-document";
 
 type Note = { content: string; version: number; blocks: NoteBlock[] };
+export type DraftNoteBlock = NoteBlock & { pendingImage?: true };
+const blocksForSave = (blocks: DraftNoteBlock[]) => blocks.filter((block) => !block.pendingImage);
 type Status =
   | "loading"
   | "idle"
@@ -35,7 +37,7 @@ function readNote(note: {
 }
 
 export function useMeetingNote(meetingId: string, userId: string) {
-  const [blocks, setBlocks] = useState<NoteBlock[]>([
+  const [blocks, setBlocks] = useState<DraftNoteBlock[]>([
     { id: "legacy", text: "" },
   ]);
   const [status, setStatus] = useState<Status>("loading");
@@ -47,7 +49,12 @@ export function useMeetingNote(meetingId: string, userId: string) {
     setRequiresSignIn(true);
     setStatus("error");
   }, []);
-  const draft = useRef<NoteBlock[]>([{ id: "legacy", text: "" }]);
+  const restoreSession = useCallback(() => {
+    if (!sessionExpired.current) return;
+    sessionExpired.current = false;
+    setRequiresSignIn(false);
+  }, []);
+  const draft = useRef<DraftNoteBlock[]>([{ id: "legacy", text: "" }]);
   const saved = useRef<Note | null>(null);
   const draftVersion = useRef(0);
   const saving = useRef(false);
@@ -58,12 +65,13 @@ export function useMeetingNote(meetingId: string, userId: string) {
 
   const retainDraft = useCallback(() => {
     try {
-      if (saved.current && !sameBlocks(draft.current, saved.current.blocks)) {
+      const persistable = blocksForSave(draft.current);
+      if (saved.current && !sameBlocks(persistable, saved.current.blocks)) {
         sessionStorage.setItem(
           draftKey,
           JSON.stringify({
-            content: noteContent(draft.current),
-            blocks: draft.current,
+            content: noteContent(persistable),
+            blocks: persistable,
             version: draftVersion.current,
           }),
         );
@@ -134,11 +142,12 @@ export function useMeetingNote(meetingId: string, userId: string) {
     if (!saved.current || saving.current || conflict.current || sessionExpired.current) return;
     saving.current = true;
     try {
-      while (!sessionExpired.current && !sameBlocks(draft.current, saved.current.blocks)) {
+      let persistable = blocksForSave(draft.current);
+      while (!sessionExpired.current && !sameBlocks(persistable, saved.current.blocks)) {
         setStatus("saving");
         const next: Note = {
-          content: noteContent(draft.current),
-          blocks: draft.current,
+          content: noteContent(persistable),
+          blocks: persistable,
           version: saved.current.version,
         };
         const response: Response = await fetch(url, {
@@ -165,6 +174,7 @@ export function useMeetingNote(meetingId: string, userId: string) {
         };
         draftVersion.current = saved.current.version;
         retainDraft();
+        persistable = blocksForSave(draft.current);
       }
       setStatus("saved");
     } catch {
@@ -210,7 +220,7 @@ export function useMeetingNote(meetingId: string, userId: string) {
   }, [save]);
 
   const change = useCallback(
-    (next: NoteBlock[] | ((current: NoteBlock[]) => NoteBlock[])) => {
+    (next: DraftNoteBlock[] | ((current: DraftNoteBlock[]) => DraftNoteBlock[])) => {
       draft.current = typeof next === "function" ? next(draft.current) : next;
       setBlocks(draft.current);
       retainDraft();
@@ -238,5 +248,5 @@ export function useMeetingNote(meetingId: string, userId: string) {
     }
   }
 
-  return { blocks, change, status, loaded, save, reload, retry, requiresSignIn, requireSignIn };
+  return { blocks, change, status, loaded, save, reload, retry, requiresSignIn, requireSignIn, restoreSession };
 }

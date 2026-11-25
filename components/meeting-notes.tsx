@@ -10,6 +10,7 @@ import {
 } from "react";
 import { Check, Copy, LockKeyhole } from "lucide-react";
 import { NoteMarkdown } from "@/components/note-markdown";
+import { MeetingNoteImage } from "@/components/meeting-note-image";
 import { noteClipboardMarkdown } from "@/lib/note-markdown";
 import { Button } from "@/components/ui/button";
 import {
@@ -23,9 +24,12 @@ import {
   MeetingNoteAnswer,
   type NoteTranscript,
 } from "@/components/meeting-note-answer";
-import { useMeetingNote } from "@/components/use-meeting-note";
+import { useMeetingNote, type DraftNoteBlock } from "@/components/use-meeting-note";
 import {
   noteContent,
+  meetingNoteSchema,
+  noteImageMaxBytes,
+  noteImageSchema,
   noteQuestion,
   type NoteAnswer,
   type NoteBlock,
@@ -46,6 +50,33 @@ import {
 } from "@/lib/note-moments";
 
 const emptyMomentSources: NoteMomentSource[] = [];
+type ImagePreview = { url: string; file?: File; error?: string };
+
+async function prepareImage(file: File): Promise<Blob> {
+  if (file.size <= noteImageMaxBytes) return file;
+
+  const bitmap = await createImageBitmap(file);
+  try {
+    const canvas = document.createElement("canvas");
+    const context = canvas.getContext("2d");
+    if (!context) throw new Error("Could not resize the screenshot.");
+    for (const limit of [3200, 2400, 1600]) {
+      const scale = Math.min(1, limit / Math.max(bitmap.width, bitmap.height));
+      canvas.width = Math.max(1, Math.round(bitmap.width * scale));
+      canvas.height = Math.max(1, Math.round(bitmap.height * scale));
+      context.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+      const webp = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/webp", 0.9));
+      if (webp?.type === "image/webp" && webp.size <= noteImageMaxBytes) return webp;
+      if (webp?.type !== "image/webp") {
+        const jpeg = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.9));
+        if (jpeg && jpeg.size <= noteImageMaxBytes) return jpeg;
+      }
+    }
+    throw new Error("Could not fit the image within 4 MB.");
+  } finally {
+    bitmap.close();
+  }
+}
 
 // Enter after a question starts a new writing block. Preserve the exact text.
 function splitAfterQuestions(text: string) {
@@ -85,10 +116,21 @@ export function MeetingNotes({
   userId: string;
   momentSources?: NoteMomentSource[];
 }) {
-  const { blocks, change, status, loaded, save, reload, retry, requiresSignIn, requireSignIn } =
+  const { blocks, change, status, loaded, save, reload, retry, requiresSignIn, requireSignIn, restoreSession } =
     useMeetingNote(meetingId, userId);
   const [preview, setPreview] = useState(false);
   const [pasteError, setPasteError] = useState("");
+  const [imagePreviews, setImagePreviews] = useState<Record<string, ImagePreview>>({});
+  const imageUploads = useRef(new Map<string, AbortController>());
+  const imageUrls = useRef(new Map<string, string>());
+  const [removedImage, setRemovedImage] = useState<{ block: DraftNoteBlock; index: number; beforeId?: string } | null>(null);
+  const clearImagePreviews = useCallback(() => {
+    imageUploads.current.forEach((controller) => controller.abort());
+    imageUploads.current.clear();
+    imageUrls.current.forEach((url) => URL.revokeObjectURL(url));
+    imageUrls.current.clear();
+  }, []);
+  useEffect(() => clearImagePreviews, [clearImagePreviews]);
   const [editingMoments, setEditingMoments] = useState(false);
   const [momentMessage, setMomentMessage] = useState("");
   const lastEditor = useRef<string | null>(null);
@@ -119,11 +161,13 @@ export function MeetingNotes({
   const blocksRef = useRef(blocks);
   const metadataRequest = useRef<AbortController | null>(null);
   const answerUrl = `/api/meetings/${encodeURIComponent(meetingId)}/notes/answer`;
+  const imagesUrl = `/api/meetings/${encodeURIComponent(meetingId)}/notes/images`;
   const content = noteContent(blocks);
   const hasQuestions = blocks.some(
     (block) => noteQuestion(block.text) || block.answer,
   );
   const hasAnswer = blocks.some((block) => block.answer);
+  const firstEditorId = blocks.find((block) => !block.image)?.id;
   const canEnhance = loaded && !requiresSignIn && status !== "conflict" && status !== "error";
   const copyText = blocks
     .map((block) => {
@@ -146,6 +190,8 @@ export function MeetingNotes({
           marker +
           text.slice(moment.start + moment.text.length);
       }
+      if (block.pendingImage) return "";
+      if (block.image) return `![Pasted note image](${imagesUrl}?id=${block.image.id})`;
       return [text, block.answer?.text].filter(Boolean).join("\n");
     })
     .join("\n");
@@ -231,10 +277,10 @@ export function MeetingNotes({
   }, [resizeEditors]);
   useEffect(() => {
     if (copyStatus !== "error") return;
-    const editor = copyFallback.current ?? editors.current.get(blocks[0].id);
+    const editor = copyFallback.current ?? editors.current.get(firstEditorId ?? "");
     editor?.focus();
     editor?.select();
-  }, [blocks, copyStatus]);
+  }, [blocks, copyStatus, firstEditorId]);
 
   const onEditingChange = useCallback((id: string, dirty: boolean) => {
     setAnswerDrafts((previous) => {
@@ -346,6 +392,122 @@ export function MeetingNotes({
     if (JSON.stringify(updated).length > 200_000) return;
     change(updated);
     setCopyStatus("idle");
+  }
+
+  async function uploadImage(blockId: string, file: File, url: string) {
+    if (imageUploads.current.has(blockId)) return;
+    const controller = new AbortController();
+    imageUploads.current.set(blockId, controller);
+    setImagePreviews((current) => ({ ...current, [blockId]: { url, file } }));
+    let errorMessage = file.size > noteImageMaxBytes
+      ? "Could not add this large image."
+      : "Could not upload image.";
+    try {
+      const body = await prepareImage(file);
+      errorMessage = "Could not upload image.";
+      if (controller.signal.aborted) return;
+      const response = await fetch(imagesUrl, { method: "POST", body, signal: controller.signal });
+      if (!response.ok) {
+        if (response.status === 401 && !controller.signal.aborted) {
+          requireSignIn();
+          errorMessage = "Sign in again to upload.";
+        }
+        throw new Error(errorMessage);
+      }
+      const data = await response.json();
+      const image = noteImageSchema.parse({ id: data.id, width: 75 });
+      if (controller.signal.aborted) return;
+      restoreSession();
+      change((current) => current.map((block) => {
+        if (block.id !== blockId || !block.image) return block;
+        return { id: block.id, text: "", image: { ...block.image, id: image.id } };
+      }));
+      setImagePreviews((current) => ({ ...current, [blockId]: { url } }));
+    } catch {
+      if (!controller.signal.aborted) {
+        setImagePreviews((current) => ({ ...current, [blockId]: { url, file, error: errorMessage } }));
+      }
+    } finally {
+      if (imageUploads.current.get(blockId) === controller) imageUploads.current.delete(blockId);
+    }
+  }
+
+  function pasteImages(files: File[], block: NoteBlock, editor: HTMLTextAreaElement) {
+    const supported = files.filter((file) =>
+      ["image/png", "image/jpeg", "image/webp"].includes(file.type),
+    );
+    if (!supported.length) {
+      setPasteError("Paste a PNG, JPEG, or WebP image.");
+      return;
+    }
+    const current = blocksRef.current;
+    const images = supported.map((file) => {
+      const id = crypto.randomUUID();
+      return { file, block: { id, text: "", image: { id, width: 75 } } };
+    });
+    const start = editor.selectionStart;
+    const canSplit = !block.answer && !(block.moments ?? []).some((moment) =>
+      moment.start < start && moment.start + moment.text.length > start);
+    const before = canSplit ? block.text.slice(0, start) : block.text;
+    const after = canSplit ? block.text.slice(start) : "";
+    const hasLeading = Boolean(before || block.answer);
+    const leading = {
+      ...block,
+      text: before,
+      moments: canSplit ? block.moments?.filter((moment) => moment.start + moment.text.length <= start) : block.moments,
+    };
+    const trailing: NoteBlock = {
+      id: hasLeading ? crypto.randomUUID() : block.id,
+      text: after,
+      moments: canSplit ? block.moments?.filter((moment) => moment.start >= start)
+        .map((moment) => ({ ...moment, start: moment.start - start })) : undefined,
+    };
+    const pastedBlocks = images.map(({ block }) => block);
+    const next: DraftNoteBlock[] = current.flatMap((item) => item.id === block.id
+      ? [...(hasLeading ? [leading] : []), ...pastedBlocks, trailing]
+      : [item]);
+    const validationBlocks = next.map((item) =>
+      item.pendingImage ? { id: item.id, text: item.text, image: item.image } : item,
+    );
+    if (!meetingNoteSchema.safeParse({ blocks: validationBlocks, content: noteContent(next), version: 0 }).success) {
+      setPasteError("There is no room for another image in this note.");
+      return;
+    }
+    const pastedIds = new Set(pastedBlocks.map((item) => item.id));
+    pendingFocus.current = { id: trailing.id, position: 0 };
+    change(next.map((item) => pastedIds.has(item.id) ? { ...item, pendingImage: true } : item));
+    for (const { file, block: pasted } of images) {
+      const url = URL.createObjectURL(file);
+      imageUrls.current.set(pasted.id, url);
+      void uploadImage(pasted.id, file, url);
+    }
+  }
+
+  function removeImage(block: DraftNoteBlock, index: number) {
+    const nextEditor = blocks.slice(index + 1).find((item) => !item.image);
+    const previousEditor = blocks.slice(0, index).findLast((item) => !item.image);
+    if (nextEditor) pendingFocus.current = { id: nextEditor.id, position: 0 };
+    else if (previousEditor) {
+      pendingFocus.current = { id: previousEditor.id, position: previousEditor.text.length };
+    }
+    if (block.pendingImage) {
+      imageUploads.current.get(block.id)?.abort();
+      imageUploads.current.delete(block.id);
+      const url = imageUrls.current.get(block.id);
+      if (url) URL.revokeObjectURL(url);
+      imageUrls.current.delete(block.id);
+      setImagePreviews((current) => {
+        const next = { ...current };
+        delete next[block.id];
+        return next;
+      });
+    } else {
+      setRemovedImage({ block, index, beforeId: blocks[index + 1]?.id });
+    }
+    change((current) => {
+      const next = current.filter((item) => item.id !== block.id);
+      return next.length ? next : [{ id: crypto.randomUUID(), text: "" }];
+    });
   }
 
   function captureMoment(id: string, command = false) {
@@ -540,7 +702,8 @@ export function MeetingNotes({
               setPreview(!preview);
               if (preview) {
                 setEditingMoments(true);
-                const id = lastEditor.current ?? blocks[0].id;
+                const id = lastEditor.current ?? firstEditorId;
+                if (!id) return;
                 pendingFocus.current = { id, position: blocks.find((block) => block.id === id)?.text.length ?? 0 };
               } else void save();
             }}
@@ -567,7 +730,8 @@ export function MeetingNotes({
               type="button"
               className="min-h-11 rounded px-2 text-xs text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:min-h-8"
               onClick={() => {
-                const id = lastEditor.current ?? blocks[0].id;
+                const id = lastEditor.current ?? firstEditorId;
+                if (!id) return;
                 setPreview(false);
                 setEditingMoments(true);
                 pendingFocus.current = {
@@ -587,7 +751,11 @@ export function MeetingNotes({
           role="status"
           className="flex min-h-6 min-w-16 shrink-0 items-center justify-end gap-1.5 pl-2 text-xs text-muted-foreground"
         >
-          {answerDrafts.size > 0 ? (
+          {Object.values(imagePreviews).some((image) => image.file && !image.error) ? (
+            "Uploading image…"
+          ) : Object.values(imagePreviews).some((image) => image.error) ? (
+            "Image not saved"
+          ) : answerDrafts.size > 0 ? (
             "Editing answer…"
           ) : status === "loading" ? (
             "Loading…"
@@ -626,7 +794,34 @@ export function MeetingNotes({
             <div className="h-2.5 w-2/3 rounded bg-muted" />
           </div>
         ) : null}
-        {blocks.map((block, index) => (
+        {blocks.map((block, index) => block.image ? (
+          <MeetingNoteImage
+            key={block.id}
+            blockId={block.id}
+            image={block.image}
+            src={imagePreviews[block.id]?.url ?? `${imagesUrl}?id=${block.image.id}`}
+            uploadStatus={block.pendingImage ? imagePreviews[block.id]?.error ?? "Uploading image…" : undefined}
+            onRetry={imagePreviews[block.id]?.error ? () => {
+              const upload = imagePreviews[block.id];
+              if (upload?.file) void uploadImage(block.id, upload.file, upload.url);
+            } : undefined}
+            onMeasure={block.pendingImage || !preview && canEnhance ? (aspectRatio) => {
+              change((current) => current.map((item) =>
+                item.id === block.id && item.image && !item.image.aspectRatio
+                  ? { ...item, image: { ...item.image, aspectRatio } }
+                  : item,
+              ));
+            } : undefined}
+            onResize={!preview ? (width) => {
+              change((current) => current.map((item) =>
+                item.id === block.id && item.image
+                  ? { ...item, image: { ...item.image, width } }
+                  : item,
+              ));
+            } : undefined}
+            onRemove={!preview ? () => removeImage(block, index) : undefined}
+          />
+        ) : (
           <div key={block.id}>
             {preview ? renderMomentText(block, true) : null}
             {!preview && loaded &&
@@ -648,7 +843,7 @@ export function MeetingNotes({
                 if (node) editors.current.set(block.id, node);
                 else editors.current.delete(block.id);
               }}
-              aria-label={index === 0 ? "My notes" : `Note ${index + 1}`}
+              aria-label={block.id === firstEditorId ? "My notes" : `Note ${index + 1}`}
               aria-describedby={privacyId}
               aria-busy={status === "loading"}
               className={`${preview || (loaded && !editingMoments && (parseNoteMoments(block.text).length > 0 || Boolean(block.moments?.length))) ? "hidden" : "block"} max-h-[min(24rem,60dvh)] w-full resize-none border-0 bg-transparent p-0 text-base leading-7 outline-none placeholder:text-muted-foreground disabled:text-muted-foreground ${blocks.length === 1 && !hasQuestions ? "min-h-14 focus:min-h-36" : "min-h-7"}`}
@@ -666,9 +861,26 @@ export function MeetingNotes({
               onPaste={(event) => {
                 pastedCommand.current = block.id;
                 setPasteError("");
+                const images = Array.from(event.clipboardData?.files ?? [])
+                  .filter((file) => file.type.startsWith("image/"));
+                const plain = event.clipboardData?.getData?.("text/plain") ?? "";
+                const html = event.clipboardData?.getData?.("text/html") ?? "";
+                const clipboardBody = images.length && html
+                  ? new DOMParser().parseFromString(html, "text/html").body
+                  : null;
+                const hasImageMarkup = clipboardBody?.querySelector("img") &&
+                  !clipboardBody.querySelector("table") && !clipboardBody.textContent?.trim();
+                const hasText = plain.trim() || clipboardBody?.textContent?.trim();
+                const hasStandaloneFile = !html && images.length === 1 &&
+                  plain.trim() === images[0].name;
+                if (images.length && (hasImageMarkup || hasStandaloneFile || !hasText)) {
+                  event.preventDefault();
+                  pasteImages(images, block, event.currentTarget);
+                  return;
+                }
                 let markdown = noteClipboardMarkdown(
-                  event.clipboardData?.getData("text/html") ?? "",
-                  event.clipboardData?.getData("text/plain") ?? "",
+                  html,
+                  plain,
                 );
                 if (markdown === null) return;
                 event.preventDefault();
@@ -731,6 +943,10 @@ export function MeetingNotes({
                 ) {
                   event.preventDefault();
                   const previous = blocks[index - 1];
+                  if (previous.image) {
+                    document.getElementById(`note-image-${previous.id}`)?.focus();
+                    return;
+                  }
                   if (!previous.answer && !noteQuestion(previous.text)) {
                     pendingFocus.current = {
                       id: previous.id,
@@ -827,6 +1043,20 @@ export function MeetingNotes({
           </button>
         ) : null}
       </div>
+      {removedImage ? (
+        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+          <span role="status">Image removed</span>
+          <Button size="sm" variant="ghost" onClick={() => {
+            change((current) => {
+              const next = [...current];
+              const index = next.findIndex((block) => block.id === removedImage.beforeId);
+              next.splice(index < 0 ? removedImage.index : index, 0, removedImage.block);
+              return next;
+            });
+            setRemovedImage(null);
+          }}>Undo</Button>
+        </div>
+      ) : null}
       {content.length >= 19_000 ? (
         <p
           className="mt-3 text-right text-xs tabular-nums text-muted-foreground"
@@ -895,7 +1125,7 @@ export function MeetingNotes({
               </p>
               {blocks.length > 1 ||
               hasAnswer ||
-              blocks.some((block) => block.moments?.length) ? (
+              blocks.some((block) => block.image || block.moments?.length) ? (
                 <textarea
                   ref={copyFallback}
                   aria-label="Copy your notes"
@@ -941,6 +1171,9 @@ export function MeetingNotes({
                     /* Storage is optional. */
                   }
                 });
+                clearImagePreviews();
+                setImagePreviews({});
+                setRemovedImage(null);
                 reload();
               }}
             >
