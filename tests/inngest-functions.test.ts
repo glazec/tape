@@ -236,6 +236,10 @@ describe("Inngest functions", () => {
         triggers: [{ event: "person/profile.generate" }],
       },
       {
+        id: "generate-person-timeline-on-meeting",
+        triggers: [{ event: "person/profile.generate" }, { event: "person/timeline.generate" }],
+      },
+      {
         id: "send-location-reminder",
         triggers: [{ event: "meeting/send.location-reminder" }],
       },

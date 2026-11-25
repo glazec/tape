@@ -140,6 +140,8 @@ Completed meetings support Replace audio in the meeting actions menu. Uploading 
 
 ### Keep notes about people
 
+Repeat meetings build a dated Person page history of ongoing projects, public topics, preferences and ways to work together. Each update links to a meeting you can open. Use Refresh on the profile to process earlier meetings.
+
 On a Person page, add a shared note about a topic the person follows or something worth remembering. Colleagues with Person page access can read and add notes. Authors can edit or delete their own entries. Intel can suggest that person for a relevant new idea and link back to the dated note, even without a recent meeting.
 
 ### Add a meeting

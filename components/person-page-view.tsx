@@ -13,6 +13,7 @@ import { PersonTodos } from "@/components/person-todos";
 import { formatDuration, initials, workDomain } from "@/lib/person-format";
 import type { PersonColleague, PersonConnection, PersonFollowupItem, PersonPageData } from "@/lib/people";
 import type { PersonNote } from "@/lib/person-notes";
+import type { PersonTimelineTopic } from "@/lib/person-timeline";
 import type { StoredPersonProfile } from "@/lib/person-profile";
 import { summarizeRelationship } from "@/lib/person-relationship";
 
@@ -20,7 +21,7 @@ import { summarizeRelationship } from "@/lib/person-relationship";
  * A person page is shared team knowledge: every colleague sees the same
  * meetings, to dos and profile. Data loading lives in app/people/[personId].
  */
-export function PersonPageView({ data, profile, notes = [], now = new Date() }: { data: PersonPageData; profile: StoredPersonProfile | null; notes?: PersonNote[]; now?: Date }) {
+export function PersonPageView({ data, profile, notes = [], timeline, now = new Date() }: { data: PersonPageData; profile: StoredPersonProfile | null; notes?: PersonNote[]; timeline?: PersonTimelineTopic[]; now?: Date }) {
   const { person, meetings, todos, dynamics, connections, colleagues } = data;
   const relationship = summarizeRelationship(meetings, now);
   const next = meetings.filter(meeting => new Date(meeting.at).getTime() > now.getTime()).at(-1);
@@ -74,7 +75,7 @@ export function PersonPageView({ data, profile, notes = [], now = new Date() }: 
         </section>
       ) : null}
 
-      {person.isTeammate ? null : <PersonProfile key={person.id} initialProfile={profile} personId={person.id} personName={person.name} />}
+      {person.isTeammate ? null : <PersonProfile key={person.id} initialProfile={profile} initialTimeline={timeline} personId={person.id} personName={person.name} />}
 
       {connections.length ? <Connections connections={connections} /> : null}
 

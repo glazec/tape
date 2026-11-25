@@ -1046,6 +1046,18 @@ export const personProfiles = pgTable("person_profiles", {
   generatedAt: timestamp("generated_at", { withTimezone: true }).notNull().defaultNow(),
 }, table => [uniqueIndex("person_profiles_person_unique").on(table.personId)]);
 
+// Meeting-scoped evidence for the longitudinal Person page.
+export const personTimelineEvidence = pgTable("person_timeline_evidence", {
+  personId: uuid("person_id").notNull().references(() => workspacePeople.id, { onDelete: "cascade" }),
+  meetingId: uuid("meeting_id").notNull().references(() => meetings.id, { onDelete: "cascade" }),
+  sourceHash: text("source_hash").notNull(),
+  observations: jsonb("observations").notNull(),
+  extractedAt: timestamp("extracted_at", { withTimezone: true }).notNull(),
+}, table => [
+  uniqueIndex("person_timeline_evidence_person_meeting_unique").on(table.personId, table.meetingId),
+  index("person_timeline_evidence_meeting_index").on(table.meetingId),
+]);
+
 // Notes are shared with internal workspace members who can open the person page.
 export const personNotes = pgTable("person_notes", {
   id: uuid("id").primaryKey().defaultRandom(),

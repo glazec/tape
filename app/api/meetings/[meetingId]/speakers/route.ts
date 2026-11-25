@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { inngest } from "@/inngest/client";
 import { db } from "@/db/client";
 import { meetings } from "@/db/schema";
 import { getCurrentUser } from "@/lib/auth";
@@ -16,6 +17,17 @@ export async function PATCH(request: Request, context: {params: Promise<{meeting
   const workspace = await getOrCreateWorkspaceForSessionUser(user, {meetingId});
   const [meeting] = await db.select({id:meetings.id}).from(meetings).where(getManageableMeetingCondition(workspace,meetingId)).limit(1);
   if (!meeting) return Response.json({error:"Meeting not found"}, {status:404});
-  try { return Response.json(await mutateSpeakerIdentity(meetingId,result.data)); }
+  try {
+    const updated = await mutateSpeakerIdentity(meetingId, result.data);
+    const people = [...new Set(updated.segments.flatMap(segment => segment.personId ? [segment.personId] : []))];
+    if (people.length) {
+      try {
+        await inngest.send(people.map(personId => ({ name: "person/timeline.generate", data: { meetingId, personId } })));
+      } catch (error) {
+        console.error("person_timeline_queue_failed", { meetingId, error: error instanceof Error ? error.message : String(error) });
+      }
+    }
+    return Response.json(updated);
+  }
   catch (error) { const response = speakerIdentityError(error); if (response) return response; throw error; }
 }

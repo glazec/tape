@@ -4,6 +4,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Loader2, RefreshCw } from "lucide-react";
 
 import { AppLabel } from "@/components/app-label";
+import { PersonTimeline } from "@/components/person-timeline";
+import type { PersonTimelineTopic } from "@/lib/person-timeline";
 import { LocalDateTime } from "@/components/local-date-time";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -20,14 +22,19 @@ const expertiseLabels = {
 
 export function PersonProfile({
   initialProfile,
+  initialTimeline = [],
   personId,
   personName,
 }: {
   initialProfile: StoredPersonProfile | null;
+  initialTimeline?: PersonTimelineTopic[];
   personId: string;
   personName: string;
 }) {
   const [stored, setStored] = useState(initialProfile);
+  const [timeline, setTimeline] = useState(initialTimeline);
+  const [timelineRemaining, setTimelineRemaining] = useState(0);
+  const [timelineError, setTimelineError] = useState(false);
   const [status, setStatus] = useState<Status>(initialProfile ? "idle" : "loading");
   const [error, setError] = useState<string | null>(null);
 
@@ -35,10 +42,16 @@ export function PersonProfile({
   const generate = useCallback(async () => {
     setStatus("loading");
     setError(null);
+    setTimelineError(false);
     try {
       const response = await fetch(`/api/people/${encodeURIComponent(personId)}/profile`, { method: "POST" });
-      const body = (await response.json().catch(() => null)) as (ProfileGeneration & { error?: string }) | null;
+      const body = (await response.json().catch(() => null)) as (ProfileGeneration & {
+        error?: string; timeline?: PersonTimelineTopic[]; timelineRemaining?: number; timelineError?: boolean;
+      }) | null;
       if (!response.ok || !body) throw new Error(body?.error ?? "Could not write the profile. Try again.");
+      if (body.timeline) setTimeline(body.timeline);
+      setTimelineRemaining(body.timelineRemaining ?? 0);
+      setTimelineError(body.timelineError ?? false);
       if (body.status === "no_meetings") {
         setStatus("no_meetings");
         return;
@@ -85,11 +98,18 @@ export function PersonProfile({
 
       {stored ? (
         <div className={busy ? "opacity-60 transition-opacity duration-200" : "transition-opacity duration-200"}>
-          <ProfileBody stored={stored} />
+          <ProfileBody stored={stored} showRecentFocus={!timeline.some(topic => topic.category === "project" || topic.category === "focus")} />
         </div>
       ) : status === "loading" ? (
         <ProfileSkeleton name={personName} />
       ) : null}
+      <PersonTimeline topics={timeline} />
+      {timelineRemaining > 0 ? (
+        <p role="status" className="mt-3 text-sm text-muted-foreground">
+          {timelineRemaining} more {timelineRemaining === 1 ? "meeting" : "meetings"} to review. Use Refresh to continue.
+        </p>
+      ) : null}
+      {timelineError ? <p role="alert" className="mt-3 text-sm text-destructive">Could not update meeting insights. Use Refresh to try again.</p> : null}
       {status === "no_meetings" ? (
         <p className="mt-3 max-w-[52ch] text-sm leading-6 text-muted-foreground text-pretty">
           {stored ? "Could not refresh this profile. " : ""}To generate a profile, open a meeting transcript and link {personName} to their speaker label. If the meeting has no transcript yet, upload its recording first.
@@ -113,11 +133,11 @@ function ProfileSkeleton({ name }: { name: string }) {
   );
 }
 
-function ProfileBody({ stored }: { stored: StoredPersonProfile }) {
+function ProfileBody({ stored, showRecentFocus }: { stored: StoredPersonProfile; showRecentFocus: boolean }) {
   const { profile } = stored;
   const groups: Array<{ label: string; items: Profile["background"] }> = [
     { label: "What they do", items: profile.role },
-    { label: "Recent focus", items: profile.recentFocus },
+    { label: "Recent focus", items: showRecentFocus ? profile.recentFocus : [] },
     { label: "Background", items: profile.background },
     { label: "Achievements", items: profile.achievements },
   ];

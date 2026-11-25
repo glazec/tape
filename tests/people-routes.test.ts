@@ -97,7 +97,7 @@ describe("people routes", () => {
   it("writes a profile only for an active person in the viewer's workspace", async () => {
     generate.mockResolvedValue({ status: "no_meetings" });
     execute.mockResolvedValue({ rows: [] });
-    expect(await (await writeProfile(post({}), person)).json()).toEqual({ status: "no_meetings" });
+    expect(await (await writeProfile(post({}), person)).json()).toEqual({ status: "no_meetings", timeline: [], timelineRemaining: 0, timelineError: false });
     expect(generate).toHaveBeenCalledWith({ teamId: id, userId: id }, { id, name: "Dana" });
     limit.mockResolvedValue([]);
     expect((await writeProfile(post({}), person)).status).toBe(404);
