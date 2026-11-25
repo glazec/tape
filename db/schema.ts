@@ -1046,6 +1046,31 @@ export const personProfiles = pgTable("person_profiles", {
   generatedAt: timestamp("generated_at", { withTimezone: true }).notNull().defaultNow(),
 }, table => [uniqueIndex("person_profiles_person_unique").on(table.personId)]);
 
+// Meeting-scoped evidence for the longitudinal Person page.
+export const personTimelineEvidence = pgTable("person_timeline_evidence", {
+  personId: uuid("person_id").notNull().references(() => workspacePeople.id, { onDelete: "cascade" }),
+  meetingId: uuid("meeting_id").notNull().references(() => meetings.id, { onDelete: "cascade" }),
+  sourceHash: text("source_hash").notNull(),
+  observations: jsonb("observations").notNull(),
+  extractedAt: timestamp("extracted_at", { withTimezone: true }).notNull(),
+}, table => [
+  uniqueIndex("person_timeline_evidence_person_meeting_unique").on(table.personId, table.meetingId),
+  index("person_timeline_evidence_meeting_index").on(table.meetingId),
+]);
+
+// Notes are shared with internal workspace members who can open the person page.
+export const personNotes = pgTable("person_notes", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  personId: uuid("person_id").notNull().references(() => workspacePeople.id, { onDelete: "cascade" }),
+  teamId: uuid("team_id").notNull().references(() => teams.id, { onDelete: "cascade" }),
+  authorId: uuid("author_id").references(() => users.id, { onDelete: "set null" }),
+  body: text("body").notNull(),
+  ...timestamps,
+}, table => [
+  index("person_notes_team_person_created_index").on(table.teamId, table.personId, table.createdAt),
+  check("person_notes_body_length_check", sql`char_length(btrim(${table.body})) between 1 and 4000`),
+]);
+
 // Team-wide progress on a followup to do. The key identifies the item within
 // its meeting's followup, so status survives page reloads and other viewers.
 export const followupTodoStates = pgTable("followup_todo_states", {

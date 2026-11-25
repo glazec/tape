@@ -172,6 +172,7 @@ export async function recordOpenRouterCompletionUsage(input: {
   operation?: "chat_completion" | "decisions";
   generationId?: string | null;
   meetingId?: string | null;
+  workspace?: { teamId: string; userId: string };
   metadata?: Record<string, unknown>;
   model?: string | null;
   usage?: OpenRouterUsage | null;
@@ -180,16 +181,15 @@ export async function recordOpenRouterCompletionUsage(input: {
   const meetingId = input.meetingId?.trim();
   const costUsdMicros = dollarsToUsdMicros(input.usage?.costUsd ?? 0);
 
-  if (!generationId || !meetingId || costUsdMicros === 0) {
+  if (!generationId || (!meetingId && !input.workspace) || costUsdMicros === 0) {
     return;
   }
 
-  await recordMeetingProviderUsage({
+  const event = {
     category: input.category,
-    costSource: "provider_reported",
+    costSource: "provider_reported" as const,
     costUsdMicros,
     idempotencyKey: `openrouter:generation:${generationId}`,
-    meetingId,
     metadata: {
       ...input.metadata,
       completionTokens: input.usage?.completionTokens ?? null,
@@ -202,7 +202,14 @@ export async function recordOpenRouterCompletionUsage(input: {
     provider: "openrouter",
     quantity: Math.max(0, Math.round(input.usage?.totalTokens ?? 0)),
     unit: "tokens",
-  });
+  };
+  if (meetingId) {
+    await recordMeetingProviderUsage({ ...event, meetingId });
+  } else if (input.workspace) {
+    await db.insert(providerUsageEvents).values({
+      ...event, teamId: input.workspace.teamId, userId: input.workspace.userId,
+    }).onConflictDoNothing({ target: providerUsageEvents.idempotencyKey });
+  }
 }
 
 async function recordMeetingProviderUsage(input: {

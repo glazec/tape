@@ -6,6 +6,7 @@ import { TranscriptViewer, type TranscriptSegment } from "@/components/transcrip
 import type { PersonPageData } from "@/lib/people";
 import { summarizeColleagues } from "@/lib/person-relationship";
 import type { StoredPersonProfile } from "@/lib/person-profile";
+import type { PersonNote } from "@/lib/person-notes";
 
 // Fictional records for visual review only.
 const now = new Date();
@@ -81,11 +82,38 @@ const segments: TranscriptSegment[] = [
   { id: "c", meetingSpeakerId: "g-c", speakerRevision: 0, personId: null, sourceSpeaker: "Speaker 3", speaker: "Speaker 3", text: "Sorry, joining late.", startMs: 18000, endMs: 20000 },
 ];
 
+const hoursAgo = (hours: number) => new Date(now.getTime() - hours * 3_600_000).toISOString();
+const notes: PersonNote[] = [
+  { id: "n1", body: "Prefers short written updates before calls. Send the agenda the day before.", authorName: "Taylor Chen", createdAt: hoursAgo(3), updatedAt: hoursAgo(3), canEdit: true },
+  { id: "n2", body: "Warm intro came through Riley's former team.\nAsk about the Northline pilot timeline before raising terms.", authorName: "Riley Ng", createdAt: daysAgo(2), updatedAt: daysAgo(1), canEdit: false },
+  { id: "n3", body: "Strong on perception, still building the ops bench. Worth introducing to our logistics portfolio founders.", authorName: "Jordan Park", createdAt: daysAgo(9), updatedAt: daysAgo(9), canEdit: false },
+  { id: "n4", body: "Pricing is per site per month. They are open to a two warehouse pilot at a discount if we help with the intro to Northline's VP Ops.\n\nContext from the pricing review:\nThey quoted three tiers.\nThe middle tier covers 20 robots.\nSupport is included for the first quarter.\nIntegration work is billed separately.\nThey expect a decision by end of month.\nFollow up on SOC 2 status, which they said is in progress with an auditor already selected and fieldwork scheduled.", authorName: "Taylor Chen", createdAt: daysAgo(12), updatedAt: daysAgo(12), canEdit: true },
+  { id: "n5", body: "Met at the robotics dinner. Very responsive on email.", authorName: "Jordan Park", createdAt: daysAgo(40), updatedAt: daysAgo(40), canEdit: false },
+  { id: "n6", body: "First intro call notes are in the Intro meeting.", authorName: "Riley Ng", createdAt: daysAgo(210), updatedAt: daysAgo(210), canEdit: false },
+];
+
 const params = new URLSearchParams(location.search);
 const mode = params.get("profile");
+// ?notes=empty starts with none, ?notes=error fails every change, ?notes=slow holds each save for 2.5 seconds.
+const notesMode = params.get("notes");
 window.fetch = async (input, init) => {
   const url = String(input);
-  await new Promise(resolve => setTimeout(resolve, mode === "slow" ? 2500 : 300));
+  await new Promise(resolve => setTimeout(resolve, mode === "slow" || notesMode === "slow" ? 2500 : 300));
+  const noteMatch = /\/notes(?:\/([^/?]+))?$/.exec(url);
+  if (noteMatch) {
+    if (notesMode === "error") return Response.json({ error: "Could not save the note. Check your connection and try again." }, { status: 503 });
+    if (init?.method === "DELETE") return new Response(null, { status: 204 });
+    const { body } = JSON.parse(String(init?.body ?? "{}")) as { body?: string };
+    const at = new Date().toISOString();
+    if (init?.method === "PATCH") {
+      const existing = notes.find(note => note.id === noteMatch[1])!;
+      return Response.json({ note: { ...existing, body: body!.trim(), updatedAt: at } });
+    }
+    if (init?.method === "POST") {
+      return Response.json({ note: { id: `n${Date.now()}`, body: body!.trim(), authorName: "Taylor Chen", createdAt: at, updatedAt: at, canEdit: true } }, { status: 201 });
+    }
+    return Response.json({ notes });
+  }
   if (url.endsWith("/profile")) {
     if (mode === "error") return Response.json({ error: "Could not write the profile. Try again." }, { status: 502 });
     if (mode === "empty") return Response.json({ status: "no_meetings" });
@@ -112,7 +140,7 @@ function App() {
       {view === "transcript" ? (
         <TranscriptViewer canOpenPeople meetingId="fixture" segments={segments} />
       ) : (
-        <PersonPageView data={params.get("empty") ? { ...data, meetings: [], todos: [], dynamics: [], connections: [], colleagues: [] } : data} profile={mode ? null : profile} />
+        <PersonPageView data={params.get("empty") ? { ...data, meetings: [], todos: [], dynamics: [], connections: [], colleagues: [] } : data} notes={notesMode === "empty" ? [] : notes} profile={mode ? null : profile} />
       )}
     </main>
   );

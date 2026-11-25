@@ -98,7 +98,7 @@ export function buildRecentPeopleBatches(corpus: IntelMeeting[], catalog: IntelC
   const candidates = catalog.people.filter(p => p.kind === "participant" && !selectedPeople.some(s => s.id === p.id)
     && !(sourceAnchor && p.segmentIds.includes(sourceAnchor)));
   const context = corpus.map(m => {
-    const followup = getCurrentMeetingFollowup(m);
+    const followup = m.personNote ? null : getCurrentMeetingFollowup(m);
     const notes = m.notes ?? null;
     // Notes may omit requests or later reversals. Preserve the transcript so
     // every candidate can be evaluated against the actual conversation.

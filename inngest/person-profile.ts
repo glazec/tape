@@ -2,6 +2,7 @@ import { z } from "zod";
 
 import { inngest } from "@/inngest/client";
 import { generatePersonProfileAfterTranscript, listTranscriptProfilePeople } from "@/lib/person-profile";
+import { refreshPersonTimelineAfterMeeting } from "@/lib/person-timeline-store";
 import { ProviderCreditExhaustedError } from "@/lib/provider-credit";
 
 const transcriptSchema = z.object({ meetingId: z.uuid(), transcriptJobId: z.uuid() });
@@ -35,6 +36,23 @@ export const generatePersonProfileOnTranscript = inngest.createFunction({
   return step.run("generate-person-profile", async () => {
     try {
       return await generatePersonProfileAfterTranscript(transcript, personId);
+    } catch (error) {
+      if (error instanceof ProviderCreditExhaustedError) return { status: "credit_exhausted" };
+      throw error;
+    }
+  });
+});
+
+export const generatePersonTimelineOnMeeting = inngest.createFunction({
+  id: "generate-person-timeline-on-meeting",
+  retries: 2,
+  concurrency: [{ limit: 3 }, { limit: 1, key: "event.data.personId" }],
+  triggers: [{ event: profileEvent }, { event: "person/timeline.generate" }],
+}, async ({ event, step }) => {
+  const { meetingId, personId } = z.object({ meetingId: z.uuid(), personId: z.uuid() }).parse(event.data);
+  return step.run("refresh-meeting-evidence", async () => {
+    try {
+      return await refreshPersonTimelineAfterMeeting(meetingId, personId);
     } catch (error) {
       if (error instanceof ProviderCreditExhaustedError) return { status: "credit_exhausted" };
       throw error;

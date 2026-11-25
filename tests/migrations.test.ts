@@ -400,8 +400,11 @@ describe("database migrations", () => {
     });
 
     for (const table of tenantTables) {
-      const policySql =
-        ["workspace_people", "person_emails", "meeting_speakers", "meeting_speaker_changes"].includes(table) ? readFileSync("db/migrations/0070_speaker_person_identity.sql", "utf8") : ["person_names", "person_profiles", "person_merges", "followup_todo_states"].includes(table) ? readFileSync("db/migrations/0071_person_pages.sql", "utf8") : table === "intel_searches" ? readFileSync("db/migrations/0066_intel_search.sql", "utf8") : table === "meeting_parts" ? readFileSync("db/migrations/0060_meeting_continuity.sql", "utf8") : table === "meeting_notes"
+      const policySql = table === "person_timeline_evidence"
+        ? readFileSync("db/migrations/0079_person_timeline_evidence.sql", "utf8")
+        : table === "person_notes"
+        ? readFileSync("db/migrations/0078_person_notes.sql", "utf8")
+        : ["workspace_people", "person_emails", "meeting_speakers", "meeting_speaker_changes"].includes(table) ? readFileSync("db/migrations/0070_speaker_person_identity.sql", "utf8") : ["person_names", "person_profiles", "person_merges", "followup_todo_states"].includes(table) ? readFileSync("db/migrations/0071_person_pages.sql", "utf8") : table === "intel_searches" ? readFileSync("db/migrations/0066_intel_search.sql", "utf8") : table === "meeting_parts" ? readFileSync("db/migrations/0060_meeting_continuity.sql", "utf8") : table === "meeting_notes"
           ? readFileSync("db/migrations/0051_meeting_notes.sql", "utf8")
           : sql;
       expect(

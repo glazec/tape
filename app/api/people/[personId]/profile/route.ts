@@ -5,6 +5,7 @@ import { and, eq, isNull } from "drizzle-orm";
 import { getCurrentUser } from "@/lib/auth";
 import { getPersonWorkspace, isPersonColleague } from "@/lib/people";
 import { generatePersonProfile } from "@/lib/person-profile";
+import { getPersonTimeline, refreshPersonTimeline } from "@/lib/person-timeline-store";
 import { ProviderCreditExhaustedError } from "@/lib/provider-credit";
 
 export const runtime = "nodejs";
@@ -24,7 +25,19 @@ export async function POST(_request: Request, context: { params: Promise<{ perso
     return Response.json({ error: "Profiles are written for people outside the team." }, { status: 400 });
   }
   try {
-    return Response.json(await generatePersonProfile(workspace, person));
+    const [profile, updated] = await Promise.allSettled([
+      generatePersonProfile(workspace, person),
+      refreshPersonTimeline(workspace, person.id),
+    ]);
+    if (profile.status === "rejected") throw profile.reason;
+    if (updated.status === "rejected") console.error("person_timeline_generation_failed", { personId, error: String(updated.reason) });
+    const timeline = await getPersonTimeline(workspace, person.id);
+    return Response.json({
+      ...profile.value,
+      timeline,
+      timelineRemaining: updated.status === "fulfilled" ? updated.value.remaining : 0,
+      timelineError: updated.status === "rejected",
+    });
   } catch (error) {
     if (error instanceof ProviderCreditExhaustedError) {
       return Response.json({ error: "Your workspace has used its AI credit. Ask an admin to raise the limit." }, { status: 402 });

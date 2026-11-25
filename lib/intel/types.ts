@@ -9,18 +9,21 @@ export const intelItemSchema = z.strictObject({
 });
 export const intelExtractionSchema = z.strictObject({ items: z.array(intelItemSchema).max(40) });
 export type IntelItem = z.infer<typeof intelItemSchema>;
-export type Segment = { id: string; speaker: string | null; text: string; startMs: number; sourceSpeaker?: string | null; meetingSpeakerId?: string | null; personId?: string | null; participantEmail?: string | null };
+export type PersonNoteSource = { noteId: string; personId: string; authorName: string };
+export type Segment = { id: string; speaker: string | null; text: string; startMs: number; sourceSpeaker?: string | null; meetingSpeakerId?: string | null; personId?: string | null; participantEmail?: string | null; personNote?: PersonNoteSource };
 export type IntelMeeting = {
   id: string; title: string; date: string; startedAt: string | null;
   status: string; transcriptJobStatus: string | null; attributionRevision?: number;
   followupSource?: { title: string; startedAt: string | null; segments: Segment[] };
   notes?: { content: string; blocks: unknown } | null;
+  personNote?: PersonNoteSource;
+  viewerIsNoteSubject?: boolean;
   segments: Segment[]; aiIntel: unknown; aiFollowup: unknown;
 };
 export type Evidence = Segment & { meetingId: string; meetingTitle: string; date: string };
 export type Person = {
   id: string; name: string; detail: string; kind: "participant" | "mentioned";
-  meetingIds: string[]; segmentIds: string[]; relationship?: string; sourceDate: string; sourceMeetingId: string; sourceSegmentId: string;
+  meetingIds: string[]; sourcePersonNote?: PersonNoteSource; noteCount?: number; segmentIds: string[]; relationship?: string; sourceDate: string; sourceMeetingId: string; sourceSegmentId: string;
 };
 export type IntelCard = IntelItem & { id: string; date: string; speaker: string; evidence: Evidence[] };
 export const searchInputSchema = z.discriminatedUnion("kind", [

@@ -19,9 +19,11 @@ vi.mock("@/lib/provider-credit", async (importOriginal) => ({
 }));
 vi.mock("@/lib/vendors/openrouter", () => ({ createOpenRouterChatCompletion: vi.fn() }));
 
-import { generatePersonProfileOnTranscript, queuePersonProfilesOnTranscript } from "@/inngest/person-profile";
+import { generatePersonProfileOnTranscript, generatePersonTimelineOnMeeting, queuePersonProfilesOnTranscript } from "@/inngest/person-profile";
 import { createOpenRouterChatCompletion } from "@/lib/vendors/openrouter";
+import { getPersonTimeline, refreshPersonTimeline } from "@/lib/person-timeline-store";
 import { getStoredPersonProfile } from "@/lib/person-profile";
+import { createPersonNote, deletePersonNote, listIntelPersonNotes, listPersonNotes, updatePersonNote } from "@/lib/person-notes";
 
 // Opt in with a migrated, disposable localhost database. Fixtures roll back.
 const url = process.env.PERSON_TEST_DATABASE_URL;
@@ -78,6 +80,96 @@ describe.skipIf(!url)("person pages PostgreSQL", () => {
     await db.query("insert into team_memberships(team_id,user_id,role) values($1,$2,'owner'),($1,$3,'member'),($4,$5,'member'),($1,$6,'external')", [team, owner, member, otherTeam, outsider, guest]);
   });
   afterAll(async () => { if (db) { await db.query("ROLLBACK"); await db.end(); } });
+
+  it("updates only changed timeline evidence and observes meeting access and corrected speaker labels", async () => {
+    const person = await newPerson("Timeline Attendee");
+    const first = await meetingWith(["Timeline Attendee"]);
+    const later = await meetingWith(["Timeline Attendee", "Different Speaker"]);
+    await db.query("update meeting_speakers set person_id=$1 where id=any($2::uuid[])", [person, [first.segments[0].meeting_speaker_id, later.segments[0].meeting_speaker_id]]);
+    await db.query("update meetings set started_at='2026-03-01' where id=$1", [first.meeting]);
+    await db.query("update meetings set started_at='2026-04-01' where id=$1", [later.meeting]);
+    await db.query("update transcript_segments set text=$2 where id=$1", [first.segments[0].id, "I am building Harbor"]);
+    await db.query("update transcript_segments set text=$2 where id=$1", [later.segments[0].id, "Harbor has a private beta"]);
+    await db.query("insert into meeting_access(meeting_id,user_id,role,source) values($1,$2,'shared','manual')", [first.meeting, member]);
+    const workspace = (userId: string) => ({ teamId: team, userId, domain: "team.test" });
+    const provider = vi.mocked(createOpenRouterChatCompletion);
+    provider.mockClear().mockImplementation(async input => {
+      const [meeting] = JSON.parse(String(input.messages[1].content));
+      const [segment] = meeting.segments;
+      return JSON.stringify({ meetings: [{ id: meeting.id, observations: [{
+        category: "project", topic: "Harbor", title: "Harbor", fact: segment.text,
+        summary: segment.text, state: "active", segmentIds: [segment.id],
+      }] }] });
+    });
+
+    expect(await as(owner, () => refreshPersonTimeline(workspace(owner), person, first.meeting))).toEqual({ remaining: 0 });
+    expect(await as(owner, () => refreshPersonTimeline(workspace(owner), person, later.meeting))).toEqual({ remaining: 0 });
+    expect(await as(owner, () => refreshPersonTimeline(workspace(owner), person))).toEqual({ remaining: 0 });
+    expect(provider).toHaveBeenCalledTimes(2);
+    expect((await as(owner, () => getPersonTimeline(workspace(owner), person)))[0].current.summary).toBe("Harbor has a private beta");
+    expect((await as(member, () => getPersonTimeline(workspace(member), person)))[0].current.summary).toBe("I am building Harbor");
+    expect(await as(guest, () => getPersonTimeline(workspace(guest), person))).toEqual([]);
+    expect((await as(member, () => db.query("select * from person_timeline_evidence where person_id=$1", [person]))).rows).toHaveLength(1);
+
+    await db.query("update meeting_speakers set person_id=null where id=$1", [later.segments[0].meeting_speaker_id]);
+    expect((await as(owner, () => getPersonTimeline(workspace(owner), person)))[0].current.summary).toBe("I am building Harbor");
+    await db.query("update transcript_segments set text=$2 where id=$1", [first.segments[0].id, "Harbor has launched"]);
+    expect(await as(owner, () => getPersonTimeline(workspace(owner), person))).toEqual([]);
+    await as(owner, () => refreshPersonTimeline(workspace(owner), person));
+    expect(provider).toHaveBeenCalledTimes(3);
+    expect((await as(owner, () => getPersonTimeline(workspace(owner), person)))[0].current.summary).toBe("Harbor has launched");
+    provider.mockReset();
+  });
+
+  it("automatically records project evidence without personal inference for a six speaker meeting", async () => {
+    const person = await newPerson("Large Meeting Attendee");
+    const { meeting, segments } = await meetingWith(["Large Meeting Attendee", "Speaker 2", "Speaker 3", "Speaker 4", "Speaker 5", "Speaker 6"]);
+    await db.query("update meeting_speakers set person_id=$1 where id=$2", [person, segments[0].meeting_speaker_id]);
+    const provider = vi.mocked(createOpenRouterChatCompletion);
+    provider.mockClear().mockImplementation(async input => {
+      const [source] = JSON.parse(String(input.messages[1].content));
+      expect(source.includePersonal).toBe(false);
+      expect(source.segments.map((segment: { id: string }) => segment.id)).toEqual([segments[0].id]);
+      const observation = { topic: "Harbor", title: "Harbor", fact: "beta", summary: "Building Harbor.", state: "active", segmentIds: [segments[0].id] };
+      return JSON.stringify({ meetings: [{ id: meeting, observations: [
+        { ...observation, category: "project" }, { ...observation, category: "preference" }, { ...observation, category: "trust" },
+      ] }] });
+    });
+    const step = { run: async (_id: string, task: () => Promise<unknown>) => task() };
+    const worker = generatePersonTimelineOnMeeting as unknown as {
+      fn: (input: { event: { data: { meetingId: string; personId: string } }; step: typeof step }) => Promise<unknown>;
+    };
+    await as(owner, () => worker.fn({ event: { data: { meetingId: meeting, personId: person } }, step }));
+    expect(provider).toHaveBeenCalledTimes(1);
+    const topics = await as(owner, () => getPersonTimeline({ teamId: team, userId: owner, domain: "team.test" }, person));
+    expect(topics.map(topic => topic.category)).toEqual(["project"]);
+    provider.mockReset();
+  });
+
+  it("shares notes with Person page readers, limits editing to the author, and follows merges", async () => {
+    const lucky = await newPerson("Lucky");
+    const canonical = await newPerson("Lucky Verified");
+    const ownWorkspace = { teamId: team, userId: owner, domain: "team.test" };
+    const peerWorkspace = { ...ownWorkspace, userId: member };
+    const note = await as(owner, () => createPersonNote(ownWorkspace, lucky, "Interested in models that run on a phone."));
+    expect(note).toMatchObject({ body: "Interested in models that run on a phone.", canEdit: true });
+    const noteId = note!.id;
+
+    expect(await as(member, () => listPersonNotes(peerWorkspace, lucky))).toMatchObject([{ id: noteId, canEdit: false }]);
+    expect(await as(guest, () => listPersonNotes({ ...ownWorkspace, userId: guest }, lucky))).toEqual([]);
+    expect(await as(outsider, () => listIntelPersonNotes({ ...ownWorkspace, userId: outsider }))).toEqual([]);
+    expect(await as(member, () => updatePersonNote(peerWorkspace, lucky, noteId, "Someone else's edit"))).toBeNull();
+    expect(await as(member, () => deletePersonNote(peerWorkspace, lucky, noteId))).toBe(false);
+
+    await db.query("update workspace_people set merged_into_id=$2 where id=$1", [lucky, canonical]);
+    expect(await as(owner, () => updatePersonNote(ownWorkspace, canonical, noteId, "Interested in on-device mobile AI.")))
+      .toMatchObject({ id: noteId, body: "Interested in on-device mobile AI." });
+    expect(await as(member, () => listIntelPersonNotes(peerWorkspace))).toContainEqual(expect.objectContaining({
+      id: noteId, personId: canonical, personName: "Lucky Verified", body: "Interested in on-device mobile AI.",
+    }));
+    expect(await as(owner, () => deletePersonNote(ownWorkspace, canonical, noteId))).toBe(true);
+    expect(await as(member, () => listPersonNotes(peerWorkspace, canonical))).toEqual([]);
+  });
 
   it("opens an unlinked speaker as a person without changing meeting attribution", async () => {
     const { meeting, segments } = await meetingWith(["Dana Wu", "Speaker 2"], [{ name: "Dana Wu", email: "dana@acme.test" }]);

@@ -9,6 +9,7 @@ vi.mock("@/lib/intel/verification", () => mocks);
 vi.mock("@/lib/intel/scoring", () => mocks);
 vi.mock("@/lib/provider-credit", () => mocks);
 vi.mock("@/lib/intel/content", () => ({ ...mocks, IntelInputError: class extends Error {} }));
+import { intelPersonNoteSource } from "@/lib/intel/store";
 import { searchIntel } from "@/lib/intel/search";
 import { buildCatalog, intelSourceHash } from "@/lib/intel/provenance";
 import type { IntelMeeting } from "@/lib/intel/types";
@@ -19,6 +20,29 @@ beforeEach(() => { vi.clearAllMocks(); mocks.loadIntelMeetings.mockResolvedValue
  return ({ matches: batch.people.map((p: {id:string; sourceSegmentId:string}) => ({id:p.id,type:"person",score:25,relevance:"related_focus",reason:"Background relevance",caveat:"No direct request",segmentIds:[p.sourceSegmentId],counterEvidenceIds:[]})) });
  }); mocks.verifyIntelClaims.mockResolvedValue([]); mocks.resolveIntelContent.mockResolvedValue({ text: "Actual article content about inference", url: "https://example.com/article" }); });
 describe("Intel matching boundaries", () => {
+ it("ranks a person from an older Person note with no meeting and preserves note provenance", async () => {
+  const note = intelPersonNoteSource({
+    id: "note-1", personId: "lucky", personName: "Lucky", authorName: "Yiping",
+    updatedAt: "2024-01-01T00:00:00Z", body: "Lucky mentioned interest in Liquid AI and models running on mobile devices.",
+  });
+  mocks.loadIntelMeetings.mockResolvedValue([note]);
+  const result = await searchIntel(workspace, { kind: "content", text: "New on-device model running on phones" }, [note]);
+  expect(result.catalog.pending).toBe(0);
+  expect(result.matches).toMatchObject([{ id: "person:lucky", title: "Lucky", evidence: [{
+    text: note.segments[0].text, personNote: { noteId: "note-1", personId: "lucky", authorName: "Yiping" },
+  }] }]);
+  expect(mocks.scoreIntelBatch.mock.calls[0][1]).toEqual({ meetingId: "", searchId: undefined, workspace });
+  mocks.loadIntelMeetings.mockResolvedValue([]);
+  await expect(searchIntel(workspace, { kind: "content", text: "Another mobile model" }, [note])).rejects.toThrow(/content changed/);
+ });
+ it("does not recommend the searching user from a shared note on their own page", async () => {
+  const note = intelPersonNoteSource({
+    id: "self-note", personId: "self", personName: "Me", authorName: "A colleague",
+    updatedAt: "2024-01-01T00:00:00Z", body: "Interested in mobile AI.", viewerIsSubject: true,
+  });
+  expect((await searchIntel(workspace, { kind: "content", text: "mobile AI" }, [note])).matches).toEqual([]);
+  expect(mocks.scoreIntelBatch).not.toHaveBeenCalled();
+ });
  it("identifies a matching timeout without sending search or provider text to telemetry", async () => {
   mocks.scoreIntelBatch.mockRejectedValueOnce(new Error("timeout for confidential query"));
   await expect(searchIntel(workspace, { kind: "content", text: "inference" }, [m])).rejects.toThrow("timeout");
