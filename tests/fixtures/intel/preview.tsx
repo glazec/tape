@@ -2,16 +2,16 @@ import React from "react";
 import { createRoot } from "react-dom/client";
 import { AppShell } from "@/components/app-shell";
 import { IntelSearch } from "@/components/intel-search";
-import type { IntelCatalog, HistoryEntry, Person } from "@/lib/intel/types";
+import type { IntelBrowserCatalog, HistoryEntry, IntelBrowserPerson } from "@/lib/intel/types";
 const evidence = { id: "s1", meetingId: "m1", meetingTitle: "Infrastructure roundtable", date: "2026-11-02T12:00:00Z", speaker: "Alex Chen", text: "We want to work with inference teams who already have enterprise customers. Security approval is what slows us down.", startMs: 432000 };
 const mayaEvidence = { ...evidence, id: "s3", meetingId: "m3", meetingTitle: "Product and distribution", speaker: "Maya Patel", text: "Two of our enterprise pilots stalled in security review. We want partners who can help them reach production." };
-const people: Person[] = [
- { id: "alex", name: "Alex Chen", detail: "Infrastructure roundtable", kind: "participant", meetingIds: ["m1"], segmentIds: ["s1"], sourceDate: evidence.date, sourceMeetingId: "m1", sourceSegmentId: "s1" },
- { id: "alex-other", name: "Alex Chen", detail: "Enterprise AI discussion", kind: "participant", meetingIds: ["m2"], segmentIds: ["s2"], sourceDate: "2026-10-12T12:00:00Z", sourceMeetingId: "m2", sourceSegmentId: "s2" },
- { id: "maya", name: "Maya Patel", detail: "Product and distribution", kind: "participant", meetingIds: ["m3"], segmentIds: ["s3"], sourceDate: evidence.date, sourceMeetingId: "m3", sourceSegmentId: "s3" },
- { id: "contact", name: "Unnamed infrastructure contact", detail: "Mentioned by Alex · Advises teams on enterprise security", kind: "mentioned", relationship: "knows", meetingIds: ["m1"], segmentIds: ["s1"], sourceDate: evidence.date, sourceMeetingId: "m1", sourceSegmentId: "s1" },
+const people: IntelBrowserPerson[] = [
+ { id: "alex", name: "Alex Chen", detail: "Infrastructure roundtable", kind: "participant", meetingIds: ["m1"], sourceDate: evidence.date, sourceMeetingId: "m1", sourceSegmentId: "s1", sourceStartMs: evidence.startMs },
+ { id: "alex-other", name: "Alex Chen", detail: "Enterprise AI discussion", kind: "participant", meetingIds: ["m2"], sourceDate: "2026-10-12T12:00:00Z", sourceMeetingId: "m2", sourceSegmentId: "s2", sourceStartMs: 74000 },
+ { id: "maya", name: "Maya Patel", detail: "Product and distribution", kind: "participant", meetingIds: ["m3"], sourceDate: evidence.date, sourceMeetingId: "m3", sourceSegmentId: "s3" },
+ { id: "contact", name: "Unnamed infrastructure contact", detail: "Mentioned by Alex · Advises teams on enterprise security", kind: "mentioned", relationship: "knows", meetingIds: ["m1"], sourceDate: evidence.date, sourceMeetingId: "m1", sourceSegmentId: "s1" },
 ];
-const catalog: IntelCatalog = { people, pending: 0, coverage: "Fictional fixture: four accessible meetings. No live meeting data.", intel: [
+const catalog: IntelBrowserCatalog = { people, pending: 0, coverage: "Fictional fixture: four accessible meetings. No live meeting data.", intel: [
  { id: "i1", kind: "plan", importance: "high", text: "Alex is looking for inference teams with enterprise customers.", speaker: "Alex Chen", date: evidence.date, evidence: [evidence], speakerSegmentId: "s1", segmentIds: ["s1"] },
  { id: "i2", kind: "anecdote", importance: "high", text: "Two enterprise pilots stalled during security approval, despite strong usage.", speaker: "Maya Patel", date: "2026-10-30T12:00:00Z", evidence: [{ ...evidence, speaker: "Maya Patel", text: "Two of our pilots stalled in security review." }], speakerSegmentId: "s1", segmentIds: ["s1"] },
  { id: "i3", kind: "opinion", importance: "normal", text: "Distribution is becoming a more durable advantage than model performance.", speaker: "Alex Chen", date: "2026-10-28T12:00:00Z", evidence: [evidence], speakerSegmentId: "s1", segmentIds: ["s1"] },
@@ -21,7 +21,7 @@ const history: HistoryEntry[] = [
  ...Array.from({ length: 8 }, (_, i) => ({ id: `repeat-${i}`, savedJob: true, label: "AI infrastructure", input: { kind: "content" as const, text: "AI infrastructure" }, createdAt: `2026-11-07T0${i}:00:00Z` })),
  { id: "h0", label: "Enterprise inference", input: { kind: "content", text: "Enterprise inference" }, createdAt: evidence.date }, { id: "h2", label: "Who is building in Japan?", input: { kind: "content", text: "Who is building in Japan?" }, createdAt: evidence.date }];
 let currentCatalog = catalog;
-const newPerson: Person = { ...people[2], id: "new-person", name: "Jordan Lee", detail: "Newly indexed meeting" };
+const newPerson: IntelBrowserPerson = { ...people[2], id: "new-person", name: "Jordan Lee", detail: "Newly indexed meeting" };
 const newIntel = { ...catalog.intel[0], id: "new-intel", text: "A newly indexed opportunity for enterprise inference." };
 const realFetch = window.fetch.bind(window);
 window.fetch = async (url, init) => {
@@ -31,7 +31,7 @@ window.fetch = async (url, init) => {
  if (init?.method === "DELETE") return Response.json({ cleared: true });
  const input = JSON.parse(String(init?.body));
  if (input.text?.includes("fail")) return Response.json({ error: "Could not read this link. Paste the content to find interested people." }, { status: 422 });
- if (String(url).includes("?estimate=")) return Response.json({ id: crypto.randomUUID(), estimate: { lowUsd: 0.01, highUsd: 0.09 } });
+ if (String(url).includes("?estimate=")) return Response.json({ id: crypto.randomUUID(), estimate: input.id === "i1" ? { lowUsd: 1, highUsd: 1.1 } : { lowUsd: 0.01, highUsd: 0.09 } });
  if (input.text === "newly indexed") currentCatalog = { ...catalog, people: [...people, newPerson], intel: [...catalog.intel, newIntel] };
  const targetPerson = currentCatalog.people.find(p => p.id === "new-person") ?? people[2];
  const targetIntel = currentCatalog.intel.find(i => i.id === "new-intel") ?? catalog.intel[0];

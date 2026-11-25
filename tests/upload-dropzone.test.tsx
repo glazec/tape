@@ -27,7 +27,64 @@ describe("UploadDropzone", () => {
     vi.stubGlobal("fetch", vi.fn());
   });
 
-  afterEach(() => vi.unstubAllGlobals());
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+  });
+
+  it("opens Android Files and keeps a saved recording selected after cancelling a second browse", async () => {
+    vi.spyOn(window.navigator, "userAgent", "get").mockReturnValue("Android");
+    const file = new File(["audio"], "saved-recording.m4a", {
+      lastModified: 0,
+      type: "application/octet-stream",
+    });
+    const showOpenFilePicker = vi.fn()
+      .mockResolvedValueOnce([{ getFile: async () => file }])
+      .mockRejectedValueOnce(new DOMException("Cancelled", "AbortError"));
+    vi.stubGlobal("showOpenFilePicker", showOpenFilePicker);
+    render(<UploadDropzone />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Browse recording files" }));
+    await screen.findByLabelText("Recording preview");
+    expect(showOpenFilePicker).toHaveBeenCalledWith({ multiple: true });
+    const changeFile = screen.getByRole("button", { name: "Choose a different file" });
+    fireEvent.click(changeFile);
+    await waitFor(() => expect((changeFile as HTMLButtonElement).disabled).toBe(false));
+    expect(screen.getByLabelText("Recording preview")).toBeTruthy();
+    expect(screen.queryByText(/use your browser’s picker/)).toBeNull();
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it("offers Android browser browsing after a document picker failure", async () => {
+    vi.spyOn(window.navigator, "userAgent", "get").mockReturnValue("Android");
+    const showOpenFilePicker = vi.fn().mockRejectedValue(new DOMException("Blocked", "SecurityError"));
+    vi.stubGlobal("showOpenFilePicker", showOpenFilePicker);
+    render(<UploadDropzone />);
+    const input = screen.getByLabelText("Recording files");
+    const click = vi.spyOn(input, "click").mockImplementation(() => {});
+    const browse = screen.getByRole("button", { name: "Browse recording files" });
+
+    fireEvent.click(browse);
+    expect(await screen.findByRole("status")).toHaveProperty(
+      "textContent",
+      "Tap the button to use your browser’s picker. If prompted, choose Files.",
+    );
+    expect(click).not.toHaveBeenCalled();
+    fireEvent.click(browse);
+    expect(click).toHaveBeenCalledOnce();
+    expect(input.hasAttribute("accept")).toBe(false);
+    expect(showOpenFilePicker).toHaveBeenCalledOnce();
+  });
+
+  it("preserves desktop browser picker filters", () => {
+    render(<UploadDropzone />);
+    const input = screen.getByLabelText("Recording files");
+    const click = vi.spyOn(input, "click").mockImplementation(() => {});
+    fireEvent.click(screen.getByRole("button", { name: "Browse recording files" }));
+    expect(click).toHaveBeenCalledOnce();
+    expect(input.getAttribute("accept")).toContain(".m4a");
+    expect(input.getAttribute("accept")).toContain("video/mp4");
+  });
 
   it("requires a destination before uploading and previews locally", async () => {
     render(<UploadDropzone />);

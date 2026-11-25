@@ -13,6 +13,7 @@ import { useRouter } from "next/navigation";
 import { AlertCircle, CheckCircle2, FileText, UploadCloud } from "lucide-react";
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { RecordingFilePicker } from "@/components/recording-file-picker";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -73,7 +74,6 @@ export function MeetingRecoveryUploadPanel({
   const audioFormId = useId();
   const transcriptFormId = useId();
   const transcriptFileInputRef = useRef<HTMLInputElement>(null);
-  const audioFileInputRef = useRef<HTMLInputElement>(null);
   const dragDepthRef = useRef(0);
   const [isDragging, setIsDragging] = useState(false);
   const [state, setState] = useState<RecoveryState>("idle");
@@ -93,12 +93,8 @@ export function MeetingRecoveryUploadPanel({
     setSignInRequired(false);
   }
 
-  function handleAudioChange(event: ChangeEvent<HTMLInputElement>) {
-    selectAudioFiles(Array.from(event.currentTarget.files ?? []));
-  }
-
   function selectAudioFiles(files: File[]) {
-    if (isBusy) return;
+    if (isBusy || state === "complete") return;
 
     setAudioFiles(files);
     audioDurationPromisesRef.current = files.map((file) =>
@@ -313,7 +309,6 @@ export function MeetingRecoveryUploadPanel({
       const files = Array.from(event.dataTransfer.files);
       if (isBusy || files.length === 0) return;
       if (source === "audio") {
-        if (audioFileInputRef.current) audioFileInputRef.current.value = "";
         selectAudioFiles(files);
       } else {
         if (files.length > 1) {
@@ -443,22 +438,24 @@ export function MeetingRecoveryUploadPanel({
             onSubmit={handleAudioSubmit}
           >
             <div {...dropAreaProps}>
-              <Label htmlFor={audioInputId}>Audio files</Label>
-              <p className="text-sm" aria-live="polite">
+              <p
+                className={
+                  isDragging ? "text-sm" : "hidden text-sm [@media(hover:hover)]:block"
+                }
+                aria-live="polite"
+              >
                 {isDragging
                   ? "Drop audio files here"
                   : "Drag and drop audio files here, or choose files below."}
               </p>
-              <Input
-                ref={audioFileInputRef}
+              <RecordingFilePicker
                 accept={audioUploadMediaAccept}
-                className="bg-background"
-                disabled={isBusy}
+                disabled={isBusy || state === "complete"}
+                hasSelection={audioFiles.length > 0}
                 id={audioInputId}
+                label="Audio files"
                 name="meeting-recovery-audio"
-                multiple
-                onChange={handleAudioChange}
-                type="file"
+                onSelect={selectAudioFiles}
               />
               <p className="text-xs text-muted-foreground">
                 MP3, M4A, or WebM · 1 GB maximum per file · files play in the

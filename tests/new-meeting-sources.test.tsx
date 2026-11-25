@@ -17,7 +17,12 @@ vi.mock("@/components/meeting-link-form", () => ({
 }));
 
 vi.mock("@/components/upload-dropzone", () => ({
-  UploadDropzone: () => <label>Recording upload form<input aria-label="Recording files" type="file" /></label>,
+  UploadDropzone: () => (
+    <div>
+      Recording upload form
+      <button id="meeting-audio-browse" type="button">Browse recording files</button>
+    </div>
+  ),
 }));
 
 import { NewMeetingSources } from "@/components/new-meeting-sources";
@@ -32,7 +37,7 @@ describe("NewMeetingSources", () => {
 
   it.each([
     [/Meeting link/, "Meeting link"],
-    [/Recording file/, "Recording files"],
+    [/Recording file/, "Browse recording files"],
     [/Transcript/, "Transcript text"],
     [/Record on phone/, "Meeting title"],
   ] as const)("centers the input when selecting %s, including repeated clicks", (option, label) => {
@@ -40,7 +45,9 @@ describe("NewMeetingSources", () => {
     expect(HTMLElement.prototype.scrollIntoView).not.toHaveBeenCalled();
     const button = screen.getByRole("button", { name: option });
     fireEvent.click(button);
-    const input = screen.getByLabelText(label);
+    const input = label === "Browse recording files"
+      ? screen.getByRole("button", { name: label })
+      : screen.getByLabelText(label);
     const scroll = vi.mocked(input.scrollIntoView);
     expect(scroll).toHaveBeenLastCalledWith({ behavior: "smooth", block: "center" });
     expect(scroll.mock.instances.at(-1)).toBe(input);

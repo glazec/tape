@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import { IntelSearch } from "@/components/intel-search";
 const catalog = { people: [], intel: [], pending: 0, coverage: "" };
@@ -44,6 +44,58 @@ it("shows zero relevance without presenting it as an interest probability", asyn
  render(<IntelSearch/>);
  expect(await screen.findByText("Relevance 0/100")).toBeTruthy();
  expect(screen.getByText("1 person ranked")).toBeTruthy();
+});
+
+it("groups duplicate names and searches only the meeting identity chosen", async () => {
+  const people = [
+    { id: "person:alex1", name: "Alex Chen", detail: "Infrastructure roundtable", kind: "participant", meetingIds: ["m"], sourceDate: "2026-11-08T02:00:00Z", sourceMeetingId: "m", sourceSegmentId: "s1", sourceStartMs: 0 },
+    { id: "speaker:alex2", name: "alex  chen", detail: "Infrastructure roundtable", kind: "participant", meetingIds: ["m"], sourceDate: "2026-11-08T02:00:00Z", sourceMeetingId: "m", sourceSegmentId: "s2", sourceStartMs: 74000 },
+  ];
+  const fetch = vi.fn(async (url: string) => {
+    if (url.includes("estimate")) return new Promise<Response>(() => {});
+    return Response.json(url.includes("catalog") ? { catalog: { ...catalog, people }, history: [] } : { job: null });
+  });
+  vi.stubGlobal("fetch", fetch);
+  render(<IntelSearch />);
+  fireEvent.click(await screen.findByRole("tab", { name: "People" }));
+  const rows = within(screen.getByRole("tabpanel")).getAllByRole("button", { name: /Alex Chen/i });
+  expect(rows).toHaveLength(1);
+  expect(rows[0].textContent).toContain("2 speaker records");
+  fireEvent.click(rows[0]);
+  const dialog = within(screen.getByRole("dialog"));
+  const choices = dialog.getAllByRole("checkbox");
+  expect(choices).toHaveLength(2);
+  expect(choices.every(choice => !(choice as HTMLInputElement).checked)).toBe(true);
+  expect(dialog.getByRole("button", { name: "Find matches" })).toHaveProperty("disabled", true);
+  expect(dialog.getByRole("link", { name: /1:14/ }).getAttribute("href")).toBe("/meetings/m#s2");
+  fireEvent.click(choices[1]);
+  fireEvent.click(dialog.getByRole("button", { name: "Find matches" }));
+  expect(fetch).toHaveBeenCalledWith("/api/intel/search?estimate=1", expect.objectContaining({
+    body: JSON.stringify({ kind: "person", ids: ["speaker:alex2"] }),
+  }));
+});
+
+it("shows separate source timestamps for same-name results from one meeting", async () => {
+  const date = "2026-11-08T02:00:00Z";
+  const people = [0, 74000].map((sourceStartMs, index) => ({
+    id: `person:${index}`, name: "Alex Chen", detail: "Roundtable", kind: "participant", meetingIds: ["m"],
+    sourceDate: date, sourceMeetingId: "m", sourceSegmentId: `s${index}`, sourceStartMs,
+  }));
+  const matches = people.map(person => ({
+    id: person.id, type: "person", title: person.name, detail: person.detail, relevance: "related_focus",
+    reason: "Shared interest", caveat: "", segmentIds: [person.sourceSegmentId], counterEvidenceIds: [], counterEvidence: [],
+    evidence: [{ id: person.sourceSegmentId, meetingId: "m", meetingTitle: person.detail, date, speaker: person.name, startMs: person.sourceStartMs, text: "Source" }],
+  }));
+  const resultCatalog = { ...catalog, people };
+  vi.stubGlobal("fetch", vi.fn(async (url: string) => Response.json(url.includes("catalog") ? { catalog: resultCatalog, history: [] } : {
+    job: { id: "job", input: { kind: "content", text: "Inference" }, status: "complete", completed: 1, total: 1,
+      createdAt: date, result: { matches, source: { text: "Inference" }, coverage: "", catalog: resultCatalog } },
+  })));
+  render(<IntelSearch />);
+  await screen.findByText("2 people ranked");
+  const cards = screen.getAllByRole("article");
+  expect(cards[0].textContent).toContain("Roundtable · Nov 8, 2026 · 0:00");
+  expect(cards[1].textContent).toContain("Roundtable · Nov 8, 2026 · 1:14");
 });
 
 function memoryStorage() {

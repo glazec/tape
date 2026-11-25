@@ -74,7 +74,7 @@ export function getUploadMediaFromFile(file: File) {
 
   const contentType = normalizeContentType(file.type);
 
-  if (!contentType) {
+  if (!contentType || contentType === "application/octet-stream") {
     return candidates[0];
   }
 
