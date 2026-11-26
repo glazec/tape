@@ -53,6 +53,10 @@ jobs:
         run: |
           psql "$DATABASE_URL" --set ON_ERROR_STOP=1 --command 'CREATE DATABASE tape_workflow_test'
           npx vitest run tests/local-recorder-targets.integration.test.ts tests/upload-recording-import.integration.test.ts tests/recording-timeline.integration.test.ts
+      - name: Check seeded migration upgrade and repeat deployment
+        run: |
+          psql "$DATABASE_URL" --set ON_ERROR_STOP=1 --command 'CREATE DATABASE tape_upgrade_test'
+          DATABASE_URL=postgresql://ci:ci@127.0.0.1:5432/tape_upgrade_test node scripts/test-migration-upgrade.mjs
       - name: Replay every migration on an empty database
         shell: bash
         run: |
