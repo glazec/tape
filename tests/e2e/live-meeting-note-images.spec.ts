@@ -6,9 +6,8 @@ const readerState = process.env.TAPE_SMOKE_READER_STATE;
 const png = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGNgYPgPAAEDAQAIicLsAAAAAElFTkSuQmCC";
 
 test("a private note image survives reload and stays private in storage", async ({ browser, baseURL }) => {
-  test.skip(!meetingId, "Requires a disposable shared meeting.");
-  if (!process.env.PLAYWRIGHT_BASE_URL || !ownerState || !readerState || ownerState === readerState) {
-    throw new Error("Provide a deployed base URL and separate owner and shared reader session files.");
+  if (!meetingId || !process.env.PLAYWRIGHT_BASE_URL || !ownerState || !readerState || ownerState === readerState) {
+    throw new Error("Provide a disposable shared meeting, a deployed base URL, and separate owner and reader session files.");
   }
 
   const owner = await browser.newContext({ baseURL, storageState: ownerState });

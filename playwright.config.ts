@@ -49,7 +49,11 @@ export default defineConfig({
   projects: [
     {
       name: "chromium",
-      testIgnore: [/auth\.setup\.ts/, /authenticated-.*\.spec\.ts/],
+      testIgnore: [
+        /auth\.setup\.ts/,
+        /authenticated-.*\.spec\.ts/,
+        ...(!process.env.TAPE_SMOKE_MEETING_ID ? [/live-meeting-note-images\.spec\.ts/] : []),
+      ],
       use: { ...devices["Desktop Chrome"] },
     },
     ...(authenticatedE2EEnabled
