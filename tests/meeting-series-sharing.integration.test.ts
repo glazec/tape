@@ -43,14 +43,14 @@ it.skipIf(!database)(
         [team, owner, recipient],
       );
       await client.query(
-        "insert into calendar_connections (id,team_id,user_id,external_calendar_id) values ($1,$2,$3,'primary')",
+        "insert into calendar_connections (id,team_id,user_id,external_calendar_id,account_email) values ($1,$2,$3,'primary','owner@second-calendar.test')",
         [calendar, team, owner],
       );
       async function occurrence(id: string, series: string, day: string) {
         const event = randomUUID();
         const start = `2026-11-${day}T02:00:00Z`;
         await client.query(
-          "insert into calendar_events (id,team_id,connection_id,title,starts_at,external_event_id) values ($1,$2,$3,$4,$5,$6)",
+          "insert into calendar_events (id,team_id,connection_id,title,starts_at,external_event_id,attendee_emails) values ($1,$2,$3,$4,$5,$6,$7)",
           [
             event,
             team,
@@ -58,6 +58,7 @@ it.skipIf(!database)(
             title,
             start,
             `${series}_202611${day}T020000Z`,
+            JSON.stringify(["owner@second-calendar.test", "colleague@second-calendar.test"]),
           ],
         );
         await client.query(
@@ -86,6 +87,7 @@ it.skipIf(!database)(
       }
       vi.doMock("@/db/client", () => ({
         db: drizzle(client),
+        privilegedDb: drizzle(client),
         databaseSql: {
           async transaction(
             build: (tag: typeof query) => ReturnType<typeof query>[],
@@ -152,6 +154,7 @@ it.skipIf(!database)(
           meetingCount: 2,
         });
       }
+      await reconcileMeetingSharingForMeeting(unrelated);
       expect(await grants()).toEqual([past, seed].sort());
       // Independently sharing one meeting must survive a later series refresh.
       expect(await share(unrelated, false, false)).toMatchObject({

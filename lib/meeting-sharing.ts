@@ -1,4 +1,8 @@
 import {
+  getExternalOrganizationDomain,
+  normalizeEmailAddress,
+} from "@/lib/email-domains";
+import {
   getExternalParticipantKeys,
   getMeetingSimilarityKeys,
 } from "@/lib/meeting-intelligence";
@@ -7,14 +11,31 @@ export function getMeetingShareMatchKeys(input: {
   attendeeEmails: unknown;
   connectionId?: string | null;
   externalEventId?: string | null;
+  ownerEmails?: string[];
   title: string;
   workspaceDomain: string;
 }) {
+  const ownerEmails = new Set(input.ownerEmails?.map(normalizeEmailAddress));
+  const internalDomains = new Set(
+    Array.from(ownerEmails, (email) => getExternalOrganizationDomain(email))
+      .filter((domain) => domain !== null),
+  );
+  const attendeeEmails = input.attendeeEmails;
+  const guestEmails = Array.isArray(attendeeEmails)
+    ? attendeeEmails.filter((email) => {
+        if (typeof email !== "string" || ownerEmails.has(normalizeEmailAddress(email))) {
+          return false;
+        }
+
+        const domain = getExternalOrganizationDomain(email);
+        return domain === null || !internalDomains.has(domain);
+      })
+    : [];
   const keys = getMeetingSimilarityKeys(
     {
       title: input.title,
       externalParticipantKeys: getExternalParticipantKeys(
-        input.attendeeEmails,
+        guestEmails,
         input.workspaceDomain,
       ),
     },

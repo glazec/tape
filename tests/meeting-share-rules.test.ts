@@ -1,15 +1,20 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-const { select, transaction, txn } = vi.hoisted(() => ({
+const { listMeetingShareOwnerEmails, select, transaction, txn } = vi.hoisted(() => ({
+  listMeetingShareOwnerEmails: vi.fn().mockResolvedValue([]),
   select: vi.fn(),
   transaction: vi.fn(),
-  txn: vi.fn((strings: TemplateStringsArray) => strings),
+  txn: vi.fn<(strings: TemplateStringsArray, ...values: unknown[]) => TemplateStringsArray>(
+    (strings) => strings,
+  ),
 }));
 
 vi.mock("@/db/client", () => ({
   databaseSql: { transaction },
   db: { select },
 }));
+
+vi.mock("@/lib/connected-calendar-accounts", () => ({ listMeetingShareOwnerEmails }));
 
 function mockMeetingRows(rows: unknown[]) {
   const limit = vi.fn().mockResolvedValue(rows);
@@ -74,7 +79,8 @@ describe("meeting share rules", () => {
     ).resolves.toEqual({ sharedCount: 0 });
   });
 
-  it("materializes matching policies in the same transaction", async () => {
+  it("materializes matching policies without using the owner’s calendar aliases", async () => {
+    listMeetingShareOwnerEmails.mockResolvedValueOnce(["owner@iosf.vc"]);
     transaction.mockImplementation(async (buildQueries) => {
       const queries = buildQueries(txn);
 
@@ -88,7 +94,7 @@ describe("meeting share rules", () => {
 
     await expect(
       applyMeetingShareRules({
-        attendeeEmails: ["partner@vendor.com", "owner@example.com"],
+        attendeeEmails: ["partner@vendor.com", "owner@example.com", "owner@iosf.vc", "jocy@iosf.vc"],
         meetingId: "22222222-2222-4222-8222-222222222222",
         ownerUserId: "owner_user_id",
         teamId: "team_123",
@@ -101,6 +107,14 @@ describe("meeting share rules", () => {
     const revokeSql = txn.mock.calls[0]?.[0].join(" ") ?? "";
     const countSql = txn.mock.calls[6]?.[0].join(" ") ?? "";
 
+    const expectedKeys = [
+      "title:weekly partner sync",
+      "participant:email:partner@vendor.com",
+      "participant:domain:vendor.com",
+    ];
+    expect(txn.mock.calls[0]).toContainEqual(expectedKeys);
+    expect(txn.mock.calls[1]).toContainEqual(expectedKeys);
+    expect(revokeSql).toContain("policy.seed_meeting_id =");
     expect(revokeSql).toContain("source.revoked_at is null");
     expect(revokeSql).toContain("not exists");
     expect(revokeSql).toContain(

@@ -6,6 +6,7 @@ const {
   getTeamConfiguration,
   getWorkspace,
   listActiveMeetingShares,
+  listMeetingShareOwnerEmails,
   listWorkspaceShareRecipients,
   meetingSharePolicyAppliesToMeeting,
   revokeMeetingRecipientAccess,
@@ -17,6 +18,7 @@ const {
   getTeamConfiguration: vi.fn(),
   getWorkspace: vi.fn(),
   listActiveMeetingShares: vi.fn(),
+  listMeetingShareOwnerEmails: vi.fn().mockResolvedValue([]),
   listWorkspaceShareRecipients: vi.fn(),
   meetingSharePolicyAppliesToMeeting: vi.fn(),
   revokeMeetingRecipientAccess: vi.fn(),
@@ -36,6 +38,7 @@ vi.mock("@/lib/meeting-share-service", () => ({
   revokeMeetingRecipientAccess,
   revokeMeetingSharePolicy,
 }));
+vi.mock("@/lib/connected-calendar-accounts", () => ({ listMeetingShareOwnerEmails }));
 vi.mock("@/lib/meeting-queries", () => ({ listWorkspaceShareRecipients }));
 vi.mock("@/db/client", () => ({ db: { select } }));
 
@@ -577,15 +580,26 @@ describe("POST /api/meetings/[meetingId]/share", () => {
       teamId: "team_123",
       userId: "owner_user_id",
     });
+    listMeetingShareOwnerEmails.mockResolvedValueOnce(["owner@iosf.vc"]);
     mockMeetingRows([
       {
-        attendeeEmails: ["founder@nascent.xyz", "owner@example.com"],
+        attendeeEmails: ["founder@nascent.xyz", "owner@example.com", "Owner@IOSF.VC", "jocy@iosf.vc"],
         id: meetingId,
         ownerUserId: "owner_user_id",
         title: "Example <> Nascent",
       },
     ]);
     mockCandidateRows([
+      {
+        attendeeEmails: ["owner@iosf.vc", "guest@unrelated.com"],
+        id: "77777777-7777-4777-8777-777777777777",
+        title: "Unrelated lunch",
+      },
+      {
+        attendeeEmails: ["jocy@iosf.vc", "guest@unrelated.com"],
+        id: "88888888-8888-4888-8888-888888888888",
+        title: "Unrelated team call",
+      },
       {
         attendeeEmails: ["founder@nascent.xyz"],
         id: meetingId,

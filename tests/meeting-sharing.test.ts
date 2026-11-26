@@ -119,6 +119,17 @@ describe("meeting sharing", () => {
     expect(hasReliableMeetingShareMatchKeys(occurrence("calendar1", "abc123"))).toBe(false);
   });
 
+  it("keeps external guests who use the owner's personal email provider", () => {
+    expect(
+      getMeetingShareMatchKeys({
+        attendeeEmails: ["OWNER@gmail.com", "guest@gmail.com"],
+        ownerEmails: ["owner@gmail.com"],
+        title: "Google Meet",
+        workspaceDomain: "iosg.vc",
+      }),
+    ).toEqual(["participant:email:guest@gmail.com"]);
+  });
+
   it("does not create broad title rules for generic meeting names", () => {
     expect(
       getMeetingShareMatchKeys({

@@ -3,6 +3,7 @@ import { eq } from "drizzle-orm";
 import { databaseSql, db } from "@/db/client";
 import { calendarEvents, meetings, users } from "@/db/schema";
 import { normalizeEmailDomain } from "@/lib/access";
+import { listMeetingShareOwnerEmails } from "@/lib/connected-calendar-accounts";
 import { getMeetingShareMatchKeys } from "@/lib/meeting-sharing";
 
 export async function applyMeetingShareRules(input: {
@@ -15,7 +16,8 @@ export async function applyMeetingShareRules(input: {
   title: string;
   workspaceDomain: string;
 }) {
-  const matchKeys = getMeetingShareMatchKeys(input);
+  const ownerEmails = await listMeetingShareOwnerEmails(input.ownerUserId);
+  const matchKeys = getMeetingShareMatchKeys({ ...input, ownerEmails });
   const result = await databaseSql.transaction((txn) => [
     txn`
       update meeting_access_sources as source
@@ -44,7 +46,8 @@ export async function applyMeetingShareRules(input: {
                 and exclusion.recipient_email = policy.recipient_email
             )
             and (
-              exists (
+              policy.seed_meeting_id = ${input.meetingId}::uuid
+              or exists (
                 select 1
                 from meeting_share_policy_keys as identity_key
                 where identity_key.policy_id = policy.id

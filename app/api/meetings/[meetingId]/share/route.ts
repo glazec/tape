@@ -5,6 +5,7 @@ import { db } from "@/db/client";
 import { calendarEvents, meetings, users } from "@/db/schema";
 import { normalizeEmail } from "@/lib/access";
 import { getCurrentUser } from "@/lib/auth";
+import { listMeetingShareOwnerEmails } from "@/lib/connected-calendar-accounts";
 import { getReadableMeetingsCondition } from "@/lib/meeting-access-policy";
 import {
   createMeetingSharePolicy,
@@ -160,7 +161,9 @@ export async function POST(
     });
   }
 
+  const ownerEmails = await listMeetingShareOwnerEmails(access.meeting.ownerUserId);
   const matchKeys = getMeetingShareMatchKeys({
+    ownerEmails,
     connectionId: access.meeting.connectionId,
     externalEventId: access.meeting.externalEventId,
     attendeeEmails: access.meeting.attendeeEmails,
@@ -234,7 +237,7 @@ export async function POST(
   const relatedMeetings = candidates.filter((candidate) =>
     meetingsShareReliableMatch(
       matchKeys,
-      getCandidateMatchKeys(candidate, access.workspace.domain),
+      getCandidateMatchKeys(candidate, access.workspace.domain, ownerEmails),
     ),
   );
 
@@ -344,11 +347,13 @@ export async function DELETE(
 function getCandidateMatchKeys(
   candidate: MeetingMatchCandidate,
   workspaceDomain: string,
+  ownerEmails: string[],
 ) {
   return getMeetingShareMatchKeys({
     connectionId: candidate.connectionId,
     externalEventId: candidate.externalEventId,
     attendeeEmails: candidate.attendeeEmails,
+    ownerEmails,
     title: candidate.title,
     workspaceDomain,
   });
