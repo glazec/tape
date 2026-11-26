@@ -1,6 +1,6 @@
 "use client";
 
-import Link from "next/link";
+import Link, { useLinkStatus } from "next/link";
 import { useRouter } from "next/navigation";
 import {
   Fragment,
@@ -114,6 +114,25 @@ const statusLabels: Record<MeetingDisplayStatus, string> = {
   missed: "No recording",
   cancelled: "Cancelled",
 };
+
+// Reveal the list only once browser-local day headings and times can render together.
+export function MeetingLibraryResults({
+  children,
+  fallback,
+  pagination,
+}: {
+  children: ReactNode;
+  fallback: ReactNode;
+  pagination: ReactNode;
+}) {
+  const isClient = useSyncExternalStore(subscribeToNothing, () => true, () => false);
+  return (
+    <>
+      {isClient ? children : fallback}
+      <div hidden={!isClient}>{pagination}</div>
+    </>
+  );
+}
 
 export function MeetingList({
   emptyMessage = "No meetings found",
@@ -317,7 +336,8 @@ function MeetingTableRow({
       aria-expanded={relatedCount > 0 ? isExpanded : undefined}
       className={cn(
         // Rows separate by spacing and a hover tone, never a resting rule.
-        "group/meeting-row meeting-row tape-row-enter border-0",
+        "group/meeting-row meeting-row border-0",
+        isChild && "tape-row-enter",
       )}
       style={{ "--tape-row-index": rowIndex } as CSSProperties}
     >
@@ -550,14 +570,17 @@ function MeetingTitleCell({
         <div className="flex min-w-0 flex-wrap items-center gap-2">
           <Link
             className={cn(
+              "transition-opacity duration-150 active:opacity-70 has-[[data-meeting-opening]]:underline has-[[data-meeting-opening]]:decoration-dotted",
               isChild ? "text-sm hover:underline" : "font-medium hover:underline",
               shouldDimMeetingCopy
                 ? "text-muted-foreground hover:text-foreground"
                 : "text-foreground",
             )}
+            aria-label={meeting.title}
             href={`/meetings/${meeting.id}`}
           >
             {meeting.title}
+            <MeetingOpeningStatus />
           </Link>
         </div>
         <MeetingMeta
@@ -583,6 +606,16 @@ function MeetingTitleCell({
         />
       </div>
     </div>
+  );
+}
+
+function MeetingOpeningStatus() {
+  const { pending } = useLinkStatus();
+
+  return (
+    <span className="sr-only" data-meeting-opening={pending || undefined} role="status">
+      {pending ? "Opening meeting…" : null}
+    </span>
   );
 }
 

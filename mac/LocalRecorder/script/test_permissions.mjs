@@ -18,6 +18,7 @@ function method(name, next) {
 
 const systemSource = readFileSync(new URL("../Sources/MeetingNoteLocalRecorder/RecorderSystemActions.swift", import.meta.url), "utf8");
 const repairPermissionEnum = systemSource.slice(systemSource.indexOf("    enum RepairPermission:"), systemSource.indexOf("    enum Failure:"));
+const meterLevelsType = source.slice(source.indexOf("@MainActor\nfinal class RecorderMeterLevels"), source.indexOf("@MainActor\nfinal class RecorderAppModel"));
 let directory;
 before(() => {
   directory = mkdtempSync(join(tmpdir(), "tape-permissions-"));
@@ -44,6 +45,8 @@ void installMicrophoneMock(void) {
   writeFileSync(join(directory, "Probe.swift"), `
 import AVFoundation
 import Foundation
+import Combine
+${meterLevelsType}
 @_silgen_name("installMicrophoneMock") func installMicrophoneMock()
 enum LocalRecorderAudioSource { case microphone, computerAudio }
 struct SilenceTracker {
@@ -124,10 +127,7 @@ ${repairPermissionEnum}
   static let audioLevelSampleCount = 36
   var isRecording = false
   var isTestingLevels = false
-  var microphoneLevel: Float = 0
-  var systemAudioLevel: Float = 0
-  var microphoneLevelAt = Date.distantPast
-  var systemAudioLevelAt = Date.distantPast
+  let meterLevels = RecorderMeterLevels()
   var audioLevels = Array(repeating: Float(0), count: audioLevelSampleCount)
   var endPromptPolicy = SilenceTracker()
   func showSilencePrompt() {}
@@ -185,6 +185,7 @@ ${method("observeAudioLevel(source:", "func toggleLevelTest()")}
     } else if CommandLine.arguments.contains("levels") {
       probe.isRecording = true
       probe.observeAudioLevel(source: .computerAudio, level: 0.04)
+      precondition(probe.meterLevels.systemAudio > 0 && probe.meterLevels.microphone == 0)
       precondition(probe.audioLevels.last! > 0, "Mac sound must animate the waveform without microphone callbacks")
       probe.observeAudioLevel(source: .microphone, level: 0)
       precondition(probe.audioLevels.last! > 0, "Silent microphone must not erase active Mac sound")
@@ -195,9 +196,9 @@ ${method("observeAudioLevel(source:", "func toggleLevelTest()")}
       probe.isTestingLevels = true
       let now = Date()
       probe.observeAudioLevel(source: .microphone, level: 1, at: now)
-      precondition(probe.microphoneLevel == 1 && probe.audioLevels.last == 0)
+      precondition(probe.meterLevels.microphone == 1 && probe.audioLevels.last == 0)
       probe.observeAudioLevel(source: .computerAudio, level: 1, at: now.addingTimeInterval(1))
-      let levels = probe.recentAudioLevels(at: now.addingTimeInterval(2.5))
+      let levels = probe.meterLevels.recentAudioLevels(at: now.addingTimeInterval(2.5))
       precondition(levels.microphone == 0 && levels.systemAudio == 1)
       print("levels passed")
     } else if CommandLine.arguments.contains("restart") {

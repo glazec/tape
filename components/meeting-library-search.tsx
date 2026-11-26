@@ -116,7 +116,7 @@ export function MeetingLibrarySearch({
         {isPending ? (
           <div
             aria-label="Searching meetings"
-            className="absolute inset-0 z-10 flex min-h-40 items-center justify-center bg-card/85 text-sm font-medium text-muted-foreground backdrop-blur-[1px]"
+            className="tape-search-pending absolute inset-0 z-10 flex min-h-40 items-center justify-center bg-card/90 text-sm font-medium text-muted-foreground"
             role="status"
           >
             <LoaderCircle

@@ -1103,7 +1103,7 @@ export function MeetingNotes({
               onClick={() => void copyEdits()}
             >
               {copyStatus === "copied" ? (
-                <Check aria-hidden="true" />
+                <Check aria-hidden="true" data-confirm="" />
               ) : (
                 <Copy aria-hidden="true" />
               )}

@@ -1,4 +1,3 @@
-import Link from "next/link";
 import { ProductLogo } from "@/components/product-logo";
 import { Skeleton } from "@/components/ui/skeleton";
 
@@ -96,25 +95,24 @@ export function MeetingLibrarySkeleton() {
   );
 }
 
-export function MeetingLibraryRowsScaffold({
-  meetings,
-}: {
-  meetings: { id: string; title: string }[];
-}) {
+export function MeetingLibraryRowsScaffold({ rowCount }: { rowCount: number }) {
   return (
-    <ul aria-label="Meetings" className="divide-y divide-border/50">
-      {meetings.map((meeting) => (
-        <li key={meeting.id} className="flex items-center gap-4 py-3.5">
-          <Skeleton aria-hidden="true" className="hidden h-4 w-24 md:block" />
-          <div className="min-w-0 flex-1">
-            <Link href={`/meetings/${meeting.id}`} prefetch={false} className="text-sm font-medium hover:underline">
-              {meeting.title}
-            </Link>
-            <Skeleton aria-hidden="true" className="mt-2 h-3 w-24" />
+    <div aria-label="Loading meeting details" aria-busy="true" role="status">
+      <div aria-hidden="true" className="pt-8 pb-2">
+        <Skeleton className="h-4 w-20" />
+      </div>
+      <div aria-hidden="true">
+        {Array.from({ length: rowCount }, (_, index) => (
+          <div key={index} className="grid grid-cols-[minmax(0,1fr)_7rem] px-2 py-3 md:grid-cols-[7rem_minmax(0,1fr)_7rem] md:pl-0">
+            <Skeleton className="mt-0.5 hidden h-4 w-16 md:block" />
+            <div className="px-2">
+              <Skeleton className="h-5 w-40 max-w-full" />
+              <Skeleton className="mt-1 h-3 w-28 max-w-full" />
+            </div>
+            <Skeleton className="ml-auto mr-2 h-5 w-16" />
           </div>
-          <Skeleton aria-hidden="true" className="h-4 w-16" />
-        </li>
-      ))}
-    </ul>
+        ))}
+      </div>
+    </div>
   );
 }

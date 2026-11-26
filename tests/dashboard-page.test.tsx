@@ -256,7 +256,7 @@ describe("DashboardPage", () => {
     await reader.cancel();
   });
 
-  it("streams clickable meeting titles while row details are pending", async () => {
+  it("keeps meeting titles out of the streamed placeholder while row details are pending", async () => {
     requireCurrentUser.mockResolvedValue({ id: "user", email: "member@example.com" });
     getWorkspace.mockResolvedValue({ userId: "user", teamId: "team", canCreateMeetings: false });
     getWorkspaceAccessSummary.mockResolvedValue({ isSharedOnly: true });
@@ -272,13 +272,14 @@ describe("DashboardPage", () => {
     const reader = stream.getReader();
     let html = "";
     try {
-      while (!html.includes("Weekly review")) {
+      while (!html.includes('aria-label="Loading meeting details"')) {
         const { done, value } = await reader.read();
         if (done) break;
         html += new TextDecoder().decode(value);
       }
-      expect(html).toContain('href="/meetings/meeting"');
-      expect(html).toContain("Weekly review");
+      expect(html).toContain('aria-label="Loading meeting details"');
+      expect(html).not.toContain('href="/meetings/meeting"');
+      expect(html).not.toContain("Weekly review");
     } finally {
       await reader.cancel();
     }
@@ -444,7 +445,7 @@ describe("DashboardPage", () => {
     expect(html).toContain("Showing last 12 months, page 2");
     expect(html).toContain("min-w-0 space-y-2");
     expect(html).toContain("h-11 w-full min-w-0");
-    expect(html).toContain("flex min-w-0 flex-wrap items-center gap-2");
+    expect(html).toContain("<div hidden=\"\"><nav");
     expect(html).toContain(
       "/dashboard?q=founder&amp;scope=participants&amp;status=ready&amp;sort=duration_desc&amp;syncCalendar=1&amp;historyMonths=12&amp;relatedMonths=18",
     );

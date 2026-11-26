@@ -118,10 +118,15 @@ enum RecorderWindowChrome {
 }
 
 struct RecorderMenuView: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @ObservedObject var model: RecorderAppModel
     @FocusState private var isTitleFocused: Bool
     @State private var panelWindow = PanelWindowFitter()
     @State private var showsPermissionRecovery = false
+    private static let captureStatusTransition = AnyTransition.asymmetric(
+        insertion: .opacity,
+        removal: .opacity.animation(.linear(duration: 0.01))
+    )
     /// The setup window shares its titlebar row with the settings control;
     /// the menu bar panel has no titlebar and keeps the control beside the status line.
     var showsWindowChrome = false
@@ -201,23 +206,23 @@ struct RecorderMenuView: View {
                     .focused($isTitleFocused)
                     .padding(.top, 10)
 
-                if model.isFinishingRecording {
-                    SavingProgressView(
-                        step: model.statusText,
-                        stoppedAt: model.recordingStoppedAt ?? Date()
-                    )
-                    .padding(.top, 14)
-                } else {
-                    TimelineView(.periodic(from: .now, by: 1)) { context in
-                        let levels = model.recentAudioLevels(at: context.date)
+                VStack(alignment: .leading, spacing: 0) {
+                    if model.isFinishingRecording {
+                        SavingProgressView(
+                            step: model.statusText,
+                            stoppedAt: model.recordingStoppedAt ?? Date()
+                        )
+                        .transition(Self.captureStatusTransition)
+                    } else {
                         RecordingLevelsView(
-                            microphoneLevel: levels.microphone,
-                            systemAudioLevel: levels.systemAudio,
+                            levels: model.meterLevels,
                             isInputPreview: model.activeRecordingBackend == .recallDesktopSDK
                         )
+                            .transition(Self.captureStatusTransition)
                     }
-                    .padding(.top, 14)
                 }
+                .padding(.top, 14)
+                .animation(reduceMotion ? nil : .easeOut(duration: 0.15), value: model.isFinishingRecording)
             } else if showsDestinationChip {
                 // Ready to record: the destination is the headline, so the title above
                 // Record is always the meeting it saves to. A calendar event that is not
@@ -860,6 +865,7 @@ struct RecorderActionButtonStyle: ButtonStyle {
     var kind: Kind
     var height: CGFloat = 30
     @Environment(\.isEnabled) private var isEnabled
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     func makeBody(configuration: Configuration) -> some View {
         let isQuiet = kind != .primary
@@ -883,6 +889,8 @@ struct RecorderActionButtonStyle: ButtonStyle {
             Capsule().inset(by: 0.5).stroke(isQuiet ? TapePalette.border : Color.clear, lineWidth: 1)
         )
         .opacity(configuration.isPressed ? 0.8 : (isEnabled ? 1 : 0.55))
+        .scaleEffect(configuration.isPressed && !reduceMotion ? 0.98 : 1)
+        .animation(configuration.isPressed || reduceMotion ? nil : .easeOut(duration: 0.14), value: configuration.isPressed)
         .contentShape(Capsule())
     }
 }
@@ -940,6 +948,8 @@ struct DestinationCard: View {
     var action: () -> Void
     @State private var isHovering = false
 
+    private var isHighlighted: Bool { isInteractive && (isHovering || isPickerOpen) }
+
     var body: some View {
         Button(action: action) {
             VStack(alignment: .leading, spacing: 4) {
@@ -980,7 +990,11 @@ struct DestinationCard: View {
             }
             .padding(12)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(isInteractive && (isHovering || isPickerOpen) ? TapePalette.mist : TapePalette.surface, in: RoundedRectangle(cornerRadius: 8))
+            .background {
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(isHighlighted ? TapePalette.mist : TapePalette.surface)
+                    .animation(.easeOut(duration: 0.12), value: isHighlighted)
+            }
             .overlay(RoundedRectangle(cornerRadius: 8).stroke(TapePalette.border, lineWidth: 1))
             .contentShape(RoundedRectangle(cornerRadius: 8))
         }
@@ -1028,28 +1042,30 @@ struct RecordingDestinationCard: View {
 
 /// Levels from the native recording tracks, or an input preview for SDK recordings.
 struct RecordingLevelsView: View {
-    var microphoneLevel: Float
-    var systemAudioLevel: Float
+    @ObservedObject var levels: RecorderMeterLevels
     var isInputPreview: Bool
     @State private var lastHeard = Date()
 
     var body: some View {
-        HStack(spacing: 14) {
-            SourceLevel(title: "Mic", level: microphoneLevel)
-            SourceLevel(title: "Mac sound", level: systemAudioLevel)
-            Spacer(minLength: 0)
-            if isInputPreview {
-                Text("Mac input preview")
-                    .font(TapeType.sans(11))
-                    .foregroundStyle(TapePalette.ash)
-                    .fixedSize()
-                    .help("These levels show Mac input. The meeting recorder uses its own audio capture.")
-            } else {
-                silenceIndicator
+        TimelineView(.periodic(from: .now, by: 1)) { context in
+            let recent = levels.recentAudioLevels(at: context.date)
+            HStack(spacing: 14) {
+                SourceLevel(title: "Mic", level: recent.microphone)
+                SourceLevel(title: "Mac sound", level: recent.systemAudio)
+                Spacer(minLength: 0)
+                if isInputPreview {
+                    Text("Mac input preview")
+                        .font(TapeType.sans(11))
+                        .foregroundStyle(TapePalette.ash)
+                        .fixedSize()
+                        .help("These levels show Mac input. The meeting recorder uses its own audio capture.")
+                } else {
+                    silenceIndicator
+                }
             }
-        }
-        .onChange(of: max(microphoneLevel, systemAudioLevel)) { _, level in
-            if level > 0.02 { lastHeard = Date() }
+            .onChange(of: max(recent.microphone, recent.systemAudio)) { _, level in
+                if level > 0.02 { lastHeard = Date() }
+            }
         }
     }
 
@@ -1070,6 +1086,7 @@ struct RecordingLevelsView: View {
 /// Shown in place of the live meters after Stop: capture is over, so the row
 /// reports which save step is running and how long it has taken.
 struct SavingProgressView: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     var step: String
     var stoppedAt: Date
 
@@ -1082,11 +1099,19 @@ struct SavingProgressView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 8) {
-                ProgressView().controlSize(.small)
+                if reduceMotion {
+                    Image(systemName: "hourglass")
+                        .foregroundStyle(TapePalette.muted)
+                        .accessibilityHidden(true)
+                } else {
+                    ProgressView().controlSize(.small)
+                }
                 Text(step.isEmpty ? "Saving recording" : step)
                     .font(TapeType.sans(12, .medium))
                     .foregroundStyle(TapePalette.ink)
                     .lineLimit(1)
+                    .contentTransition(.opacity)
+                    .animation(.easeOut(duration: 0.15), value: step)
                 Spacer(minLength: 8)
                 TimelineView(.periodic(from: stoppedAt, by: 1)) { context in
                     Text(savingText(context.date))
@@ -1100,6 +1125,7 @@ struct SavingProgressView: View {
             ProgressView(value: stepNumber.map { Double($0 - 1) + 0.5 } ?? 1, total: Double(Self.steps.count + 1))
                 .progressViewStyle(.linear)
                 .tint(TapePalette.ink.opacity(0.65))
+                .animation(reduceMotion ? nil : .easeOut(duration: 0.18), value: stepNumber)
             Text("Upload starts as soon as the file is saved. Keep Tape open.")
                 .font(TapeType.sans(11))
                 .foregroundStyle(TapePalette.muted)
@@ -1136,6 +1162,7 @@ struct SourceLevel: View {
 }
 
 struct AudioLevelBar: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     var level: Float
     var inkOpacity: Double
     var height: CGFloat = 4
@@ -1150,11 +1177,12 @@ struct AudioLevelBar: View {
             }
         }
         .frame(height: height)
-        .animation(.linear(duration: 0.1), value: level)
+        .animation(reduceMotion ? nil : .linear(duration: 0.1), value: level)
     }
 }
 
 struct StatusDot: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     /// Snapshot rendering turns this off so captures show the dot at rest.
     @MainActor static var pulsesWhileLive = true
 
@@ -1168,7 +1196,7 @@ struct StatusDot: View {
                 Image(systemName: "circle.fill")
                     .font(TapeType.sans(6))
                     .foregroundStyle(tone)
-                    .symbolEffect(.pulse, options: .repeating, isActive: isLive && Self.pulsesWhileLive)
+                    .symbolEffect(.pulse, options: .repeating, isActive: isLive && Self.pulsesWhileLive && !reduceMotion)
             } else {
                 Circle()
                     .strokeBorder(TapePalette.ash, lineWidth: 1)
@@ -1314,13 +1342,7 @@ struct RecorderSettingsView: View {
                 }
             }
 
-            TimelineView(.periodic(from: .now, by: 1)) { context in
-                let levels = model.recentAudioLevels(at: context.date)
-                VStack(alignment: .leading, spacing: 10) {
-                    AudioLevelMeterRow(title: "Microphone", level: levels.microphone)
-                    AudioLevelMeterRow(title: "Mac sound", level: levels.systemAudio)
-                }
-            }
+            AudioCheckMeters(levels: model.meterLevels)
 
             Text(
                 model.isTestingLevels
@@ -1351,6 +1373,20 @@ struct RecorderSettingsView: View {
     }
 }
 
+private struct AudioCheckMeters: View {
+    @ObservedObject var levels: RecorderMeterLevels
+
+    var body: some View {
+        TimelineView(.periodic(from: .now, by: 1)) { context in
+            let recent = levels.recentAudioLevels(at: context.date)
+            VStack(alignment: .leading, spacing: 10) {
+                AudioLevelMeterRow(title: "Microphone", level: recent.microphone)
+                AudioLevelMeterRow(title: "Mac sound", level: recent.systemAudio)
+            }
+        }
+    }
+}
+
 struct AudioLevelMeterRow: View {
     var title: String
     var level: Float
@@ -1372,6 +1408,7 @@ struct AudioLevelMeterRow: View {
 
 /// The outcome of one stopped recording, with the action that recovers it.
 struct RecordingReceiptCard: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     enum Phase { case working, done, failed }
     var title: String
     var status: String
@@ -1397,7 +1434,13 @@ struct RecordingReceiptCard: View {
             HStack(alignment: .firstTextBaseline, spacing: 6) {
                 switch phase {
                 case .working:
-                    ProgressView().controlSize(.mini)
+                    if reduceMotion {
+                        Image(systemName: "hourglass")
+                            .foregroundStyle(TapePalette.muted)
+                            .accessibilityHidden(true)
+                    } else {
+                        ProgressView().controlSize(.mini)
+                    }
                 case .done:
                     Image(systemName: "checkmark")
                         .font(TapeType.sans(11, .semibold))
@@ -1406,6 +1449,8 @@ struct RecordingReceiptCard: View {
                     EmptyView()
                 }
                 Text(status)
+                    .contentTransition(.opacity)
+                    .animation(.easeOut(duration: 0.15), value: status)
                     .font(TapeType.sans(12))
                     .foregroundStyle(phase == .failed ? TapePalette.coralInk : TapePalette.muted)
                     .fixedSize(horizontal: false, vertical: true)

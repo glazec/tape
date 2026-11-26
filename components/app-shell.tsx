@@ -91,7 +91,7 @@ export function AppShell({
               <DetailsDismiss />
               <summary
                 aria-label="Account"
-                className="flex size-11 cursor-pointer list-none items-center justify-center rounded-full text-muted-foreground outline-none transition-[color,background-color,transform] duration-150 ease-out hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring active:scale-[0.94] group-open:bg-muted group-open:text-foreground sm:size-8 [&::-webkit-details-marker]:hidden"
+                className="flex size-11 cursor-pointer list-none items-center justify-center rounded-full text-muted-foreground outline-none transition-[color,background-color,scale] duration-150 ease-out hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring motion-safe:active:scale-[0.97] group-open:bg-muted group-open:text-foreground sm:size-8 [&::-webkit-details-marker]:hidden"
               >
                 <UserRound aria-hidden="true" className="size-4" />
               </summary>

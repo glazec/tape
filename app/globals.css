@@ -267,7 +267,7 @@ body {
 @keyframes tape-pop-in {
   from {
     opacity: 0;
-    transform: scale(0.85);
+    transform: scale(0.94);
   }
 }
 
@@ -338,12 +338,12 @@ html {
    <main>, even mid animation, would capture the fixed audio player bar.
    Refreshes keep the same element mounted, so live updates never replay. */
 .tape-page-enter {
-  animation: tape-fade 220ms var(--tape-ease-out) backwards;
+  animation: tape-fade 140ms var(--tape-ease-out) backwards;
 }
 
-/* The persistent player rises in once, after the page has settled. */
+/* The persistent player rises in once when its audio becomes available. */
 [data-persistent-player] {
-  animation: tape-rise 320ms var(--tape-ease-out) 120ms backwards;
+  animation: tape-rise 220ms var(--tape-ease-out) backwards;
 }
 
 /* Rows answer a tap on touch screens, where there is no hover tone. */
@@ -357,15 +357,36 @@ details[open] > .tape-popover {
   animation: tape-pop 160ms var(--tape-ease-out) backwards;
 }
 
-/* Library rows arrive in a short cascade, capped so long lists never wait. */
-.tape-row-enter {
-  animation: tape-rise 320ms var(--tape-ease-out) backwards;
-  animation-delay: calc(min(var(--tape-row-index, 0), 10) * 22ms);
+/* Base UI keeps the popup mounted during exit, so a reopen can reverse it. */
+.tape-popup-motion {
+  transition: opacity 150ms var(--tape-ease-out), scale 150ms var(--tape-ease-out);
 }
 
-/* Panel switches (notes and transcript) crossfade instead of cutting. */
-.tape-panel-enter {
-  animation: tape-fade 200ms var(--tape-ease-out) backwards;
+.tape-popup-motion[data-starting-style],
+.tape-popup-motion[data-ending-style] {
+  opacity: 0;
+}
+
+.tape-popup-motion[data-ending-style] {
+  transition-duration: 110ms;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .tape-popup-motion:not([data-align-trigger="true"]):is([data-starting-style], [data-ending-style]) {
+    scale: 0.97;
+  }
+}
+
+/* Library rows arrive in a short cascade, capped so long lists never wait. */
+.tape-row-enter {
+  animation: tape-rise 170ms var(--tape-ease-out) backwards;
+  animation-delay: calc(min(var(--tape-row-index, 0), 4) * 18ms);
+}
+
+/* Fade incoming content without fading a player that is already visible. */
+.tape-panel-enter:not(:has([data-persistent-player])),
+.tape-panel-enter:has([data-persistent-player]) [data-transcript-content] {
+  animation: tape-fade 120ms var(--tape-ease-out) backwards;
 }
 
 .tape-toast {
@@ -373,7 +394,7 @@ details[open] > .tape-popover {
 }
 
 .tape-toast[data-phase="leaving"] {
-  animation: tape-toast-out 180ms ease-in forwards;
+  animation: tape-toast-out 180ms var(--tape-ease-out) forwards;
 }
 
 /* Confirmation ticks pop in, so "Copied" reads as a result of the click
@@ -384,7 +405,11 @@ details[open] > .tape-popover {
 
 /* Keep connection notices clear of the audio scrubber on meeting pages. */
 body:has([data-persistent-player]) .tape-toast-anchor {
-  bottom: calc(5.5rem + env(safe-area-inset-bottom));
+  bottom: calc(11rem + env(safe-area-inset-bottom));
+
+  @media (width >= 40rem) {
+    bottom: calc(5.5rem + env(safe-area-inset-bottom));
+  }
 }
 
 /* Live states: recording pulses outward, work in progress breathes. */
@@ -412,7 +437,8 @@ body:has([data-persistent-player]) .tape-toast-anchor {
 @media (prefers-reduced-motion: reduce) {
   .tape-page-enter,
   .tape-row-enter,
-  .tape-panel-enter,
+  .tape-panel-enter:not(:has([data-persistent-player])),
+  .tape-panel-enter:has([data-persistent-player]) [data-transcript-content],
   .tape-toast,
   .tape-toast[data-phase="leaving"],
   [data-persistent-player],
@@ -432,4 +458,9 @@ body:has([data-persistent-player]) .tape-toast-anchor {
   .tape-shimmer {
     animation: none;
   }
+}
+
+/* Keep fast searches from flashing a loading layer over the results. */
+.tape-search-pending {
+  animation: tape-fade 120ms var(--tape-ease-out) 160ms backwards;
 }

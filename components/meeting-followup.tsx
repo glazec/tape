@@ -85,10 +85,15 @@ export function MeetingFollowup({
   const [error, setError] = useState("");
   const [announcement, setAnnouncement] = useState("");
   const [toast, setToast] = useState<{ message: string; error: boolean } | null>(null);
+  const [toastLeaving, setToastLeaving] = useState(false);
   useEffect(() => {
     if (!toast) return;
-    const timer = setTimeout(() => setToast(null), 4000);
-    return () => clearTimeout(timer);
+    const leaveTimer = setTimeout(() => setToastLeaving(true), 4000);
+    const removeTimer = setTimeout(() => setToast(null), 4180);
+    return () => {
+      clearTimeout(leaveTimer);
+      clearTimeout(removeTimer);
+    };
   }, [toast]);
   useEffect(() => {
     const applySnapshot = () => {
@@ -276,8 +281,10 @@ export function MeetingFollowup({
         url: `${window.location.origin}/meetings/${encodeURIComponent(meetingId)}`,
         segments,
       }));
+      setToastLeaving(false);
       setToast({ message: t("Research prompt copied", "研究问题和会议背景已复制"), error: false });
     } catch {
+      setToastLeaving(false);
       setToast({ message: t("Could not copy. Please try again.", "复制失败，请重试。"), error: true });
     }
   }
@@ -560,10 +567,13 @@ export function MeetingFollowup({
       <div
         role={toast?.error ? "alert" : "status"}
         aria-atomic="true"
-        className="pointer-events-none fixed bottom-6 left-1/2 z-50 w-max max-w-[calc(100vw-2rem)] -translate-x-1/2"
+        className="tape-toast-anchor pointer-events-none fixed bottom-[calc(1.5rem+env(safe-area-inset-bottom))] left-1/2 z-50 w-max max-w-[calc(100vw-2rem)] -translate-x-1/2"
       >
         {toast ? (
-          <div className="flex items-center gap-2 rounded-lg border bg-popover px-4 py-3 text-sm text-popover-foreground shadow-md">
+          <div
+            className="tape-toast flex items-center gap-2 rounded-lg border bg-popover px-4 py-3 text-sm text-popover-foreground shadow-md"
+            data-phase={toastLeaving ? "leaving" : undefined}
+          >
             {!toast.error ? <Check aria-hidden="true" className="size-4 shrink-0" /> : null}
             {toast.message}
           </div>

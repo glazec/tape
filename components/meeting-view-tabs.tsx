@@ -131,7 +131,7 @@ export function MeetingViewTabs({
                   aria-hidden="true"
                   className="absolute inset-0 rounded-full bg-background shadow-sm"
                   layoutId="meeting-view-pill"
-                  transition={{ type: "spring", duration: 0.32, bounce: 0.12 }}
+                  transition={{ type: "spring", duration: 0.23, bounce: 0 }}
                 />
               ) : null}
               <Icon aria-hidden="true" className="relative size-4" />

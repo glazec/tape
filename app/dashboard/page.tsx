@@ -23,7 +23,7 @@ import {
 import { DashboardStats } from "@/components/dashboard-stats";
 import { MeetingLibrarySearch } from "@/components/meeting-library-search";
 import { DashboardScrollRestoration } from "@/components/dashboard-scroll-restoration";
-import { MeetingList } from "@/components/meeting-list";
+import { MeetingLibraryResults, MeetingList } from "@/components/meeting-list";
 import { OnboardingTutorial } from "@/components/onboarding-tutorial";
 import {
   Alert,
@@ -542,6 +542,7 @@ async function DashboardMeetingLibrary({
     },
   );
   const renderedAtMs = new Date().getTime();
+  const rowsFallback = <MeetingLibraryRowsScaffold rowCount={meetingLibraryPage.meetings.length} />;
 
   return (
     <section
@@ -577,8 +578,9 @@ async function DashboardMeetingLibrary({
             />
           }
         >
-          <Suspense fallback={<MeetingLibraryRowsScaffold meetings={meetingLibraryPage.meetings} />}>
+          <Suspense fallback={rowsFallback}>
             <DetailedMeetingList
+              fallback={rowsFallback}
               loadDetails={loadDetails}
               renderedAtMs={renderedAtMs}
               emptyMessage={
@@ -592,6 +594,45 @@ async function DashboardMeetingLibrary({
                 relatedHistoryMonths: meetingLibraryPage.relatedHistoryMonths,
                 syncCalendar,
               }}
+              pagination={
+                <MeetingLibraryPagination
+                  className="pt-5"
+                  hasNextPage={meetingLibraryPage.hasNextPage}
+                  hasOlderMeetings={meetingLibraryPage.hasOlderMeetings}
+                  hasPreviousPage={meetingLibraryPage.hasPreviousPage}
+                  historyHref={buildDashboardPageHref({
+                    ...activeViewConfig,
+                    historyMonths: getNextHistoryMonths(
+                      meetingLibraryPage.historyMonths,
+                    ),
+                    relatedHistoryMonths: Math.max(
+                      meetingLibraryPage.relatedHistoryMonths,
+                      getNextHistoryMonths(meetingLibraryPage.historyMonths),
+                    ),
+                    syncCalendar,
+                  })}
+                  historyMonths={meetingLibraryPage.historyMonths}
+                  nextHref={buildDashboardPageHref({
+                    ...activeViewConfig,
+                    historyMonths: meetingLibraryPage.historyMonths,
+                    page: meetingLibraryPage.page + 1,
+                    relatedHistoryMonths: meetingLibraryPage.relatedHistoryMonths,
+                    syncCalendar,
+                  })}
+                  page={meetingLibraryPage.page}
+                  previousHref={buildDashboardPageHref({
+                    ...activeViewConfig,
+                    historyMonths: meetingLibraryPage.historyMonths,
+                    page: meetingLibraryPage.page - 1,
+                    relatedHistoryMonths: meetingLibraryPage.relatedHistoryMonths,
+                    syncCalendar,
+                  })}
+                  resetHistoryHref={buildDashboardPageHref({
+                    ...activeViewConfig,
+                    syncCalendar,
+                  })}
+                />
+              }
               sort={activeViewConfig.sort}
               sortLinks={getMeetingLibrarySortLinks({
                 activeViewConfig,
@@ -601,58 +642,29 @@ async function DashboardMeetingLibrary({
               })}
             />
           </Suspense>
-          <MeetingLibraryPagination
-            className="pt-5"
-            hasNextPage={meetingLibraryPage.hasNextPage}
-            hasOlderMeetings={meetingLibraryPage.hasOlderMeetings}
-            hasPreviousPage={meetingLibraryPage.hasPreviousPage}
-            historyHref={buildDashboardPageHref({
-              ...activeViewConfig,
-              historyMonths: getNextHistoryMonths(
-                meetingLibraryPage.historyMonths,
-              ),
-              relatedHistoryMonths: Math.max(
-                meetingLibraryPage.relatedHistoryMonths,
-                getNextHistoryMonths(meetingLibraryPage.historyMonths),
-              ),
-              syncCalendar,
-            })}
-            historyMonths={meetingLibraryPage.historyMonths}
-            nextHref={buildDashboardPageHref({
-              ...activeViewConfig,
-              historyMonths: meetingLibraryPage.historyMonths,
-              page: meetingLibraryPage.page + 1,
-              relatedHistoryMonths: meetingLibraryPage.relatedHistoryMonths,
-              syncCalendar,
-            })}
-            page={meetingLibraryPage.page}
-            previousHref={buildDashboardPageHref({
-              ...activeViewConfig,
-              historyMonths: meetingLibraryPage.historyMonths,
-              page: meetingLibraryPage.page - 1,
-              relatedHistoryMonths: meetingLibraryPage.relatedHistoryMonths,
-              syncCalendar,
-            })}
-            resetHistoryHref={buildDashboardPageHref({
-              ...activeViewConfig,
-              syncCalendar,
-            })}
-          />
         </MeetingLibrarySearch>
     </section>
   );
 }
 
 async function DetailedMeetingList({
+  fallback,
   loadDetails,
   historyOptions,
+  pagination,
   ...props
 }: Omit<React.ComponentProps<typeof MeetingList>, "meetings"> & {
+  fallback: React.ReactNode;
+  pagination: React.ReactNode;
   loadDetails: Awaited<ReturnType<typeof prepareMeetingLibraryPage>>["loadDetails"];
   historyOptions: Parameters<typeof withRelatedHistoryLinks>[1];
 }) {
   const page = await loadDetails();
-  return <MeetingList {...props} meetings={withRelatedHistoryLinks(page.meetings, historyOptions)} />;
+  return (
+    <MeetingLibraryResults fallback={fallback} pagination={pagination}>
+      <MeetingList {...props} meetings={withRelatedHistoryLinks(page.meetings, historyOptions)} />
+    </MeetingLibraryResults>
+  );
 }
 
 function getCalendarErrorMessage(error: string | undefined) {

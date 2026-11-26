@@ -1107,7 +1107,7 @@ export function TranscriptViewer({
 
   return (
     <>
-      <section>
+      <section data-transcript-content>
         <header className={hideHeading && !(hasOriginalPolish || hasTranslations || translationNotNeeded) ? undefined : "mb-5"}>
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <h2 className={hideHeading ? "sr-only" : "text-lg font-semibold tracking-[-0.01em]"}>Transcript</h2>
@@ -1463,7 +1463,7 @@ export function TranscriptViewer({
                       for (const id of segment.sourceIds) segmentRefs.current.delete(id);
                     }}
                     className={cn(
-                      "group/line relative has-[:target]:bg-primary/5 grid grid-cols-[3rem_minmax(0,1fr)] gap-4 rounded-lg pr-3 transition-colors sm:-ml-16",
+                      "group/line relative has-[:target]:bg-primary/5 grid grid-cols-[3rem_minmax(0,1fr)] gap-4 rounded-lg pr-3 transition-colors duration-150 ease-(--tape-ease-out) sm:-ml-16",
                       isContinuation ? "py-0.5" : "mt-2 pt-2.5 pb-0.5",
                       isActive ? "bg-primary/5" : "hover:bg-muted/35",
                     )}
@@ -1909,7 +1909,7 @@ export function MeetingVisualGalleryOverview({
           return (
             <button
               aria-label={`Open image from ${timestampLabel}`}
-              className="group overflow-hidden rounded-xl border bg-background text-left outline-none transition-[transform,box-shadow] hover:-translate-y-0.5 hover:shadow-lg focus-visible:ring-3 focus-visible:ring-ring/50"
+              className="group overflow-hidden rounded-xl border bg-background text-left outline-none transition-[translate,box-shadow] motion-safe:hover:-translate-y-0.5 hover:shadow-lg focus-visible:ring-3 focus-visible:ring-ring/50"
               key={asset.id}
               onClick={() => onOpenAsset(assetIndex)}
               type="button"
@@ -1918,7 +1918,7 @@ export function MeetingVisualGalleryOverview({
                 {/* eslint-disable-next-line @next/next/no-img-element -- protected image routes need browser auth cookies */}
                 <img
                   alt=""
-                  className="h-full w-full object-cover transition-transform duration-200 group-hover:scale-[1.01]"
+                  className="h-full w-full object-cover transition-[scale] duration-200 motion-safe:group-hover:scale-[1.01]"
                   loading="lazy"
                   src={asset.url}
                 />
@@ -2070,7 +2070,7 @@ export function MeetingVisualLightbox({
               className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-sm font-medium text-neutral-200"
               role="status"
             >
-              <LoaderCircle className="size-5 animate-spin" />
+              <LoaderCircle aria-hidden="true" className="size-5 motion-safe:animate-spin" />
               <span>
                 Loading image {assetIndex + 1} of {visualAssets.length}
               </span>

@@ -224,11 +224,27 @@ struct MeetingNoteLocalRecorderApp: App {
     }
 }
 
+// Audio samples update meter views without invalidating the recorder panel.
+@MainActor
+final class RecorderMeterLevels: ObservableObject {
+    @Published var microphone: Float = 0
+    @Published var systemAudio: Float = 0
+    var microphoneLevelAt = Date.distantPast
+    var systemAudioLevelAt = Date.distantPast
+
+    func recentAudioLevels(at date: Date) -> (microphone: Float, systemAudio: Float) {
+        (
+            date.timeIntervalSince(microphoneLevelAt) <= 2 ? microphone : 0,
+            date.timeIntervalSince(systemAudioLevelAt) <= 2 ? systemAudio : 0
+        )
+    }
+}
+
 @MainActor
 final class RecorderAppModel: NSObject, ObservableObject, UNUserNotificationCenterDelegate {
     private static let audioLevelSampleCount = 36
 
-    @Published var audioLevels = Array(repeating: Float(0), count: audioLevelSampleCount)
+    var audioLevels = Array(repeating: Float(0), count: audioLevelSampleCount)
     @Published var activeRecordingTitle: String?
     @Published var permissionChecklist = PermissionChecklist(
         microphone: .unknown,
@@ -255,10 +271,7 @@ final class RecorderAppModel: NSObject, ObservableObject, UNUserNotificationCent
     @Published var isRestarting = false
     @Published var availableMicrophones: [AudioInputDevice] = []
     @Published var selectedMicrophoneUID: String?
-    @Published var microphoneLevel: Float = 0
-    @Published var systemAudioLevel: Float = 0
-    private var microphoneLevelAt = Date.distantPast
-    private var systemAudioLevelAt = Date.distantPast
+    let meterLevels = RecorderMeterLevels()
     @Published var isFinishingRecording = false {
         didSet {
             if isFinishingRecording, isRecording, recordingStoppedAt == nil { recordingStoppedAt = Date() }
@@ -1236,18 +1249,18 @@ final class RecorderAppModel: NSObject, ObservableObject, UNUserNotificationCent
         let scaled = max(0, min(1, level * 16))
         switch source {
         case .microphone:
-            microphoneLevelAt = observedAt
-            microphoneLevel = scaled
+            meterLevels.microphoneLevelAt = observedAt
+            meterLevels.microphone = scaled
         case .computerAudio:
-            systemAudioLevelAt = observedAt
-            systemAudioLevel = scaled
+            meterLevels.systemAudioLevelAt = observedAt
+            meterLevels.systemAudio = scaled
         }
 
         guard isRecording else {
             return
         }
 
-        let levels = recentAudioLevels(at: Date())
+        let levels = meterLevels.recentAudioLevels(at: Date())
         audioLevels.append(max(levels.microphone, levels.systemAudio))
         if audioLevels.count > Self.audioLevelSampleCount {
             audioLevels.removeFirst(audioLevels.count - Self.audioLevelSampleCount)
@@ -1256,13 +1269,6 @@ final class RecorderAppModel: NSObject, ObservableObject, UNUserNotificationCent
         if endPromptPolicy.observe(source: source, level: level, at: observedAt) {
             showSilencePrompt()
         }
-    }
-
-    func recentAudioLevels(at date: Date) -> (microphone: Float, systemAudio: Float) {
-        (
-            date.timeIntervalSince(microphoneLevelAt) <= 2 ? microphoneLevel : 0,
-            date.timeIntervalSince(systemAudioLevelAt) <= 2 ? systemAudioLevel : 0
-        )
     }
 
     func toggleLevelTest() {
@@ -1354,8 +1360,8 @@ final class RecorderAppModel: NSObject, ObservableObject, UNUserNotificationCent
             } catch {
                 guard !Task.isCancelled else { return }
                 isTestingLevels = false
-                microphoneLevel = 0
-                systemAudioLevel = 0
+                meterLevels.microphone = 0
+                meterLevels.systemAudio = 0
                 LocalRecorderTelemetry.capture(error, operation: .audioTestStart)
                 statusText = "Could not test audio: \(error.localizedDescription)"
                 await refreshPermissions()
@@ -1373,8 +1379,8 @@ final class RecorderAppModel: NSObject, ObservableObject, UNUserNotificationCent
         previousTask?.cancel()
         levelTestSession = nil
         isTestingLevels = false
-        microphoneLevel = 0
-        systemAudioLevel = 0
+        meterLevels.microphone = 0
+        meterLevels.systemAudio = 0
         if canMonitor, !isRecording, !isStartingRecording {
             statusText = "Watching your calendar"
         }
@@ -1485,8 +1491,8 @@ final class RecorderAppModel: NSObject, ObservableObject, UNUserNotificationCent
 
     func resetAudioLevels() {
         audioLevels = Array(repeating: 0, count: Self.audioLevelSampleCount)
-        microphoneLevel = 0
-        systemAudioLevel = 0
+        meterLevels.microphone = 0
+        meterLevels.systemAudio = 0
     }
 
     func restartApp() {

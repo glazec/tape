@@ -187,8 +187,10 @@ enum LocalRecorderSnapshot {
             let wave = abs(sin(Double(index) * 0.55)) * 0.55 + abs(sin(Double(index) * 1.7)) * 0.3
             return Float(min(1, 0.08 + wave))
         }
-        recording.microphoneLevel = 0.55
-        recording.systemAudioLevel = 0.32
+        recording.meterLevels.microphoneLevelAt = Date()
+        recording.meterLevels.systemAudioLevelAt = Date()
+        recording.meterLevels.microphone = 0.55
+        recording.meterLevels.systemAudio = 0.32
 
         let picker = RecorderAppModel(snapshotBearerToken: "token")
         picker.permissionChecklist = granted

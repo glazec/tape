@@ -206,6 +206,7 @@ struct RecorderMeetingPicker: View {
             .background(
                 RoundedRectangle(cornerRadius: 6)
                     .fill(current || isFocused || hoveredID == meeting.id ? TapePalette.mist : Color.clear)
+                    .animation(.easeOut(duration: 0.12), value: hoveredID == meeting.id)
             )
             .contentShape(Rectangle())
         }
