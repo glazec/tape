@@ -534,22 +534,22 @@ final class RecorderAppModel: NSObject, ObservableObject, UNUserNotificationCent
         credentialWrites.async { [credentialStore, weak self] in
             let saved = (try? credentialStore.save(credentials)) != nil
             Task { @MainActor [weak self] in
-                guard let self, revision == credentialRevision else { return }
-                isSavingSession = false
+                guard let self, revision == self.credentialRevision else { return }
+                self.isSavingSession = false
                 guard saved else {
-                    reportLoginFailure()
-                    resumeSavedRecordingWork()
-                    if isSignedIn { scheduleNextMonitoringCheck(after: 5 * 60) }
+                    self.reportLoginFailure()
+                    self.resumeSavedRecordingWork()
+                    if self.isSignedIn { self.scheduleNextMonitoringCheck(after: 5 * 60) }
                     return
                 }
-                account = nil
-                clearRecordingDisplayState()
-                serverURLText = credentials.serverURLText
-                bearerToken = credentials.bearerToken
+                self.account = nil
+                self.clearRecordingDisplayState()
+                self.serverURLText = credentials.serverURLText
+                self.bearerToken = credentials.bearerToken
                 activationLogger.notice("Sign in saved")
-                statusText = "Finish access setup"
-                resumeSavedRecordingWork()
-                await refreshPermissionsAndStartIfReady()
+                self.statusText = "Finish access setup"
+                self.resumeSavedRecordingWork()
+                await self.refreshPermissionsAndStartIfReady()
             }
         }
     }

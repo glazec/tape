@@ -286,7 +286,7 @@ describe("local recorder app packaging", () => {
       /await restoreLocalRecorderCredentials[\s\S]*?if isSignedIn \{\s+statusText = "Finish access setup"\s+resumeSavedRecordingWork\(\)\s+\}\s+await refreshPermissionsAndStartIfReady\(\)/,
     );
     expect(appSource).toMatch(
-      /func handleLoginCallback[\s\S]*?credentialWrites\.async[\s\S]*?credentialStore\.save\(credentials\)[\s\S]*?statusText = "Finish access setup"\s+resumeSavedRecordingWork\(\)\s+await refreshPermissionsAndStartIfReady\(\)/,
+      /func handleLoginCallback[\s\S]*?credentialWrites\.async[\s\S]*?credentialStore\.save\(credentials\)[\s\S]*?self\.statusText = "Finish access setup"\s+self\.resumeSavedRecordingWork\(\)\s+await self\.refreshPermissionsAndStartIfReady\(\)/,
     );
     expect(appSource).toMatch(
       /var nextPermissionStep: RecorderPermissionStep\? \{\s+guard isSignedIn else \{\s+return nil/,
