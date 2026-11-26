@@ -139,10 +139,17 @@ describe.skipIf(!url)("person pages PostgreSQL", () => {
     const worker = generatePersonTimelineOnMeeting as unknown as {
       fn: (input: { event: { data: { meetingId: string; personId: string } }; step: typeof step }) => Promise<unknown>;
     };
-    await as(owner, () => worker.fn({ event: { data: { meetingId: meeting, personId: person } }, step }));
+    const runWorker = () => as(owner, () => worker.fn({
+      event: { data: { meetingId: meeting, personId: person } }, step,
+    }));
+    expect(await runWorker()).toEqual({ remaining: 0 });
+    expect(await runWorker()).toEqual({ remaining: 0 });
     expect(provider).toHaveBeenCalledTimes(1);
     const topics = await as(owner, () => getPersonTimeline({ teamId: team, userId: owner, domain: "team.test" }, person));
-    expect(topics.map(topic => topic.category)).toEqual(["project"]);
+    expect(topics).toMatchObject([{
+      category: "project",
+      current: { meetingId: meeting, segmentId: segments[0].id },
+    }]);
     provider.mockReset();
   });
 
