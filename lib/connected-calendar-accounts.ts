@@ -1,6 +1,6 @@
 import { asc, eq } from "drizzle-orm";
 
-import { db, privilegedDb } from "@/db/client";
+import { db } from "@/db/client";
 import { calendarConnections, teams, users } from "@/db/schema";
 import type { WorkspaceContext } from "@/lib/workspace";
 
@@ -19,8 +19,7 @@ export async function listConnectedCalendarAccounts(workspace: WorkspaceContext)
 }
 
 export async function listMeetingShareOwnerEmails(ownerUserId: string) {
-  // An owner's calendar identities can span workspaces.
-  const rows = await privilegedDb
+  const rows = await db
     .select({
       email: users.email,
       calendarEmail: calendarConnections.accountEmail,

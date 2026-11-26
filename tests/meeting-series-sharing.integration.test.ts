@@ -87,7 +87,6 @@ it.skipIf(!database)(
       }
       vi.doMock("@/db/client", () => ({
         db: drizzle(client),
-        privilegedDb: drizzle(client),
         databaseSql: {
           async transaction(
             build: (tag: typeof query) => ReturnType<typeof query>[],
