@@ -208,10 +208,14 @@ struct RecorderMenuView: View {
                     )
                     .padding(.top, 14)
                 } else {
-                    RecordingLevelsView(
-                        microphoneLevel: model.microphoneLevel,
-                        systemAudioLevel: model.systemAudioLevel
-                    )
+                    TimelineView(.periodic(from: .now, by: 1)) { context in
+                        let levels = model.recentAudioLevels(at: context.date)
+                        RecordingLevelsView(
+                            microphoneLevel: levels.microphone,
+                            systemAudioLevel: levels.systemAudio,
+                            isInputPreview: model.activeRecordingBackend == .recallDesktopSDK
+                        )
+                    }
                     .padding(.top, 14)
                 }
             } else if showsDestinationChip {
@@ -1022,11 +1026,11 @@ struct RecordingDestinationCard: View {
     }
 }
 
-/// Live proof that capture is working: one meter per source, so a silent microphone
-/// or missing system audio is visible at a glance.
+/// Levels from the native recording tracks, or an input preview for SDK recordings.
 struct RecordingLevelsView: View {
     var microphoneLevel: Float
     var systemAudioLevel: Float
+    var isInputPreview: Bool
     @State private var lastHeard = Date()
 
     var body: some View {
@@ -1034,19 +1038,31 @@ struct RecordingLevelsView: View {
             SourceLevel(title: "Mic", level: microphoneLevel)
             SourceLevel(title: "Mac sound", level: systemAudioLevel)
             Spacer(minLength: 0)
-            TimelineView(.periodic(from: .now, by: 1)) { context in
-                let isSilent = context.date.timeIntervalSince(lastHeard) > 10
-                Text("No sound yet")
+            if isInputPreview {
+                Text("Mac input preview")
                     .font(TapeType.sans(11))
                     .foregroundStyle(TapePalette.ash)
-                    .lineLimit(1)
                     .fixedSize()
-                    .opacity(isSilent ? 1 : 0)
-                    .accessibilityHidden(!isSilent)
+                    .help("These levels show Mac input. The meeting recorder uses its own audio capture.")
+            } else {
+                silenceIndicator
             }
         }
         .onChange(of: max(microphoneLevel, systemAudioLevel)) { _, level in
             if level > 0.02 { lastHeard = Date() }
+        }
+    }
+
+    private var silenceIndicator: some View {
+        TimelineView(.periodic(from: .now, by: 1)) { context in
+            let isSilent = context.date.timeIntervalSince(lastHeard) > 10
+            Text("No sound yet")
+                .font(TapeType.sans(11))
+                .foregroundStyle(TapePalette.ash)
+                .lineLimit(1)
+                .fixedSize()
+                .opacity(isSilent ? 1 : 0)
+                .accessibilityHidden(!isSilent)
         }
     }
 }
@@ -1289,22 +1305,27 @@ struct RecorderSettingsView: View {
                     }
                 }
                 .controlSize(.small)
-                .disabled(model.isRecording)
+                .disabled(model.isRecording || model.isStartingRecording)
                 .onAppear(perform: model.refreshMicrophones)
 
                 if !model.isRecording {
                     textButton(model.isTestingLevels ? "Stop test" : "Test levels", action: model.toggleLevelTest)
-                        .disabled(!model.hasAudioCapturePermissions || model.isFinishingRecording)
+                        .disabled(!model.hasAudioCapturePermissions || model.isStartingRecording || model.isFinishingRecording)
                 }
             }
 
-            AudioLevelMeterRow(title: "Microphone", level: model.microphoneLevel)
-            AudioLevelMeterRow(title: "Mac sound", level: model.systemAudioLevel)
+            TimelineView(.periodic(from: .now, by: 1)) { context in
+                let levels = model.recentAudioLevels(at: context.date)
+                VStack(alignment: .leading, spacing: 10) {
+                    AudioLevelMeterRow(title: "Microphone", level: levels.microphone)
+                    AudioLevelMeterRow(title: "Mac sound", level: levels.systemAudio)
+                }
+            }
 
             Text(
                 model.isTestingLevels
                     ? "Speak and play any sound. Both bars should move."
-                    : "Levels are live while recording or testing."
+                    : "Tests the mic selected for local recording."
             )
             .font(TapeType.sans(11.5))
             .foregroundStyle(TapePalette.ash)

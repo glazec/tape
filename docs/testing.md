@@ -317,7 +317,7 @@ Additional regressions cover immediate preparation feedback, truthful queue stat
 
 Recorder multipart regression checks: `npx vitest run tests/local-recorder-multipart.test.ts tests/local-recorder-multipart-route.test.ts tests/local-recorder-routes.test.ts tests/local-recorder-records.test.ts tests/r2.test.ts`, followed by `npm run test:swift`. The native recovery test verifies that a persisted session skips an uploaded part. See [recorder upload recovery](recorder-upload-recovery.md) for the required live interruption check.
 
-The native gate also runs `mac/LocalRecorder/script/test_compressed_audio.mjs`, compiling the actual writer, converter, and synthesizer and checking AAC bitrate, mono output, and duration with 48 kHz and 44.1 kHz stereo inputs. `tests/local-recorder-media-request.test.ts` verifies compressed audio and screenshot metadata; completion tests check atomic screenshot registration and missing image rejection. Screenshot change detection tests cover first frames, slides, small rendering noise, and queue timestamps.
+The native gate also runs `mac/LocalRecorder/script/test_compressed_audio.mjs`. It checks that level readings agree with saved AAC for mono, stereo with audio on the right channel only, opposite polarity stereo, and discrete multichannel input at 44.1 and 48 kHz. It also checks AAC bitrate, mono output, and duration after mixing. `tests/local-recorder-media-request.test.ts` verifies compressed audio and screenshot metadata; completion tests check atomic screenshot registration and missing image rejection. Screenshot change detection tests cover first frames, slides, small rendering noise, and queue timestamps.
 
 ## Desktop permission continuity
 

@@ -126,6 +126,8 @@ ${repairPermissionEnum}
   var isTestingLevels = false
   var microphoneLevel: Float = 0
   var systemAudioLevel: Float = 0
+  var microphoneLevelAt = Date.distantPast
+  var systemAudioLevelAt = Date.distantPast
   var audioLevels = Array(repeating: Float(0), count: audioLevelSampleCount)
   var endPromptPolicy = SilenceTracker()
   func showSilencePrompt() {}
@@ -191,8 +193,12 @@ ${method("observeAudioLevel(source:", "func toggleLevelTest()")}
       precondition(probe.audioLevels.count == Probe.audioLevelSampleCount)
       probe.isRecording = false
       probe.isTestingLevels = true
-      probe.observeAudioLevel(source: .microphone, level: 1)
+      let now = Date()
+      probe.observeAudioLevel(source: .microphone, level: 1, at: now)
       precondition(probe.microphoneLevel == 1 && probe.audioLevels.last == 0)
+      probe.observeAudioLevel(source: .computerAudio, level: 1, at: now.addingTimeInterval(1))
+      let levels = probe.recentAudioLevels(at: now.addingTimeInterval(2.5))
+      precondition(levels.microphone == 0 && levels.systemAudio == 1)
       print("levels passed")
     } else if CommandLine.arguments.contains("restart") {
       probe.restartApp()

@@ -342,11 +342,12 @@ final class AudioLevelTestSession {
 
     init(
         microphoneDeviceUID: String?,
+        usesVoiceProcessing: Bool = true,
         onAudioLevel: @escaping @Sendable (LocalRecorderAudioSource, Float) -> Void
     ) {
         self.microphoneRecorder = MicrophoneTrackRecorder(
             deviceUID: microphoneDeviceUID,
-            fallsBackToDefaultDevice: false,
+            usesVoiceProcessing: usesVoiceProcessing,
             onAudioLevel: { level in
                 onAudioLevel(.microphone, level)
             }
@@ -371,8 +372,8 @@ final class AudioLevelTestSession {
     }
 
     func stop() async {
-        await systemRecorder.stop()
         microphoneRecorder.stop()
+        await systemRecorder.stop()
     }
 }
 
@@ -569,18 +570,17 @@ final class MicrophoneTrackRecorder {
     private let deviceUID: String?
     private var engine = AVAudioEngine()
     private var hasInputTap = false
-    private let fallsBackToDefaultDevice: Bool
+    private let usesVoiceProcessing: Bool
     private let onAudioLevel: @Sendable (Float) -> Void
     private let writer: CompressedAudioWriter?
 
     init(
         outputURL: URL,
         deviceUID: String?,
-        fallsBackToDefaultDevice: Bool = true,
         onAudioLevel: @escaping @Sendable (Float) -> Void
     ) throws {
         self.deviceUID = deviceUID
-        self.fallsBackToDefaultDevice = fallsBackToDefaultDevice
+        self.usesVoiceProcessing = true
         self.onAudioLevel = onAudioLevel
         self.writer = try CompressedAudioWriter(outputURL: outputURL)
     }
@@ -588,21 +588,21 @@ final class MicrophoneTrackRecorder {
     /// Meter-only mode: reports levels without writing audio to disk.
     init(
         deviceUID: String?,
-        fallsBackToDefaultDevice: Bool = true,
+        usesVoiceProcessing: Bool = true,
         onAudioLevel: @escaping @Sendable (Float) -> Void
     ) {
         self.deviceUID = deviceUID
-        self.fallsBackToDefaultDevice = fallsBackToDefaultDevice
+        self.usesVoiceProcessing = usesVoiceProcessing
         self.onAudioLevel = onAudioLevel
         self.writer = nil
     }
 
     func start() throws {
         do {
-            try startEngine(voiceProcessing: writer != nil)
+            try startEngine(voiceProcessing: usesVoiceProcessing)
         } catch {
             resetEngine()
-            guard writer != nil else { throw error }
+            guard usesVoiceProcessing else { throw error }
             LocalRecorderTelemetry.capture(error, operation: .audioProcessingStart)
             // Some audio routes cannot initialize VoiceProcessingIO. Retry with
             // a fresh, unprocessed engine while preserving the selected input.
@@ -618,13 +618,8 @@ final class MicrophoneTrackRecorder {
     private func startEngine(voiceProcessing: Bool) throws {
         let input = engine.inputNode
 
-        if let deviceUID {
-            let applied = applyInputDevice(uid: deviceUID, to: input)
-            if !applied, !fallsBackToDefaultDevice {
-                throw LocalRecordingCaptureError.writerFailed(
-                    "Selected microphone is unavailable"
-                )
-            }
+        if let deviceUID, !applyInputDevice(uid: deviceUID, to: input) {
+            throw LocalRecordingCaptureError.writerFailed("Selected microphone is unavailable")
         }
 
         if voiceProcessing {
@@ -645,13 +640,14 @@ final class MicrophoneTrackRecorder {
             )
         }
 
+        // The hardware may renegotiate its format after a device change.
+        // Follow the input node's current format instead of pinning the snapshot.
         input.installTap(
             onBus: 0,
             bufferSize: 4096,
-            format: inputFormat
+            format: nil
         ) { [onAudioLevel, writer] buffer, _ in
-            onAudioLevel(LocalAudioLevelMeter.rmsLevel(from: buffer))
-            writer?.write(buffer)
+            onAudioLevel(LocalAudioLevelMeter.captureLevel(from: buffer, writer: writer))
         }
         hasInputTap = true
         engine.prepare()
@@ -764,8 +760,7 @@ final class SystemAudioTrackRecorder: NSObject, @unchecked Sendable, SCStreamOut
 
         do {
             let buffer = try AVAudioPCMBuffer.localRecorderBuffer(from: sampleBuffer)
-            onAudioLevel(LocalAudioLevelMeter.rmsLevel(from: buffer))
-            writer?.write(buffer)
+            onAudioLevel(LocalAudioLevelMeter.captureLevel(from: buffer, writer: writer))
         } catch {
             writer?.record(error)
         }
@@ -796,16 +791,19 @@ final class CompressedAudioWriter: @unchecked Sendable {
         ], commonFormat: .pcmFormatFloat32, interleaved: false)
     }
 
-    func write(_ buffer: AVAudioPCMBuffer) {
+    @discardableResult
+    func write(_ buffer: AVAudioPCMBuffer) -> AVAudioPCMBuffer? {
         lock.lock()
         defer { lock.unlock() }
-        guard let file, error == nil else { return }
+        guard let file, error == nil else { return nil }
         do {
             let converted = try LocalAudioBufferConverter.convert(buffer, to: file.processingFormat)
             try file.write(from: converted)
+            return converted
         } catch {
             self.error = error
             LocalRecorderTelemetry.capture(error, operation: .audioWrite)
+            return nil
         }
     }
 
@@ -834,9 +832,10 @@ final class CompressedAudioWriter: @unchecked Sendable {
 
 enum LocalAudioBufferConverter {
     static func convert(
-        _ buffer: AVAudioPCMBuffer,
+        _ input: AVAudioPCMBuffer,
         to outputFormat: AVAudioFormat
     ) throws -> AVAudioPCMBuffer {
+        let buffer = outputFormat.channelCount == 1 ? try downmixToMono(input) : input
         if buffer.format == outputFormat {
             return buffer
         }
@@ -870,6 +869,48 @@ enum LocalAudioBufferConverter {
 
         return converted
     }
+
+    private static func downmixToMono(_ input: AVAudioPCMBuffer) throws -> AVAudioPCMBuffer {
+        let channelCount = input.format.channelCount
+        guard channelCount > 1, let channels = input.floatChannelData else {
+            return input
+        }
+
+        // Core Audio's default channel map can omit a stereo input or write
+        // silence for discrete VoiceProcessingIO channels. Include every input.
+        guard let format = AVAudioFormat(standardFormatWithSampleRate: input.format.sampleRate, channels: 1),
+              let mono = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: input.frameLength),
+              let samples = mono.floatChannelData?[0] else {
+            throw LocalRecordingCaptureError.audioBufferUnavailable
+        }
+        mono.frameLength = input.frameLength
+        let isInterleaved = input.format.isInterleaved
+        let stride = input.stride
+        let frameCount = Int(input.frameLength)
+        var energyByChannel = [Float](repeating: 0, count: Int(channelCount))
+        var summedEnergy: Float = 0
+        for frame in 0..<frameCount {
+            var sum: Float = 0
+            for channel in 0..<Int(channelCount) {
+                let sample = isInterleaved ? channels[0][frame * stride + channel] : channels[channel][frame]
+                sum += sample
+                energyByChannel[channel] += sample * sample
+            }
+            summedEnergy += sum * sum
+            samples[frame] = sum / Float(channelCount)
+        }
+
+        // Opposite-polarity inputs can cancel before averaging. Keep the strongest
+        // channel if the channel sum loses more than 20 dB against that input.
+        if let strongest = energyByChannel.indices.max(by: { energyByChannel[$0] < energyByChannel[$1] }),
+           summedEnergy < energyByChannel[strongest] * 0.01 {
+            let source = isInterleaved ? channels[0].advanced(by: strongest) : channels[strongest]
+            for frame in 0..<frameCount {
+                samples[frame] = source[frame * stride]
+            }
+        }
+        return mono
+    }
 }
 
 final class AudioConverterInput: @unchecked Sendable {
@@ -899,6 +940,16 @@ final class AudioConverterInput: @unchecked Sendable {
 }
 
 enum LocalAudioLevelMeter {
+    static func captureLevel(from buffer: AVAudioPCMBuffer, writer: CompressedAudioWriter?) -> Float {
+        let converted: AVAudioPCMBuffer?
+        if let writer {
+            converted = writer.write(buffer)
+        } else {
+            converted = try? LocalAudioBufferConverter.convert(buffer, to: LocalTrackAudioFormat.processingFormat)
+        }
+        return converted.map { rmsLevel(from: $0) } ?? 0
+    }
+
     static func rmsLevel(from buffer: AVAudioPCMBuffer) -> Float {
         guard buffer.frameLength > 0, buffer.format.channelCount > 0 else {
             return 0

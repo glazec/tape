@@ -20,7 +20,7 @@ var selectedDevices: [AudioDeviceID] = []
 func AudioUnitSetProperty(_ unit: Int, _ property: Int, _ scope: Int, _ bus: Int, _ device: inout AudioDeviceID, _ size: UInt32) -> Int {
     selectedDevices.append(device); return noErr
 }
-enum AudioInputDeviceList { static func deviceID(forUID: String) -> AudioDeviceID? { 42 } }
+enum AudioInputDeviceList { static func deviceID(forUID uid: String) -> AudioDeviceID? { uid == "chosen" ? 42 : nil } }
 enum LocalRecordingCaptureError: Error { case writerFailed(String) }
 enum LocalRecorderTelemetry {
     enum Operation { case audioProcessingStart }
@@ -28,7 +28,9 @@ enum LocalRecorderTelemetry {
 }
 struct Format { let sampleRate = 48_000.0; let channelCount = 1 }
 struct Buffer {}
-enum LocalAudioLevelMeter { static func rmsLevel(from: Buffer) -> Float { 0 } }
+enum LocalAudioLevelMeter {
+    static func captureLevel(from: Buffer, writer: CompressedAudioWriter?) -> Float { 0 }
+}
 final class CompressedAudioWriter {
     var closed = false
     init(outputURL: URL) throws {}
@@ -56,7 +58,11 @@ final class AVAudioInputNode {
         if failEnable { throw NSError(domain: "com.apple.coreaudio.avfaudio", code: -10875) }
     }
     func outputFormat(forBus: Int) -> Format { Format() }
-    func installTap(onBus: Int, bufferSize: Int, format: Format, block: (Buffer, Int) -> Void) { precondition(!tapped); tapped = true }
+    func installTap(onBus: Int, bufferSize: Int, format: Format?, block: (Buffer, Int) -> Void) {
+        precondition(!tapped)
+        if case .some = format { fatalError("The mic tap must follow the hardware format") }
+        tapped = true
+    }
     func removeTap(onBus: Int) { precondition(tapped); tapped = false }
 }
 final class AVAudioEngine {
@@ -85,7 +91,7 @@ func check(enable: Bool, start: Bool, plain: Bool, meter: Bool = false) throws {
     let active = engines.filter { $0.running }
     precondition(active.count == (plain ? 0 : 1))
     if !plain {
-        precondition(active[0].inputNode.processing == (!enable && !start && !meter))
+        precondition(active[0].inputNode.processing == (!enable && !start))
     }
     precondition(engines.filter { !$0.running }.allSatisfy { !$0.inputNode.tapped })
     precondition(selectedDevices.allSatisfy { $0 == 42 })
@@ -97,7 +103,24 @@ try check(enable: true, start: false, plain: false)
 try check(enable: false, start: false, plain: false)
 try check(enable: false, start: true, plain: false)
 try check(enable: false, start: true, plain: true)
-try check(enable: true, start: false, plain: true, meter: true)
+try check(enable: false, start: false, plain: false, meter: true)
+try check(enable: true, start: false, plain: false, meter: true)
+try check(enable: false, start: true, plain: false, meter: true)
+let preview = MicrophoneTrackRecorder(deviceUID: "chosen", usesVoiceProcessing: false, onAudioLevel: { _ in })
+try preview.start()
+precondition(engines.last?.inputNode.processing == false)
+preview.stop()
+for recorder in [
+    MicrophoneTrackRecorder(deviceUID: "unplugged", onAudioLevel: { _ in }),
+    try MicrophoneTrackRecorder(outputURL: URL(fileURLWithPath: "/unused"), deviceUID: "unplugged", onAudioLevel: { _ in })
+] {
+    do {
+        try recorder.start()
+        fatalError("An unplugged selected microphone must fail before using another input")
+    } catch LocalRecordingCaptureError.writerFailed(let message) {
+        precondition(message == "Selected microphone is unavailable")
+    }
+}
 print("microphone startup cases passed")
 `;
     const file = join(directory, "main.swift");

@@ -5,7 +5,16 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 
-for (const sampleRate of [48_000, 44_100]) test(`AAC preserves duration through synthesis from ${sampleRate} Hz stereo`, () => {
+const inputFormats = [
+  [48_000, 1, false],
+  [48_000, 2, false],
+  [44_100, 2, false],
+  [44_100, 4, true],
+  [48_000, 9, false],
+  [48_000, 2, false, true],
+];
+
+for (const [sampleRate, channels, interleaved, oppositePolarity = false] of inputFormats) test(`Meters and AAC agree for ${sampleRate} Hz with ${channels} channels${oppositePolarity ? " in opposite polarity" : ""}`, () => {
   const directory = mkdtempSync(join(tmpdir(), "tape-aac-"));
   try {
     const source = readFileSync(new URL("../Sources/MeetingNoteLocalRecorder/LocalAudioCapture.swift", import.meta.url), "utf8");
@@ -23,20 +32,40 @@ enum LocalRecorderTelemetry {
 }
 ${definitions}
 let directory = URL(fileURLWithPath: CommandLine.arguments[1])
-let sourceFormat = AVAudioFormat(standardFormatWithSampleRate: ${sampleRate}, channels: 2)!
+let channelCount: AVAudioChannelCount = ${channels}
+let layoutTag: AudioChannelLayoutTag
+switch channelCount {
+case 1: layoutTag = kAudioChannelLayoutTag_Mono
+case 2: layoutTag = kAudioChannelLayoutTag_Stereo
+default: layoutTag = kAudioChannelLayoutTag_DiscreteInOrder | channelCount
+}
+let layout = AVAudioChannelLayout(layoutTag: layoutTag)!
+let sourceFormat = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: ${sampleRate}, interleaved: ${interleaved}, channelLayout: layout)
 let buffer = AVAudioPCMBuffer(pcmFormat: sourceFormat, frameCapacity: ${sampleRate / 10})!
 buffer.frameLength = ${sampleRate / 10}
+let oppositePolarity = ${oppositePolarity}
 for frame in 0..<${sampleRate / 10} {
-    buffer.floatChannelData![0][frame] = Float(sin(Double(frame) * 2 * .pi * 440 / ${sampleRate})) * 0.2
-    buffer.floatChannelData![1][frame] = Float(sin(Double(frame) * 2 * .pi * 880 / ${sampleRate})) * 0.2
+    for channel in 0..<${channels} {
+        let frequency = oppositePolarity ? 440 : Double(channel + 1) * 440
+        let data = buffer.floatChannelData!
+        let samples = buffer.format.isInterleaved ? data[0].advanced(by: channel) : data[channel]
+        let amplitude: Float = oppositePolarity ? (channel == 0 ? 0.2 : -0.2) : (channelCount == 2 && channel == 0 ? 0 : 0.2)
+        samples[frame * buffer.stride] = Float(sin(Double(frame) * 2 * .pi * frequency / ${sampleRate})) * amplitude
+    }
 }
 let computer = directory.appendingPathComponent("computer.m4a")
 let microphone = directory.appendingPathComponent("microphone.m4a")
 let mixed = directory.appendingPathComponent("mixed.m4a")
+let checkLevel = LocalAudioLevelMeter.captureLevel(from: buffer, writer: nil)
+precondition(checkLevel > 0.02, "Audio Check lost the input signal")
 for url in [computer, microphone] {
     let writer = try CompressedAudioWriter(outputURL: url)
-    for _ in 0..<100 { writer.write(buffer) }
+    for _ in 0..<100 {
+        let recordingLevel = LocalAudioLevelMeter.captureLevel(from: buffer, writer: writer)
+        precondition(abs(recordingLevel - checkLevel) < 0.0001, "Audio Check and the recording meter disagree")
+    }
     try writer.finish()
+    precondition(LocalAudioLevelMeter.captureLevel(from: buffer, writer: writer) == 0)
 }
 let interrupted = directory.appendingPathComponent("interrupted.m4a")
 let recorder = try SystemAudioTrackRecorder(outputURL: interrupted, onAudioLevel: { _ in })
@@ -51,6 +80,13 @@ for url in [computer, microphone, mixed] {
     let bytes = try url.resourceValues(forKeys: [.fileSizeKey]).fileSize!
     precondition(file.processingFormat.channelCount == 1)
     precondition(file.processingFormat.sampleRate == 48_000)
+    let decoded = AVAudioPCMBuffer(pcmFormat: file.processingFormat, frameCapacity: 4_096)!
+    try file.read(into: decoded)
+    let samples = UnsafeBufferPointer(start: decoded.floatChannelData![0], count: Int(decoded.frameLength))
+    precondition(samples.contains { abs($0) > 0.02 }, "AAC lost the input signal")
+    if url != mixed {
+        precondition(abs(LocalAudioLevelMeter.rmsLevel(from: decoded) - checkLevel) < 0.02, "Meter differs from decoded AAC")
+    }
     precondition(abs(seconds - 10) < 0.1, "Duration changed: \\(seconds)")
     precondition(bytes < 150_000 && bytes > 30_000, "Unexpected size: \\(bytes)")
     print("\\(url.lastPathComponent): \\(bytes) bytes, \\(seconds) seconds")

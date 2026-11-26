@@ -257,6 +257,8 @@ final class RecorderAppModel: NSObject, ObservableObject, UNUserNotificationCent
     @Published var selectedMicrophoneUID: String?
     @Published var microphoneLevel: Float = 0
     @Published var systemAudioLevel: Float = 0
+    private var microphoneLevelAt = Date.distantPast
+    private var systemAudioLevelAt = Date.distantPast
     @Published var isFinishingRecording = false {
         didSet {
             if isFinishingRecording, isRecording, recordingStoppedAt == nil { recordingStoppedAt = Date() }
@@ -290,6 +292,8 @@ final class RecorderAppModel: NSObject, ObservableObject, UNUserNotificationCent
     private var queuedUploadRetryAfter: Date?
     private var appActivationObserver: NSObjectProtocol?
     private var levelTestSession: AudioLevelTestSession?
+    private var levelTestTask: Task<Void, Never>?
+    private var levelTestGeneration = 0
     private var levelTestTimeoutTask: Task<Void, Never>?
     private var recallSDKMeterSession: AudioLevelTestSession?
     var recallSDKMeterGeneration = 0
@@ -998,6 +1002,7 @@ final class RecorderAppModel: NSObject, ObservableObject, UNUserNotificationCent
         nativeOnly: Bool = false
     ) async {
         stopLevelTest()
+        await levelTestTask?.value
         isAdvancedExpanded = false
         let intentID = fallbackIntentId
         let confirmedTitle = title
@@ -1093,6 +1098,7 @@ final class RecorderAppModel: NSObject, ObservableObject, UNUserNotificationCent
 
             let session = AudioLevelTestSession(
                 microphoneDeviceUID: selectedMicrophoneUID,
+                usesVoiceProcessing: false,
                 onAudioLevel: { [weak self] source, level in
                     let observedAt = Date()
                     Task { @MainActor in
@@ -1230,8 +1236,10 @@ final class RecorderAppModel: NSObject, ObservableObject, UNUserNotificationCent
         let scaled = max(0, min(1, level * 16))
         switch source {
         case .microphone:
+            microphoneLevelAt = observedAt
             microphoneLevel = scaled
         case .computerAudio:
+            systemAudioLevelAt = observedAt
             systemAudioLevel = scaled
         }
 
@@ -1239,7 +1247,8 @@ final class RecorderAppModel: NSObject, ObservableObject, UNUserNotificationCent
             return
         }
 
-        audioLevels.append(max(microphoneLevel, systemAudioLevel))
+        let levels = recentAudioLevels(at: Date())
+        audioLevels.append(max(levels.microphone, levels.systemAudio))
         if audioLevels.count > Self.audioLevelSampleCount {
             audioLevels.removeFirst(audioLevels.count - Self.audioLevelSampleCount)
         }
@@ -1247,6 +1256,13 @@ final class RecorderAppModel: NSObject, ObservableObject, UNUserNotificationCent
         if endPromptPolicy.observe(source: source, level: level, at: observedAt) {
             showSilencePrompt()
         }
+    }
+
+    func recentAudioLevels(at date: Date) -> (microphone: Float, systemAudio: Float) {
+        (
+            date.timeIntervalSince(microphoneLevelAt) <= 2 ? microphoneLevel : 0,
+            date.timeIntervalSince(systemAudioLevelAt) <= 2 ? systemAudioLevel : 0
+        )
     }
 
     func toggleLevelTest() {
@@ -1293,7 +1309,7 @@ final class RecorderAppModel: NSObject, ObservableObject, UNUserNotificationCent
     }
 
     private func startLevelTest() {
-        guard !isRecording, !isFinishingRecording, levelTestSession == nil else {
+        guard !isStartingRecording, !isRecording, !isFinishingRecording, !isTestingLevels else {
             return
         }
 
@@ -1302,19 +1318,30 @@ final class RecorderAppModel: NSObject, ObservableObject, UNUserNotificationCent
             return
         }
 
-        Task {
+        let previousTask = levelTestTask
+        let generation = levelTestGeneration
+        let deviceUID = selectedMicrophoneUID
+        isTestingLevels = true
+        statusText = "Starting audio check"
+        levelTestTask = Task { [self] in
+            await previousTask?.value
+            guard !Task.isCancelled else { return }
             do {
                 let session = AudioLevelTestSession(
-                    microphoneDeviceUID: selectedMicrophoneUID,
+                    microphoneDeviceUID: deviceUID,
                     onAudioLevel: { [weak self] source, level in
                         Task { @MainActor in
+                            guard self?.levelTestGeneration == generation else { return }
                             self?.observeAudioLevel(source: source, level: level)
                         }
                     }
                 )
                 try await session.start()
+                guard !Task.isCancelled else {
+                    await session.stop()
+                    return
+                }
                 levelTestSession = session
-                isTestingLevels = true
                 statusText = "Testing audio levels"
                 levelTestTimeoutTask = Task { @MainActor [weak self] in
                     try? await Task.sleep(for: .seconds(30))
@@ -1325,6 +1352,10 @@ final class RecorderAppModel: NSObject, ObservableObject, UNUserNotificationCent
                     self?.stopLevelTest()
                 }
             } catch {
+                guard !Task.isCancelled else { return }
+                isTestingLevels = false
+                microphoneLevel = 0
+                systemAudioLevel = 0
                 LocalRecorderTelemetry.capture(error, operation: .audioTestStart)
                 statusText = "Could not test audio: \(error.localizedDescription)"
                 await refreshPermissions()
@@ -1333,22 +1364,23 @@ final class RecorderAppModel: NSObject, ObservableObject, UNUserNotificationCent
     }
 
     private func stopLevelTest() {
+        levelTestGeneration += 1
         levelTestTimeoutTask?.cancel()
         levelTestTimeoutTask = nil
-
-        guard let session = levelTestSession else {
-            return
-        }
-
+        let previousTask = levelTestTask
+        let session = levelTestSession
+        guard isTestingLevels || session != nil else { return }
+        previousTask?.cancel()
         levelTestSession = nil
         isTestingLevels = false
-        Task {
-            await session.stop()
-            microphoneLevel = 0
-            systemAudioLevel = 0
-            if canMonitor, !isRecording, !isStartingRecording {
-                statusText = "Watching your calendar"
-            }
+        microphoneLevel = 0
+        systemAudioLevel = 0
+        if canMonitor, !isRecording, !isStartingRecording {
+            statusText = "Watching your calendar"
+        }
+        levelTestTask = Task {
+            await previousTask?.value
+            await session?.stop()
         }
     }
 
