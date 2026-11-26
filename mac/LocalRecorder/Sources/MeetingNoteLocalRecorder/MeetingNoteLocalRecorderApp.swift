@@ -70,11 +70,12 @@ private final class LocalRecorderAppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         guard recorderAppModel.canCloseApp(allowPendingUploads: true) else { return .terminateCancel }
-        guard recorderAppModel.isStartingRecording else { return .terminateNow }
-        // Only a start cancelled at the window chooser gets here. Give it a moment to
-        // fail its intent, so the server is not left waiting for a recording.
         Task { @MainActor in
-            await recorderAppModel.waitForCancelledStart(timeout: .seconds(5))
+            // Give a start cancelled at the window chooser time to fail its server intent.
+            if recorderAppModel.isStartingRecording {
+                await recorderAppModel.waitForCancelledStart(timeout: .seconds(5))
+            }
+            await recorderAppModel.waitForCredentialWrites()
             NSApp.reply(toApplicationShouldTerminate: true)
         }
         return .terminateLater
@@ -213,14 +214,28 @@ enum MeetingNoteLocalRecorderEntry {
 
 struct MeetingNoteLocalRecorderApp: App {
     @NSApplicationDelegateAdaptor(LocalRecorderAppDelegate.self) private var appDelegate
-    @StateObject private var model = recorderAppModel
+    private let model = recorderAppModel
     private let updater = LocalRecorderUpdater.shared
 
     var body: some Scene {
-        MenuBarExtra(LocalRecorderAppIdentity.name, systemImage: model.menuBarImage) {
+        MenuBarExtra {
             RecorderMenuView(model: model)
+        } label: {
+            RecorderMenuBarLabel(model: model)
         }
         .menuBarExtraStyle(.window)
+    }
+}
+
+private struct RecorderMenuBarLabel: View {
+    let model: RecorderAppModel
+    @State private var isRecording = false
+
+    var body: some View {
+        // Keep the app scene independent of recorder status, uploads and other panel updates.
+        Label(LocalRecorderAppIdentity.name, systemImage: isRecording ? "record.circle.fill" : "waveform")
+            .labelStyle(.iconOnly)
+            .onReceive(model.$isRecording.removeDuplicates()) { isRecording = $0 }
     }
 }
 
@@ -253,6 +268,7 @@ final class RecorderAppModel: NSObject, ObservableObject, UNUserNotificationCent
         notifications: .unknown,
         startAtLogin: .unknown
     )
+    @Published private(set) var isRestoringSession = false
     @Published var statusText = "Sign in to start monitoring"
     @Published var serverURLText: String
     @Published var account: LocalRecorderAccount?
@@ -295,6 +311,9 @@ final class RecorderAppModel: NSObject, ObservableObject, UNUserNotificationCent
     let captureController = LocalRecordingCaptureController()
     let recallSDKController = RecallDesktopSDKRecordingController()
     private let credentialStore: LocalRecorderKeychainCredentialStore
+    private let credentialWrites = DispatchQueue(label: "tape.recorder.keychain", qos: .userInitiated)
+    private var credentialRevision = 0
+    private var isSavingSession = false
     private let deviceIdStore = DeviceIdStore()
     lazy var notificationCenter = UNUserNotificationCenter.current()
     let uploadQueue: LocalRecordingUploadQueue
@@ -403,13 +422,13 @@ final class RecorderAppModel: NSObject, ObservableObject, UNUserNotificationCent
 
     override init() {
         let credentialStore = LocalRecorderKeychainCredentialStore(service: LocalRecorderAppIdentity.bundleID)
-        let credentials = recoverLocalRecorderCredentials(try? credentialStore.load())
         self.credentialStore = credentialStore
         self.uploadQueue = LocalRecordingUploadQueue(
             directoryURL: LocalRecorderFileLocations.uploadQueueDirectoryURL()
         )
-        self.serverURLText = initialLocalRecorderServerURLText(credentials: credentials)
-        self.bearerToken = credentials?.bearerToken ?? ""
+        self.serverURLText = initialLocalRecorderServerURLText(credentials: nil)
+        self.bearerToken = ""
+        self.isRestoringSession = true
         super.init()
         Task { @MainActor in
             await resumePermissionRepair(arguments: ProcessInfo.processInfo.arguments)
@@ -422,9 +441,6 @@ final class RecorderAppModel: NSObject, ObservableObject, UNUserNotificationCent
             }
         }
         loadMicrophoneSelection()
-        externalURLDispatcher.setHandler { [weak self] url in
-            self?.handleLoginCallback(url)
-        }
         notificationCenter.delegate = self
         configureRecordingWorkflow()
         appActivationObserver = NotificationCenter.default.addObserver(
@@ -436,23 +452,23 @@ final class RecorderAppModel: NSObject, ObservableObject, UNUserNotificationCent
                 await self?.refreshPermissionsAndStartIfReady()
             }
         }
-        if !bearerToken.isEmpty {
-            statusText = "Finish access setup"
-            Task {
-                await refreshPermissionsAndStartIfReady()
+        Task {
+            let credentials = await restoreLocalRecorderCredentials(load: credentialStore.load)
+            if let credentials {
+                serverURLText = credentials.serverURLText
+                bearerToken = credentials.bearerToken
             }
-            Task {
-                await retryQueuedUploadsIfPossible()
+            isRestoringSession = false
+            externalURLDispatcher.setHandler { [weak self] url in
+                self?.handleLoginCallback(url)
             }
-        } else {
-            Task {
-                await refreshPermissions()
-            }
-        }
-    }
 
-    var menuBarImage: String {
-        isRecording ? "record.circle.fill" : "waveform"
+            if isSignedIn {
+                statusText = "Finish access setup"
+                resumeSavedRecordingWork()
+            }
+            await refreshPermissionsAndStartIfReady()
+        }
     }
 
     var isSignedIn: Bool {
@@ -476,6 +492,7 @@ final class RecorderAppModel: NSObject, ObservableObject, UNUserNotificationCent
     }
 
     func signIn() {
+        guard !isRestoringSession else { return }
         guard let serverURL = URL(string: serverURLText) else {
             statusText = "Enter a valid server URL"
             return
@@ -502,26 +519,57 @@ final class RecorderAppModel: NSObject, ObservableObject, UNUserNotificationCent
     }
 
     func handleLoginCallback(_ url: URL) {
-        do {
-            let callback = try LocalRecorderLoginCallback(url: url, expectedScheme: LocalRecorderAppIdentity.loginScheme)
-            try credentialStore.save(
-                LocalRecorderCredentials(
-                    serverURLText: callback.serverURL.absoluteString,
-                    bearerToken: callback.token
-                )
-            )
-            account = nil
-            clearRecordingDisplayState()
-            serverURLText = callback.serverURL.absoluteString
-            bearerToken = callback.token
-            activationLogger.notice("Sign in saved")
-            statusText = "Finish access setup"
-            Task {
+        guard let callback = try? LocalRecorderLoginCallback(url: url, expectedScheme: LocalRecorderAppIdentity.loginScheme) else {
+            reportLoginFailure()
+            return
+        }
+        let credentials = LocalRecorderCredentials(
+            serverURLText: callback.serverURL.absoluteString,
+            bearerToken: callback.token
+        )
+        credentialRevision += 1
+        let revision = credentialRevision
+        isSavingSession = true
+
+        credentialWrites.async { [credentialStore, weak self] in
+            let saved = (try? credentialStore.save(credentials)) != nil
+            Task { @MainActor [weak self] in
+                guard let self, revision == credentialRevision else { return }
+                isSavingSession = false
+                guard saved else {
+                    reportLoginFailure()
+                    resumeSavedRecordingWork()
+                    if isSignedIn { scheduleNextMonitoringCheck(after: 5 * 60) }
+                    return
+                }
+                account = nil
+                clearRecordingDisplayState()
+                serverURLText = credentials.serverURLText
+                bearerToken = credentials.bearerToken
+                activationLogger.notice("Sign in saved")
+                statusText = "Finish access setup"
+                resumeSavedRecordingWork()
                 await refreshPermissionsAndStartIfReady()
             }
-        } catch {
-            activationLogger.error("Sign in callback could not be saved")
-            statusText = "Could not finish login. Try signing in again."
+        }
+    }
+
+    private func reportLoginFailure() {
+        activationLogger.error("Sign in callback could not be saved")
+        statusText = "Could not finish login. Try signing in again."
+    }
+
+    private func clearSavedCredentials() {
+        credentialRevision += 1
+        isSavingSession = false
+        credentialWrites.async { [credentialStore] in
+            try? credentialStore.delete()
+        }
+    }
+
+    func waitForCredentialWrites() async {
+        await withCheckedContinuation { continuation in
+            credentialWrites.async { continuation.resume() }
         }
     }
 
@@ -593,6 +641,12 @@ final class RecorderAppModel: NSObject, ObservableObject, UNUserNotificationCent
 
     func showSavedRecordings() {
         NSWorkspace.shared.activateFileViewerSelecting([uploadQueue.directoryURL])
+    }
+
+    private func resumeSavedRecordingWork() {
+        guard isSignedIn, !isSavingSession else { return }
+        resumeRecordingRecovery()
+        Task { await retryQueuedUploadsIfPossible() }
     }
 
     private func retryQueuedUploadsIfPossible() async {
@@ -784,7 +838,7 @@ final class RecorderAppModel: NSObject, ObservableObject, UNUserNotificationCent
     }
 
     func checkNow() {
-        guard !isRefreshingSchedule else {
+        guard !isSavingSession, !isRefreshingSchedule else {
             return
         }
 
@@ -799,21 +853,24 @@ final class RecorderAppModel: NSObject, ObservableObject, UNUserNotificationCent
         }
 
         isRefreshingSchedule = true
+        let requestRevision = credentialRevision
+        let requestToken = bearerToken
         Task {
             defer {
                 isRefreshingSchedule = false
+                if isSignedIn, requestToken != bearerToken { checkNow() }
             }
 
             do {
                 let client = LocalRecorderAPIClient(
                     serverURL: serverURL,
-                    bearerToken: bearerToken,
+                    bearerToken: requestToken,
                     deviceId: deviceIdStore.deviceId,
                     appVersion: appVersion,
                     permissionReadiness: permissionReadinessReport
                 )
                 let monitoringStatus = try await client.fetchMonitoringStatus()
-                guard client.bearerToken == bearerToken else { return }
+                guard requestRevision == credentialRevision else { return }
                 account = monitoringStatus.account
                 activationLogger.info("Device connected; permissions ready: \(self.canMonitor)")
                 guard canMonitor else {
@@ -854,6 +911,7 @@ final class RecorderAppModel: NSObject, ObservableObject, UNUserNotificationCent
                     )
                 )
             } catch {
+                guard requestRevision == credentialRevision else { return }
                 if !requireSignInIfExpired(error) {
                     statusText = "Could not connect. Retrying shortly."
                     scheduleNextMonitoringCheck(after: 5 * 60)
@@ -868,7 +926,7 @@ final class RecorderAppModel: NSObject, ObservableObject, UNUserNotificationCent
         clearRecordingDisplayState()
         account = nil
         bearerToken = ""
-        try? credentialStore.delete()
+        clearSavedCredentials()
         monitoringTimer?.invalidate()
         statusText = "Session expired. Sign in to reconnect."
         activationLogger.notice("Saved session expired; sign in required")
@@ -1485,7 +1543,7 @@ final class RecorderAppModel: NSObject, ObservableObject, UNUserNotificationCent
         UserDefaults.standard.removeObject(forKey: Self.pendingMeetingsDefaultsKey)
         account = nil
         bearerToken = ""
-        try? credentialStore.delete()
+        clearSavedCredentials()
         statusText = "Signed out"
     }
 
@@ -1637,6 +1695,7 @@ final class RecorderAppModel: NSObject, ObservableObject, UNUserNotificationCent
     }
 
     private func refreshPermissionsAndStartIfReady() async {
+        guard !isRestoringSession else { return }
         await refreshPermissions()
         if isSignedIn {
             startMonitoring()

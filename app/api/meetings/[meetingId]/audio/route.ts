@@ -211,11 +211,17 @@ async function proxyAudio(request: Request, audioUrl: string, filename?: string)
     if (value) upstreamHeaders.set(name, value);
   }
 
-  const response = await fetch(audioUrl, {
-    headers: upstreamHeaders,
-    cache: "no-store",
-    signal: request.signal,
-  });
+  let response: Response;
+  try {
+    response = await fetch(audioUrl, {
+      headers: upstreamHeaders,
+      cache: "no-store",
+      signal: request.signal,
+    });
+  } catch (error) {
+    if (request.signal.aborted) return new Response(null, { status: 499 });
+    throw error;
+  }
 
   if (response.status === 416) {
     const headers = new Headers({ "cache-control": "private, no-store" });

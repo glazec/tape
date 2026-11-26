@@ -128,12 +128,6 @@ extension RecorderAppModel {
             recoveryState.sdkDrains[index].needsFailure = true
         }
         try? persistCaptureRecovery()
-        if let client = makeClient() {
-            for drain in recoveryState.sdkDrains {
-                startSDKDrain(client: client, target: drain.target, recordingID: drain.recordingID)
-            }
-            Task { try? await sealRecoveredCaptures(client: client) }
-        }
         recallSDKController.onCaptureFailure = { [weak self] id in
             guard let self, self.captureSessionID == id, self.isRecording, !self.isFinishingRecording else { return }
             self.isFinishingRecording = true
@@ -152,6 +146,14 @@ extension RecorderAppModel {
                 self.presentEndPrompt(reason: .meetingClosed)
             }
         }
+    }
+
+    func resumeRecordingRecovery() {
+        guard isSignedIn, let client = makeClient() else { return }
+        for drain in recoveryState.sdkDrains {
+            startSDKDrain(client: client, target: drain.target, recordingID: drain.recordingID)
+        }
+        Task { try? await sealRecoveredCaptures(client: client) }
     }
 
     /// `displayTitle` is only what the starting screen shows until the server names the target.

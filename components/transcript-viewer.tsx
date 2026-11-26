@@ -34,6 +34,7 @@ import { personNameKey } from "@/lib/person-names";
 import { Button } from "@/components/ui/button";
 import { SPEAKER_LABELS_CHANGED } from "@/lib/meeting-connections";
 import { normalizeAudioPeaks, resampleAudioPeaks } from "@/lib/audio-waveform";
+import { captureClientAction } from "@/lib/telemetry/client";
 import {
   getAudioPlaylistDurationSeconds,
   getAudioPlaylistPartOffsetSeconds,
@@ -452,6 +453,7 @@ export function TranscriptViewer({
     localTimeSeconds: number;
     shouldPlay: boolean;
   } | null>(null);
+  const playbackRetryRef = useRef<{ audioUrl: string; resumeAt: number | null } | null>(null);
   const [activeAudioPartIndex, setActiveAudioPartIndex] = useState(0);
   const [currentTime, setCurrentTime] = useState(0);
   const [noteMomentSegmentId, setNoteMomentSegmentId] = useState<string | null>(null);
@@ -732,6 +734,9 @@ export function TranscriptViewer({
       return;
     }
 
+    const retry = playbackRetryRef.current;
+    if (retry && retry.audioUrl === activeAudioUrl) retry.resumeAt = null;
+
     if (audio.readyState === 0) {
       pendingPlaybackRef.current = {
         localTimeSeconds: position.localTimeSeconds,
@@ -762,6 +767,11 @@ export function TranscriptViewer({
     setFailedPlaybackAudioUrl(null);
     audio.playbackRate = playbackRate;
     const pendingPlayback = pendingPlaybackRef.current;
+    const retry = playbackRetryRef.current;
+    if (retry && retry.audioUrl === activeAudioUrl && retry.resumeAt !== null) {
+      if (!pendingPlayback) audio.currentTime = retry.resumeAt;
+      retry.resumeAt = null;
+    }
 
     if (!pendingPlayback) {
       return;
@@ -786,21 +796,29 @@ export function TranscriptViewer({
 
   async function togglePlayback() {
     const audio = audioRef.current;
-
-    if (!audio) {
+    if (!audio || !activeAudioUrl || playbackRetryRef.current?.audioUrl === activeAudioUrl) {
       return;
     }
 
     clearSpeakerPreview();
 
-    if (audio.paused) {
+    if (audio.paused || hasPlaybackError) {
+      const retry = hasPlaybackError ? { audioUrl: activeAudioUrl, resumeAt: audio.currentTime } : null;
       try {
+        // Start play in the click handler so Safari retains user activation.
+        if (retry) {
+          playbackRetryRef.current = retry;
+          audio.load();
+        }
         await audio.play();
         setIsPlaying(true);
       } catch (error) {
         if (error instanceof DOMException && error.name === "AbortError") return;
+        captureClientAction("recording_playback_request_failed");
         setFailedPlaybackAudioUrl(activeAudioUrl);
         setIsPlaying(false);
+      } finally {
+        if (retry && playbackRetryRef.current === retry) playbackRetryRef.current = null;
       }
       return;
     }
@@ -2346,13 +2364,19 @@ function TranscriptAudioPlayer({
     let idleHandle: number | null = null;
     let timeoutHandle: number | null = null;
 
-    async function loadWaveform() {
+    async function loadWaveform(canRetry = Boolean(serverWaveformUrl)) {
+      let retryable = true;
       try {
         const response = await fetch(serverWaveformUrl ?? getWaveformAudioUrl(audioUrl), {
           credentials: "include",
           signal: controller.signal,
         });
 
+        retryable = response.status === 503;
+        if (serverWaveformUrl && response.status === 422) {
+          if (!isCancelled) setFailedWaveformAudioUrl(audioUrl);
+          return;
+        }
         if (!response.ok) {
           throw new Error("Audio waveform request failed");
         }
@@ -2403,9 +2427,13 @@ function TranscriptAudioPlayer({
           void audioContext.close();
         }
       } catch {
-        if (!isCancelled) {
-          setFailedWaveformAudioUrl(audioUrl);
+        if (isCancelled) return;
+        if (canRetry && retryable) {
+          timeoutHandle = window.setTimeout(() => void loadWaveform(false), 500);
+          return;
         }
+        setFailedWaveformAudioUrl(audioUrl);
+        captureClientAction("recording_waveform_failed");
       }
     }
 
@@ -2485,6 +2513,7 @@ function TranscriptAudioPlayer({
         onEnded={onEnded}
         onPause={() => setIsPlaying(false)}
         onError={() => {
+          captureClientAction("recording_playback_failed");
           onPlaybackError();
         }}
         onPlay={(event) => {
@@ -2515,7 +2544,7 @@ function TranscriptAudioPlayer({
             <RotateCcw className="size-4" />
           </Button>
           <Button
-            aria-label={isPlaying ? "Pause audio" : "Play audio"}
+            aria-label={hasPlaybackError ? "Retry audio" : isPlaying ? "Pause audio" : "Play audio"}
             className="size-9 rounded-full bg-foreground text-background hover:bg-foreground/85"
             onClick={onTogglePlayback}
             size="icon"
@@ -2715,7 +2744,7 @@ function TranscriptAudioPlayer({
             className="text-center text-xs font-medium text-destructive"
             role="alert"
           >
-            Recording could not be played. Reload and try again.
+            Recording could not be played. Try playing it again.
           </p>
         ) : null}
         </div>

@@ -577,6 +577,17 @@ struct RecorderMenuView: View {
     private var state: RecorderSummaryState {
         let title = model.destinationUnconfirmed ? "Confirm recording destination" : (model.activeRecordingTitle ?? "Untitled recording")
 
+        if model.isRestoringSession {
+            return RecorderSummaryState(
+                eyebrow: "Tape for Mac",
+                tone: nil,
+                title: "Opening Tape",
+                detail: "Checking your saved session.",
+                actionTitle: "Opening…",
+                actionKind: .primary,
+                isActionDisabled: true
+            )
+        }
         if model.isRequestingPermissions {
             return RecorderSummaryState(
                 eyebrow: "Setting up",
@@ -1273,7 +1284,7 @@ struct RecorderSettingsView: View {
             }
 
 #if DEBUG
-            if !isSignedIn {
+            if !isSignedIn, !model.isRestoringSession {
                 DisclosureGroup("Development server", isExpanded: $showsDevelopmentServer) {
                     TextField("Server", text: $model.serverURLText)
                         .textFieldStyle(.roundedBorder)

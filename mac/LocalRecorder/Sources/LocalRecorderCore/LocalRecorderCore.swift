@@ -933,6 +933,14 @@ public func recoverLocalRecorderCredentials(
     return credentials
 }
 
+public func restoreLocalRecorderCredentials(
+    load: @escaping @Sendable () throws -> LocalRecorderCredentials?
+) async -> LocalRecorderCredentials? {
+    await Task.detached(priority: .userInitiated) {
+        recoverLocalRecorderCredentials(try? load())
+    }.value
+}
+
 public enum LocalRecorderKeychainCredentialStoreError: Error, Equatable {
     case invalidKeychainData
     case keychainStatus(OSStatus)

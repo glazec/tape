@@ -283,10 +283,10 @@ describe("local recorder app packaging", () => {
     expect(requestNextSource).toContain("requestNotificationPermission()");
     expect(appSource).not.toContain("requestAllPermissionsAtStartup");
     expect(appSource).toMatch(
-      /if !bearerToken\.isEmpty \{\s+statusText = "Finish access setup"\s+Task \{\s+await refreshPermissionsAndStartIfReady\(\)\s+\}\s+Task \{\s+await retryQueuedUploadsIfPossible\(\)/,
+      /await restoreLocalRecorderCredentials[\s\S]*?if isSignedIn \{\s+statusText = "Finish access setup"\s+resumeSavedRecordingWork\(\)\s+\}\s+await refreshPermissionsAndStartIfReady\(\)/,
     );
     expect(appSource).toMatch(
-      /func handleLoginCallback[\s\S]*?statusText = "Finish access setup"\s+Task \{\s+await refreshPermissionsAndStartIfReady\(\)/,
+      /func handleLoginCallback[\s\S]*?credentialWrites\.async[\s\S]*?credentialStore\.save\(credentials\)[\s\S]*?statusText = "Finish access setup"\s+resumeSavedRecordingWork\(\)\s+await refreshPermissionsAndStartIfReady\(\)/,
     );
     expect(appSource).toMatch(
       /var nextPermissionStep: RecorderPermissionStep\? \{\s+guard isSignedIn else \{\s+return nil/,

@@ -831,6 +831,18 @@ import Testing
     #expect(recoverLocalRecorderCredentials(nil) == nil)
 }
 
+@MainActor
+@Test func restoresSavedCredentialsWithoutBlockingTheMainThread() async {
+    let saved = LocalRecorderCredentials(serverURLText: "https://tape.inevitable.tech", bearerToken: "test_token")
+
+    let restored = await restoreLocalRecorderCredentials {
+        #expect(!Thread.isMainThread)
+        return saved
+    }
+
+    #expect(restored == saved)
+}
+
 @Test func browserLoginURLStartsAtSignInWithEncodedDeviceCallback() throws {
     let url = try #require(
         makeLocalRecorderBrowserLoginURL(

@@ -656,6 +656,25 @@ describe("TranscriptViewer interactions", () => {
     );
   });
 
+  it("retries a temporary server waveform outage without failing playback", async () => {
+    Object.defineProperty(window, "requestIdleCallback", {
+      configurable: true,
+      value: (callback: () => void) => {
+        callback();
+        return 1;
+      },
+    });
+    vi.mocked(fetch)
+      .mockResolvedValueOnce(new Response(null, { status: 503 }))
+      .mockResolvedValueOnce(Response.json({ peaks: [0.2, 0.5, 0.8] }));
+
+    render(<TranscriptViewer audioUrl="/api/meetings/a/audio" segments={segments} />);
+
+    expect(await screen.findByTitle("Audio volume")).toBeTruthy();
+    expect(fetch).toHaveBeenCalledTimes(2);
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
   it("previews a speaker across clips and stops at the end", async () => {
     render(<TranscriptViewer audioUrl="/audio.mp3" segments={[
       { id: "a1", speaker: "Alice", startMs: 0, endMs: 1000, text: "one" },
@@ -761,7 +780,7 @@ describe("TranscriptViewer interactions", () => {
     fireEvent.click(secondWord);
     await waitFor(() => expect(audio.currentTime).toBeGreaterThan(0));
     expect((await screen.findByRole("alert")).textContent).toContain(
-      "Recording could not be played. Reload and try again.",
+      "Recording could not be played. Try playing it again.",
     );
   });
 
@@ -774,7 +793,7 @@ describe("TranscriptViewer interactions", () => {
     fireEvent.click(screen.getByRole("button", { name: "Play audio" }));
 
     expect((await screen.findByRole("alert")).textContent).toContain(
-      "Recording could not be played. Reload and try again.",
+      "Recording could not be played. Try playing it again.",
     );
   });
 
@@ -784,14 +803,68 @@ describe("TranscriptViewer interactions", () => {
 
     fireEvent.error(audio);
     expect(screen.getByRole("alert").textContent).toContain(
-      "Recording could not be played. Reload and try again.",
+      "Recording could not be played. Try playing it again.",
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "Play audio" }));
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Retry audio" }));
+    });
     expect(screen.getByRole("alert")).toBeTruthy();
 
     fireEvent.canPlay(audio);
     expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("reloads a failed media source from the current position when playback is retried", async () => {
+    const load = vi.spyOn(HTMLMediaElement.prototype, "load").mockImplementation(function (this: HTMLMediaElement) {
+      this.currentTime = 0;
+    });
+    render(<TranscriptViewer audioUrl="/audio.mp3" segments={segments} />);
+    const audio = document.querySelector("audio") as HTMLAudioElement;
+
+    audio.currentTime = 18;
+    fireEvent.error(audio);
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Retry audio" }));
+      expect(load).toHaveBeenCalledTimes(1);
+      fireEvent.canPlay(audio);
+    });
+    expect(audio.currentTime).toBe(18);
+    await waitFor(() => expect(screen.queryByRole("alert")).toBeNull());
+  });
+
+  it("does not restart a retry that is already loading", async () => {
+    const load = vi.spyOn(HTMLMediaElement.prototype, "load").mockImplementation(() => {});
+    let resume!: () => void;
+    vi.mocked(HTMLMediaElement.prototype.play).mockReturnValueOnce(new Promise<void>(resolve => {
+      resume = resolve;
+    }));
+    render(<TranscriptViewer audioUrl="/audio.mp3" segments={segments} />);
+
+    fireEvent.error(document.querySelector("audio")!);
+    const retry = screen.getByRole("button", { name: "Retry audio" });
+    fireEvent.click(retry);
+    fireEvent.click(retry);
+
+    expect(load).toHaveBeenCalledTimes(1);
+    await act(async () => resume());
+  });
+
+  it("does not apply a failed retry's position to a different recording", async () => {
+    vi.mocked(HTMLMediaElement.prototype.play).mockRejectedValueOnce(new Error("network"));
+    const { rerender } = render(<TranscriptViewer audioUrl="/first.mp3" segments={segments} />);
+    const audio = document.querySelector("audio") as HTMLAudioElement;
+    audio.currentTime = 18;
+    fireEvent.error(audio);
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Retry audio" }));
+    });
+
+    rerender(<TranscriptViewer audioUrl="/second.mp3" segments={segments} />);
+    audio.currentTime = 0;
+    fireEvent.canPlay(audio);
+
+    expect(audio.currentTime).toBe(0);
   });
 
   it("uses the compact waveform on mobile and responds to media query changes", () => {

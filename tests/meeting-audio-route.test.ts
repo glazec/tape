@@ -79,10 +79,11 @@ vi.mock("@/db/client", () => ({
 async function getMeetingAudio(
   url = "https://app.example.com/api/meetings/11111111-1111-4111-8111-111111111111/audio",
   headers?: HeadersInit,
+  signal?: AbortSignal,
 ) {
   const { GET } = await import("@/app/api/meetings/[meetingId]/audio/route");
 
-  return GET(new Request(url, { headers }), {
+  return GET(new Request(url, { headers, signal }), {
     params: Promise.resolve({
       meetingId: "11111111-1111-4111-8111-111111111111",
     }),
@@ -338,6 +339,26 @@ describe("GET /api/meetings/[meetingId]/audio", () => {
       expect(forwarded.get("if-range")).toBe('"recording-v1"');
       await expect(response.text()).resolves.toBe("part");
     }
+  });
+
+  it("treats a client disconnect during the upstream fetch as a canceled request", async () => {
+    getCurrentUser.mockResolvedValue({ id: "user_123", email: "user@example.com" });
+    getWorkspace.mockResolvedValue({ teamId: "team_123" });
+    limit.mockResolvedValue([{ objectKey: "audio.mp3" }]);
+    createReadUrl.mockResolvedValue("https://r2.example.com/audio.mp3");
+    const controller = new AbortController();
+    vi.stubGlobal("fetch", vi.fn(async (_url: string, options: RequestInit) => {
+      controller.abort();
+      options.signal?.throwIfAborted();
+    }));
+
+    const response = await getMeetingAudio(
+      "https://app.example.com/api/meetings/11111111-1111-4111-8111-111111111111/audio?proxy=1",
+      { Range: "bytes=0-1" },
+      controller.signal,
+    );
+
+    expect(response.status).toBe(499);
   });
 
   it("preserves unsatisfiable range responses", async () => {
